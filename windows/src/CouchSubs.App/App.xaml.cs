@@ -77,6 +77,8 @@ public partial class App : Application
         Theme.Motion.AnimationsEnabled = controller.Settings.TransitionAnimations;
         var window = new ShellWindow(controller);
         MainWindow = window;
+        // Pencere çizildi: açılış başarılı, kurtarma güncellemesinin işareti silinir.
+        window.ContentRendered += (_, _) => RescueUpdate.Reached();
         window.Show();
     }
 }
