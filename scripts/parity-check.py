@@ -137,7 +137,7 @@ CAPABILITIES = {
         ("mac", "mac/CouchSubs/UI/Onboarding/ConsoleStep.swift", r"private func showLogFile\(\)"),
         ("windows", "windows/src/CouchSubs.App/Views/Steps/LogFile.cs", r"public static void Show\(\)"),
         ("ios", _CORE + "LogShare.swift", r"public static func redact\("),
-        ("ios", "couchsubs-ios/CouchSubs/UI/Profile.swift", r"ShareLink\(item: PhoneLogs\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/UI/Profile.swift", r"ShareLink\(item: PhoneLogsZip\(\)"),
         ("android", _DROID + "LogShare.kt", r"fun redact\("),
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/ProfileScreens.kt", r"shareLogs\(context\)"),
     ],

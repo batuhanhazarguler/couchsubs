@@ -143,7 +143,7 @@ struct ProfileScreen: View {
                         ms: $model.settings.partialWaitMs)
                 Text("These waits only delay lines that were read badly; most lines are shown without waiting. A shorter wait shows those lines sooner but lets more wrong translations through.")
                     .dsMuted()
-                Button("Restore Defaults") {
+                Button("Restore defaults") {
                     model.settings.misreadWaitMs = SubtitlePipeline.packWaitMs
                     model.settings.partialWaitMs = SubtitlePipeline.cleanWaitMs
                 }
@@ -426,7 +426,7 @@ struct SettingsScreen: View {
                     .font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if model.demoMode {
-                    Button("Exit Demo Mode") {
+                    Button("Exit demo mode") {
                         model.exitDemo()
                         path.removeAll()
                     }
@@ -449,7 +449,7 @@ struct SettingsScreen: View {
             if model.settings.output.showsOnTV, model.testTVNotConnected, model.tvClients == 0 {
                 MobileNote(text: String(localized: "The test subtitle did not reach the TV because the TV app is not connected. Open CouchSubs on the TV. If the TV shows a 6-digit code, don't type it anywhere: approve it in the “Pair this TV?” window that opens on this phone, then test again."))
             }
-            Button("Send Test Subtitle") { model.sendTestSubtitle() }.buttonStyle(.mobileSecondary)
+            Button("Send test subtitle") { model.sendTestSubtitle() }.buttonStyle(.mobileSecondary)
         }
         .onAppear { app.analytics.screen("settings") }
     }
@@ -654,7 +654,7 @@ struct AboutScreen: View {
             // remoteplay.log, altyazi.log ve varsa tvinstall.log tek dosyada, kişisel veri maskelenmiş (Android'de de aynı;
             // masaüstünde "Günlük dosyasını göster").
             Tile(spacing: Mobile.Space.gap) {
-                LogShareButton(fullWidth: true)
+                LogShareButton(fullWidth: true, title: "Share logs")
                 Text("Attach this file to your GitHub issue when reporting a problem, or send it to us.").dsMuted()
             }
         } bottom: {
@@ -667,10 +667,12 @@ struct AboutScreen: View {
 /// zip dosyasında paylaşılır (Dosyalar'a kaydet, Mail, Mesajlar, AirDrop…).
 struct LogShareButton: View {
     var fullWidth = false
+    /// Hakkında'da eski ad ("Günlükleri paylaş"; Android'deki Hakkında ile aynı), ana ekranda "Günlüğü Paylaş".
+    var title: LocalizedStringKey = "Share Log"
 
     var body: some View {
         ShareLink(item: PhoneLogsZip(), preview: SharePreview(PhoneLogsZip.fileName)) {
-            Label("Share Log", systemImage: "square.and.arrow.up")
+            Label(title, systemImage: "square.and.arrow.up")
         }
         .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: fullWidth))
         .frame(maxWidth: .infinity, alignment: fullWidth ? .center : .leading)

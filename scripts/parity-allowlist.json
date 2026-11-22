@@ -46,6 +46,7 @@
       "Enter the 4-digit passcode.": "Android şifre alanı yalnız rakam ve en çok 4 hane alır, her tuşta kaydeder; eksik şifre uyarısı yerine 'Kaydedildi' etiketi 4 hanede görünür.",
       "Passcode saved.": "bkz. 'Enter the 4-digit passcode.' (Android'de 'Kaydedildi' etiketi).",
       "Remove passcode": "Android'de alan boşaltılınca şifre silinir (her tuşta kaydedilir).",
+      "Share Log": "Yeni arayüz: iPhone ana ekranındaki ve çeviri ekranındaki Günlüğü Paylaş düğmesinin (LogShareButton, Profile.swift'te tanımlı) varsayılan adı; Hakkında'da Android'le aynı 'Share logs' kullanılır.",
       "CouchSubs": "Yerleşim farkı: iPhone Hakkında ekranındaki uygulama adı (sürümle birlikte); Android Hakkında penceresinin başlığında aynı ad sürümle yazar."
     },
     "android_only": {
@@ -71,10 +72,11 @@
       "TV and subtitle target": "Yerleşim farkı: iPhone satırı 'Subtitle target' adıyla aynı ekrana götürür.",
       "On the TV": "Yerleşim farkı: Android görünüm ayarlarında bölüm başlığı; iPhone aynı ayarları 'Subtitle appearance' kutusunda verir.",
       "Subtitle background": "Yerleşim farkı: bkz. 'On the TV' (iPhone'da 'Background').",
-      "Text size": "Yerleşim farkı: iPhone boyutu 'Subtitle appearance' başlığındaki yüzdeyle gösterir.",
       "TV app": "Yerleşim farkı: Android Ayarlar'daki TV uygulaması kurma kutusu; iPhone'da aynı kurulum Altyazı hedefi ekranından açılır.",
       "Start translation first; the test subtitle shows once the TV app connects to the phone.": "Android'de bekleme sunucusu açılamazsa (kapı başka uygulamada) gösterilen yedek ileti; iPhone sunucuyu açamazsa sessiz kalır.",
       "This is a test subtitle. Can you see it on top of the game?": "iPhone deneme altyazısı metnini PhoneModel.sendTestSubtitle içinde kurar.",
+      "Copy": "Yeni arayüz: iPhone'da kopyala simgesi adres kutusunun içinde (DSCopyField, couchsubs-ios/CouchSubs/UI/Yeni); Profile.swift'te düğme metni olarak geçmez.",
+      "Copied": "bkz. 'Copy'.",
       "Close": "Android Hakkında penceresinin kapatma düğmesi; iPhone Hakkında ekranı geri düğmesiyle kapanır.",
       "CouchSubs · © 2026 Sinan Yorulmaz · AGPL-3.0 · Enmera": "Android Ayarlar'ın alt satırı; iPhone aynı bilgiyi Profil'in altında Text(verbatim:) ile verir."
     }
