@@ -194,7 +194,9 @@ public sealed class LiveServices : IAppServices
                 throw;
             }
         }, () => LgDiscovery.SearchAsync(), onMoved);
-        return new Keeper(new TvKeeper(locator.ConnectAsync, AppController.TvAppId, parameters, consolePort: consolePort, onOpenResult: onOpenResult));
+        // Açık ve bağlı TV uygulamasına yeni bağlantıda açma komutu gitmez (#1055; Mac, iPhone ve Android ile aynı).
+        return new Keeper(new TvKeeper(locator.ConnectAsync, AppController.TvAppId, parameters, consolePort: consolePort, onOpenResult: onOpenResult,
+                                       tvConnected: appConnected));
     }
 
     /// <summary>Android TV'de açılamamanın nedeni: TV hata ayıklama iznini onaylamadıysa ayrı, gerisi "ulaşılamıyor".</summary>

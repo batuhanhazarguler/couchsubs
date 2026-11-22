@@ -328,8 +328,9 @@ final class LiveServices: AppServices {
             }
             return client
         }, search: { await LGDiscovery.search() }, onMoved: onMoved)
+        // Açık ve bağlı TV uygulamasına yeni bağlantıda açma komutu gitmez (#1055; iPhone, Windows ve Android ile aynı).
         return TVKeeper(connect: { try await locator.connect() }, appId: AppIdentity.tvAppId, params: params, consolePort: consolePort,
-                        onOpenResult: onOpenResult)
+                        onOpenResult: onOpenResult, tvConnected: appConnected)
     }
 
     // MARK: - TV uygulamasını kurma

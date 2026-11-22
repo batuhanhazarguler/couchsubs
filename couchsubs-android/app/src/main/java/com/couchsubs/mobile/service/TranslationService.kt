@@ -370,8 +370,9 @@ class TranslationService : Service() {
                 adbKeyFile = java.io.File(noBackupFilesDir, "adb/adbkey"), connected = connected,
                 log = { Log.i(TAG, it) }, onOpenResult = report, openWithSdb = openWithSdb, installLog = tvInstallLog::write, active = active)
             // LG: PS tuşu TV'yi PS5'in girişine geçirince uygulama geri getirilir (Windows/Mac/iPhone bekçisiyle aynı).
+            // Açık ve bağlı uygulamaya açma komutu gitmez (#1055; Mac, iPhone ve Windows ile aynı).
             com.couchsubs.mobile.tv.TvSessionLauncher.keepLgOpen(settings, subtitlePort, key, consolePort = { server?.consolePort },
-                log = { Log.i(TAG, it) }, onOpenResult = report) { active() && settings.target.showsOnTv }
+                log = { Log.i(TAG, it) }, onOpenResult = report, connected = connected) { active() && settings.target.showsOnTv }
             // Samsung: TV uygulaması bağlı değilken arada bir (ya da "Otomatik açmayı dene"de hemen) yeniden açılır.
             com.couchsubs.mobile.tv.TvSessionLauncher.keepSamsungOpen(settings, subtitlePort, key, connected = connected,
                 log = { Log.i(TAG, it) }, onOpenResult = report, openWithSdb = openWithSdb,
@@ -679,7 +680,9 @@ class TranslationService : Service() {
         // TV alındı göndermeyi bıraktı (uygulama arka planda askıda, bağlantı yarı açık): "yeniden bağlanılıyor" gösterilir ve
         // TV bekçisi beklemeden uygulamayı yeniden açar ("Otomatik açmayı dene" ile aynı yol; LG bekçisi uygulama öne gelince
         // geri çekilmeyi de bırakır, Android TV bekçisi açma sınırını sıfırlar).
-        subtitleServer.onTvStale = {
+        // #1055: TV'nin başka bağlantısı açıksa bekçiye dokunulmaz (sunucu da yalnız TV'den bağlantı kalmayınca çağırır).
+        subtitleServer.onTvStale = stale@{
+            if (subtitleServer.connectedClients > 0) return@stale
             Log.i(TAG, "TV alındı göndermedi: bağlantı kopmuş sayıldı, yeniden bağlanılıyor")
             com.couchsubs.mobile.tv.TvOpenRetry.request()
             markTvReconnecting()

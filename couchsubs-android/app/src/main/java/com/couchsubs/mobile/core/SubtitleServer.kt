@@ -164,7 +164,10 @@ class SubtitleServer(
         const val PING_FRAME = ": ping\n\nevent: ping\ndata: {}\n\n"
 
         /** Bu süre alındı gelmeyen (bir kez göndermiş) TV bağlantısı kopmuş sayılır: üç ping (bkz. [onTvStale]). */
-        fun ackTimeoutMs(pingIntervalMs: Long): Long = pingIntervalMs * 3
+        fun ackTimeoutMs(pingIntervalMs: Long): Long = pingIntervalMs * ACK_MISS_LIMIT
+
+        /** Bu kadar ping turu alındısız geçerse bağlantı kopmuş sayılır (#1055: saat değil, gönderilen ping sayılır). */
+        const val ACK_MISS_LIMIT = 3
 
         private val LINK_LETTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         private val random = java.security.SecureRandom()
@@ -308,12 +311,12 @@ class SubtitleServer(
 
     /** [legacy]: sürüm bildirmeyen (0.9.69'den eski) TV uygulaması; `clear` ona geciktirilerek gider ([legacyClearHoldMs]). */
     /**
-     * [link]: `link` olayıyla TV'ye bildirilen kimlik (izleyicide boş). [lastAckMs]: son alındının anı (monoton ms);
-     * 0 ise bu bağlantı hiç alındı göndermedi (eski TV uygulaması), alındı denetimi ona uygulanmaz.
+     * [link]: `link` olayıyla TV'ye bildirilen kimlik (izleyicide boş). [ackMisses]: son alındıdan beri geçen ping turu;
+     * -1 ise bu bağlantı hiç alındı göndermedi (eski TV uygulaması), alındı denetimi ona uygulanmaz.
      */
     private class Client(val socket: Socket, val viewer: Boolean, val legacy: Boolean = false, val link: String = "") {
         val output: OutputStream = socket.getOutputStream()
-        @Volatile var lastAckMs: Long = 0
+        @Volatile var ackMisses: Int = -1
     }
 
     private val lock = Any()
@@ -334,13 +337,12 @@ class SubtitleServer(
      * dondurunca) TV'nin ağ katmanı soketi açık tutuyor, gönderim hatası hiç gelmiyordu: telefon saatlerce "Bağlı"
      * gösteriyor, altyazı TV'ye ulaşmıyordu; ancak CouchSubs'tan çıkıp girince düzeliyordu. Akış açılınca `link` olayı
      * bağlantının kimliğini (`id`) taşır; 0.9.76+ TV her ping'de (ve `link`'te) `GET /ack?c=<id>` gönderir. Bir kez alındı
-     * gönderen bağlantıdan [ackTimeoutMs] boyunca alındı gelmezse bağlantı kopmuş sayılıp kapatılır (TV sayısı düşer) ve
-     * bu çağrılır (ping iş parçacığında): çağıran "Yeniden bağlanılıyor" gösterip TV bekçisini yeniler. Hiç alındı
-     * göndermeyen eski TV uygulaması eskisi gibi kalır. Bilinmeyen kimliğe 404 döner: TV hemen yeniden bağlanır.
+     * gönderen bağlantıdan [ACK_MISS_LIMIT] ping turu alındı gelmezse bağlantı kopmuş sayılıp kapatılır (TV sayısı düşer);
+     * TV'den başka bağlantı kalmadıysa bu çağrılır (ping iş parçacığında): çağıran "Yeniden bağlanılıyor" gösterip TV
+     * bekçisini yeniler. Hiç alındı göndermeyen eski TV uygulaması eskisi gibi kalır. Bilinmeyen kimliğe 404 döner: TV
+     * hemen yeniden bağlanır.
      */
     @Volatile var onTvStale: (() -> Unit)? = null
-    private val ackTimeoutMs = ackTimeoutMs(pingIntervalMs)
-    private fun monotonicMs(): Long = System.nanoTime() / 1_000_000
 
     /** Altyazı ve temizleme olayları gönderildiği anda buraya da verilir (telefon ekranındaki görünüm için). */
     @Volatile var onEvent: ((SubtitleEvent) -> Unit)? = null
@@ -588,7 +590,7 @@ class SubtitleServer(
                     val id = request.parameter("c") ?: ""
                     val client = synchronized(lock) { clients.firstOrNull { !it.viewer && it.link.isNotEmpty() && it.link == id } }
                     if (client != null) {
-                        client.lastAckMs = monotonicMs()
+                        synchronized(lock) { client.ackMisses = 0 }
                         respondAndClose(socket, "204 No Content", cors = cors)
                     } else respondAndClose(socket, "404 Not Found", cors = cors)
                 }
@@ -659,14 +661,25 @@ class SubtitleServer(
     }
 
     /**
-     * Alındısı [ackTimeoutMs]'tan uzun süredir gelmeyen TV bağlantılarını kapatır ve [onTvStale]'i çağırır; kapattıysa
-     * true (her ping turunda).
+     * Bir ping turu (ping gönderilmeden hemen önce): son alındıdan beri [ACK_MISS_LIMIT] turdan fazla geçmiş TV
+     * bağlantılarını kapatır; kapattıysa true. #1055 (beta.86): süre saatle ölçülüyordu; zamanlayıcı gecikince (telefon
+     * uyudu, uygulama arka planda kısıtlandı) ping gitmediği halde sağlam TV "susmuş" sayılıyordu. Artık alındısız geçen
+     * ping turları sayılır. [onTvStale] de yalnız TV'den hiç bağlantı kalmadıysa çağrılır: TV yeni akışını açmışken eski,
+     * yarı açık bağlantısının susması bekçiyi yenilemez (yenilenen bekçi LG'de açık uygulamayı yeniden başlatıyor, ekran
+     * kararıyordu). Mac/iPhone ve Windows ile aynı.
      */
-    internal fun dropSilentTvs(now: Long = monotonicMs()): Boolean {
-        val silent = synchronized(lock) { clients.filter { !it.viewer && it.lastAckMs != 0L && now - it.lastAckMs > ackTimeoutMs } }
+    internal fun dropSilentTvs(): Boolean {
+        val (silent, remaining) = synchronized(lock) {
+            val found = mutableListOf<Client>()
+            for (client in clients) {
+                if (client.viewer || client.ackMisses < 0) continue
+                if (client.ackMisses + 1 > ACK_MISS_LIMIT) found.add(client) else client.ackMisses++
+            }
+            found to clients.count { !it.viewer && it !in found }
+        }
         if (silent.isEmpty()) return false
         silent.forEach { remove(it) }
-        onTvStale?.invoke()
+        if (remaining == 0) onTvStale?.invoke()
         return true
     }
 

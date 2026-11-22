@@ -202,13 +202,14 @@ object TvSessionLauncher {
      * bir daha TV'ye gelmiyordu. TV'nin izin sorusu [launch]'ta yanıtlanmış olmalı (saklı anahtar yoksa bağlanılmaz). Bloklar.
      */
     fun keepLgOpen(settings: AppSettings, port: Int, key: String, consolePort: () -> Int?, log: (String) -> Unit = {},
-                   onOpenResult: (TvOpenProblem?) -> Unit = {}, active: () -> Boolean) {
+                   onOpenResult: (TvOpenProblem?) -> Unit = {}, connected: (() -> Boolean)? = null, active: () -> Boolean) {
         val tv = settings.installedTv ?: return
         if (tv.brand != TvBrand.LG || !active()) return
         val remote = InetAddress.getByName(tv.host)
         if (!SubtitleAccess.isLocalPeer(remote)) return
         LgKeeper.keep(open = { serverAddress(remote, port)?.let { LgKeeper.ssapControl(settings, tv, remote, it, key) } },
-            active = active, consolePort = consolePort, log = log, onOpenResult = onOpenResult, retry = TvOpenRetry::take)
+            active = active, consolePort = consolePort, log = log, onOpenResult = onOpenResult, retry = TvOpenRetry::take,
+            connected = connected)
     }
 
     /**
@@ -274,6 +275,12 @@ object TvSessionLauncher {
         // Samsung: önce geliştirici bağlantısı (sdb `was_execute`; Windows, Mac ve iPhone ile aynı). Uzaktan kumanda
         // bağlantısıyla açmayı bazı TV'ler sessizce yok sayıyor (Tizen 9.0, #412; iPhone build 27). sdb yalnız geliştirici modu
         // açık ve Host PC IP bu telefonsa çalışır (telefondan kurulduysa öyledir); değilse uzaktan kumandaya geçilir.
+        // LG: uygulama zaten açık ve bağlıysa açma komutu gitmez; webOS önde çalışan uygulamayı yeniden başlatıp HDMI
+        // görüntüsünü yeniden kuruyor, ekran kararıyordu (#1055; Mac, iPhone ve Windows ile aynı).
+        if (tv.brand == TvBrand.LG && connected()) {
+            onOpenResult(null)
+            return
+        }
         if (tv.brand == TvBrand.SAMSUNG && openWithSdb?.invoke() == true) {
             log("Samsung (${tv.host}) TV uygulaması geliştirici bağlantısıyla açıldı")
             onOpenResult(null)

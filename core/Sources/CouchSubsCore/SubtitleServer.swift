@@ -158,7 +158,7 @@ public final class SubtitleServer: @unchecked Sendable {
             viewers.removeAll()
             legacyClients.removeAll()
             linkIds.removeAll()
-            lastAck.removeAll()
+            ackMisses.removeAll()
             notifyClientsChanged()
         }
     }
@@ -211,10 +211,18 @@ public final class SubtitleServer: @unchecked Sendable {
     /// kalkar), `onTVStale` çağrılır; TV kendi tarafında yeniden bağlanır, bekçi uygulamayı yeniden açar. Hiç alındı
     /// göndermeyen eski TV uygulaması eskisi gibi kalır (olayı tanımaz). Bilinmeyen kimliğe 404 döner: TV bağlantısının
     /// sunucuda artık olmadığını anlayıp hemen yeniden bağlanır. Windows ve Android ile aynı.
+    ///
+    /// #1055 (beta.86): süre saatle ölçülüyordu; ping zamanlayıcısı gecikince (iPhone arka planda askıya alındı, Mac/Windows
+    /// zamanlayıcıyı erteledi) ping hiç gitmediği halde sağlam TV "susmuş" sayılıyordu. Artık alındısız geçen ping turları
+    /// sayılır (`ackMissLimit`): gitmeyen ping için TV'den alındı beklenmez. `onTVStale` de yalnız TV'den hiç bağlantı
+    /// kalmadıysa çağrılır: TV yeni akışını açmışken eski, yarı açık bağlantısının susması bekçiyi yenilemez.
     private let ackTimeout: TimeInterval
     private var linkIds: [String: ObjectIdentifier] = [:]
-    private var lastAck: [ObjectIdentifier: Date] = [:]
-    static func ackTimeout(pingInterval: TimeInterval) -> TimeInterval { pingInterval * 3 }
+    /// Alındı göndermiş bağlantının son alındıdan beri geçen ping turu (hiç göndermemiş eski TV burada yok).
+    private var ackMisses: [ObjectIdentifier: Int] = [:]
+    static func ackTimeout(pingInterval: TimeInterval) -> TimeInterval { pingInterval * Double(ackMissLimit) }
+    /// Bu kadar ping turu alındısız geçerse bağlantı kopmuş sayılır.
+    static let ackMissLimit = 3
 
     /// Alındısı kesilen TV bağlantısı kapatıldı (ana iş parçacığında). Çağıran "Yeniden bağlanılıyor" gösterip TV
     /// bekçisini yeniler (uygulama arka plandaysa öne getirilir).
@@ -425,7 +433,7 @@ public final class SubtitleServer: @unchecked Sendable {
             viewers.removeAll()
             legacyClients.removeAll()
             linkIds.removeAll()
-            lastAck.removeAll()
+            ackMisses.removeAll()
         }
     }
 
@@ -713,7 +721,7 @@ public final class SubtitleServer: @unchecked Sendable {
         } else if method == "GET" && path == "/ack" {
             // TV'nin alındısı (bkz. ackTimeout). Bilinmeyen kimlik: sunucuda bu bağlantı yok, TV yeniden bağlanmalı.
             if let id = linkIds[request.parameter("c") ?? ""], clients[id] != nil {
-                lastAck[id] = Date()
+                ackMisses[id] = 0
                 respondAndClose(connection, status: "204 No Content", data: Data(), type: nil, cors: cors)
             } else {
                 respondAndClose(connection, status: "404 Not Found", cors: cors)
@@ -793,22 +801,27 @@ public final class SubtitleServer: @unchecked Sendable {
         connection.cancel()
         viewers.remove(id)
         legacyClients.remove(id)
-        lastAck[id] = nil
+        ackMisses[id] = nil
         linkIds = linkIds.filter { $0.value != id }
         if clients.removeValue(forKey: id) != nil { notifyClientsChanged() }
     }
 
-    /// Alındısı `ackTimeout`'tan uzun süredir gelmeyen TV bağlantılarını kapatır; kapattıysa true (her ping turunda,
-    /// sunucunun kuyruğunda).
+    /// Bir ping turu: son alındıdan beri `ackMissLimit` turdan fazla geçmiş TV bağlantılarını kapatır; kapattıysa true
+    /// (ping gönderilmeden hemen önce, sunucunun kuyruğunda). `onTVStale` yalnız TV'den hiç bağlantı kalmadıysa çağrılır.
     @discardableResult
-    func dropSilentTVs(now: Date = Date()) -> Bool {
-        let silent = lastAck.filter { now.timeIntervalSince($0.value) > ackTimeout }.map(\.key)
+    func dropSilentTVs() -> Bool {
+        var silent: [ObjectIdentifier] = []
+        for (id, misses) in ackMisses {
+            if misses + 1 > Self.ackMissLimit { silent.append(id) } else { ackMisses[id] = misses + 1 }
+        }
         for id in silent {
-            if let connection = clients[id] { drop(connection, id: id) } else { lastAck[id] = nil }
+            if let connection = clients[id] { drop(connection, id: id) } else { ackMisses[id] = nil }
         }
         guard !silent.isEmpty else { return false }
-        SubtitleLog.write("TV \(Int(ackTimeout)) sn alındı göndermedi: bağlantı kopmuş sayıldı, kapatıldı")
-        if let handler = onTVStale { DispatchQueue.main.async { handler() } }
+        let remaining = clients.count - viewers.count
+        SubtitleLog.write("TV \(Self.ackMissLimit) ping turu alındı göndermedi: bağlantı kopmuş sayıldı, kapatıldı"
+                          + (remaining > 0 ? " (TV'nin başka bağlantısı açık, bekçiye dokunulmadı)" : ""))
+        if remaining == 0, let handler = onTVStale { DispatchQueue.main.async { handler() } }
         return true
     }
 

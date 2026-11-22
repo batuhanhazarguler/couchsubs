@@ -717,10 +717,12 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// yenilenir (TV'ye yeniden bağlanır, geri çekilmesi sıfırlanır, uygulamayı öne getirir). Eskiden bilgisayar
     /// "Bağlı" görüyor, bekçi uygulamayı açık sandığı için hiçbir şey yapmıyordu.
     /// </summary>
+    /// #1055: TV'nin başka bağlantısı açıksa (yeni akışını açtı, susan eski, yarı açık bağlantısıydı) bekçiye dokunulmaz;
+    /// eskiden bekçi yine yenileniyor, LG'de açık uygulamaya açma komutu gidip ekran kararıyordu (Mac/iPhone ile aynı).
     private void OnTvStale() => post(() =>
     {
-        if (!isRunning || !ShowsOnTv) return;
-        if (tvClients == 0) SetTvReconnecting(true);
+        if (!isRunning || !ShowsOnTv || server.ConnectedClients > 0) return;
+        SetTvReconnecting(true);
         if (keeper is null) StartKeeper();
         else keeper.Reconnect();
     });

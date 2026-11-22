@@ -273,13 +273,46 @@ final class SubtitleServerTests: XCTestCase {
         }
         XCTAssertEqual(server.connectedClients, 2)
         XCTAssertFalse(stale.value)
-        // TV susar (askıya alındı): 3 ping aralığı sonra bağlantı kapanır; eski TV kalır.
+        // TV susar (askıya alındı): 3 ping turu sonra bağlantı kapanır; eski TV kalır.
         try await waitUntil { server.connectedClients == 1 }
-        try await waitUntil { stale.value }
         try await Task.sleep(nanoseconds: 400_000_000)
         XCTAssertEqual(server.connectedClients, 1)
+        // #1055: TV'nin başka bağlantısı açıkken bekçi yenilenmez (yenilenen bekçi LG'de uygulamayı yeniden başlatıyordu).
+        XCTAssertFalse(stale.value)
         let (_, gone) = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/ack?c=\(id)")!)
         XCTAssertEqual((gone as? HTTPURLResponse)?.statusCode, 404)
+    }
+
+    /// #1055: TV'nin tek bağlantısı susunca `onTVStale` bir kez çağrılır; alındı gönderen TV ping turları boyunca
+    /// hiç düşmez.
+    func testOnlyTheLastSilentTVConnectionRenewsTheKeeper() async throws {
+        let server = SubtitleServer(port: 0, pingInterval: 0.1)
+        let stale = Locked(0)
+        server.onTVStale = { stale.set(stale.value + 1) }
+        let port = try await server.start()
+        defer { server.stop() }
+        let (bytes, _) = try await URLSession.shared.bytes(from: URL(string: "http://127.0.0.1:\(port)/events?v=0.9.80")!)
+        var link: String?
+        var previous = ""
+        for try await line in bytes.lines {
+            if previous == "event: link", line.hasPrefix("data:") {
+                link = (try JSONSerialization.jsonObject(with: Data(line.dropFirst(5).utf8)) as? [String: Any])?["id"] as? String
+                break
+            }
+            previous = line
+        }
+        let id = try XCTUnwrap(link)
+        try await waitUntil { server.connectedClients == 1 }
+        for _ in 0..<10 {
+            _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:\(port)/ack?c=\(id)")!)
+            try await Task.sleep(nanoseconds: 80_000_000)
+        }
+        XCTAssertEqual(server.connectedClients, 1)
+        XCTAssertEqual(stale.value, 0)
+        try await waitUntil { server.connectedClients == 0 }
+        try await waitUntil { stale.value == 1 }
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertEqual(stale.value, 1)
     }
 
     func testStreamsScreenTranslationsAndTheirClear() async throws {

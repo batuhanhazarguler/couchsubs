@@ -185,13 +185,61 @@ class SubtitleServerTest {
             assertTrue(waitFor { server.connectedClients == 2 })
             assertTrue(get(port, "/ack?c=$acked").startsWith("HTTP/1.1 204"))
             assertTrue("susan TV düşmeli", waitFor { server.connectedClients == 1 })
-            assertTrue(waitFor { stale.get() == 1 })
             // Düşen bağlantının kimliği artık bilinmiyor: TV beklemeden yeniden bağlanır.
             assertTrue(get(port, "/ack?c=$acked").startsWith("HTTP/1.1 404"))
             Thread.sleep(500)
             assertEquals(1, server.connectedClients)
-            assertEquals(1, stale.get())
+            // #1055: TV'nin başka bağlantısı açıkken bekçi yenilenmez (yenilenen bekçi LG'de uygulamayı yeniden başlatıyordu).
+            assertEquals(0, stale.get())
             assertEquals(300L, SubtitleServer.ackTimeoutMs(100))
+        } finally {
+            sockets.forEach { it.close() }
+            server.stop()
+        }
+    }
+
+    /** #1055: alındı gönderen TV ping turları boyunca düşmez; TV'nin tek bağlantısı susunca onTvStale bir kez çağrılır. */
+    @Test
+    fun onlyTheLastSilentTvConnectionRenewsTheKeeper() {
+        val server = SubtitleServer(0, pingIntervalMs = 100)
+        val stale = java.util.concurrent.atomic.AtomicInteger()
+        server.onTvStale = { stale.incrementAndGet() }
+        val port = server.start()
+        val sockets = mutableListOf<Socket>()
+        try {
+            val id = openTv(port, sockets)
+            assertTrue(waitFor { server.connectedClients == 1 })
+            repeat(10) {
+                assertTrue(get(port, "/ack?c=$id").startsWith("HTTP/1.1 204"))
+                Thread.sleep(80)
+            }
+            assertEquals(1, server.connectedClients)
+            assertEquals(0, stale.get())
+            assertTrue(waitFor { server.connectedClients == 0 })
+            assertTrue(waitFor { stale.get() == 1 })
+            Thread.sleep(400)
+            assertEquals(1, stale.get())
+        } finally {
+            sockets.forEach { it.close() }
+            server.stop()
+        }
+    }
+
+    /** #1055: alındısız sayılan ping turlarıdır, geçen saat değil: ping gitmedikçe (zamanlayıcı gecikti) TV düşmez. */
+    @Test
+    fun tvIsDroppedOnlyAfterMissedPingTurns() {
+        val server = SubtitleServer(0, pingIntervalMs = 3_600_000)
+        val port = server.start()
+        val sockets = mutableListOf<Socket>()
+        try {
+            val id = openTv(port, sockets)
+            assertTrue(waitFor { server.connectedClients == 1 })
+            assertTrue(get(port, "/ack?c=$id").startsWith("HTTP/1.1 204"))
+            Thread.sleep(300)
+            repeat(SubtitleServer.ACK_MISS_LIMIT) { assertFalse(server.dropSilentTvs()) }
+            assertEquals(1, server.connectedClients)
+            assertTrue(server.dropSilentTvs())
+            assertEquals(0, server.connectedClients)
         } finally {
             sockets.forEach { it.close() }
             server.stop()

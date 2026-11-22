@@ -151,8 +151,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         public SemaphoreSlim WriteLock { get; } = new(1, 1);
         /// <summary>TV akışının <c>link</c> olayıyla bildirilen kimliği (izleyicilerde null; bkz. <see cref="AckTimeout"/>).</summary>
         public string? LinkId { get; init; }
-        /// <summary>Son alındının anı (<c>gate</c> altında); hiç alındı göndermemiş (eski) TV'de null.</summary>
-        public DateTime? LastAck { get; set; }
+        /// <summary>Son alındıdan beri geçen ping turu (<c>gate</c> altında); hiç alındı göndermemiş (eski) TV'de null.</summary>
+        public int? AckMisses { get; set; }
     }
 
     /// <summary>Bu kurulumun kalıcı kimliği (<c>/hello</c> yanıtında). Aynı ağda iki CouchSubs varken TV uygulaması kendi
@@ -325,7 +325,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         var every = pingInterval ?? TimeSpan.FromSeconds(15);
         pingTimer = new Timer(_ =>
         {
-            DropSilentTvs(DateTime.UtcNow);
+            DropSilentTvs();
             Broadcast(PingFrame);
         }, null, every, every);
         return Task.FromResult(((IPEndPoint)listener.LocalEndpoint).Port);
@@ -711,7 +711,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
                 lock (gate)
                 {
                     var client = link.Length == 0 ? null : clients.FirstOrDefault(c => c.LinkId == link);
-                    if (client is not null) client.LastAck = DateTime.UtcNow;
+                    if (client is not null) client.AckMisses = 0;
                     known = client is not null;
                 }
                 await RespondAndClose(tcp, known ? "204 No Content" : "404 Not Found", cors: cors);
@@ -812,16 +812,36 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         return new string([.. Enumerable.Range(0, 16).Select(_ => letters[System.Security.Cryptography.RandomNumberGenerator.GetInt32(letters.Length)])]);
     }
 
-    /// <summary>Alındısı <see cref="AckTimeout"/>'tan uzun süredir gelmeyen TV bağlantılarını kapatır; kapattıysa true
-    /// (her ping turunda).</summary>
-    internal bool DropSilentTvs(DateTime now)
+    /// <summary>Bu kadar ping turu alındısız geçerse bağlantı kopmuş sayılır.</summary>
+    internal const int AckMissLimit = 3;
+
+    /// <summary>
+    /// Bir ping turu (ping gönderilmeden hemen önce): son alındıdan beri <see cref="AckMissLimit"/> turdan fazla geçmiş TV
+    /// bağlantılarını kapatır; kapattıysa true. #1055 (beta.86): süre saatle ölçülüyordu; zamanlayıcı gecikince (bilgisayar
+    /// uykudan döndü, iş parçacığı havuzu tıkandı) ping gitmediği halde sağlam TV "susmuş" sayılıyordu. Artık alındısız
+    /// geçen ping turları sayılır. <see cref="TvStale"/> da yalnız TV'den hiç bağlantı kalmadıysa tetiklenir: TV yeni akışını
+    /// açmışken eski, yarı açık bağlantısının susması bekçiyi yenilemez (yenilenen bekçi LG'de açık uygulamayı yeniden
+    /// başlatıyor, ekran kararıyordu). Mac/iPhone ve Android ile aynı.
+    /// </summary>
+    internal bool DropSilentTvs()
     {
-        List<Client> silent;
-        lock (gate) silent = [.. clients.Where(c => c.LastAck is { } last && now - last > AckTimeout)];
+        List<Client> silent = [];
+        int remaining;
+        lock (gate)
+        {
+            foreach (var client in clients)
+            {
+                if (client.AckMisses is not { } misses) continue;
+                if (misses + 1 > AckMissLimit) silent.Add(client);
+                else client.AckMisses = misses + 1;
+            }
+            remaining = clients.Count(c => !c.Viewer && !silent.Contains(c));
+        }
         if (silent.Count == 0) return false;
         foreach (var client in silent) Remove(client);
-        SubtitleLog.Write($"TV {(int)AckTimeout.TotalSeconds} sn alındı göndermedi: bağlantı kopmuş sayıldı, kapatıldı");
-        TvStale?.Invoke();
+        SubtitleLog.Write($"TV {AckMissLimit} ping turu alındı göndermedi: bağlantı kopmuş sayıldı, kapatıldı"
+                          + (remaining > 0 ? " (TV'nin başka bağlantısı açık, bekçiye dokunulmadı)" : ""));
+        if (remaining == 0) TvStale?.Invoke();
         return true;
     }
 

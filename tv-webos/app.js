@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.79';
+  var APP_VERSION = '0.9.80';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -214,7 +214,7 @@
 
   // Parametrelerdeki sunucu ve HDMI tercihini uygular; sunucu değiştiyse yeniden bağlanır.
   function applyParams(params) {
-    if (params.hdmi >= 1 && params.hdmi <= 4) chooseHdmi(Number(params.hdmi));
+    if (params.hdmi >= 1 && params.hdmi <= 4) chooseHdmiFromComputer(Number(params.hdmi));
     if (params.server) {
       var address = params.server.replace(/\/+$/, '');
       var oldKey = serverKey(address);
@@ -248,6 +248,19 @@
     hdmiPort = port;
     save('hdmi', hdmiPort);
     showHdmi(hdmiPort);
+  }
+
+  // Bilgisayarın/telefonun bildirdiği giriş (açılış parametresi `hdmi`, stil `hdmiInput`). Zaten gösterilen girişse
+  // yalnız saklanır, görüntüye dokunulmaz (TV uygulaması 0.9.80, #1055): aynı girişi yeniden açmak <video>'yu bırakıp
+  // yeniden kuruyor, ekran kararıp "HDR" yazısıyla geri geliyordu; bilgisayar her yeniden açışta aynı değeri gönderirse
+  // bu her seferinde olurdu. Kumandayla aynı girişin yeniden seçilmesi (chooseHdmi) eskisi gibi yeniden kurar.
+  function chooseHdmiFromComputer(port) {
+    if (port === shownPort && port === hdmiPort) {
+      autoQueue = [];
+      save('hdmi', port);
+      return;
+    }
+    chooseHdmi(port);
   }
 
   function showHdmi(port) {
@@ -1927,7 +1940,7 @@
     // Kurulumda bilgisayarda seçilen TV girişi: yalnız değer değişince açılır (TV'de elle seçilen giriş ezilmez).
     if (style.hdmiInput >= 1 && style.hdmiInput <= 4 && String(style.hdmiInput) !== load('appHdmi')) {
       save('appHdmi', style.hdmiInput);
-      chooseHdmi(Number(style.hdmiInput));
+      chooseHdmiFromComputer(Number(style.hdmiInput));
     }
     if (style.bottomPercent >= 0 && String(style.bottomPercent) !== load('appBottom')) {
       save('appBottom', style.bottomPercent);

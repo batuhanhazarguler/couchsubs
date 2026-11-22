@@ -569,13 +569,61 @@ public class SubtitleServerTests
 
         using var ack = await Http.GetAsync($"http://127.0.0.1:{port}/ack?c={id}");
         Assert.Equal(HttpStatusCode.NoContent, ack.StatusCode);
-        // Alındı kesildi: 3 ping süresi (300 ms) sonra bağlantı düşer.
+        // Alındı kesildi: 3 ping turu sonra bağlantı düşer.
         await WaitUntil(() => server.ConnectedClients == 1);
-        Assert.Equal(1, Volatile.Read(ref stale));
         using var again = await Http.GetAsync($"http://127.0.0.1:{port}/ack?c={id}");
         Assert.Equal(HttpStatusCode.NotFound, again.StatusCode);
         await Task.Delay(500);
         Assert.Equal(1, server.ConnectedClients);
+        // #1055: TV'nin başka bağlantısı açıkken bekçi yenilenmez (yenilenen bekçi LG'de uygulamayı yeniden başlatıyordu).
+        Assert.Equal(0, Volatile.Read(ref stale));
+    }
+
+    /// <summary>#1055: alındı gönderen TV ping turları boyunca düşmez; TV'nin tek bağlantısı susunca <see cref="SubtitleServer.TvStale"/>
+    /// bir kez tetiklenir.</summary>
+    [Fact]
+    public async Task OnlyTheLastSilentTvConnectionRenewsTheKeeper()
+    {
+        using var server = new SubtitleServer(0, TimeSpan.FromMilliseconds(100));
+        var stale = 0;
+        server.TvStale += () => Interlocked.Increment(ref stale);
+        var port = await server.StartAsync();
+        using var acking = await Http.GetAsync($"http://127.0.0.1:{port}/events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await acking.Content.ReadAsStreamAsync());
+        await ReadLines(reader, "event: link");
+        var id = JsonDocument.Parse((await reader.ReadLineAsync())!["data: ".Length..]).RootElement.GetProperty("id").GetString()!;
+        await WaitUntil(() => server.ConnectedClients == 1);
+        for (var i = 0; i < 10; i++)
+        {
+            using var ack = await Http.GetAsync($"http://127.0.0.1:{port}/ack?c={id}");
+            Assert.Equal(HttpStatusCode.NoContent, ack.StatusCode);
+            await Task.Delay(80);
+        }
+        Assert.Equal(1, server.ConnectedClients);
+        Assert.Equal(0, Volatile.Read(ref stale));
+        await WaitUntil(() => server.ConnectedClients == 0);
+        await WaitUntil(() => Volatile.Read(ref stale) == 1);
+        await Task.Delay(400);
+        Assert.Equal(1, Volatile.Read(ref stale));
+    }
+
+    /// <summary>#1055: ping turu gitmediyse (zamanlayıcı gecikti) TV'den alındı beklenmez: alındısız sayılan yalnız ping
+    /// turlarıdır, geçen saat değil.</summary>
+    [Fact]
+    public async Task TvIsNotDroppedWhilePingsAreNotSent()
+    {
+        using var server = new SubtitleServer(0, TimeSpan.FromHours(1));
+        var port = await server.StartAsync();
+        using var acking = await Http.GetAsync($"http://127.0.0.1:{port}/events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await acking.Content.ReadAsStreamAsync());
+        await ReadLines(reader, "event: link");
+        var id = JsonDocument.Parse((await reader.ReadLineAsync())!["data: ".Length..]).RootElement.GetProperty("id").GetString()!;
+        using var ack = await Http.GetAsync($"http://127.0.0.1:{port}/ack?c={id}");
+        await WaitUntil(() => server.ConnectedClients == 1);
+        for (var turn = 0; turn < SubtitleServer.AckMissLimit; turn++) Assert.False(server.DropSilentTvs());
+        Assert.Equal(1, server.ConnectedClients);
+        Assert.True(server.DropSilentTvs());
+        Assert.Equal(0, server.ConnectedClients);
     }
 
     [Fact]
