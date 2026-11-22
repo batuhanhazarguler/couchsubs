@@ -245,9 +245,10 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     public bool SendsToTv { get; set; } = true;
 
     /// <summary>
-    /// Konuşana göre renk: açıkken <c>subtitle</c> olayı satır başındaki konuşan adlarını ve renklerini <c>speakers</c>
-    /// alanında taşır (<see cref="Core.SpeakerColors"/>); kapalıyken ya da metinde ad yoksa alan yazılmaz. Eski TV
-    /// uygulamaları alanı yok sayar.
+    /// Konuşan adını renklendir: açıkken <c>subtitle</c> olayı satır başındaki konuşan adlarını ve renklerini
+    /// <c>speakerNames</c> alanında taşır (<see cref="Core.SpeakerColors"/>; TV yalnız adı boyar); kapalıyken ya da metinde
+    /// ad yoksa alan yazılmaz. Eski <c>speakers</c> alanı gönderilmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı
+    /// boyuyordu; yeni alanı tanımaz, tek renk gösterir.
     /// </summary>
     public bool SpeakerColors { get; set; }
 
@@ -366,7 +367,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         if (replaces) json["replace"] = true;
         if (box is { } b) json["box"] = BoxJson(b);
         if (SpeakerColors && Core.SpeakerColors.Speakers(text) is { Count: > 0 } speakers)
-            json["speakers"] = speakers.Select(name => new SortedDictionary<string, object> { ["name"] = name, ["color"] = SpeakerBook.Color(name)! }).ToList();
+            json["speakerNames"] = speakers.Select(name => new SortedDictionary<string, object> { ["name"] = name, ["color"] = SpeakerBook.Color(name)! }).ToList();
         lock (gate)
         {
             legacyHoldGeneration++;

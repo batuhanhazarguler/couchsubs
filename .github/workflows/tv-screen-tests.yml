@@ -50,7 +50,7 @@ jobs:
         run: node --test scripts/obs-overlay.test.js
       - name: Altyazı kutusu yazıya oturur (TV)
         run: node --test scripts/tv-subtitle-box.test.js
-      - name: Konuşana göre renk testleri (TV ve OBS)
+      - name: Konuşan adını renklendir testleri (TV ve OBS)
         run: node --test scripts/tv-speakers.test.js
       - name: LG HDMI görüntü gözcüsü ve ekran koruyucu testleri
         run: node --test scripts/tv-webos-hdmi.test.js scripts/tv-webos-screensaver.test.js

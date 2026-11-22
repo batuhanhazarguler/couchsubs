@@ -14457,34 +14457,34 @@
         }
       }
     },
-    "Color by speaker": {
+    "Color speaker names": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Color by speaker"
+            "value": "Color speaker names"
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Konuşana göre renk"
+            "value": "Konuşan adını renklendir"
           }
         }
       }
     },
-    "Each speaker's name and line keep their own color.": {
+    "Only the speaker's name gets its own color; the line stays in your Text color.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Each speaker's name and line keep their own color."
+            "value": "Only the speaker's name gets its own color; the line stays in your Text color."
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Her konuşanın adı ve satırı kendi renginde görünür."
+            "value": "Yalnız konuşanın adı kendi renginde görünür; cümle Yazı rengi ayarında kalır."
           }
         }
       }

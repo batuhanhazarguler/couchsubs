@@ -8,8 +8,8 @@ using CouchSubs.Core;
 namespace CouchSubs.App.Views;
 
 /// <summary>
-/// Konuşana göre renkli altyazı (bilgisayar ekranındaki pencere ve yayın penceresi): "Mattia: …" satırı o konuşanın
-/// renginde yazılır (<see cref="SpeakerColors"/>; TV'deki ile aynı renk). Ad yoksa ya da ayar kapalıysa düz metin.
+/// Konuşan adını renklendir (bilgisayar ekranındaki pencere ve yayın penceresi): "Mattia: …" satırında yalnız ad o
+/// konuşanın renginde, cümle yazı renginde (<see cref="SpeakerColors"/>; TV'deki ile aynı). Ad yoksa ya da ayar kapalıysa düz metin.
 /// </summary>
 internal static class SpeakerText
 {

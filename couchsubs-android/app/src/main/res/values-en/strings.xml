@@ -328,7 +328,7 @@
     <string name="settings_ask_game_short">If no pack recognises the game, asked once two minutes after translation starts.</string>
     <string name="settings_speaker_names">Show speaker name</string>
     <string name="settings_speaker_names_short">Keeps the character\'s name in front of the translation (ARTHUR: …). The name itself is never translated.</string>
-    <string name="settings_speaker_colors">Color by speaker</string>
+    <string name="settings_speaker_colors">Color speaker names</string>
     <string name="settings_game_area_presets">Use ready areas for known games</string>
     <string name="settings_game_area_presets_short">When a game with ready areas (such as GTA 6) is being played, its help box and messages are read and translated automatically. Your own extra areas take precedence.</string>
     <string name="settings_auto_screen_text">Automatically translate on-screen text (experimental)</string>
@@ -343,7 +343,7 @@
     <string name="settings_screen_text_manual">Translate the screen always translates everything.</string>
     <string name="settings_set_text_apart">Set on-screen text apart from subtitles</string>
     <string name="settings_set_text_apart_short">On-screen text keeps its own colours and place, and never looks like the subtitle box.</string>
-    <string name="settings_speaker_colors_short">Each speaker\'s name and line keep their own color.</string>
+    <string name="settings_speaker_colors_short">Only the speaker\'s name gets its own color; the line stays in your Text color.</string>
     <string name="settings_fast_reading">Check unchanged subtitle areas more often</string>
     <string name="settings_fast_reading_short">When the subtitle area looks unchanged, read it again after 2 frames instead of 20. Uses more CPU.</string>
     <string name="settings_game_phone">Automatically translate the GTA 6 phone (experimental)</string>

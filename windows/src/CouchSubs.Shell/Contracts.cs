@@ -432,7 +432,7 @@ public sealed record UserSettings
     /// <summary>Altyazıdaki konuşan adı ("ARTHUR: …") çeviride gösterilir; kapalıysa yalnız Türkçe cümle görünür.</summary>
     public bool ShowSpeakerNames { get; init; } = true;
     /// <summary>
-    /// Konuşana göre renk: "Mattia: …" satırında ad ve satır o konuşana özgü renkte görünür (TV, bilgisayar ekranındaki
+    /// Konuşan adını renklendir: "Mattia: …" satırında yalnız ad o konuşana özgü renkte, cümle yazı renginde (TV, bilgisayar ekranındaki
     /// pencere ve yayın penceresi; bkz. <see cref="Core.SpeakerColors"/>). Eski ayar dosyalarında yoktur; açık başlar.
     /// </summary>
     public bool SpeakerColors { get; init; } = true;

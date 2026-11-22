@@ -211,7 +211,7 @@ class TranslationService : Service() {
             current?.launchTv(key)
             LiveState.update { it.copy(pairing = null) }
         }
-        /** Ayarlar'da "Konuşana göre renk" değişti: çeviri sürüyorsa sonraki satırlar hemen yeni ayarla gider. */
+        /** Ayarlar'da "Konuşan adını renklendir" değişti: çeviri sürüyorsa sonraki satırlar hemen yeni ayarla gider. */
         fun setSpeakerColors(on: Boolean) {
             liveServer?.speakerColors = on
         }

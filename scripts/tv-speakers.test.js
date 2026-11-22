@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Konuşana göre renkli altyazı: TV uygulaması (tv-webos/app.js; Samsung ve Android TV de bunu kullanır) ve OBS katmanı.
+// Konuşan adını renklendir: TV uygulaması (tv-webos/app.js; Samsung ve Android TV de bunu kullanır) ve OBS katmanı.
 // node --test scripts/tv-speakers.test.js — tarayıcı gerekmez.
 'use strict';
 const test = require('node:test');
@@ -52,12 +52,15 @@ for (const [name, file] of Object.entries(sources)) {
     assert.deepEqual(JSON.parse(JSON.stringify(api.speakerSegments('Mattia: Selam.', null))), [{ text: 'Mattia: Selam.', color: null }]);
   });
 
-  test(`${name}: ad ve cümlesi o konuşanın renginde, bölünmüş satırda renk sürer`, () => {
+  // Yazı rengi ayarı (beyaz/sarı) cümleye her zaman uygulanır: yalnız "Ad:" boyanır, cümle ve devam satırı renksiz.
+  test(`${name}: yalnız konuşan adı o konuşanın renginde, cümle ve bölünmüş satır yazı renginde`, () => {
     const map = api.speakerMap([{ name: 'Mattia', color: '#90CAF9' }, { name: 'Lucia', color: '#F06292' }]);
     const segments = api.speakerSegments('Mattia: Bu işi bugün\nbitirmeliyiz.\nLucia: Tamam.', map);
     assert.deepEqual(JSON.parse(JSON.stringify(segments)), [
-      { text: 'Mattia: Bu işi bugün\nbitirmeliyiz.\n', color: '#90CAF9' },
-      { text: 'Lucia: Tamam.', color: '#F06292' },
+      { text: 'Mattia:', color: '#90CAF9' },
+      { text: ' Bu işi bugün\nbitirmeliyiz.\n', color: null },
+      { text: 'Lucia:', color: '#F06292' },
+      { text: ' Tamam.', color: null },
     ]);
   });
 
@@ -66,18 +69,19 @@ for (const [name, file] of Object.entries(sources)) {
     const segments = api.speakerSegments('Dikkat et.\nARTHUR : Gidelim.\nSonra ARTHUR: değil', map);
     assert.deepEqual(JSON.parse(JSON.stringify(segments)), [
       { text: 'Dikkat et.\n', color: null },
-      { text: 'ARTHUR : Gidelim.\nSonra ARTHUR: değil', color: '#FFD54F' },
+      { text: 'ARTHUR :', color: '#FFD54F' },
+      { text: ' Gidelim.\nSonra ARTHUR: değil', color: null },
     ]);
     assert.deepEqual(JSON.parse(JSON.stringify(api.speakerSegments('ARTHURO: Merhaba', map))),
       [{ text: 'ARTHURO: Merhaba', color: null }]);
   });
 
-  test(`${name}: renkli parça span olarak yazılır, renksiz metne dokunulmaz`, () => {
+  test(`${name}: renkli ad span olarak yazılır, cümle ve renksiz metin düz kalır`, () => {
     const map = api.speakerMap([{ name: 'Dutch', color: '#81C784' }]);
     const colored = element();
     colored.textContent = 'Dutch： Sakin ol.';
     api.paintSpeakers(colored, 'Dutch： Sakin ol.', map);
-    assert.deepEqual(colored.children, [{ text: 'Dutch： Sakin ol.', color: '#81C784' }]);
+    assert.deepEqual(colored.children, [{ text: 'Dutch：', color: '#81C784' }, { text: ' Sakin ol.', color: null }]);
     const plain = element();
     plain.textContent = 'Sakin ol.';
     api.paintSpeakers(plain, 'Sakin ol.', map);

@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.78';
+  var APP_VERSION = '0.9.79';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -573,10 +573,10 @@
   }
 
   // --- Konuşan rengi ---
-  // Bilgisayar altyazıdaki konuşan adlarını ve renklerini gönderir: speakers = [{name, color}] ("Konuşana göre renk"
-  // ayarı açıksa; eski bilgisayar alanı göndermez, yazı eskisi gibi tek renk kalır). Satır başındaki "Ad:" ile o
-  // konuşanın cümlesi, bir sonraki konuşanın adına dek o renkte yazılır. Renk bilgisayarda addan hesaplanır: aynı
-  // karakter her cihazda hep aynı renktir.
+  // Bilgisayar altyazıdaki konuşan adlarını ve renklerini gönderir: speakerNames = [{name, color}] ("Konuşan adını
+  // renklendir" ayarı açıksa; eski sürümler aynı listeyi speakers adıyla gönderir; hiç göndermeyen eski bilgisayarda yazı
+  // tek renk kalır). Yalnız satır başındaki "Ad:" o konuşanın renginde yazılır, cümle kullanıcının yazı renginde kalır.
+  // Renk bilgisayarda addan hesaplanır: aynı karakter her cihazda hep aynı renktir.
   function speakerMap(list) {
     if (!list || typeof list.length !== 'number') return null;
     var map = null;
@@ -590,39 +590,43 @@
     return map;
   }
 
-  // Metnin renkli parçaları: [{text, color}] (renksiz parçada color null). Ad yalnız satır başında aranır; bölünmüş
-  // satırda ("ARTHUR: Gitmeliyiz\nhemen.") renk sonraki satıra da sürer.
+  // Metnin parçaları: [{text, color}] (renksiz parçada color null). Ad yalnız satır başında aranır ve yalnız "Ad:"
+  // boyanır; cümle ve bölünmüş devam satırları kullanıcının yazı renginde kalır (TV 0.9.79; önceden bütün satır
+  // boyanıyor, "Yazı rengi" beyazken altyazı renkli görünüyordu).
   function speakerSegments(text, map) {
     if (!map) return [{ text: text, color: null }];
     var segments = [];
-    var color = null;
     var start = 0;
     var lineStart = 0;
     while (lineStart <= text.length) {
       var found = null;
+      var end = 0;
       for (var name in map) {
         if (!Object.prototype.hasOwnProperty.call(map, name)) continue;
-        var after = text.charAt(lineStart + name.length);
-        if (text.substr(lineStart, name.length) === name && (after === ':' || after === '\uFF1A' ||
-            (after === ' ' && /[:\uFF1A]/.test(text.charAt(lineStart + name.length + 1))))) {
-          if (!found || name.length > found.length) found = name;
+        if (text.substr(lineStart, name.length) !== name) continue;
+        var at = lineStart + name.length;
+        if (text.charAt(at) === ' ') at++;
+        var after = text.charAt(at);
+        if ((after === ':' || after === '\uFF1A') && (!found || name.length > found.length)) {
+          found = name;
+          end = at + 1;
         }
       }
-      if (found && map[found] !== color) {
-        if (lineStart > start) segments.push({ text: text.slice(start, lineStart), color: color });
-        start = lineStart;
-        color = map[found];
+      if (found) {
+        if (lineStart > start) segments.push({ text: text.slice(start, lineStart), color: null });
+        segments.push({ text: text.slice(lineStart, end), color: map[found] });
+        start = end;
       }
       var next = text.indexOf('\n', lineStart);
       if (next < 0) break;
       lineStart = next + 1;
     }
-    if (start < text.length || !segments.length) segments.push({ text: text.slice(start), color: color });
+    if (start < text.length || !segments.length) segments.push({ text: text.slice(start), color: null });
     return segments;
   }
 
-  // Yeni arayüzdeki "Karakter Adı" rengi yalnız adı boyar (style.nameOnly); alanı göndermeyen bilgisayarda eskisi gibi
-  // ad ve satır o renkte.
+  // Yeni arayüzdeki "Karakter Adı" rengi yalnız adı boyar (style.nameOnly). 0.9.79'dan beri speakerSegments zaten
+  // yalnız "Ad:" bölümünü renkli verir; bu ayrım yeni arayüzle uyum için kalıyor (cümle hiçbir durumda boyanmaz).
   var speakerNameOnly = false;
 
   function paintSpeakers(el, text, map) {
@@ -2164,9 +2168,11 @@
       diag.subtitles++;
       renderDiag();
       if (!data.text) return;
+      // Yeni bilgisayar/telefon `speakerNames` gönderir; eski sürüm `speakers` gönderir, o da yalnız adı boyar.
+      var speakers = data.speakerNames || data.speakers;
       showSubtitle(data.text, data.duration, data.box, data.paragraphs === true, data.replace === true,
-        speakerMap(data.speakers));
-      lastLine = { text: data.text, box: data.box, paragraphs: data.paragraphs === true, speakers: data.speakers, until: shownUntil };
+        speakerMap(speakers));
+      lastLine = { text: data.text, box: data.box, paragraphs: data.paragraphs === true, speakers: speakers, until: shownUntil };
     });
     onEvent('clear', function () {
       // Oyundaki satır kalktı: geri gelişte yeniden çizilmez (tutma süresi yine onClear'da).

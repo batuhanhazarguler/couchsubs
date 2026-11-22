@@ -125,7 +125,7 @@ final class SubtitleServerTests: XCTestCase {
         old.task.cancel(); fresh.task.cancel()
     }
 
-    /// Konuşana göre renk açıkken adlı satır `speakers` alanını taşır; adsız satırda ve ayar kapalıyken alan yoktur.
+    /// Konuşan adını renklendir açıkken adlı satır `speakerNames` alanını taşır; adsız satırda ve ayar kapalıyken alan yoktur.
     func testSubtitleCarriesSpeakerColorsWhenEnabled() async throws {
         let server = SubtitleServer(port: 0)
         let port = try await server.start()
@@ -140,11 +140,13 @@ final class SubtitleServerTests: XCTestCase {
 
         let data = try await readLines(bytes, until: "event: clear").filter { $0.hasPrefix("data:") && $0.contains("\"text\"") }
         XCTAssertEqual(data.count, 3)
-        XCTAssertFalse(data[0].contains("speakers"))
-        XCTAssertTrue(data[1].contains("\"speakers\":[{"))
+        XCTAssertFalse(data[0].contains("speaker"))
+        XCTAssertTrue(data[1].contains("\"speakerNames\":[{"))
+        // Eski alan gitmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı boyuyordu.
+        XCTAssertFalse(data[1].contains("\"speakers\""))
         XCTAssertTrue(data[1].contains("\"name\":\"Mattia\"") && data[1].contains("#90CAF9"))
         XCTAssertTrue(data[1].contains("\"name\":\"Lucia\"") && data[1].contains("#F06292"))
-        XCTAssertFalse(data[2].contains("speakers"))
+        XCTAssertFalse(data[2].contains("speaker"))
     }
 
     /// Telefon, sunucu düştüyse (iOS arka planda dinleyiciyi kapatır) bunu `isListening` ile anlar ve aynı nesneyi

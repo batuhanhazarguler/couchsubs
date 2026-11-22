@@ -3,10 +3,12 @@
 namespace CouchSubs.Core;
 
 /// <summary>
-/// Konuşana göre renkli altyazı: "Mattia: …" satırında ad ve satır o konuşana özgü renkte görünür; aynı ad hep aynı
-/// renktir. Renk addan hesaplanır (büyük/küçük harf fark etmez): FNV-1a (32 bit, UTF-16 birimleri) → 10 renklik palet.
-/// Mac/iPhone (SpeakerColors.swift), Android (SpeakerColors.kt) ve TV uygulaması aynı paleti ve aynı hesabı kullanır.
-/// TV'ye <c>subtitle</c> olayının <c>speakers</c> alanıyla gider (eski TV uygulaması alanı yok sayar).
+/// Konuşan adını renklendir: "Mattia: …" satırında yalnız ad ("Mattia:") o konuşana özgü renkte görünür, cümle
+/// kullanıcının seçtiği yazı renginde kalır; aynı ad hep aynı renktir. Renk addan hesaplanır (büyük/küçük harf fark
+/// etmez): FNV-1a (32 bit, UTF-16 birimleri) → 10 renklik palet. Mac/iPhone (SpeakerColors.swift), Android
+/// (SpeakerColors.kt) ve TV uygulaması aynı paleti ve aynı hesabı kullanır. TV'ye <c>subtitle</c> olayının
+/// <c>speakerNames</c> alanıyla gider (0.9.79'dan eski TV uygulamaları eski <c>speakers</c> alanıyla bütün satırı boyuyordu;
+/// yeni alanı tanımaz, tek renk gösterir).
 /// </summary>
 public static class SpeakerColors
 {
@@ -39,8 +41,9 @@ public static class SpeakerColors
     public readonly record struct Segment(string Text, string? Color);
 
     /// <summary>
-    /// Bölünmüş (satırlara sarılmış) metni renkli parçalara ayırır: <paramref name="names"/>'ten biri satır başında
-    /// "Ad:" ile başlıyorsa oradan bir sonraki adlı satıra dek o adın rengindedir. Ad yoksa tek renksiz parça döner.
+    /// Bölünmüş (satırlara sarılmış) metni parçalara ayırır: <paramref name="names"/>'ten biri satır başında "Ad:" ile
+    /// başlıyorsa yalnız "Ad:" o adın rengindedir; cümle ve devam satırları renksizdir, kullanıcının seçtiği yazı renginde
+    /// kalır (önceden bütün satır renkleniyor, "Yazı rengi" beyazken altyazı renkli görünüyordu). Ad yoksa tek renksiz parça.
     /// </summary>
     /// <param name="colorOf">Adın rengi (oturumun <see cref="SpeakerColorBook"/>'u); verilmezse <see cref="Color"/>.</param>
     public static IReadOnlyList<Segment> Segments(string text, IReadOnlyList<string> names, Func<string, string?>? colorOf = null)
@@ -48,30 +51,31 @@ public static class SpeakerColors
         if (names.Count == 0) return [new Segment(text, null)];
         var result = new List<Segment>();
         var start = 0;
-        string? color = null;
         var lineStart = 0;
         while (lineStart <= text.Length)
         {
-            var found = names.FirstOrDefault(name => StartsWithName(text, lineStart, name));
+            var found = names.Where(name => NameEnd(text, lineStart, name) > 0).OrderByDescending(name => name.Length).FirstOrDefault();
             if (found is not null)
             {
-                if (lineStart > start) result.Add(new Segment(text[start..lineStart], color));
-                start = lineStart;
-                color = colorOf is null ? Color(found) : colorOf(found);
+                var end = NameEnd(text, lineStart, found);
+                if (lineStart > start) result.Add(new Segment(text[start..lineStart], null));
+                result.Add(new Segment(text[lineStart..end], colorOf is null ? Color(found) : colorOf(found)));
+                start = end;
             }
             var next = text.IndexOf('\n', lineStart);
             if (next < 0) break;
             lineStart = next + 1;
         }
-        if (start < text.Length) result.Add(new Segment(text[start..], color));
+        if (start < text.Length) result.Add(new Segment(text[start..], null));
         return result;
     }
 
-    private static bool StartsWithName(string text, int at, string name)
+    /// <summary>Satır <paramref name="at"/>'te "Ad:" ile başlıyorsa iki noktadan sonraki konum; değilse 0.</summary>
+    private static int NameEnd(string text, int at, string name)
     {
-        if (string.CompareOrdinal(text, at, name, 0, name.Length) != 0) return false;
+        if (string.CompareOrdinal(text, at, name, 0, name.Length) != 0) return 0;
         var rest = at + name.Length;
         if (rest < text.Length && text[rest] == ' ') rest++;
-        return rest < text.Length && text[rest] is ':' or '：';
+        return rest < text.Length && text[rest] is ':' or '：' ? rest + 1 : 0;
     }
 }

@@ -176,8 +176,9 @@ public final class SubtitleServer: @unchecked Sendable {
     }
     private var tvEnabled = true
 
-    /// Konuşana göre renk: açıksa adlı satırları olan `subtitle` olayına `speakers` alanı ([{name, color}]) eklenir;
-    /// TV o adla başlayan satırı o renkte gösterir. Alanı tanımayan eski TV uygulaması yok sayar.
+    /// Konuşan adını renklendir: açıksa adlı satırları olan `subtitle` olayına `speakerNames` alanı ([{name, color}])
+    /// eklenir; TV yalnız satır başındaki adı o renkte gösterir, cümle yazı renginde kalır. Eski `speakers` alanı
+    /// gönderilmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı boyuyordu; yeni alanı tanımaz, tek renk gösterir.
     public var speakerColors: Bool {
         get { queue.sync { colorsEnabled } }
         set { queue.sync { colorsEnabled = newValue } }
@@ -444,7 +445,7 @@ public final class SubtitleServer: @unchecked Sendable {
         if replaces { json["replace"] = true }
         if speakerColors {
             let speakers = SpeakerColors.speakers(in: text, book: speakerBook)
-            if !speakers.isEmpty { json["speakers"] = speakers.map { ["name": $0.name, "color": $0.color] } }
+            if !speakers.isEmpty { json["speakerNames"] = speakers.map { ["name": $0.name, "color": $0.color] } }
         }
         broadcast(event: "subtitle", json: json)
         onEvent?(.subtitle(text: text, durationMs: durationMs, paragraphs: paragraphs, replaces: replaces, box: box))

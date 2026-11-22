@@ -179,7 +179,11 @@ class SubtitleServer(
             "right" to Json.Decimal(box.right), "top" to Json.Decimal(box.top),
         )
 
-        /** [speakerColors]: açıksa satırlardaki konuşanlar renkleriyle `speakers` alanında gider (bkz. [SpeakerColors]). */
+        /**
+         * [speakerColors]: açıksa satırlardaki konuşanlar renkleriyle `speakerNames` alanında gider; TV yalnız adı boyar
+         * (bkz. [SpeakerColors]). Eski `speakers` alanı gönderilmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı
+         * boyuyor, kullanıcının yazı rengini eziyordu.
+         */
         fun subtitleFrame(
             text: String, durationMs: Int, box: TextBox?, at: Long, paragraphs: Boolean = false, replaces: Boolean = false,
             speakerColors: Boolean = false,
@@ -189,7 +193,7 @@ class SubtitleServer(
             if (replaces) json["replace"] = true
             // Konuşan adı yoksa ya da ayar kapalıysa alan hiç yazılmaz; eski TV uygulamaları alanı yok sayar.
             if (speakerColors) SpeakerColors.speakers(text).takeIf { it.isNotEmpty() }?.let { speakers ->
-                json["speakers"] = speakers.map { mapOf("color" to it.color, "name" to it.name) }
+                json["speakerNames"] = speakers.map { mapOf("color" to it.color, "name" to it.name) }
             }
             if (box != null) json["box"] = boxJson(box)
             return frame("subtitle", json)
@@ -343,7 +347,7 @@ class SubtitleServer(
 
     /** false ise altyazı olayları TV'lere gitmez (altyazı yalnız telefon ekranında). */
     @Volatile var sendsToTv: Boolean = true
-    /** "Konuşana göre renk": altyazı olayına konuşanların renkleri eklenir (`speakers`). */
+    /** "Konuşan adını renklendir": altyazı olayına konuşanların renkleri eklenir (`speakerNames`). */
     @Volatile var speakerColors: Boolean = false
 
     val connectedClients: Int get() = synchronized(lock) { clients.count { !it.viewer } }

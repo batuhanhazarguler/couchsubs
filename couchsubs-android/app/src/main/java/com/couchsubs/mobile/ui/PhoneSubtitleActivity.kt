@@ -68,7 +68,7 @@ import com.couchsubs.mobile.service.LiveState
  */
 class PhoneSubtitleActivity : ComponentActivity() {
     companion object {
-        /** Bölünmüş [display] metni; [enabled] ise konuşanların parçaları kendi renginde ([source]: bölünmemiş metin). */
+        /** Bölünmüş [display] metni; [enabled] ise yalnız konuşan adları kendi renginde ([source]: bölünmemiş metin). */
         fun speakerText(display: String, source: String, enabled: Boolean): AnnotatedString {
             val segments = if (enabled) SpeakerColors.segments(display, source) else emptyList()
             if (segments.none { it.color != null }) return AnnotatedString(display)
@@ -98,7 +98,7 @@ class PhoneSubtitleActivity : ComponentActivity() {
         val scale = settings.subtitleScale / 100f
         // "Hızlı konuşmada önceki satırları üstte tut" kapalıysa soluk önceki satır gösterilmez (TV ve Windows ile aynı).
         val stackPrevious = settings.stackPrevious
-        // "Konuşana göre renk": konuşan adlı satır o konuşanın renginde (TV ile aynı palet; bkz. SpeakerColors).
+        // "Konuşan adını renklendir": yalnız ad o konuşanın renginde, cümle "Yazı rengi"nde (TV ile aynı; bkz. SpeakerColors).
         val speakerColors = settings.speakerColors
         val setApart = settings.setTextApart
         setContent {

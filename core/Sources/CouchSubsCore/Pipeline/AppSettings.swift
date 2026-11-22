@@ -173,7 +173,7 @@ public struct UserSettings: Codable, Equatable {
     public var usageNoticeSeen = false
     /// Altyazıdaki konuşan adı ("ARTHUR: …") çeviride gösterilir; kapalıysa yalnız Türkçe cümle görünür.
     public var showSpeakerNames = true
-    /// Konuşana göre renk: "Mattia: …" satırında ad ve satır o konuşanın sabit renginde görünür (bkz. `SpeakerColors`).
+    /// Konuşan adını renklendir: "Mattia: …" satırında yalnız ad o konuşanın renginde, cümle `textColor`'da (bkz. `SpeakerColors`).
     public var speakerColors = true
     /// Mac'te değişmeyen altyazı bölgesini en fazla iki kare yeniden kullan; varsayılan kapalı.
     public var fastSubtitleDetection = false

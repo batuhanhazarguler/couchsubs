@@ -2,9 +2,10 @@
 
 import Foundation
 
-/// Konuşana göre renk: "Mattia: …" satırında ad ve satır o konuşanın sabit renginde görünür. Renk addan hesaplanır
-/// (büyük/küçük harf fark etmez), aynı konuşan her cihazda ve her oturumda aynı renktir. Palet koyu altyazı zemininde
-/// okunaklı on renktir; beyaz yoktur (adsız satırlar beyaz kalır). TV'ye `subtitle` olayının `speakers` alanıyla gider.
+/// Konuşan adını renklendir: "Mattia: …" satırında yalnız ad ("Mattia:") o konuşanın sabit renginde görünür, cümle
+/// kullanıcının seçtiği yazı renginde kalır. Renk addan hesaplanır (büyük/küçük harf fark etmez), aynı konuşan her
+/// cihazda ve her oturumda aynı renktir. Palet koyu altyazı zemininde okunaklı on renktir. TV'ye `subtitle` olayının
+/// `speakerNames` alanıyla gider (0.9.79'dan eski TV uygulamaları eski `speakers` alanıyla bütün satırı boyuyordu).
 /// Windows (SpeakerColors.cs), Android (SpeakerColors.kt) ve TV uygulaması aynı paleti ve aynı hesabı kullanır.
 public enum SpeakerColors {
     public static let palette = ["#FFD54F", "#4FC3F7", "#81C784", "#FF8A65", "#CE93D8",
@@ -65,25 +66,38 @@ public enum SpeakerColors {
         public var color: String?
     }
 
-    /// Metnin renkli parçaları. Konuşan adıyla başlayan satır, sonraki adlı satıra kadar (bölünmüş devam satırları
-    /// dahil) o konuşanın renginde; ilk adlı satırdan öncekiler renksiz. Parçalar birleşince metnin kendisi çıkar.
+    /// Metnin parçaları. Yalnız satır başındaki konuşan adı ve iki noktası ("Mattia:") o konuşanın renginde; cümle ve
+    /// bölünmüş devam satırları renksizdir, kullanıcının seçtiği yazı renginde kalır (önceden bütün satır renkleniyor,
+    /// "Yazı rengi" beyazken altyazı renkli görünüyordu). Parçalar birleşince metnin kendisi çıkar.
     public static func segments(in text: String, book: SpeakerColorBook? = nil) -> [Segment] {
         var result: [Segment] = []
-        var color: String?
-        for (index, line) in text.components(separatedBy: "\n").enumerated() {
-            if let name = speaker(line) {
-                color = book?.color(name) ?? self.color(for: name)
-            } else if SpeakerPrefix.split(line) != nil {
-                // Türkçe başlık ("Hedef: …") önceki konuşanın satırı değildir.
-                color = nil
-            }
-            let piece = (index > 0 ? "\n" : "") + line
+        func add(_ piece: String, _ color: String?) {
+            guard !piece.isEmpty else { return }
             if let last = result.last, last.color == color {
                 result[result.count - 1].text += piece
             } else {
                 result.append(Segment(text: piece, color: color))
             }
         }
+        for (index, line) in text.components(separatedBy: "\n").enumerated() {
+            if index > 0 { add("\n", nil) }
+            guard let name = speaker(line), let range = nameRange(name, in: line) else {
+                add(line, nil)
+                continue
+            }
+            add(String(line[..<range.lowerBound]), nil)
+            add(String(line[range]), book?.color(name) ?? color(for: name))
+            add(String(line[range.upperBound...]), nil)
+        }
         return result
+    }
+
+    /// Satırdaki "Ad:" bölümü (baştaki boşluk hariç, ad ile iki nokta arasındaki boşluk dahil); yoksa nil.
+    static func nameRange(_ name: String, in line: String) -> Range<String.Index>? {
+        guard let start = line.firstIndex(where: { !$0.isWhitespace }), line[start...].hasPrefix(name) else { return nil }
+        var index = line.index(start, offsetBy: name.count)
+        while index < line.endIndex, line[index] == " " { index = line.index(after: index) }
+        guard index < line.endIndex, line[index] == ":" || line[index] == "：" else { return nil }
+        return start..<line.index(after: index)
     }
 }

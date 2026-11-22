@@ -309,7 +309,10 @@ class AppSettings(context: Context) : AreaStore {
         get() = prefs.getBoolean("setTextApart", true)
         set(value) = prefs.edit().putBoolean("setTextApart", value).apply()
 
-    /** "Konuşana göre renk": konuşan adlı satır (ad ve cümle) o konuşanın renginde görünür. Eski kayıtlarda yoktur; açık başlar. */
+    /**
+     * "Konuşan adını renklendir": satır başındaki konuşan adı o konuşanın renginde görünür; cümle her zaman "Yazı rengi"nde
+     * kalır. Eski kayıtlarda yoktur; açık başlar.
+     */
     var speakerColors: Boolean
         get() = prefs.getBoolean("speakerColors", true)
         set(value) = prefs.edit().putBoolean("speakerColors", value).apply()

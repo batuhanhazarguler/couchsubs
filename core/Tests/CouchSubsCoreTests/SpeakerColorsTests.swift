@@ -26,8 +26,8 @@ final class SpeakerColorsTests: XCTestCase {
     func testTurkishHeadingsAreNotSpeakers() {
         XCTAssertTrue(SpeakerColors.speakers(in: "Hedef: Arabaya bin.\nGörev: Lucia'yı bul.\nNOT: Kaydet.\nİpucu: Koş.").isEmpty)
         XCTAssertEqual(SpeakerColors.segments(in: "Mattia: Gidelim.\nHedef: Arabaya bin."), [
-            .init(text: "Mattia: Gidelim.", color: "#90CAF9"),
-            .init(text: "\nHedef: Arabaya bin.", color: nil),
+            .init(text: "Mattia:", color: "#90CAF9"),
+            .init(text: " Gidelim.\nHedef: Arabaya bin.", color: nil),
         ])
     }
 
@@ -39,15 +39,18 @@ final class SpeakerColorsTests: XCTestCase {
         XCTAssertTrue(SpeakerColors.speakers(in: "Note: Kaydet").isEmpty)
     }
 
-    /// Bölünmüş devam satırı konuşanın renginde kalır; ilk adlı satırdan öncesi renksizdir; parçalar metni bozmaz.
-    func testSegmentsFollowSpeakerUntilNextName() {
-        let text = "Görev başladı\nMattia: Buradan\ngidelim.\nLucia: Tamam."
+    /// Yalnız "Ad:" konuşanın renginde; cümle ve bölünmüş devam satırı renksiz (kullanıcının Yazı rengi) kalır;
+    /// parçalar metni bozmaz.
+    func testOnlySpeakerNameIsColored() {
+        let text = "Görev başladı\nMattia: Buradan\ngidelim.\nLucia : Tamam."
         let segments = SpeakerColors.segments(in: text)
         XCTAssertEqual(segments.map(\.text).joined(), text)
         XCTAssertEqual(segments, [
-            .init(text: "Görev başladı", color: nil),
-            .init(text: "\nMattia: Buradan\ngidelim.", color: "#90CAF9"),
-            .init(text: "\nLucia: Tamam.", color: "#F06292"),
+            .init(text: "Görev başladı\n", color: nil),
+            .init(text: "Mattia:", color: "#90CAF9"),
+            .init(text: " Buradan\ngidelim.\n", color: nil),
+            .init(text: "Lucia :", color: "#F06292"),
+            .init(text: " Tamam.", color: nil),
         ])
         XCTAssertEqual(SpeakerColors.segments(in: "Adsız"), [.init(text: "Adsız", color: nil)])
     }

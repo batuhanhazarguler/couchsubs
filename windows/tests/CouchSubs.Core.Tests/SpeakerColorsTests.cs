@@ -32,13 +32,16 @@ public class SpeakerColorsTests
     }
 
     [Fact]
-    public void SegmentsColorEachSpeakerUntilTheNextOne()
+    public void OnlyTheSpeakerNameIsColored()
     {
-        // Sarılmış metin: Mattia'nın satırı iki satıra bölünmüş, ikinci satır da onun renginde.
-        var text = "Mattia: Bunu yarın\nkonuşuruz.\nLucia: Tamam.";
-        var segments = SpeakerColors.Segments(text, SpeakerColors.Speakers("Mattia: Bunu yarın konuşuruz.\nLucia: Tamam."));
+        // Sarılmış metin: yalnız "Ad:" konuşanın renginde; cümle ve devam satırı renksiz (kullanıcının Yazı rengi).
+        var text = "Mattia: Bunu yarın\nkonuşuruz.\nLucia : Tamam.";
+        var segments = SpeakerColors.Segments(text, SpeakerColors.Speakers("Mattia: Bunu yarın konuşuruz.\nLucia : Tamam."));
         Assert.Equal(
-            [new SpeakerColors.Segment("Mattia: Bunu yarın\nkonuşuruz.\n", "#90CAF9"), new SpeakerColors.Segment("Lucia: Tamam.", "#F06292")],
+            [
+                new SpeakerColors.Segment("Mattia:", "#90CAF9"), new SpeakerColors.Segment(" Bunu yarın\nkonuşuruz.\n", null),
+                new SpeakerColors.Segment("Lucia :", "#F06292"), new SpeakerColors.Segment(" Tamam.", null),
+            ],
             segments);
         Assert.Equal(text, string.Concat(segments.Select(segment => segment.Text)));
     }
@@ -47,7 +50,9 @@ public class SpeakerColorsTests
     public void TextBeforeTheFirstNameStaysUncolored()
     {
         var segments = SpeakerColors.Segments("Kapıyı aç.\nJason: Geldim.", ["Jason"]);
-        Assert.Equal([new SpeakerColors.Segment("Kapıyı aç.\n", null), new SpeakerColors.Segment("Jason: Geldim.", "#4DD0E1")], segments);
+        Assert.Equal(
+            [new SpeakerColors.Segment("Kapıyı aç.\n", null), new SpeakerColors.Segment("Jason:", "#4DD0E1"), new SpeakerColors.Segment(" Geldim.", null)],
+            segments);
         Assert.Equal([new SpeakerColors.Segment("Düz metin", null)], SpeakerColors.Segments("Düz metin", []));
     }
 }

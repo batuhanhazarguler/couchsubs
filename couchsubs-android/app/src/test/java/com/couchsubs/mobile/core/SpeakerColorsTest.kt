@@ -26,30 +26,49 @@ class SpeakerColorsTest {
         assertTrue(SpeakerColors.speakers("Saat 10:30 oldu.").isEmpty())
     }
 
+    /** Yalnız "Ad:" konuşanın renginde; cümle ve bölünmüş devam satırı renksiz (Yazı rengi ayarında) kalır. */
     @Test
-    fun wrappedLinesKeepTheSpeakerColor() {
+    fun onlyTheSpeakerNameIsColored() {
         val source = "Mattia: Bu çok uzun bir cümle ve bölünüyor. Lucia: Evet."
         val display = "Mattia: Bu çok uzun bir\ncümle ve bölünüyor."
-        assertEquals(listOf(SpeakerColors.Segment(0, display.length, "#90CAF9")), SpeakerColors.segments(display, source, SpeakerColorBook()))
-        val two = "Lucia: Gidelim.\nJason: Tamam."
         assertEquals(
-            listOf(SpeakerColors.Segment(0, 16, "#F06292"), SpeakerColors.Segment(16, two.length, "#4DD0E1")),
+            listOf(SpeakerColors.Segment(0, 7, "#90CAF9"), SpeakerColors.Segment(7, display.length, null)),
+            SpeakerColors.segments(display, source, SpeakerColorBook()),
+        )
+        val two = "Lucia: Gidelim.\nJason : Tamam."
+        assertEquals(
+            listOf(
+                SpeakerColors.Segment(0, 6, "#F06292"), SpeakerColors.Segment(6, 16, null),
+                SpeakerColors.Segment(16, 23, "#4DD0E1"), SpeakerColors.Segment(23, two.length, null),
+            ),
             SpeakerColors.segments(two, book = SpeakerColorBook()),
         )
+        assertEquals("Jason :", two.substring(16, 23))
         assertTrue(SpeakerColors.segments("Sadece cümle.").isEmpty())
     }
 
+    /** Telefon ekranındaki altyazı: ad renkli span, cümleye span yok (Text'in Yazı rengi geçerli). */
     @Test
-    fun subtitleFrameCarriesSpeakersOnlyWhenOn() {
+    fun phoneSubtitleKeepsTheTextColorOnTheLine() {
+        SpeakerColors.session.reset()
+        val text = com.couchsubs.mobile.ui.PhoneSubtitleActivity.speakerText("Mattia: Gidelim.", "Mattia: Gidelim.", enabled = true)
+        assertEquals(listOf(0 to 7), text.spanStyles.map { it.start to it.end })
+        assertTrue(com.couchsubs.mobile.ui.PhoneSubtitleActivity.speakerText("Mattia: Gidelim.", "Mattia: Gidelim.", enabled = false).spanStyles.isEmpty())
+    }
+
+    @Test
+    fun subtitleFrameCarriesSpeakerNamesOnlyWhenOn() {
         SpeakerColors.session.reset()
         val on = SubtitleServer.subtitleFrame("Mattia: Merhaba", 4000, null, at = 1, speakerColors = true)
         assertEquals(
-            "event: subtitle\ndata: {\"at\":1,\"duration\":4000,\"speakers\":[{\"color\":\"#90CAF9\",\"name\":\"Mattia\"}]," +
+            "event: subtitle\ndata: {\"at\":1,\"duration\":4000,\"speakerNames\":[{\"color\":\"#90CAF9\",\"name\":\"Mattia\"}]," +
                 "\"text\":\"Mattia: Merhaba\"}\n\n",
             on,
         )
-        assertFalse(SubtitleServer.subtitleFrame("Mattia: Merhaba", 4000, null, at = 1).contains("speakers"))
-        assertFalse(SubtitleServer.subtitleFrame("Merhaba", 4000, null, at = 1, speakerColors = true).contains("speakers"))
+        // Eski alan hiç gitmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı boyuyordu.
+        assertFalse(on.contains("\"speakers\""))
+        assertFalse(SubtitleServer.subtitleFrame("Mattia: Merhaba", 4000, null, at = 1).contains("speaker"))
+        assertFalse(SubtitleServer.subtitleFrame("Merhaba", 4000, null, at = 1, speakerColors = true).contains("speaker"))
     }
 
     /** Konuşana göre renk v2: dört platformun ortak vektörü (docs/speaker-colors-vectors.json) birebir. */

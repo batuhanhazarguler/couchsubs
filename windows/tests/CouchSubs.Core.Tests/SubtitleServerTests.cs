@@ -152,7 +152,8 @@ public class SubtitleServerTests
         Assert.False(SubtitleServer.IsTvAppOutdated("", ""));
     }
 
-    /// Konuşana göre renk açıkken adlı satır "speakers" alanını taşır; kapalıyken ve adsız satırda alan yoktur.
+    /// Konuşan adını renklendir açıkken adlı satır "speakerNames" alanını taşır (eski "speakers" hiç gitmez: 0.9.79'dan eski
+    /// TV uygulamaları onunla bütün satırı boyuyordu); kapalıyken ve adsız satırda alan yoktur.
     [Fact]
     public async Task SubtitleCarriesSpeakerColorsOnlyWhenEnabled()
     {
@@ -168,10 +169,10 @@ public class SubtitleServerTests
 
         using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
         var lines = await ReadLines(reader, "event: clear");
-        Assert.Contains(lines, l => l.Contains("Kapat.") && !l.Contains("speakers"));
+        Assert.Contains(lines, l => l.Contains("Kapat.") && !l.Contains("speaker"));
         Assert.Contains(lines, l => l.Contains("Lucia: Hayır.")
-            && l.Contains("\"speakers\":[{\"color\":\"#90CAF9\",\"name\":\"Mattia\"},{\"color\":\"#F06292\",\"name\":\"Lucia\"}]"));
-        Assert.Contains(lines, l => l.Contains("Adsız satır.") && !l.Contains("speakers"));
+            && !l.Contains("\"speakers\"") && l.Contains("\"speakerNames\":[{\"color\":\"#90CAF9\",\"name\":\"Mattia\"},{\"color\":\"#F06292\",\"name\":\"Lucia\"}]"));
+        Assert.Contains(lines, l => l.Contains("Adsız satır.") && !l.Contains("speaker"));
     }
 
     /// TV yarı açık bağlantıyı adlı "ping" olayının gelmemesinden anlar; yorum satırını EventSource görmez.

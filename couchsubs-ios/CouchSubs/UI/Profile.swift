@@ -86,7 +86,7 @@ struct ProfileScreen: View {
                 toggleRow("Show speaker name", "Keeps the character's name in front of the translation (ARTHUR: …). The name itself is never translated.",
                           isOn: $model.settings.showSpeakerNames)
                 RowDivider()
-                toggleRow("Color by speaker", "Each speaker's name and line keep their own color.",
+                toggleRow("Color speaker names", "Only the speaker's name gets its own color; the line stays in your Text color.",
                           isOn: $model.settings.speakerColors)
                 RowDivider()
                 toggleRow("Automatically translate on-screen text (experimental)",
