@@ -481,6 +481,81 @@ private struct DSOptionBody: View {
     }
 }
 
+// MARK: Hesap kartı
+
+/// Hesap kartı (PlayStation / Microsoft): solda yuvarlak rozet, ortada başlık ve durum (yeşil/gri nokta + "Giriş yapıldı"
+/// ya da "Giriş yapılmadı", varsa hesap adı gri), sağda kartın içinde dikey ortalı tek düğme (girişliyse küçük ikincil
+/// "Yeniden Giriş Yap", değilse birincil "Giriş Yap"). Altta ince ayraçtan sonra "Diğer Giriş Yolları ›"; açılınca
+/// seçenekler kartın içinde.
+struct DSAccountCard<Others: View>: View {
+    let badge: String
+    let title: LocalizedStringKey
+    let signedIn: Bool
+    var detail: String?
+    var busy = false
+    /// Diğer yollardan biri sürüyorsa (ör. giriş tarayıcıya geçti) açılır kendiliğinden açık kalır.
+    var expanded = false
+    let signIn: () -> Void
+    @ViewBuilder var others: Others
+    @State private var showOthers = false
+    @State private var hovering = false
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: DS.radius("tile"), style: .continuous)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: DS.space("s")) {
+                Text(verbatim: badge)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Color.dsOnCharcoal)
+                    .frame(width: 40, height: 40)
+                    .background(Color.dsCharcoal, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: DS.space("line")) {
+                    Text(title).font(.dsBodyStrong).foregroundStyle(Color.dsText)
+                    HStack(spacing: DS.space("xxs")) {
+                        Circle().fill(signedIn ? Color.dsSuccess : Color.dsFaint).frame(width: 7, height: 7).accessibilityHidden(true)
+                        Text(signedIn ? "Signed in" : "Not signed in").font(.dsSmall).foregroundStyle(Color.dsMuted)
+                        if let detail { Text(verbatim: "· \(detail)").font(.dsSmall).foregroundStyle(Color.dsFaint).lineLimit(1) }
+                    }
+                }
+                Spacer(minLength: DS.space("s"))
+                if busy { ProgressView().controlSize(.small) }
+                if signedIn {
+                    Button("Sign In Again", action: signIn).buttonStyle(DSButtonStyle(kind: .compact)).disabled(busy)
+                } else {
+                    Button("Sign In", action: signIn).buttonStyle(DSButtonStyle(kind: .primary)).disabled(busy)
+                }
+            }
+            .padding(DS.space("m"))
+            DSDivider()
+            Button {
+                withAnimation(DS.animation(.medium, reduced: false)) { showOthers.toggle() }
+            } label: {
+                HStack(spacing: DS.space("xxs")) {
+                    Text("Other Sign-In Ways")
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(showOthers || expanded ? 90 : 0)).accessibilityHidden(true)
+                    Spacer(minLength: 0)
+                }
+                .font(.dsSmall)
+                .foregroundStyle(hovering ? Color.dsText : Color.dsMuted)
+                .padding(.horizontal, DS.space("m"))
+                .padding(.vertical, DS.space("s"))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            if showOthers || expanded {
+                VStack(alignment: .leading, spacing: DS.unitGap) { others }
+                    .padding([.horizontal, .bottom], DS.space("m"))
+                    .transition(.opacity)
+            }
+        }
+        .background(Color.dsSurface, in: shape)
+        .overlay(shape.strokeBorder(Color.dsBorder))
+    }
+}
+
 // MARK: Bölüm başlığı
 
 /// Başlık + altında açıklama: aralık her yerde `DS.space("titleBody")` (6). Kart içinde başlık ve açıklama ayrı kardeş

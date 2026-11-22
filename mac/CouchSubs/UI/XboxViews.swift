@@ -275,14 +275,20 @@ struct ConsoleSettingsCard: View {
                    items: [(ConsolePlatform.playstation, LocalizedStringKey("PlayStation 5")), (ConsolePlatform.xbox, LocalizedStringKey("Xbox"))])
             if model.isXbox {
                 DSRow(title: LocalizedStringKey(model.xboxConsole.map { $0.name.isEmpty ? "Xbox" : $0.name } ?? "Xbox"),
-                      subtitle: model.xboxSignedIn ? "Signed in" : "Xbox support is in Beta. If something goes wrong, tell us and we'll fix it as soon as we can.",
+                      subtitle: "Xbox support is in Beta. If something goes wrong, tell us and we'll fix it as soon as we can.",
                       divider: false) {
                     DSBadge(text: model.needsXboxLink ? "Not Connected" : "Connected", tone: model.needsXboxLink ? .unknown : .ok)
                 }
-                HStack(spacing: DS.space("xs")) {
-                    Button(model.xboxSignedIn ? "Choose Your Xbox at Home" : "Link Xbox Account") { model.linkXbox() }
-                        .buttonStyle(model.needsXboxLink ? .dsPrimary : .dsSecondary)
-                    if model.xboxSignedIn { Button("Sign out of Microsoft") { model.signOutXbox() }.buttonStyle(.dsSecondary) }
+                // PlayStation hesabıyla aynı kompakt hesap kartı.
+                DSAccountCard(badge: "MS", title: "Microsoft Account", signedIn: model.xboxSignedIn, signIn: { model.linkXbox() }) {
+                    if model.xboxSignedIn {
+                        HStack(spacing: DS.space("xs")) {
+                            Button("Choose Your Xbox at Home") { model.linkXbox() }.buttonStyle(DSButtonStyle(kind: .compact))
+                            Button("Sign out of Microsoft") { model.signOutXbox() }.buttonStyle(DSButtonStyle(kind: .compact))
+                        }
+                    } else {
+                        Text("Xbox support is in Beta. If something goes wrong, tell us and we'll fix it as soon as we can.").dsMuted()
+                    }
                 }
             } else {
                 DSRow(title: LocalizedStringKey(model.console.map { $0.name.isEmpty ? "PS5" : $0.name } ?? "PS5"),

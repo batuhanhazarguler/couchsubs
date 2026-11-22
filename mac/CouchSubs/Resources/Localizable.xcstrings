@@ -1,6 +1,9 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Not signed in": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not signed in"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş yapılmadı"}}}},
+    "Microsoft Account": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Microsoft Account"}}, "tr": {"stringUnit": {"state": "translated", "value": "Microsoft Hesabı"}}}},
+    "Sign In": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sign In"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yap"}}}},
     "TVs on This Network": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "TVs on This Network"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bu Ağdaki TV'ler"}}}},
     "Scanning the network…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Scanning the network…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ağ taranıyor…"}}}},
     "Looking for LG, Samsung and Android TVs on the same network.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Looking for LG, Samsung and Android TVs on the same network."}}, "tr": {"stringUnit": {"state": "translated", "value": "Aynı ağdaki LG, Samsung ve Android TV'ler aranıyor."}}}},

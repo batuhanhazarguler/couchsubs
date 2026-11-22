@@ -25,52 +25,20 @@ struct PSNLoginStep: View {
     @State private var showManual = false
     @State private var manualId = ""
     @State private var manualError: String?
-    /// "Diğer Giriş Yolları" açık mı (tarayıcıda giriş, hesap kimliğini elle girme).
-    @State private var showOthers = false
 
     var body: some View {
         StepLayout(title: "Sign in with the second account",
                    message: "Sign in to PlayStation Network with the second account you just created. Your password goes directly to Sony; CouchSubs only keeps the account ID.") {
-            // Giriş yapıldıysa tek satır durum + küçük "Yeniden Giriş Yap"; yapılmadıysa tek ana düğme. Diğer iki yol
-            // "Diğer Giriş Yolları" altında (iPhone ve Windows aynı düzen). Birimler arası 24.
+            // Kompakt hesap kartı (iPhone ve Windows aynı): rozet, başlık + durum, sağda tek düğme; diğer iki yol kartın
+            // altındaki "Diğer Giriş Yolları" açılırında. Birimler arası 24.
             VStack(alignment: .leading, spacing: DS.unitGap) {
-                if model.accountId != nil {
-                    HStack(spacing: DS.space("s")) {
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Color.dsSuccess)
-                            .accessibilityHidden(true)
-                        Text("Signed In").font(.dsBodyStrong).foregroundStyle(Color.dsText)
-                        Spacer(minLength: DS.space("s"))
-                        Button("Sign In Again", action: openLogin).buttonStyle(.dsSecondary).disabled(working)
-                    }
-                } else {
-                    Button("Sign In with PlayStation", action: openLogin).buttonStyle(.dsPrimary).disabled(working)
+                DSAccountCard(badge: "PS", title: "PlayStation Account", signedIn: model.accountId != nil, busy: working,
+                              expanded: showBrowser || showManual, signIn: openLogin) {
+                    browserEntry
+                    manualEntry
                 }
-                if working { ProgressView().controlSize(.small) }
+                .frame(maxWidth: 640, alignment: .leading)
                 if error != nil { ErrorText(error: error).textSelection(.enabled) }
-                VStack(alignment: .leading, spacing: DS.space("m")) {
-                    Button {
-                        withAnimation(DS.animation(.medium, reduced: false)) { showOthers.toggle() }
-                    } label: {
-                        HStack(spacing: DS.space("xs")) {
-                            Text("Other Sign-In Ways")
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .rotationEffect(.degrees(showOthers || showBrowser || showManual ? 90 : 0))
-                                .accessibilityHidden(true)
-                        }
-                        .font(.dsRow)
-                        .foregroundStyle(Color.dsAmberText)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if showOthers || showBrowser || showManual {
-                        VStack(alignment: .leading, spacing: DS.unitGap) {
-                            browserEntry
-                            manualEntry
-                        }
-                        .transition(.opacity)
-                    }
-                }
             }
         }
         // Kullanıcı tarayıcıdan dönünce panoda yönlendirme adresi varsa kendiliğinden alınır.
