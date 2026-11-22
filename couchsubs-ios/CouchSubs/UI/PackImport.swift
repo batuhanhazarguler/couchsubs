@@ -51,7 +51,7 @@ struct ImportedPacksSection: View {
             }
         }
         if let error { MobileNote(text: error) }
-        Button("Import pack…") {
+        Button("Import Pack…") {
             error = nil
             choosing = true
         }

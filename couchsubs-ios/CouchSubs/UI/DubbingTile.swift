@@ -42,20 +42,18 @@ struct DubbingTile: View {
     }
 
     private func caption(_ text: LocalizedStringKey) -> some View {
-        Text(text).font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary)
+        Text(text).dsMuted()
     }
 
     private func voiceRow(_ title: Text, voice: Binding<DubbingVoice>) -> some View {
-        HStack {
-            Picker(selection: voice) {
-                ForEach(DubbingVoice.allCases, id: \.self) { Text($0.label).tag($0) }
-            } label: {
-                title
+        // Başlık üstte, altında açılır seçim ve yanında Dinle (tasarım kuralı: başlık üstte, denetim altta).
+        VStack(alignment: .leading, spacing: Mobile.Space.inline) {
+            title.font(Mobile.TypeScale.headline).foregroundStyle(Mobile.Palette.text)
+            HStack(spacing: Mobile.Space.gap) {
+                DSSelect(selection: voice, options: DubbingVoice.allCases.map { ($0, $0.text) })
+                Button("Listen") { model.previewVoice(voice.wrappedValue) }
+                    .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: false))
             }
-            .tint(Mobile.Palette.accent)
-            Spacer()
-            Button("Listen") { model.previewVoice(voice.wrappedValue) }
-                .buttonStyle(MobileButtonStyle(kind: .secondary, compact: true))
         }
     }
 

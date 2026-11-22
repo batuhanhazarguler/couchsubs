@@ -147,8 +147,8 @@ struct PromoOverlay: View {
                         .font(Mobile.TypeScale.caption)
                         .foregroundStyle(Mobile.Palette.text)
                         .lineLimit(1)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, Mobile.Space.gap)
+                        .padding(.vertical, Mobile.Space.titleToBody)
                         .background(Mobile.Palette.surface2, in: Capsule())
                         .frame(height: badge)
                     Button {

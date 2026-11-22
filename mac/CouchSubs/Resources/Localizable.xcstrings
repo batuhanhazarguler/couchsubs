@@ -1,6 +1,18 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Not Signed In": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not Signed In"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yapılmadı"}}}},
+    "Sign In": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sign In"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yap"}}}},
+    "Other Sign-In Ways": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Other Sign-In Ways"}}, "tr": {"stringUnit": {"state": "translated", "value": "Diğer Giriş Yolları"}}}},
+    "Sign In in the Browser": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sign In in the Browser"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tarayıcıda Giriş Yap"}}}},
+    "Share Log": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Share Log"}}, "tr": {"stringUnit": {"state": "translated", "value": "Günlüğü Paylaş"}}}},
+    "Found": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Found"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bulundu"}}}},
+    "Connecting": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Connecting"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bağlanılıyor"}}}},
+    "Approval on the TV": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Approval on the TV"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'de Onay"}}}},
+    "Sending the App": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sending the App"}}, "tr": {"stringUnit": {"state": "translated", "value": "Uygulama Gönderiliyor"}}}},
+    "Installing": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Installing"}}, "tr": {"stringUnit": {"state": "translated", "value": "Kuruluyor"}}}},
+    "Opening": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Opening"}}, "tr": {"stringUnit": {"state": "translated", "value": "Açılıyor"}}}},
+    "Installation Didn't Finish": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Installation Didn't Finish"}}, "tr": {"stringUnit": {"state": "translated", "value": "Kurulum Tamamlanamadı"}}}},
     "Voice the Translation in Turkish": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Voice the Translation in Turkish"}}, "tr": {"stringUnit": {"state": "translated", "value": "Çeviriyi Türkçe Seslendir"}}}},
     "%lld s silent": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "%lld s silent"}}, "tr": {"stringUnit": {"state": "translated", "value": "%lld sn sessiz"}}}},
     "Issue": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Issue"}}, "tr": {"stringUnit": {"state": "translated", "value": "Sorun"}}}},

@@ -63,6 +63,15 @@ targets:
         buildPhase: resources
       - path: ../design/tokens.json
         buildPhase: resources
+      # Yeni arayüzün tasarım değerleri, alt reklam şeridinin reklamları ve uygulama simgeleri (Mac ve Windows aynı
+      # dosyaları okur).
+      - path: ../design/yeni-arayuz/tasarim.json
+        buildPhase: resources
+      - path: ../design/yeni-arayuz/reklamlar.json
+        buildPhase: resources
+      - path: ../design/yeni-arayuz/reklam
+        type: folder
+        buildPhase: resources
       - path: Config
         buildPhase: none
     dependencies:
@@ -135,7 +144,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        UIUserInterfaceStyle: Dark
+        # Yeni arayüz açık ve koyu görünümü sistemden alır (eskiden hep koyuydu).
+        UIUserInterfaceStyle: Automatic
         # Config/App.xcconfig + Secrets.xcconfig'ten (bkz. AppConfig.swift).
         CSPacksBaseURL: $(PACKS_API_BASE_URL)
         CSPacksFallbackURL: $(PACKS_API_FALLBACK_URL)

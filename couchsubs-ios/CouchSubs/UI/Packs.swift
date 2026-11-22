@@ -83,7 +83,7 @@ struct PacksScreen: View {
         .animation(.easeInOut(duration: 0.2), value: updating)
         .alert(result?.title ?? "", isPresented: $showResult, presenting: result) { alert in
             if alert.retry {
-                Button("Try again", action: updateNow)
+                Button("Try Again", action: updateNow)
                 Button("Close", role: .cancel) {}
             } else {
                 Button("OK", role: .cancel) {}

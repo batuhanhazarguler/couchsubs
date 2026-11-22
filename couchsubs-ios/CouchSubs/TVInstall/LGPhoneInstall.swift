@@ -577,9 +577,9 @@ struct LGInstallSection: View {
 
     var body: some View {
         InstallIntro(body1: TVText.lgBody, note: TVText.lgSupported)
-        Text(verbatim: TVText.lgTvs).font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary)
+        InstallListTitle(text: TVText.lgTvs, searching: candidates == nil)
         if let candidates {
-            if candidates.isEmpty { MobileNote(text: TVText.lgNone, tone: Mobile.Palette.secondary) }
+            if candidates.isEmpty { MobileNote(text: TVText.lgNone) }
             ForEach(candidates, id: \.host) { item in
                 Button { if !phase.isWorking { host = item.host } } label: {
                     InstallCandidateRow(name: item.name, detail: item.host,
@@ -588,7 +588,7 @@ struct LGInstallSection: View {
                 .buttonStyle(.plain)
             }
         } else {
-            ProgressView().tint(Mobile.Palette.accent)
+            InstallSearching()
         }
         if addressError {
             MobileNote(text: String(localized: "This is not a valid IP address. Type it like 192.168.1.20, without http:// or a port number."))
@@ -604,7 +604,7 @@ struct LGInstallSection: View {
             get: { passphrase }, set: { passphrase = $0.trimmingCharacters(in: .whitespaces).uppercased() }))
             .textFieldStyle(MobileFieldStyle()).keyboardType(.asciiCapable).autocorrectionDisabled().textInputAutocapitalization(.characters)
         InstallSteps(title: TVText.lgStepsTitle, steps: [TVText.lgStep1, TVText.lgStep2, TVText.lgStep3, TVText.lgStep4])
-        Text(verbatim: TVText.lgSessionNote).font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary).fixedSize(horizontal: false, vertical: true)
+        InfoBox(text: TVText.lgSessionNote, tone: Mobile.Palette.secondary)
         InstallResult(phase: phase)
         // Kurulum bitince ana düğme ana ekrana götürür; kurulumda kullanıcı 3. adımda kalıyordu (#113).
         Group {

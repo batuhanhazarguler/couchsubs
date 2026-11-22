@@ -16,7 +16,7 @@ struct GameAskTile: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Which game are you playing?").font(Mobile.TypeScale.headline)
                 Spacer(minLength: Mobile.Space.inline)
-                Button("Don't ask") { choice.dismiss() }
+                Button("Don't Ask") { choice.dismiss() }
                     .font(Mobile.TypeScale.caption)
                     .foregroundStyle(Mobile.Palette.secondary)
             }
@@ -95,7 +95,7 @@ struct GameAreasRow: View {
                     Spacer(minLength: Mobile.Space.inline)
                     Button("Undo") { areas.undo() }
                         .font(Mobile.TypeScale.caption.weight(.semibold))
-                        .foregroundStyle(Mobile.Palette.accent)
+                        .foregroundStyle(Mobile.Palette.accentText)
                 }
             }
         }
@@ -123,7 +123,7 @@ struct PlayedGameRow: View {
                 if !choice.asking {
                     Button(choice.game == nil ? LocalizedStringKey("Choose") : LocalizedStringKey("Change")) { choice.ask() }
                         .font(Mobile.TypeScale.caption.weight(.semibold))
-                        .foregroundStyle(Mobile.Palette.accent)
+                        .foregroundStyle(Mobile.Palette.accentText)
                 }
             }
         }
