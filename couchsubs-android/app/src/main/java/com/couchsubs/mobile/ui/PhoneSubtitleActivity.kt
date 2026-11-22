@@ -82,6 +82,9 @@ class PhoneSubtitleActivity : ComponentActivity() {
         }
 
 
+        /** "#RRGGBB" → renk; geçersizse beyaz. */
+        fun color(hex: String): Color = runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrDefault(Color.White)
+
         /** "Ekranı döndür": yataysa dike, değilse yataya (sensör yönüne göre iki yan da olur). */
         fun nextOrientation(current: Int): Int =
             if (current == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -94,7 +97,9 @@ class PhoneSubtitleActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val settings = Services.settings
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val color = if (settings.textColor == SubtitleTextColor.YELLOW) Tokens.Color.accentText else Tokens.Color.text
+        // Altyazı Görünümü › Yazı Rengi ve Kalın yazı (TV'deki gibi; Mac ve iPhone ile aynı).
+        val color = PhoneSubtitleActivity.color(com.couchsubs.mobile.core.SubtitlePalette.textHex(settings.style))
+        val weight = if (settings.bold) androidx.compose.ui.text.font.FontWeight.Bold else null
         val scale = settings.subtitleScale / 100f
         // "Hızlı konuşmada önceki satırları üstte tut" kapalıysa soluk önceki satır gösterilmez (TV ve Windows ile aynı).
         val stackPrevious = settings.stackPrevious
@@ -102,7 +107,8 @@ class PhoneSubtitleActivity : ComponentActivity() {
         val speakerColors = settings.speakerColors
         val setApart = settings.setTextApart
         setContent {
-            CouchSubsTheme {
+            // Siyah zeminli ekran: Görünüm Açık seçilse de koyu renkler.
+            CouchSubsTheme(forceDark = true) {
                 val status by LiveState.status.collectAsState()
                 // "Arka planda sürdür": çeviri sürerken bu ekrandan çıkınca küçük pencere (iPhone ile aynı).
                 LaunchedEffect(status.running) { BackgroundPip.update(this@PhoneSubtitleActivity, BackgroundPip.wanted(this@PhoneSubtitleActivity, status)) }
@@ -155,7 +161,7 @@ class PhoneSubtitleActivity : ComponentActivity() {
                         .offset { androidx.compose.ui.unit.IntOffset(0, (phoneOffset * areaHeight).roundToInt()) },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(Tokens.Space.gap)) {
-                        val style = Tokens.Type.subtitleLandscape
+                        val style = Tokens.Type.subtitleLandscape.let { base -> weight?.let { base.copy(fontWeight = it) } ?: base }
                         val scale = scale * phoneScale
                         val previous = status.previous
                         // Uzun çeviri en çok 3 satıra dengeli bölünür; sığmazsa yazı biraz küçülür (bkz. SubtitleWrap).

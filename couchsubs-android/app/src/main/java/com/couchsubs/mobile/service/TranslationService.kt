@@ -656,7 +656,11 @@ class TranslationService : Service() {
         // Terim sözlüğü ve kalıcı önbellek (iPhone ile aynı biçim): önceki oturumlarda çevrilen cümleler hemen gelir.
         val glossary = Glossary.load(this)
         glossaryInUse = glossary
-        val free = MlKitTranslator(cache(MlKitTranslator.ENGINE_ID), glossary).also { freeTranslator = it }
+        // Oyunun dili İngilizce değilse ücretsiz çeviri o dilden çevirir; önbellek dile göre ayrıdır, terim sözlüğü yalnız İngilizcede.
+        val english = settings.sourceLanguage == "en"
+        val free = MlKitTranslator(if (english) cache(MlKitTranslator.ENGINE_ID)
+            else TranslationCache.shared(File(filesDir, "Translations"), MlKitTranslator.ENGINE_ID, settings.sourceLanguage),
+            if (english) glossary else Glossary.Empty, settings.sourceLanguage).also { freeTranslator = it }
         val translator = engineTranslator(free)
         val subtitleServer = SubtitleServer(instanceId = installationId(this), key = settings.subtitleAccessKey, obsOverlay = assets.open("obs-overlay.html").bufferedReader().use { it.readText() },
             secondScreenPage = assets.open("second-screen.html").bufferedReader().use { it.readText() }).also { server = it }
@@ -734,7 +738,8 @@ class TranslationService : Service() {
         // Paketler burada açılır (ilk altyazı beklemesin); kapalıysa hiç açılmaz. Bellek yetmezse paketsiz sürülür:
         // çeviri motoru çalışır, uygulama kapanmaz ve PS5 bağlantısı kopmaz.
         // Deneme satırları paketlerde aranmaz.
-        var packTitles = if (!settings.packsEnabled || demo) null else try {
+        // Paketler İngilizce→Türkçedir: oyunun dili başkaysa aranmaz (Mac/iPhone ile aynı).
+        var packTitles = if (!settings.packsEnabled || demo || settings.sourceLanguage != "en") null else try {
             library.infos.associate { it.id to it.title }
         } catch (error: OutOfMemoryError) {
             Log.e(TAG, "packs", error)
@@ -750,7 +755,7 @@ class TranslationService : Service() {
                 Log.e(TAG, "packs reload", error)
             }
         }
-        reader = SubtitleReader()
+        reader = SubtitleReader(settings.sourceLanguage)
         pipeline =SubtitlePipeline(translator, subtitleServer).apply {
             // Yarım ya da bozuk okuma hemen çevrilmez; aynı satırın en iyi okuması çevrilir (Windows ve iPhone ile aynı).
             holdReadings = true
@@ -797,7 +802,7 @@ class TranslationService : Service() {
         }
         // Ek alanlar aynı paketlerle ve aynı motorla (ayrı bir örnekle; altyazının bağlamına karışmasın) çevrilir; satırları
         // ortak havuza önerilmez (arayüz yazıları havuzu kirletmesin). Mac ve iPhone ile aynı.
-        val areaReader = SubtitleReader().also { regionReader = it }
+        val areaReader = SubtitleReader(settings.sourceLanguage).also { regionReader = it }
         // Ön okuma, bulut kotasını tüketmemeli veya paketin son eşleşmesini (oyun tanıma) değiştirmemeli.
         val areaTranslator = engineTranslator(free.separate())
         val earlyTranslator = if (settings.engine == EngineChoice.FREE && packTitles == null) engineTranslator(free.separate()) else null
@@ -1242,7 +1247,7 @@ class TranslationService : Service() {
         val memory = screenMemory
         screenTask = screenWork.submit(Runnable {
             try {
-                val reader = screenReader ?: SubtitleReader().also { screenReader = it }
+                val reader = screenReader ?: SubtitleReader(settings.sourceLanguage).also { screenReader = it }
                 val read = reader.read(pixels)
                 // Altyazı zaten kendi yerinde çevriliyor: ekran çevirisinde ikinci kez çizilmez (bkz. SubtitleEcho).
                 val echo = com.couchsubs.mobile.core.SubtitleEcho.shared
@@ -1331,7 +1336,7 @@ class TranslationService : Service() {
             Log.w(TAG, "OCR: okuma süresinde bitmedi; okuyucu yeniden kuruldu", error)
             val stuck = reader
             if (stuck != null && pipeline != null) {
-                reader = SubtitleReader()
+                reader = SubtitleReader(settings.sourceLanguage)
                 runCatching { stuck.close() }
             }
         } catch (error: Exception) {
@@ -1349,6 +1354,8 @@ class TranslationService : Service() {
         (onlineTranslator(free) ?: free).let { if (demo) DemoTranslator(it) else it }
 
     private fun onlineTranslator(free: TextTranslator): TextTranslator? {
+        // Çevrimiçi motorlar yalnız İngilizce oyunları çevirir; diğer oyun dilleri ücretsiz çeviriyle (Mac/iPhone ile aynı).
+        if (settings.sourceLanguage != "en") return null
         val engine = settings.engine
         if (engine == EngineChoice.LOCAL) {
             // Yerel model: anahtar isteğe bağlıdır; adres ya da model geçersizse ücretsiz çeviri kullanılır.
@@ -1372,7 +1379,8 @@ class TranslationService : Service() {
                 val model = AiModel.selected(aiModels()[provider.id].orEmpty(), settings.aiModel(provider)) ?: return null
                 AiTranslator(provider, key, model, free, cache = cache(AiTranslator.engineId(provider, model)),
                     // Kararlı oyun (GameSense.current), son eşleşen paket değil: tek satır adı başka oyuna geçirmez (#27).
-                    playedGame = { PlayedGame.sense.current?.name }, instruction = { settings.aiInstruction })
+                    playedGame = { PlayedGame.sense.current?.name }, instruction = { settings.aiInstruction },
+                    paidTier = provider == AiProvider.GEMINI && settings.geminiPaidTier)
             }
         }
     }

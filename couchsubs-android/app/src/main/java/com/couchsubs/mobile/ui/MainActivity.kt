@@ -51,6 +51,8 @@ object Routes {
     const val PLATFORM = "platform"
     const val XBOX_LOGIN = "xboxlogin"
     const val XBOX_CONSOLE = "xboxconsole"
+    /** Kurulumda TV adımından sonra: PS5 TV'nin hangi girişine takılı (Mac ve iPhone ile aynı adım). */
+    const val HDMI = "hdmi"
 
     /** Kurulumun eksik ilk adımı; hepsi tamamsa ana ekran. */
     fun next(): String {
@@ -75,13 +77,17 @@ object Routes {
 /** Ekran geçişinin süresi (ms) ve kayma payı (genişliğin 1/n'i). */
 private const val NAV_MS = 280
 private const val NAV_SHIFT = 8
+/** Geçiş animasyonları kapalıyken kullanılan kısa solma (ms). */
+private const val FADE_MS = 120
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Uygulama hep koyu; sistem açık temadayken de durum çubuğu simgeleri açık renk kalsın.
-        enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         val settings = Services.settings
+        // Ayarlar › Temel › Görünüm ve Geçiş Animasyonları (Mac ve iPhone ile aynı; varsayılan koyu ve açık).
+        Tokens.appearance = settings.appearance
+        Tokens.transitionAnimations = settings.transitionAnimations
+        applySystemBars(Tokens.dark)
         // Tanıtım popup'ı: uygulama ön plana her geldiğinde (soğuk açılışta hemen, sonra en çok günde bir) promo.json'a
         // arka planda bakılır; ağ hatası sessizdir. Kurulum ya da ilk tur bitmediyse bu açılışta hazırlanmaz.
         lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -89,7 +95,10 @@ class MainActivity : ComponentActivity() {
                 PromoController.refresh(applicationContext, Services.scope, setupDone = Routes.next() == Routes.MAIN && settings.tourShown)
         })
         setContent {
-            CouchSubsTheme {
+            CouchSubsTheme(forceDark = inPip) {
+                // Görünüm değişince durum ve gezinme çubuğu simgeleri de zemine uyar (koyu zeminde açık, açık zeminde koyu).
+                val dark = Tokens.dark
+                LaunchedEffect(dark) { applySystemBars(dark) }
                 val navigation = rememberNavController()
                 val currentEntry by navigation.currentBackStackEntryAsState()
                 val status by LiveState.status.collectAsState()
@@ -112,12 +121,14 @@ class MainActivity : ComponentActivity() {
                 }
                 // Ekranlar arası geçiş: yeni ekran sağdan biraz kayarak ve solarak gelir, geri dönüşte tersi (~280 ms).
                 // Sistemde animasyonlar kapalıysa Compose süreleri kendisi sıfırlar.
+                // Ayarlar › Temel › Geçiş Animasyonları kapalıysa yalnız kısa solma (Mac ve iPhone ile aynı).
+                val motion = Tokens.transitionAnimations
                 NavHost(
                     navigation, startDestination = Routes.next(),
-                    enterTransition = { slideIntoContainer(SlideDirection.Start, tween(NAV_MS), initialOffset = { it / NAV_SHIFT }) + fadeIn(tween(NAV_MS)) },
-                    exitTransition = { slideOutOfContainer(SlideDirection.Start, tween(NAV_MS), targetOffset = { it / NAV_SHIFT }) + fadeOut(tween(NAV_MS)) },
-                    popEnterTransition = { slideIntoContainer(SlideDirection.End, tween(NAV_MS), initialOffset = { it / NAV_SHIFT }) + fadeIn(tween(NAV_MS)) },
-                    popExitTransition = { slideOutOfContainer(SlideDirection.End, tween(NAV_MS), targetOffset = { it / NAV_SHIFT }) + fadeOut(tween(NAV_MS)) },
+                    enterTransition = { if (motion) slideIntoContainer(SlideDirection.Start, tween(NAV_MS), initialOffset = { it / NAV_SHIFT }) + fadeIn(tween(NAV_MS)) else fadeIn(tween(FADE_MS)) },
+                    exitTransition = { if (motion) slideOutOfContainer(SlideDirection.Start, tween(NAV_MS), targetOffset = { it / NAV_SHIFT }) + fadeOut(tween(NAV_MS)) else fadeOut(tween(FADE_MS)) },
+                    popEnterTransition = { if (motion) slideIntoContainer(SlideDirection.End, tween(NAV_MS), initialOffset = { it / NAV_SHIFT }) + fadeIn(tween(NAV_MS)) else fadeIn(tween(FADE_MS)) },
+                    popExitTransition = { if (motion) slideOutOfContainer(SlideDirection.End, tween(NAV_MS), targetOffset = { it / NAV_SHIFT }) + fadeOut(tween(NAV_MS)) else fadeOut(tween(FADE_MS)) },
                 ) {
                     composable(Routes.WELCOME) {
                         WelcomeScreen(onDemo = { startDemo(navigation) }) {
@@ -151,9 +162,12 @@ class MainActivity : ComponentActivity() {
                         val onboarding = navigation.previousBackStackEntry == null
                         TargetScreen(onBack = back(navigation), onTvInstall = { navigation.navigate(Routes.TV_INSTALL) }) {
                             if (onboarding) Telemetry.event(Telemetry.ONBOARDING_DONE, "target" to settings.target.name.lowercase())
-                            advance(navigation)
+                            // Kurulumda TV seçildiyse (Android TV değil) TV girişi sorulur (Mac ve iPhone ile aynı adım).
+                            if (onboarding && settings.asksTvInput) navigation.navigate(Routes.HDMI) { popUpTo(0) { inclusive = true } }
+                            else advance(navigation)
                         }
                     }
+                    composable(Routes.HDMI) { HdmiInputScreen { advance(navigation) } }
                     composable(Routes.MAIN) {
                         MainScreen(
                             status = status,
@@ -208,6 +222,12 @@ class MainActivity : ComponentActivity() {
                 if (inPip) PipSubtitleView(status)
             }
         }
+    }
+
+    /** Durum ve gezinme çubuğu: koyu görünümde açık simgeler, açık görünümde koyu simgeler. */
+    private fun applySystemBars(dark: Boolean) {
+        val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        enableEdgeToEdge(style, style)
     }
 
     /** Küçük pencerede (Resim içinde resim) mi; Compose içeriği buna göre çizilir. */

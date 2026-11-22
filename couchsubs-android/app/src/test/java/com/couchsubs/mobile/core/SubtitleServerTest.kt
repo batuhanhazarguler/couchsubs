@@ -37,8 +37,8 @@ class SubtitleServerTest {
     fun clearAndStyleFrames() {
         assertEquals("event: clear\ndata: {}\n\n", SubtitleServer.clearFrame())
         assertEquals(
-            "event: style\ndata: {\"background\":90,\"backgroundShape\":\"fit\",\"bold\":false,\"bottomPercent\":7,\"displayMode\":\"inApp\",\"fontSize\":46," +
-                "\"placement\":\"cover\",\"setApart\":true,\"stackPrevious\":true,\"textColor\":\"white\"}\n\n",
+            "event: style\ndata: {\"background\":90,\"backgroundColor\":\"#101014\",\"backgroundShape\":\"fit\",\"bold\":false,\"bottomPercent\":7,\"displayMode\":\"inApp\",\"fontSize\":46," +
+                "\"nameOnly\":false,\"placement\":\"cover\",\"setApart\":true,\"stackPrevious\":true,\"textColor\":\"white\"}\n\n",
             SubtitleServer.styleFrame(SubtitleStyle()),
         )
         assertTrue(SubtitleServer.styleFrame(SubtitleStyle(displayMode = TvDisplayMode.OVERLAY, textColor = SubtitleTextColor.YELLOW))
@@ -52,6 +52,19 @@ class SubtitleServerTest {
         assertTrue(SubtitleServer.styleFrame(SubtitleStyle(stackPrevious = false)).contains("\"stackPrevious\":false"))
         // "Ekran yazılarını altyazıdan ayır" kapalıysa TV'ye false gider (yoksa açık sayılır).
         assertTrue(SubtitleServer.styleFrame(SubtitleStyle(), setApart = false).contains("\"setApart\":false"))
+    }
+
+    /** Mac/iPhone SubtitleStyle.json ile aynı alanlar: zemin ve yazı rengi, yalnız ad, TV girişi. */
+    @Test
+    fun styleFrameCarriesColorsNameOnlyAndHdmiInput() {
+        val frame = SubtitleServer.styleFrame(SubtitleStyle(backgroundColor = "#0e1a30", textHex = "#ffe066", nameOnly = true, hdmiInput = 2))
+        assertTrue(frame.contains("\"backgroundColor\":\"#0E1A30\""))
+        assertTrue(frame.contains("\"textHex\":\"#FFE066\""))
+        assertTrue(frame.contains("\"nameOnly\":true"))
+        assertTrue(frame.contains("\"hdmiInput\":2"))
+        // Seçilmemiş yazı rengi ve TV girişi gönderilmez; bozuk zemin rengi varsayılana döner.
+        val plain = SubtitleServer.styleFrame(SubtitleStyle(backgroundColor = "kirmizi", hdmiInput = 7))
+        assertTrue(!plain.contains("textHex") && !plain.contains("hdmiInput") && plain.contains("\"backgroundColor\":\"#101014\""))
     }
 
     @Test

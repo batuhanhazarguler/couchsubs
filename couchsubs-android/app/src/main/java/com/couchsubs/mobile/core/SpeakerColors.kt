@@ -130,14 +130,37 @@ class SpeakerColorBook {
 
     private val people = mutableListOf<Pair<String, String>>()
 
+    /**
+     * Altyazı Görünümü › Karakter Adı (Mac/iPhone SpeakerColorBook.configure ile aynı): "Tek Renk"te herkesin rengi
+     * ([fixed]), "Karaktere Göre"de kullanıcının seçtiği kişi renkleri ([overrides], anahtar küçük harfli ad). Seçilmeyen
+     * kişilere sırayla palet rengi verilir.
+     */
+    private var fixed: String? = null
+    private var overrides: Map<String, String> = emptyMap()
+
+    @Synchronized
+    fun configure(fixed: String?, overrides: Map<String, String>) {
+        this.fixed = fixed
+        this.overrides = overrides.mapKeys { key(it.key) }
+    }
+
+    /** Bu oturumda rengi verilmiş kişiler (adın anahtarı ve rengi), ilk görülen önce. */
+    val known: List<Pair<String, String>> @Synchronized get() = people.toList()
+
+    private fun samePerson(a: String, b: String) =
+        a == b || confused(a) == confused(b) || (minOf(a.length, b.length) >= 5 && distance(a, b) <= 1)
+
     /** Kişinin rengi; ad boşsa null. */
     @Synchronized
     fun color(name: String): String? {
         val key = key(name)
         if (key.isEmpty()) return null
-        people.firstOrNull { (known, _) ->
-            known == key || confused(known) == confused(key) || (minOf(known.length, key.length) >= 5 && distance(known, key) <= 1)
-        }?.let { return it.second }
+        fixed?.let { return it }
+        (overrides[key] ?: overrides.entries.firstOrNull { samePerson(it.key, key) }?.value)?.let { chosen ->
+            if (people.none { samePerson(it.first, key) }) people.add(key to chosen)
+            return chosen
+        }
+        people.firstOrNull { (known, _) -> samePerson(known, key) }?.let { return it.second }
         val palette = SpeakerColors.palette
         val start = base(key)
         val used = people.map { it.second }.toSet()

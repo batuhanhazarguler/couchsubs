@@ -28,6 +28,9 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** Uygulamanın görünümü (Mac/iPhone AppAppearance, Windows AppAppearance ile aynı); varsayılan koyu. */
+enum class AppAppearance { DARK, LIGHT, SYSTEM }
+
 /** Okunan konsol: PlayStation (varsayılan, Remote Play) ya da Xbox (Beta, ev yayını). */
 enum class ConsolePlatform { PLAYSTATION, XBOX }
 
@@ -440,9 +443,96 @@ class AppSettings(context: Context) : AreaStore {
      * (iPhone ile aynı: %120 → 55); eskiden ölçek yalnız telefon ekranını değiştiriyor, TV hep 46 kalıyordu.
      */
     val style: SubtitleStyle
-        get() = SubtitleStyle(fontSize = scaledFontSize(tvFontSize, subtitleScale), placement = tvPlacement,
-            bottomPercent = tvBottomPercent, background = tvBackground, backgroundShape = tvBackgroundShape, textColor = textColor, stackPrevious = stackPrevious,
-            displayMode = tvDisplayMode)
+        get() = SubtitleStyle(fontSize = fontSize, placement = tvPlacement,
+            bottomPercent = tvBottomPercent, background = tvBackground, backgroundShape = tvBackgroundShape, bold = bold, textColor = textColor,
+            stackPrevious = stackPrevious, displayMode = tvDisplayMode, backgroundColor = backgroundColor, textHex = textHex,
+            nameColorMode = nameColorMode, nameHex = nameHex, characterColors = characterColors, nameOnly = nameOnly, hdmiInput = hdmiInput)
+
+    /**
+     * TV'deki yazı boyu (Mac/iPhone style.fontSize; Ayarlar › Altyazı Görünümü › Yazı Boyutu 16–50 px kaydırıcısı bunu
+     * [com.couchsubs.mobile.core.SubtitlePalette.fontSize] ile yazar). Eski kayıtta yoktur: eski ölçekten (%40–160 × 46) gelir.
+     */
+    var fontSize: Int
+        get() = if (prefs.contains("fontSize")) prefs.getInt("fontSize", 46).coerceIn(16, 90)
+            else scaledFontSize(tvFontSize, prefs.getInt("subtitleScale", 100))
+        set(value) = prefs.edit().putInt("fontSize", value.coerceIn(16, 90)).apply()
+
+    /** Kalın yazı (Mac/iPhone style.bold); varsayılan kapalı. */
+    var bold: Boolean
+        get() = prefs.getBoolean("bold", false)
+        set(value) = prefs.edit().putBoolean("bold", value).apply()
+
+    /** Zemin rengi ("#RRGGBB"; Mac/iPhone style.backgroundColor). Koyuluğu [tvBackground]. */
+    var backgroundColor: String
+        get() = com.couchsubs.mobile.core.SubtitleStyle.hex(prefs.getString("backgroundColor", null)) ?: com.couchsubs.mobile.core.SubtitleStyle.DEFAULT_BACKGROUND_COLOR
+        set(value) = prefs.edit().putString("backgroundColor", value).apply()
+
+    /** Yazı rengi ("#RRGGBB"; Mac/iPhone style.textHex). Eski kayıtta yoktur: [textColor] (beyaz/sarı) geçerli. */
+    var textHex: String?
+        get() = com.couchsubs.mobile.core.SubtitleStyle.hex(prefs.getString("textHex", null))
+        set(value) = prefs.edit().putString("textHex", value).apply()
+
+    /** Karakter adının rengi (Mac/iPhone style.nameColorMode). Eski kayıtta yoktur: "Konuşana göre renk" kapalıysa Yazıyla Aynı. */
+    var nameColorMode: com.couchsubs.mobile.core.NameColorMode
+        get() = enumOr(prefs.getString("nameColorMode", null), com.couchsubs.mobile.core.NameColorMode.SPEAKER)
+        set(value) = prefs.edit().putString("nameColorMode", value.name).apply()
+
+    /** "Tek Renk"te adların rengi. */
+    var nameHex: String?
+        get() = com.couchsubs.mobile.core.SubtitleStyle.hex(prefs.getString("nameHex", null))
+        set(value) = prefs.edit().putString("nameHex", value).apply()
+
+    /** "Karaktere Göre"de kullanıcının seçtiği renkler (küçük harfli ad → "#RRGGBB"). */
+    var characterColors: Map<String, String>
+        get() = prefs.getString("characterColors", null)?.let { text ->
+            runCatching {
+                val json = JSONObject(text)
+                json.keys().asSequence().mapNotNull { key -> com.couchsubs.mobile.core.SubtitleStyle.hex(json.optString(key))?.let { key to it } }.toMap()
+            }.getOrNull()
+        } ?: emptyMap()
+        set(value) = prefs.edit().putString("characterColors", JSONObject(value).toString()).apply()
+
+    /** Konuşan rengi yalnız adı boyar (Mac/iPhone style.nameOnly); Altyazı Görünümü'nde her değişiklikte açılır. */
+    var nameOnly: Boolean
+        get() = prefs.getBoolean("nameOnly", false)
+        set(value) = prefs.edit().putBoolean("nameOnly", value).apply()
+
+    /** Kurulumda seçilen TV girişi (HDMI 1–4; Mac/iPhone style.hdmiInput); seçilmediyse null. */
+    var hdmiInput: Int?
+        get() = prefs.getInt("hdmiInput", 0).takeIf { it in 1..4 }
+        set(value) = prefs.edit().putInt("hdmiInput", value ?: 0).apply()
+
+    /** TV girişi sorulur mu (Mac asksTVInput): TV seçili, altyazı TV'de ve TV Android TV değil (orada uygulama girişi kendisi açar). */
+    val asksTvInput: Boolean
+        get() = target.showsOnTv && installedTv?.let { it.brand != TvBrand.ANDROID_TV } == true
+
+    /** Ücretli Gemini API anahtarı (Mac/iPhone geminiPaidTier): istek bütçesi ücretsiz sınırla kısılmaz. Varsayılan kapalı. */
+    var geminiPaidTier: Boolean
+        get() = prefs.getBoolean("geminiPaidTier", false)
+        set(value) = prefs.edit().putBoolean("geminiPaidTier", value).apply()
+
+    /** Ayarlar › Temel › Açılış Sesi: karşılamanın ilk açılışındaki ses. Varsayılan açık (Mac/iPhone startupSound). */
+    var startupSound: Boolean
+        get() = prefs.getBoolean("startupSound", true)
+        set(value) = prefs.edit().putBoolean("startupSound", value).apply()
+
+    /** Ayarlar › Temel › Geçiş Animasyonları: kapalıyken yalnız kısa solma. Varsayılan açık (Mac/iPhone transitionAnimations). */
+    var transitionAnimations: Boolean
+        get() = prefs.getBoolean("transitionAnimations", true)
+        set(value) = prefs.edit().putBoolean("transitionAnimations", value).apply()
+
+    /** Ayarlar › Temel › Görünüm: açık, koyu ya da sisteme uy. Varsayılan koyu (Mac/iPhone appearance). */
+    var appearance: AppAppearance
+        get() = enumOr(prefs.getString("appearance", null), AppAppearance.DARK)
+        set(value) = prefs.edit().putString("appearance", value.name).apply()
+
+    /** Oyunun dili (Mac/iPhone sourceLanguage): en, ja, de, fr, es. Çevrimiçi motorlar yalnız İngilizceyi çevirir. */
+    var sourceLanguage: String
+        get() = prefs.getString("sourceLanguage", null)?.takeIf { it in GAME_LANGUAGES } ?: "en"
+        set(value) = prefs.edit().putString("sourceLanguage", value).apply()
+
+    /** Çeviri dili (Mac/iPhone targetLanguage): bu sürümde yalnız Türkçe. */
+    val targetLanguage: String get() = "tr"
 
     /** Altyazının arandığı bölge (Ayarlar › Altyazı alanı; iPhone ile aynı hazır seçimler ve Özel). */
     var region: com.couchsubs.mobile.core.CropRegion
@@ -539,9 +629,7 @@ class AppSettings(context: Context) : AreaStore {
     /** Görünüm ayarı değişince (ölçek, renk) çağrılır; çeviri sürerken TV'ye yeni görünüm gider. */
     fun onStyleChanged(action: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "subtitleScale" || key == "textColor" || key == "tvFontSize" ||
-                key == "tvBackground" || key == "tvBackgroundShape" || key == "stackPrevious" || key == "tvDisplayMode" ||
-                key == "tvPlacement" || key == "tvBottomPercent") action()
+            if (key in STYLE_KEYS) action()
         }
         prefs.registerOnSharedPreferenceChangeListener(listener)
         return listener
@@ -560,6 +648,14 @@ class AppSettings(context: Context) : AreaStore {
          */
         const val MIN_SUBTITLE_SCALE = 40
         const val MAX_SUBTITLE_SCALE = 160
+
+        /** Görünüm ayarlarının kayıt adları: biri değişince TV'ye yeni görünüm gider. */
+        val STYLE_KEYS = setOf("subtitleScale", "fontSize", "textColor", "textHex", "tvFontSize", "tvBackground", "backgroundColor",
+            "tvBackgroundShape", "bold", "stackPrevious", "tvDisplayMode", "tvPlacement", "tvBottomPercent", "nameColorMode", "nameHex",
+            "characterColors", "nameOnly", "hdmiInput", "speakerColors")
+
+        /** Oyunun dili seçenekleri (Mac/iPhone LanguageCard ile aynı sıra). */
+        val GAME_LANGUAGES = listOf("en", "ja", "de", "fr", "es")
 
         /** Yüzde ölçekle yazı boyu (yuvarlanır). */
         fun scaledFontSize(base: Int, percent: Int): Int =
@@ -637,10 +733,9 @@ class AppSettings(context: Context) : AreaStore {
         get() = prefs.getLong("lastExitReportAt", 0)
         set(value) = prefs.edit().putLong("lastExitReportAt", value).apply()
 
-    /** Altyazı yazı ölçeği, yüzde (40–160; tasarım: Ayarlar › Altyazı görünümü). */
-    var subtitleScale: Int
-        get() = prefs.getInt("subtitleScale", 100).coerceIn(MIN_SUBTITLE_SCALE, MAX_SUBTITLE_SCALE)
-        set(value) = prefs.edit().putInt("subtitleScale", value.coerceIn(MIN_SUBTITLE_SCALE, MAX_SUBTITLE_SCALE)).apply()
+    /** Telefon ekranındaki altyazının ölçeği, yüzde: TV yazı boyunun varsayılana (46) oranı (iPhone ile aynı). */
+    val subtitleScale: Int
+        get() = Math.round(fontSize * 100.0 / 46).toInt()
 
     /** "Bu telefonda" ekranında iki parmakla verilen yazı boyu çarpanı (TV'ye dokunmaz; iPhone ile aynı sınırlar). */
     var phoneSubtitleScale: Float

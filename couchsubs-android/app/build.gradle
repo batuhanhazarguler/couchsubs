@@ -149,6 +149,8 @@ android {
 tasks.register('copyCouchSubsAssets', Copy) {
     into layout.buildDirectory.dir('generated/couchsubs-assets')
     from("$repoRoot/core/Sources/CouchSubsCore/Resources") { include 'ai-models.json', 'glossary-en-tr.json', 'obs-overlay.html', 'second-screen.html' }
+    // Açılır reklam promo.json indirilemezse uygulamayla gelen reklam (Mac, Windows ve iPhone ile aynı dosya ve görsel).
+    from("$repoRoot/design/yeni-arayuz") { include 'reklamlar.json', 'reklam/popup-*.jpg' }
 }
 tasks.register('copyCouchSubsPacks', Copy) {
     into layout.buildDirectory.dir('generated/couchsubs-packs')
@@ -294,6 +296,8 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0'
     // Cihaz üstü yazı tanıma (Latin modeli uygulamayla gelir) ve ücretsiz çeviri (EN→TR modeli ilk kullanımda iner).
     implementation 'com.google.mlkit:text-recognition:16.0.1'
+    // Ayarlar › Konsol ve Kaynak › Oyunun dili: Japonca oyunlar (Mac/iPhone'daki gibi).
+    implementation 'com.google.mlkit:text-recognition-japanese:16.0.1'
     implementation 'com.google.mlkit:translate:17.0.3'
     implementation 'androidx.navigation:navigation-compose:2.8.5'
     implementation 'androidx.compose.material:material-icons-core'
