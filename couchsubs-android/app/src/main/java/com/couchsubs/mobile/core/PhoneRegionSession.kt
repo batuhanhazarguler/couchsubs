@@ -47,14 +47,9 @@ internal class PhoneRegionSession(
          */
         fun steady(items: List<ScreenTranslation.Item>, previous: List<ScreenTranslation.Item>): List<ScreenTranslation.Item> =
             items.map { item ->
-                var match: ScreenTranslation.Item? = null
-                for (old in previous) {
-                    if (old.source != item.source || old.translation != item.translation ||
-                        abs(old.box.left - item.box.left) > 0.05 || abs(old.box.top - item.box.top) > 0.05) continue
-                    if (match != null) return@map item
-                    match = old
-                }
-                val before = match ?: return@map item
+                // Aynı balon ([PhoneSteady.match]: aynı çeviri, OCR'la biraz farklı okunsa da aynı mesaj) ilk okunuşunu ve
+                // tarafını (gelen/giden/not) korur: bir harf ya da hiza oynadı diye gönderi yenilenmez (Mac ile aynı).
+                val before = PhoneSteady.match(item, previous) ?: return@map item
                 var box = item.box
                 val width = box.right - box.left
                 val height = box.bottom - box.top
@@ -67,14 +62,20 @@ internal class PhoneRegionSession(
                 val old = before.surface
                 if (surface != null && old != null) {
                     // Ön ve arka renk ayrı ayrı: seçimin gerçek yazı/zemin rengi değişimi korunur.
+                    // Yazı rengi zeminin aynı yanında kaldıysa eskisi kalır (örnek bir siyah bir koyu gri okunuyordu); seçimde
+                    // (siyahtan beyaza) değişim izlenir.
+                    val ink = nearColor(surface.foreground, old.foreground, 16) ||
+                        PhoneSteady.sameInk(surface.foreground, old.foreground, surface.background)
                     surface = surface.copy(
-                        foreground = if (nearColor(surface.foreground, old.foreground, 16)) old.foreground else surface.foreground,
+                        foreground = if (ink) old.foreground else surface.foreground,
                         background = if (nearColor(surface.background, old.background, 16)) old.background else surface.background,
                     )
                     // İki ayrı okunur paletin karışımı kontrastı düşürebilir: o zaman güncel çift kullanılır.
                     if (surface != old && surface != item.surface && contrast(surface.background, surface.foreground) < 4.5) surface = item.surface
                 }
-                item.copy(box = box, lineHeight = line, surface = surface)
+                val role = before.phone?.role
+                item.copy(source = before.source, box = box, lineHeight = line, surface = surface,
+                    phone = if (role != null) item.phone?.copy(role = role) else item.phone)
             }
 
         /** Kanallar en çok [tolerance] farklı (palet sekizli basamaklara yuvarlar; bir basamak sıkıştırma titreşimidir). */
@@ -135,6 +136,11 @@ internal class PhoneRegionSession(
     private var sentScale = 0.0
     /** Son gönderinin ayarı: ayar değişince aynı mesajlar yeni düzende yeniden gönderilir. */
     private var sentOptions: PhonePanelOptions? = null
+    /** Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri ([PhoneSteady.steadyPose], [PhoneSteady.samePicture]). */
+    private var sentShown: List<ScreenTranslation.Item> = emptyList()
+    private var anchor: GamePhoneGeometry.Pose? = null
+    /** Boş okumanın art arda kaç turdur sürdüğü: [PhoneSteady.MISS_TURNS] tur (~1,35 sn) sürmeden ekran silinmez. */
+    private var empties = 0
 
     fun observe(capture: PhoneCapture) {
         if (!closed) latest = capture
@@ -215,9 +221,13 @@ internal class PhoneRegionSession(
         absences = 0
         if (closed) return
         if (current.bubbles.isEmpty()) {
-            if (emptyOnce || rendered.isEmpty()) {
+            // Ekranda çeviri varsa [PhoneSteady.MISS_TURNS] tur boş kalmadan silinmez: telefonun ekranı kısa süre
+            // okunamayınca panel kaybolup geri geliyordu (X, 22 Kas; Mac ile aynı).
+            empties++
+            if (rendered.isEmpty() || empties >= PhoneSteady.MISS_TURNS) {
                 publish(emptyList())
                 emptyOnce = false
+                empties = 0
             } else {
                 emptyOnce = true
             }
@@ -225,6 +235,7 @@ internal class PhoneRegionSession(
             return
         }
         emptyOnce = false
+        empties = 0
         val groups = current.bubbles.map { it.group }
         val paragraphs = groups.flatMap { it.paragraphs }
         var available = availableTranslations(groups, packLookup, skipsTurkish)
@@ -358,6 +369,7 @@ internal class PhoneRegionSession(
         holds = 0
         recheck = false
         emptyOnce = false
+        empties = 0
         needsWork = false
         publish(emptyList())
     }
@@ -413,17 +425,24 @@ internal class PhoneRegionSession(
             if (abs(scale - sentScale) > sentScale * 0.03) {
                 sentScale = scale
                 sent = emptyList()
+                anchor = null
             }
         }
-        val items = if (sent.isEmpty()) fresh else steady(fresh, sent)
+        val capture = latest
+        val aspect = capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9)
+        val items = if (sent.isEmpty()) fresh else PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
         sent = items
         val options = panel()
         if (rendered == items && (sentOptions == options || items.isEmpty())) return
+        val sameOptions = sentOptions == options
         rendered = items
         sentOptions = options
-        val capture = latest
-        val shown = arranged(items, capture?.pose, capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9),
-            options)
+        // Panel telefonun el titremesiyle kaymaz ([PhoneSteady.steadyPose]); aynı görünen gönderi yinelenmez.
+        val pose = capture?.pose?.let { PhoneSteady.steadyPose(it, anchor) }
+        if (pose != null) anchor = pose
+        val shown = arranged(items, pose, aspect, options)
+        if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) return
+        sentShown = shown
         val box = shown.map { it.box }.reduceOrNull { a, b -> a.union(b) }
         val heights = shown.map { it.lineHeight }.sorted()
         sender.sendRegion(ID, shown.filter { !ScreenPhoneCard.isBackdrop(it) }.joinToString("\n") { it.translation }, box,

@@ -84,6 +84,12 @@ public sealed partial class RegionWatcher
         public GamePhonePage? ReadPhonePage;
         public GamePhoneReader? PhoneReader;
         public IReadOnlyList<ScreenTranslation.Item>? SentPhoneBlocks;
+        /// <summary>Son gönderilen düzen, ayarı ve Yanda Panel'in dayandığı telefon yeri (<see cref="PhoneSteady.SteadyPose"/>).</summary>
+        public IReadOnlyList<ScreenTranslation.Item>? SentPhoneShown;
+        public PhonePanelOptions? SentPhoneOptions;
+        public GamePhoneGeometry.Pose? PhoneAnchor;
+        /// <summary>Boş okumanın art arda kaç turdur sürdüğü: <see cref="PhoneSteady.MissTurns"/> tur sürmeden ekran silinmez.</summary>
+        public int PhoneEmpties;
         public double PhoneScale;
         /// <summary>Telefonun okunduğu karenin eni / boyu (sohbet panelinin yeri için).</summary>
         public double PhoneAspect = 16.0 / 9;
@@ -895,14 +901,19 @@ public sealed partial class RegionWatcher
                 {
                     state.PhoneScale = scale;
                     state.SentPhoneBlocks = null;
+                    state.PhoneAnchor = null;
                 }
                 if (blocks is not null && state.SentPhoneBlocks is { } previous)
-                    blocks = StablePhoneBlocks(blocks, previous);
+                    blocks = PhoneSteady.SteadyPositions(StablePhoneBlocks(blocks, previous), previous, state.PhoneAspect);
                 state.SentPhoneBlocks = blocks;
+                var options = PhonePanel();
                 if (blocks is { Count: > 0 })
                 {
                     // Yanda Panel: mesajlar telefonun yanındaki sohbet panelinde; Balonların Üstünde: her biri kendi balonunda.
-                    var arranged = ArrangedPhone(blocks, area.PhonePose, state.PhoneAspect, PhonePanel());
+                    // Panel telefonun el titremesiyle kaymaz (PhoneSteady.SteadyPose).
+                    var pose = area.PhonePose is { } found ? PhoneSteady.SteadyPose(found, state.PhoneAnchor) : (GamePhoneGeometry.Pose?)null;
+                    if (pose is not null) state.PhoneAnchor = pose;
+                    var arranged = ArrangedPhone(blocks, pose, state.PhoneAspect, options);
                     if (arranged.Any(item => item.Panel == ScreenPhoneCard.PanelPart.Card))
                     {
                         text = string.Join('\n', arranged.Where(item => !ScreenPhoneCard.IsBackdrop(item)).Select(item => item.Translation));
@@ -910,6 +921,11 @@ public sealed partial class RegionWatcher
                     }
                     blocks = arranged.Count == 0 ? null : arranged;
                 }
+                // TV'de ve masaüstünde aynı görünen gönderi yinelenmez (panel mesajlarının akış kutuları önemsiz).
+                if (blocks is { Count: > 0 } shown && state.SentPhoneShown is { } sent && options == state.SentPhoneOptions
+                    && PhoneSteady.SamePicture(shown, sent)) return;
+                state.SentPhoneShown = blocks;
+                state.SentPhoneOptions = options;
             }
             server.SendRegion(area.Id, text, box, lineHeight, icons, blocks);
         }
@@ -936,13 +952,9 @@ public sealed partial class RegionWatcher
         return items.Select(item =>
         {
             ScreenTranslation.Item? match = null;
-            foreach (var old in previous)
-            {
-                if (old.Source != item.Source || old.Translation != item.Translation
-                    || Math.Abs(old.Box.Left - item.Box.Left) > .05 || Math.Abs(old.Box.Top - item.Box.Top) > .05) continue;
-                if (match is not null) return item; // Aynı yerdeki iki eş mesaj ayırt edilemiyor.
-                match = old;
-            }
+            // Aynı balon (PhoneSteady.Match: aynı çeviri, OCR'la biraz farklı okunsa da aynı mesaj) ilk okunuşunu ve tarafını
+            // (gelen/giden/not) korur: bir harf ya da hiza oynadı diye gönderi yenilenmez (Mac ile aynı).
+            match = PhoneSteady.Match(item, previous);
             if (match is null) return item;
             var box = item.Box;
             double width = box.Right - box.Left, height = box.Bottom - box.Top;
@@ -958,14 +970,18 @@ public sealed partial class RegionWatcher
                 // Ön ve arka renkler bağımsızdır: seçimin gerçek yazı/zemin rengi değişimi korunur.
                 style = style with
                 {
-                    Foreground = NearColor(style.Foreground, before.Foreground, 16) ? before.Foreground : style.Foreground,
+                    // Yazı rengi zeminin aynı yanında kaldıysa eskisi kalır (örnek bir siyah bir koyu gri okunuyordu); seçimde
+                    // (siyahtan beyaza) değişim izlenir.
+                    Foreground = NearColor(style.Foreground, before.Foreground, 16)
+                        || PhoneSteady.SameInk(style.Foreground, before.Foreground, style.Background) ? before.Foreground : style.Foreground,
                     Background = NearColor(style.Background, before.Background, 16) ? before.Background : style.Background
                 };
                 // Farklı iki okunabilir paletin karışımı kontrastı düşürebilir. Bu durumda güncel çifti kullan.
                 if (style != before && style != item.Style && DesignTokens.Contrast(style.Background, style.Foreground) < 4.5)
                     style = item.Style;
             }
-            return item with { Box = box, LineHeight = line, Style = style };
+            var phone = item.Phone is { } placement && match.Phone is { } kept ? placement with { Role = kept.Role } : item.Phone;
+            return item with { Source = match.Source, Box = box, LineHeight = line, Style = style, Phone = phone };
         }).ToList();
     }
 

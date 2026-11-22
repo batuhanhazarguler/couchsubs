@@ -72,7 +72,11 @@ public sealed partial class RegionWatcher
         state.ReadPhonePage = candidate.PhonePage;
         // Telefonun açılışı iki geometri örneğiyle doğrulandı. Okunan sayfayı çevirmeye hemen başla;
         // yavaş motorun yanıtı gösterilmeden önce beklerken gelen son kare ayrıca doğrulanır.
-        if (state.LastRead == candidate.Key || candidate.Key.Length > 0)
+        // Ekranda çeviri varsa PhoneSteady.MissTurns tur boş kalmadan silinmez: telefonun ekranı kısa süre okunamayınca panel
+        // kaybolup geri geliyordu (X, 22 Kas; Mac ile aynı).
+        var empties = candidate.Key.Length == 0 ? ++state.PhoneEmpties : 0;
+        if (candidate.Key.Length > 0 || (state.LastRead == candidate.Key
+            && (string.IsNullOrEmpty(state.RenderedText) || empties >= PhoneSteady.MissTurns)))
         {
             state.LastRead = candidate.Key;
             state.Candidate = null;
@@ -85,6 +89,7 @@ public sealed partial class RegionWatcher
             // Boş sonuç bir kez daha OCR ile doğrulanır; aynı pikseller ilk okumada kaçan mesajı gizlememeli.
             state.Signature = null;
         }
+        if (candidate.Key.Length > 0) state.PhoneEmpties = 0;
     }
 
     private Candidate ReadPhoneCandidate(Frame frame, WatchedArea area, Frame crop, State state)

@@ -425,10 +425,18 @@ public partial class RegionWatcherTests
         Assert.Equal(2, reader.ScreenReads);
         Assert.Single(server.Sent);
 
+        // Satır yüksekliğinin çeyreğinden (0,1 → 0,025) az oynama da yerinde kalır (PhoneSteady.SteadyPositions, X 22 Kas:
+        // "yazılar sürekli oynuyor"); daha büyük gerçek hareket izlenir.
         reader.Lines = [Line("Call me.", .2 + 3.0 / 180)];
+        var other = Shade(40);
+        Array.Fill(other.Pixels, (byte)120, 0, 4);
+        await watcher.PassAsync(other, [phone]);
+        Assert.Equal(3, reader.ScreenReads);
+        Assert.Single(server.Sent);
+        reader.Lines = [Line("Call me.", .2 + 6.0 / 180)];
         await watcher.PassAsync(Shade(40), [phone]);
         Assert.Equal(2, server.Sent.Count);
-        Assert.Equal(.2 + 3.0 / 180, server.Sent[^1].Box!.Value.Top, 5);
+        Assert.Equal(.2 + 6.0 / 180, server.Sent[^1].Box!.Value.Top, 5);
         await watcher.PassAsync(Shade(180), [phone]);
         Assert.Equal(3, server.Sent.Count);
         Assert.Single(translator.Calls);

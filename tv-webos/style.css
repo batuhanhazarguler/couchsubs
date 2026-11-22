@@ -88,6 +88,12 @@ html, body {
 }
 /* GTA 6 telefonunun yanındaki sohbet paneli: yuvarlak köşeli, yarı saydam koyu kart; üstte kişinin adı, altında
    mesajlar (karşı taraf solda krem, oyuncu sağda amber balon). Yazı boyu, köşe ve renkler app.js placePanel'den. */
+/* Telefonun yazıları gerçekten yer değiştirince (sohbet kaydı, telefon kıpırdadı) bir kerede yumuşakça kayar; bilgisayar
+   küçük titremeyi göndermez (PhoneSteady). */
+#regions .region-blocks .item.phone, .phone-panel {
+  -webkit-transition: left 0.2s ease-out, top 0.2s ease-out;
+  transition: left 0.2s ease-out, top 0.2s ease-out;
+}
 .phone-panel {
   position: absolute;
   box-sizing: border-box;

@@ -62,6 +62,11 @@ final class PhoneRegionSession {
     var panel: () -> PhonePanelOptions = { PhonePanelOptions() }
     /// Son gönderinin ayarı: ayar değişince aynı mesajlar yeni düzende yeniden gönderilir.
     private var sentOptions: PhonePanelOptions?
+    /// Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri (`PhoneSteady.steadyPose`, `samePicture`).
+    private var sentShown: [ScreenTranslation.Item] = []
+    private var anchor: GamePhoneGeometry.Pose?
+    /// Boş okumanın art arda kaç turdur sürdüğü: `PhoneSteady.missTurns` tur (~1,35 sn) sürmeden ekran silinmez.
+    private var empties = 0
 
     init(reader: TextReader, translator: TextTranslator, server: RegionSending) {
         self.reader = reader
@@ -159,16 +164,21 @@ final class PhoneRegionSession {
         }
         holds = 0
         if current.bubbles.isEmpty {
-            // Boş okuma aynı karede bir kez daha okunur: ilk okumada kaçan mesaj gizlenmesin.
-            if emptyOnce {
+            // Boş okuma aynı karede bir kez daha okunur: ilk okumada kaçan mesaj gizlenmesin. Ekranda çeviri varsa
+            // `PhoneSteady.missTurns` tur boş kalmadan silinmez: telefonun ekranı kısa süre okunamayınca (kare geçişi,
+            // bulanıklık) panel kaybolup geri geliyordu (X, 22 Kas).
+            empties += 1
+            if empties >= (rendered.isEmpty ? 2 : PhoneSteady.missTurns) {
                 publish([])
                 shownPage = nil
                 emptyOnce = false
+                empties = 0
             } else { emptyOnce = true }
             needsWork = false
             return
         }
         emptyOnce = false
+        empties = 0
         let groups = current.bubbles.map(\.group)
         let paragraphs = groups.flatMap(\.paragraphs)
         var available = availableTranslations(groups, packLookup: packLookup, skipsTurkish: skipsTurkish)
@@ -281,17 +291,17 @@ final class PhoneRegionSession {
     }
 
     /// Aynı balon hareket ederken yeri her gönderide izlenir; küçük OCR kutu farkları yazı boyunu ve satır kırılımını,
-    /// renk örneklemesi zemini sürekli değiştirmesin. Esas alınan, son çizilendir (Windows ile aynı).
+    /// renk örneklemesi zemini sürekli değiştirmesin. Esas alınan, son çizilendir (Windows ile aynı). Aynı balon
+    /// (`PhoneSteady.match`: aynı çeviri, OCR'la biraz farklı okunsa da aynı mesaj) ilk okunuşunu korur: yazının bir harfi
+    /// oynadı diye gönderi yenilenmez.
     nonisolated static func stableBlocks(_ items: [ScreenTranslation.Item], previous: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
         items.map { item in
-            var match: ScreenTranslation.Item?
-            for old in previous where old.source == item.source && old.translation == item.translation
-                && abs(old.box.left - item.box.left) <= 0.05 && abs(old.box.top - item.box.top) <= 0.05 {
-                if match != nil { return item } // Aynı yerdeki iki eş mesaj ayırt edilemiyor.
-                match = old
-            }
-            guard let match else { return item }
+            guard let match = PhoneSteady.match(item, in: previous) else { return item }
             var stable = item
+            stable.source = match.source
+            // Balonun tarafı (gelen/giden/not) da kimliğiyle kalır: hiza ya da renk okuması bir piksel oynadı diye balon
+            // panelde sola sağa atlamaz.
+            if let role = match.phone?.role, stable.phone != nil { stable.phone?.role = role }
             let width = item.box.right - item.box.left, height = item.box.bottom - item.box.top
             let oldWidth = match.box.right - match.box.left, oldHeight = match.box.bottom - match.box.top
             if oldWidth > 0, abs(width - oldWidth) <= oldWidth * 0.05 { stable.box.right = min(1, item.box.left + oldWidth) }
@@ -299,8 +309,13 @@ final class PhoneRegionSession {
             if abs(item.lineHeight - match.lineHeight) <= match.lineHeight * 0.15 { stable.lineHeight = match.lineHeight }
             if let style = item.style, let before = match.style {
                 // Ön ve arka renk ayrı ayrı: seçimin gerçek yazı/zemin rengi değişimi korunur.
+                // Yazı rengi zeminin aynı yanında kaldıysa (ikisi de zeminden koyu ya da ikisi de açık) eskisi kalır: yazı
+                // örneği balonun kenar pikselinden bir koyu, bir gri okunuyor, TV'de yazı rengi titriyordu. Seçimde yazı
+                // zeminin öbür yanına geçer (siyahtan beyaza): o değişim izlenir.
+                let ink = nearColor(style.foreground, before.foreground, 16)
+                    || PhoneSteady.sameInk(style.foreground, before.foreground, on: style.background)
                 var kept = PhoneTextStyle(background: nearColor(style.background, before.background, 16) ? before.background : style.background,
-                                          foreground: nearColor(style.foreground, before.foreground, 16) ? before.foreground : style.foreground)
+                                          foreground: ink ? before.foreground : style.foreground)
                 // İki okunabilir paletin karışımı kontrastı düşürebilir: o durumda güncel çift kullanılır.
                 if kept != before, kept != style, TextStyleSampler.contrast(kept.background, kept.foreground) < 4.5 { kept = style }
                 stable.style = kept
@@ -340,6 +355,7 @@ final class PhoneRegionSession {
         page = nil
         shownPage = nil
         emptyOnce = false
+        empties = 0
         needsWork = false
         publish([])
     }
@@ -392,8 +408,10 @@ final class PhoneRegionSession {
             // Telefon gerçekten yakınlaşıp uzaklaşınca yeni boyutlar hemen kullanılır.
             if abs(height - scale) > scale * 0.03 {
                 scale = height
+                anchor = nil
             } else if !rendered.isEmpty {
-                items = Self.stableBlocks(items, previous: rendered)
+                items = PhoneSteady.steadyPositions(Self.stableBlocks(items, previous: rendered), previous: rendered,
+                                                    aspect: Double(frameSize.width) / Double(max(1, frameSize.height)))
             }
         }
         let options = panel()
@@ -407,7 +425,12 @@ final class PhoneRegionSession {
         }) { return }
         rendered = items
         sentOptions = options
-        let shown = Self.arranged(items, pose: latest?.pose, frameSize: frameSize, options: options)
+        // Panel telefonun el titremesiyle kaymaz (`PhoneSteady.steadyPose`); TV'de aynı görünen gönderi yinelenmez.
+        let pose = latest.map { PhoneSteady.steadyPose($0.pose, anchor: anchor) }
+        anchor = pose ?? anchor
+        let shown = Self.arranged(items, pose: pose, frameSize: frameSize, options: options)
+        if sameOptions, PhoneSteady.samePicture(shown, sentShown) { return }
+        sentShown = shown
         let boxes = shown.map(\.box)
         let box = boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }
         let heights = shown.map(\.lineHeight).sorted()

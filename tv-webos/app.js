@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.77';
+  var APP_VERSION = '0.9.78';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1183,10 +1183,15 @@
     return svg;
   }
 
-  function placePanel(host, items, card, width, height) {
+  // Panel ve mesajları yerinde güncellenir (TV uygulaması 0.9.78; X, 22 Kas: "yazılar sürekli oynuyor"): aynı mesajın satırı
+  // (anahtarı: parçası, yazısı, aynı yazının kaçıncı tekrarı) yeniden yaratılmaz, yeni mesaj alta eklenir, düşen mesaj
+  // kalkar. Panel gerçekten yer değiştirince CSS geçişiyle bir kerede kayar.
+  function placePanel(host, items, card, width, height, panel) {
     var box = validBox(card.box);
-    var panel = document.createElement('div');
-    panel.className = 'phone-panel';
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.className = 'phone-panel';
+    }
     panel.couchsubsBox = box;
     panel.style.left = (box.left * 100) + '%';
     panel.style.top = (box.top * 100) + '%';
@@ -1196,10 +1201,9 @@
     panel.style.fontSize = Math.max(Math.round(BUBBLE_MIN_FONT * height / 1080), Math.round(line * 0.95)) + 'px';
     panel.style.borderRadius = Math.max(6, Math.round(18 * height / 1080)) + 'px';
     var surface = card.surface;
-    if (surface && phoneColor(surface.background) && phoneColor(surface.foreground)) {
-      panel.style.backgroundColor = translucent(surface.background, PANEL_OPACITY);
-      panel.style.color = surface.foreground;
-    }
+    var custom = surface && phoneColor(surface.background) && phoneColor(surface.foreground);
+    panel.style.backgroundColor = custom ? translucent(surface.background, PANEL_OPACITY) : '';
+    panel.style.color = custom ? surface.foreground : '';
     var title = null, messages = [];
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
@@ -1208,37 +1212,88 @@
       else messages.push(item);
     }
     messages.sort(function (a, b) { return ((validBox(a.box) || {}).top || 0) - ((validBox(b.box) || {}).top || 0); });
-    if (title) {
-      var name = document.createElement('div');
-      name.className = 'panel-title';
-      name.textContent = title.text;
-      panel.appendChild(name);
+    var name = null, list = null, couch = null;
+    for (var c = 0; c < panel.children.length; c++) {
+      var child = panel.children[c];
+      var kind = child.getAttribute('class') || '';
+      if (kind === 'panel-title') name = child;
+      else if (kind === 'panel-messages') list = child;
+      else if (kind === 'panel-couch') couch = child;
     }
-    var list = document.createElement('div');
-    list.className = 'panel-messages';
+    if (title) {
+      if (!name) {
+        name = document.createElement('div');
+        name.className = 'panel-title';
+      }
+      if (name.textContent !== title.text) name.textContent = title.text;
+      if (panel.firstChild !== name) panel.insertBefore(name, panel.firstChild);
+    } else if (name) panel.removeChild(name);
+    if (!list) {
+      list = document.createElement('div');
+      list.className = 'panel-messages';
+      panel.appendChild(list);
+    }
+    var old = {};
+    for (var r = 0; r < list.children.length; r++) {
+      var key = list.children[r].couchsubsKey;
+      if (key) (old[key] = old[key] || []).push(list.children[r]);
+    }
+    var seen = {}, rows = [];
     for (var j = 0; j < messages.length; j++) {
       var message = messages[j];
-      var row = document.createElement('div');
-      row.className = 'panel-row ' + message.panel;
-      var bubble = document.createElement('div');
-      bubble.className = 'panel-bubble';
-      fillText(bubble, message.text, message.icons);
+      var base = message.panel + '|' + message.text;
+      seen[base] = (seen[base] || 0) + 1;
+      var rowKey = base + '#' + seen[base];
       var colors = message.surface;
-      if (colors && phoneColor(colors.background) && phoneColor(colors.foreground)) {
-        if (message.panel !== 'note') bubble.style.backgroundColor = colors.background;
-        bubble.style.color = colors.foreground;
+      var paint = colors && phoneColor(colors.background) && phoneColor(colors.foreground)
+        ? (message.panel !== 'note' ? colors.background : '') + '/' + colors.foreground : '';
+      var row = old[rowKey] && old[rowKey].shift();
+      var bubble;
+      if (row && row.couchsubsPaint === paint) {
+        bubble = row.firstChild;
+      } else {
+        row = document.createElement('div');
+        row.className = 'panel-row ' + message.panel;
+        bubble = document.createElement('div');
+        bubble.className = 'panel-bubble';
+        fillText(bubble, message.text, message.icons);
+        if (paint) {
+          if (message.panel !== 'note') bubble.style.backgroundColor = colors.background;
+          bubble.style.color = colors.foreground;
+        }
+        row.appendChild(bubble);
+        row.couchsubsKey = rowKey;
+        row.couchsubsPaint = paint;
       }
-      row.appendChild(bubble);
-      list.appendChild(row);
+      rows.push(row);
     }
-    panel.appendChild(list);
-    panel.appendChild(couchIcon());
-    host.appendChild(panel);
+    // Sıra yalnız değiştiyse taşınır; yerinde kalan satıra dokunulmaz.
+    for (var k = 0; k < rows.length; k++) {
+      if (list.children[k] !== rows[k]) list.insertBefore(rows[k], list.children[k] || null);
+    }
+    while (list.children.length > rows.length) list.removeChild(list.lastChild);
+    if (!couch) couch = couchIcon();
+    if (couch.parentNode !== panel || panel.lastChild !== couch) panel.appendChild(couch);
+    if (panel.parentNode !== host) host.appendChild(panel);
     // Sığmayan en eski mesajlar düşer: son mesajlar görünür kalır.
     while (list.children.length > 1 && list.scrollHeight > list.clientHeight + 1) list.removeChild(list.firstChild);
+    return panel;
   }
 
   // Yeriyle gelen çevirileri (ekranı çevir öğeleri, ek alan blokları) kendi İngilizce yazılarının üstüne koyar.
+  // Oyun telefonunun öğeleri yerinde güncellenir (TV uygulaması 0.9.78): aynı yazının kutusu (anahtarı: yazısı ve kaçıncı
+  // tekrarı) yeniden yaratılmaz; yeri değişirse CSS geçişiyle kayar, kalkan yazının kutusu kaldırılır.
+  function takeChildren(host) {
+    var taken = { panel: null, items: {}, all: [] };
+    for (var i = 0; i < host.children.length; i++) {
+      var child = host.children[i];
+      taken.all.push(child);
+      if (child.className === 'phone-panel') taken.panel = child;
+      else if (child.couchsubsKey) (taken.items[child.couchsubsKey] = taken.items[child.couchsubsKey] || []).push(child);
+    }
+    return taken;
+  }
+
   function placeItems(host, items, regionId) {
     var phone = regionId === 'game-phone';
     var width = (window.innerWidth || 1920) / (window.COUCHSUBS_ZOOM || 1);
@@ -1246,13 +1301,32 @@
     var pad = phone ? 0.001 : SCREEN_PAD;
     var minWidth = phone ? 1 : 80;
     var card = panelCard(items);
-    if (card) placePanel(host, items, card, width, height);
+    var reuse = phone ? takeChildren(host) : null;
+    var kept = [], seen = {}, order = 0;
+    if (card) {
+      var panel = placePanel(host, items, card, width, height, reuse && reuse.panel);
+      kept.push(panel);
+      if (host.children[order] !== panel) host.insertBefore(panel, host.children[order] || null);
+      order++;
+    }
     for (var i = 0; i < (items || []).length; i++) {
       var item = items[i];
       if (card && item && (item.panel === 'card' || PANEL_PARTS[item.panel])) continue;
       var box = validBox(item && item.box);
       if (!box || !item.text || tooBig(box)) continue;
-      var el = document.createElement('div');
+      var el = null;
+      if (reuse) {
+        seen[item.text] = (seen[item.text] || 0) + 1;
+        var key = item.text + '#' + seen[item.text];
+        el = reuse.items[key] && reuse.items[key].shift();
+        if (el) {
+          // Stil baştan yazılır; yer değeri değişirse geçiş eski yerden başlar.
+          el.removeAttribute('style');
+          el.textContent = '';
+        }
+      }
+      if (!el) el = document.createElement('div');
+      if (reuse) el.couchsubsKey = key;
       el.className = item.paragraphs === true ? 'item paragraphs' : 'item';
       // Özgün yazının yeri: aynı yeri çizen başka katmanın kutusuyla karşılaştırılır (resolveLayers).
       el.couchsubsBox = box;
@@ -1307,7 +1381,11 @@
         el.style.lineHeight = Math.max(1, Math.round(Math.min(boxHeight, available)) - 4) + 'px';
       }
       el.style.fontSize = size + 'px';
-      host.appendChild(el);
+      if (reuse) {
+        kept.push(el);
+        if (host.children[order] !== el) host.insertBefore(el, host.children[order] || null);
+        order++;
+      } else host.appendChild(el);
       while (label && el.scrollWidth > el.clientWidth && size > floor) {
         size = Math.max(floor, size - 1);
         el.style.fontSize = size + 'px';
@@ -1334,6 +1412,11 @@
       }
       // En küçük okunabilir boyutta da sığmayan metni kesmeyiz/gizlemeyiz.
       // Bu uç durumda eski doğal büyüme davranışı korunur.
+    }
+    if (reuse) {
+      for (var r = 0; r < reuse.all.length; r++) {
+        if (kept.indexOf(reuse.all[r]) < 0 && reuse.all[r].parentNode === host) host.removeChild(reuse.all[r]);
+      }
     }
   }
 
@@ -1380,8 +1463,15 @@
     var blocks = Array.isArray(data.blocks) ? data.blocks : null;
     var kind = blocks && blocks.length ? 'region-blocks' : 'region';
     var el = regionBoxes[id];
+    // Oyun telefonunun aynı gönderisi yeniden çizilmez; değişen gönderi yerinde güncellenir (placeItems, placePanel).
+    var phoneBlocks = id === 'game-phone' && kind === 'region-blocks';
+    var payload = phoneBlocks ? JSON.stringify(blocks) + JSON.stringify(box) : null;
+    if (phoneBlocks && el && el.className === kind && el.couchsubsPayload === payload) {
+      el.couchsubsStamp = ++regionStamp;
+      return;
+    }
     // Bloklar her olayda baştan dizilir; tek kutudan bloklara (ya da tersine) geçen alanın eski kutusu kalkar.
-    if (el && (el.className !== kind || kind === 'region-blocks')) {
+    if (el && (el.className !== kind || (kind === 'region-blocks' && !phoneBlocks))) {
       hideRegion(id);
       el = null;
     }
@@ -1396,6 +1486,7 @@
     el.couchsubsStamp = ++regionStamp;
     el.couchsubsBox = box;
     if (kind === 'region-blocks') {
+      el.couchsubsPayload = payload;
       placeItems(el, blocks, id);
       resolveLayers();
       avoidRegions();
