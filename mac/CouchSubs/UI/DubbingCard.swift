@@ -15,13 +15,11 @@ struct DubbingCard: View {
 
             if model.settings.dubbing.enabled {
                 // "Ses: Doğal / Hızlı" (Windows ile aynı): Hızlı, Mac'in kendi Türkçe sesidir; indirme gerekmez.
-                VStack(alignment: .leading, spacing: DS.space("xs")) {
-                    Text("Voice").font(.dsBodyStrong).foregroundStyle(Color.dsText)
+                DSUnit(title: "Voice", hint: model.settings.dubbing.engine == .fast
+                    ? "This Mac's own Turkish voice: speaks at once, nothing to download. Sounds more mechanical."
+                    : "Natural voices, downloaded once. Each line takes a moment to prepare, so the voice can come a little after the subtitle.") {
                     DSTabs(selection: $model.settings.dubbing.engine, items: [(DubbingEngine.natural, "Natural"), (.fast, "Fast")])
                 }
-                HintText(text: model.settings.dubbing.engine == .fast
-                    ? "This Mac's own Turkish voice: speaks at once, nothing to download. Sounds more mechanical."
-                    : "Natural voices, downloaded once. Each line takes a moment to prepare, so the voice can come a little after the subtitle.")
                 if model.settings.dubbing.engine == .fast, !SystemSpeech.hasTurkishVoice {
                     ErrorText(error: String(localized: "No Turkish voice is installed on this Mac. Add one in System Settings › Accessibility › Spoken Content › System Voice › Manage Voices."))
                 }
@@ -38,8 +36,7 @@ struct DubbingCard: View {
                             .fixedSize()
                     }
                 } else {
-                    VStack(alignment: .leading, spacing: DS.space("xs")) {
-                        Text("Play the Voice On").font(.dsBodyStrong).foregroundStyle(Color.dsText)
+                    DSUnit(title: "Play the Voice On") {
                         DSTabs(selection: $model.settings.dubbing.output, items: [(DubbingOutput.tv, "TV"), (.computer, "This Mac")])
                     }
                     VoiceRow(title: Text("Narrator and unnamed lines"), voice: $model.settings.dubbing.cast.narrator)
@@ -77,11 +74,14 @@ private struct VoiceRow: View {
     @Binding var voice: DubbingVoice
 
     var body: some View {
-        HStack(alignment: .center, spacing: DS.space("s")) {
-            title.font(.dsBodyStrong).foregroundStyle(Color.dsText).frame(maxWidth: .infinity, alignment: .leading)
-            DSSelect(selection: $voice, options: DubbingVoice.allCases.map { ($0, $0.text) })
-                .frame(width: 240)
-            Button("Listen") { Task { await model.previewVoice(voice) } }.buttonStyle(DSButtonStyle(kind: .secondary)).fixedSize()
+        // Başlık üstte, seçim kutusu altta tam genişlik; Dinle kutunun yanında.
+        VStack(alignment: .leading, spacing: DS.unitTitleGap) {
+            title.font(.dsBodyStrong).foregroundStyle(Color.dsText)
+            HStack(alignment: .center, spacing: DS.space("s")) {
+                DSSelect(selection: $voice, options: DubbingVoice.allCases.map { ($0, $0.text) })
+                Button("Listen") { Task { await model.previewVoice(voice) } }.buttonStyle(DSButtonStyle(kind: .secondary)).fixedSize()
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

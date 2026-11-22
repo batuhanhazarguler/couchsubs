@@ -23,12 +23,46 @@ enum SettingsSection: Hashable, CaseIterable {
         }
     }
 
-    var hint: LocalizedStringKey? {
+    /// Her bölümün iki kelimelik alt yazısı (hepsinde var; tutarlı düzen).
+    var hint: LocalizedStringKey {
         switch self {
         case .basics: "Translation, Sound"
         case .appearance: "Size, Colors"
         case .advanced: "Engine, Experimental"
-        default: nil
+        case .area: "Frame, Extra Areas"
+        case .packs: "Ready Translations"
+        case .dubbing: "Voices, Characters"
+        case .outputs: "TV, OBS"
+        case .shortcuts: "Translation Keys"
+        case .console: "PS5, Xbox"
+        }
+    }
+
+    /// Gezinme simgesi (SF Symbol).
+    var icon: String {
+        switch self {
+        case .basics: "slider.horizontal.3"
+        case .appearance: "textformat.size"
+        case .advanced: "gearshape.2"
+        case .area: "viewfinder"
+        case .packs: "shippingbox"
+        case .dubbing: "waveform"
+        case .outputs: "tv"
+        case .shortcuts: "keyboard"
+        case .console: "gamecontroller"
+        }
+    }
+
+    /// Simge karesinin tonu (tasarım paleti; amber ağırlıklı, hepsi aynı değil).
+    var tint: Color {
+        switch self {
+        case .basics, .area: .dsAmber
+        case .appearance, .console: .dsPeach
+        case .advanced: .dsLive
+        case .packs: .dsOlive
+        case .dubbing: .dsPlum
+        case .outputs: .dsTeal
+        case .shortcuts: .dsSky
         }
     }
 
@@ -68,46 +102,121 @@ struct SettingsPage: View {
     }
 }
 
+/// Ayarlar'ın sol menüsü: her bölümde renkli simge karesi + ad + iki kelimelik alt yazı; seçili bölümün amber yumuşak
+/// hapı bölümler arasında kayar. Kartın arkasında yavaş dolaşan sıcak renk lekeleri (SettingsNavGlow).
 private struct SettingsNav: View {
     @Binding var section: SettingsSection
     @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var namespace
 
     var body: some View {
-        DSCard(padding: DS.space("m"), spacing: DS.space("xxs")) {
-            ForEach(SettingsSection.main, id: \.self) { item in
-                NavRow(item: item, selected: item == section, height: 64) { section = item }
+        // Kart içeriği kadar uzar (pencere boyunca değil); sağdaki içerik kayarken üstte sabit kalır.
+        DSCard(padding: DS.space("s"), spacing: 0, scrolls: false, backdrop: AnyView(SettingsNavGlow())) {
+            VStack(alignment: .leading, spacing: DS.space("xxs")) {
+                ForEach(SettingsSection.main, id: \.self) { item in row(item) }
+                DSDivider().padding(.vertical, DS.space("xs")).padding(.horizontal, DS.space("s"))
+                ForEach(SettingsSection.pages, id: \.self) { item in row(item) }
             }
-            DSDivider().padding(.vertical, DS.space("xs"))
-            ForEach(SettingsSection.pages, id: \.self) { item in
-                NavRow(item: item, selected: item == section, height: 44) { section = item }
-            }
-            Spacer(minLength: DS.space("s"))
         }
-        .frame(maxHeight: .infinity)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func row(_ item: SettingsSection) -> some View {
+        NavRow(item: item, selected: item == section, namespace: namespace) {
+            withAnimation(DS.animation(.medium, reduced: reduceMotion || !model.settings.transitionAnimations)) { section = item }
+        }
     }
 
     private struct NavRow: View {
         let item: SettingsSection
         let selected: Bool
-        let height: CGFloat
+        let namespace: Namespace.ID
         let action: () -> Void
         @State private var hovering = false
 
         var body: some View {
+            let shape = RoundedRectangle(cornerRadius: DS.radius("tile"), style: .continuous)
             Button(action: action) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title).font(item.hint == nil ? .dsRow : .dsBodyStrong).foregroundStyle(Color.dsText)
-                    if let hint = item.hint { Text(hint).font(.dsCaption).foregroundStyle(Color.dsFaint) }
+                HStack(spacing: DS.space("s")) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: DS.radius("chip"), style: .continuous)
+                            .fill(selected ? item.tint : item.tint.opacity(0.16))
+                        Image(systemName: item.icon)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(selected ? Color.white : item.tint)
+                    }
+                    .frame(width: 30, height: 30)
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: DS.space("line")) {
+                        Text(item.title).font(.dsBodyStrong).foregroundStyle(Color.dsText).lineLimit(1).minimumScaleFactor(0.8)
+                        Text(item.hint).font(.dsCaption).foregroundStyle(selected ? Color.dsMuted : Color.dsFaint).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .padding(.horizontal, DS.space("m"))
-                .frame(maxWidth: .infinity, minHeight: height, alignment: .leading)
-                .background(selected || hovering ? Color.dsField : Color.clear,
-                            in: RoundedRectangle(cornerRadius: item.hint == nil ? 14 : DS.radius("tile"), style: .continuous))
-                .contentShape(Rectangle())
+                .padding(.horizontal, DS.space("s"))
+                .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                .background {
+                    if selected {
+                        shape.fill(Color.dsAmberSoft)
+                            .overlay(shape.strokeBorder(Color.dsAmber.opacity(0.45)))
+                            .matchedGeometryEffect(id: "navSelection", in: namespace)
+                    } else if hovering {
+                        shape.fill(Color.dsField.opacity(0.8))
+                    }
+                }
+                .contentShape(shape)
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
             .accessibilityAddTraits(selected ? [.isSelected] : [])
+        }
+    }
+}
+
+/// Menü kartının arkasındaki yavaş renk geçişi: üç yumuşak (radyal) amber / şeftali / zeytin leke 24 sn'lik döngüde
+/// dolaşır. En çok 15 kare/sn; pencere önde değilken, çeviri sürerken, "Hareketi azalt" ya da Ayarlar › Geçiş
+/// Animasyonları kapalıyken durur (durağan kare). Bulanıklık süzgeci yok, radyal dolgu: işlemciye yük bindirmez.
+struct SettingsNavGlow: View {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.controlActiveState) private var activeState
+
+    static let period: Double = 24
+    static let fps: Double = 15
+    /// Yalnız işlemci ölçümü testi için: oynatmayı zorla aç/kapat.
+    @MainActor static var forced: Bool?
+
+    var animates: Bool {
+        Self.forced ?? (!reduceMotion && model.settings.transitionAnimations && !model.isRunning && activeState == .key)
+    }
+
+    var body: some View {
+        let running = animates
+        TimelineView(.animation(minimumInterval: 1 / Self.fps, paused: !running)) { context in
+            let time = running ? context.date.timeIntervalSinceReferenceDate : 0
+            Canvas(rendersAsynchronously: true) { canvas, size in
+                Self.draw(&canvas, size: size, time: time)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    static func draw(_ canvas: inout GraphicsContext, size: CGSize, time: Double) {
+        let phase = time.truncatingRemainder(dividingBy: period) / period * 2 * .pi
+        let blobs: [(Color, CGFloat, CGFloat, CGFloat, Double)] = [
+            (.dsAmber, 0.25, 0.18, 0.9, 0),
+            (.dsPeach, 0.8, 0.55, 0.8, 2.1),
+            (.dsOlive, 0.3, 0.88, 0.75, 4.2),
+        ]
+        for (color, x, y, scale, offset) in blobs {
+            let radius = max(size.width, 220) * scale
+            let center = CGPoint(x: size.width * (x + 0.18 * CGFloat(sin(phase + offset))),
+                                 y: size.height * (y + 0.08 * CGFloat(cos(phase * 1 + offset * 0.7))))
+            let rect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            canvas.fill(Path(ellipseIn: rect), with: .radialGradient(Gradient(colors: [color.opacity(0.16), color.opacity(0)]),
+                                                                     center: center, startRadius: 0, endRadius: radius))
         }
     }
 }
@@ -174,41 +283,36 @@ private struct BasicsSettings: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        HStack(alignment: .top, spacing: DS.space("l")) {
-            VStack(spacing: DS.space("l")) {
-                DSCard {
+        TwoColumns {
+                DSCard(scrolls: false) {
                     DSCardHeader("Translation")
                     let pace = Binding<TranslationPace?>(get: { TranslationPace.of(model.settings) }, set: { value in
                         guard let value else { return }
                         model.settings.misreadWaitMs = value.waits.misread
                         model.settings.partialWaitMs = value.waits.partial
                     })
-                    DSTabs(selection: pace, items: [(TranslationPace?.some(.fast), "Fast"), (TranslationPace?.some(.balanced), "Balanced"), (TranslationPace?.some(.accurate), "Accurate")])
-                    if let current = pace.wrappedValue {
-                        Text(current.explanation).dsMuted()
-                    } else {
-                        Text("These waits only delay lines that were read badly; most lines are shown without waiting. A shorter wait shows those lines sooner but lets more wrong translations through.").dsMuted()
+                    DSUnit(title: "Speed", hint: pace.wrappedValue?.explanation ?? "These waits only delay lines that were read badly; most lines are shown without waiting. A shorter wait shows those lines sooner but lets more wrong translations through.") {
+                        DSTabs(selection: pace, items: [(TranslationPace?.some(.fast), "Fast"), (TranslationPace?.some(.balanced), "Balanced"), (TranslationPace?.some(.accurate), "Accurate")])
                     }
-                    DSRow(title: "Translation Language", subtitle: "The game language is detected by itself.", divider: false) {
+                    // Bilgi (denetim değil): başlık üstte, değer altında, açıklama en altta.
+                    DSUnit(title: "Translation Language", hint: "The game language is detected by itself.") {
                         Text(verbatim: Locale.current.localizedString(forLanguageCode: model.settings.targetLanguage) ?? model.settings.targetLanguage)
-                            .font(.dsBodyStrong)
+                            .font(.dsBody)
                     }
                 }
-                DSCard(spacing: DS.space("xs")) {
+                DSCard(scrolls: false) {
                     DSCardHeader("Sound")
                     DSSwitchRow(title: "Startup Sound", subtitle: "Plays only on the first launch.", isOn: $model.settings.startupSound)
                     DSSwitchRow(title: "Transition Animations", subtitle: "When off, only a short fade is used.",
                                 isOn: $model.settings.transitionAnimations)
-                    HStack(spacing: DS.space("m")) {
-                        Text("Appearance").font(.dsBody.weight(.medium))
+                    // Başlık üstte, seçici altta tam genişlik (etiket solda/denetim sağda düzeni kullanılmaz).
+                    DSUnit(title: "Appearance") {
                         DSTabs(selection: $model.settings.appearance,
                                items: [(AppAppearance.light, "Light"), (.dark, "Dark"), (.system, "Follow System")])
                     }
-                    .padding(.top, DS.space("s"))
                 }
-            }
-            .frame(maxWidth: .infinity)
-            DSCard {
+        } right: {
+            DSCard(scrolls: false) {
                 DSCardHeader("Subtitle appearance")
                 SubtitlePreviewBox(lines: [SubtitleSample.lines[0]], height: 180).frame(maxWidth: .infinity)
                 Text("Text size, background, text and character name colors. The settings apply the same on the TV, phone and computer screen.")
@@ -223,7 +327,6 @@ private struct BasicsSettings: View {
                 }
                 .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }
@@ -304,7 +407,7 @@ struct SubtitlePreviewBox: View {
         let style = model.settings.style
         let display = SubtitlePalette.display(style.fontSize)
         DSScreenFrame {
-            VStack(spacing: 6) {
+            VStack(spacing: DS.space("unitHint")) {
                 Spacer(minLength: 0)
                 ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     (Text(verbatim: model.settings.showSpeakerNames ? line.who + ": " : "").foregroundColor(nameColor(line.who, index: index, style: style))
@@ -312,7 +415,7 @@ struct SubtitlePreviewBox: View {
                         .font(.system(size: CGFloat(display) * 0.5, weight: .semibold))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, DS.space("s"))
-                        .padding(.vertical, 6)
+                        .padding(.vertical, DS.space("unitHint"))
                         .background((SubtitlePalette.color(style.backgroundColor) ?? .black).opacity(Double(style.background) / 100),
                                     in: RoundedRectangle(cornerRadius: DS.radius("small")))
                         .shadow(color: style.background == 0 ? .black.opacity(0.85) : .clear, radius: 1.5, y: 1)
@@ -342,8 +445,8 @@ private struct SubtitleLookSettings: View {
 
     var body: some View {
         let style = model.settings.style
-        HStack(alignment: .top, spacing: DS.space("l")) {
-            DSCard {
+        TwoColumns {
+            DSCard(scrolls: false) {
                 DSCardHeader("Subtitles on the TV")
                 SubtitlePreviewBox(lines: SubtitleSample.lines)
                 if SubtitlePalette.lowContrast(style) {
@@ -355,17 +458,16 @@ private struct SubtitleLookSettings: View {
                 Text("The settings apply the same on the TV, phone and computer screen.").dsMuted()
                 Button("Send Test Subtitle") { model.sendTestSubtitle() }.buttonStyle(.dsSecondary)
             }
-            .frame(maxWidth: .infinity)
-            DSCard(spacing: 0) {
+        } right: {
+            // Her ayar bir birim (başlık 8 → denetim 6 → açıklama); birimler arası her yerde 24.
+            DSCard(scrolls: false) {
                 sizeSection
-                DSDivider()
-                backgroundSection.padding(.vertical, DS.space("l"))
-                DSDivider()
-                textSection.padding(.vertical, DS.space("l"))
-                DSDivider()
-                nameSection.padding(.top, DS.space("l"))
+                backgroundSection
+                darknessSection
+                textSection
+                nameSection
+                DSSwitchRow(title: "Show Speaker Name", isOn: $model.settings.showSpeakerNames)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .onAppear { size = Double(SubtitlePalette.display(style.fontSize)) }
     }
@@ -376,7 +478,7 @@ private struct SubtitleLookSettings: View {
     }
 
     private var sizeSection: some View {
-        VStack(alignment: .leading, spacing: DS.space("m")) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Text Size").font(.dsBodyStrong)
                 Spacer()
@@ -387,24 +489,20 @@ private struct SubtitleLookSettings: View {
             }
             .onChange(of: size) { value in update { $0.fontSize = SubtitlePalette.fontSize(Int(value.rounded())) } }
             .accessibilityLabel(Text("Text Size"))
-            HStack {
-                Text(verbatim: "16")
-                Spacer()
-                Text(verbatim: "50")
-            }
-            .font(.system(size: 11, design: .monospaced))
-            .foregroundStyle(Color.dsFaint)
-            .padding(.top, -DS.space("xs"))
+            .padding(.top, DS.unitTitleGap)
+            DSSliderRange(low: "16", high: "50")
+                .padding(.top, DS.unitHintGap)
         }
-        .padding(.bottom, DS.space("l"))
+    }
+
+    private func selectedHint(_ swatch: SubtitlePalette.Swatch?) -> LocalizedStringKey? {
+        swatch.map { LocalizedStringKey(String(format: String(localized: "Selected: %@."), String(localized: String.LocalizationValue($0.name)))) }
     }
 
     private var backgroundSection: some View {
         let style = model.settings.style
         let selected = style.background == 0 ? nil : style.backgroundColor
-        let current = SubtitlePalette.backgrounds.first { $0.hex == selected }
-        return VStack(alignment: .leading, spacing: DS.space("m")) {
-            Text("Background Color").font(.dsBodyStrong)
+        return DSUnit(title: "Background Color", hint: selectedHint(SubtitlePalette.backgrounds.first { $0.hex == selected })) {
             SwatchRow(swatches: SubtitlePalette.backgrounds, selected: selected) { swatch in
                 update { style in
                     if let hex = swatch.hex {
@@ -416,29 +514,30 @@ private struct SubtitleLookSettings: View {
                 }
                 model.sendTestSubtitle()
             }
-            if let current { Text(String(format: String(localized: "Selected: %@."), String(localized: String.LocalizationValue(current.name)))).dsMuted() }
-            HStack(spacing: DS.space("m")) {
-                Text("Darkness").font(.dsRow).frame(width: 72, alignment: .leading)
-                let level = Binding<Int?>(get: {
-                    guard style.background > 0 else { return nil }
-                    return SubtitlePalette.darkness.min { abs($0 - style.background) < abs($1 - style.background) }
-                }, set: { value in
-                    guard let value else { return }
-                    update { $0.background = value }
-                    model.sendTestSubtitle()
-                })
-                DSTabs(selection: level, items: [(Int?.some(45), "Light"), (Int?.some(75), "Medium"), (Int?.some(100), "Dark")])
-                    .disabled(style.background == 0)
-            }
+            .padding(.leading, -DS.space("xxs"))
+        }
+    }
+
+    private var darknessSection: some View {
+        let style = model.settings.style
+        let level = Binding<Int?>(get: {
+            guard style.background > 0 else { return nil }
+            return SubtitlePalette.darkness.min { abs($0 - style.background) < abs($1 - style.background) }
+        }, set: { value in
+            guard let value else { return }
+            update { $0.background = value }
+            model.sendTestSubtitle()
+        })
+        return DSUnit(title: "Darkness") {
+            DSTabs(selection: level, items: [(Int?.some(45), "Light"), (Int?.some(75), "Medium"), (Int?.some(100), "Dark")])
+                .disabled(style.background == 0)
         }
     }
 
     private var textSection: some View {
         let style = model.settings.style
         let selected = SubtitlePalette.textHex(style)
-        let current = SubtitlePalette.texts.first { $0.hex == selected }
-        return VStack(alignment: .leading, spacing: DS.space("m")) {
-            Text("Text Color").font(.dsBodyStrong)
+        return DSUnit(title: "Text Color", hint: selectedHint(SubtitlePalette.texts.first { $0.hex == selected })) {
             SwatchRow(swatches: SubtitlePalette.texts, selected: selected) { swatch in
                 update { style in
                     style.textHex = swatch.hex
@@ -446,7 +545,7 @@ private struct SubtitleLookSettings: View {
                 }
                 model.sendTestSubtitle()
             }
-            if let current { Text(String(format: String(localized: "Selected: %@."), String(localized: String.LocalizationValue(current.name)))).dsMuted() }
+            .padding(.leading, -DS.space("xxs"))
         }
     }
 
@@ -458,21 +557,23 @@ private struct SubtitleLookSettings: View {
             model.settings.speakerColors = value != .text
             model.sendTestSubtitle()
         })
-        return VStack(alignment: .leading, spacing: DS.space("m")) {
-            Text("Character Name").font(.dsBodyStrong)
-            DSTabs(selection: mode, items: [(NameColorMode.text, "Same as Text"), (.single, "Single Color"), (.speaker, "By Character")])
-            switch mode.wrappedValue {
-            case .text:
-                Text("The character name is shown in the same color as the text.").dsMuted()
-            case .single:
-                SwatchRow(swatches: SubtitlePalette.names, selected: style.nameHex ?? SubtitlePalette.names[0].hex) { swatch in
-                    update { $0.nameHex = swatch.hex }
-                    model.sendTestSubtitle()
+        return DSUnit(title: "Character Name",
+                      hint: mode.wrappedValue == .text ? "The character name is shown in the same color as the text." : nil) {
+            VStack(alignment: .leading, spacing: DS.space("s")) {
+                DSTabs(selection: mode, items: [(NameColorMode.text, "Same as Text"), (.single, "Single Color"), (.speaker, "By Character")])
+                switch mode.wrappedValue {
+                case .text:
+                    EmptyView()
+                case .single:
+                    SwatchRow(swatches: SubtitlePalette.names, selected: style.nameHex ?? SubtitlePalette.names[0].hex) { swatch in
+                        update { $0.nameHex = swatch.hex }
+                        model.sendTestSubtitle()
+                    }
+                    .padding(.leading, -DS.space("xxs"))
+                case .speaker:
+                    CharacterColors()
                 }
-            case .speaker:
-                CharacterColors()
             }
-            DSSwitchRow(title: "Show Speaker Name", isOn: $model.settings.showSpeakerNames, divider: false)
         }
     }
 }
@@ -495,7 +596,7 @@ private struct SwatchRow: View {
                 .accessibilityAddTraits(swatch.hex == selected ? [.isSelected] : [])
             }
         }
-        .padding(4)
+        .padding(DS.space("xxs"))
         .animation(DS.animation(.short, reduced: false), value: selected)
     }
 }
@@ -511,17 +612,18 @@ private struct CharacterColors: View {
             ForEach(names, id: \.self) { name in
                 let key = name.lowercased()
                 let current = style.characterColors[key] ?? model.speakerBook.known.first { $0.key == key }?.color
-                HStack(spacing: DS.space("m")) {
+                VStack(alignment: .leading, spacing: DS.space("xs")) {
                     Text(verbatim: name).font(.dsBodyStrong)
                         .foregroundStyle(SubtitlePalette.color(current) ?? Color.dsText)
-                        .frame(width: 88, alignment: .leading)
                         .lineLimit(1)
                     SwatchRow(swatches: SubtitlePalette.names, selected: current?.uppercased(), size: 24) { swatch in
                         model.settings.style.characterColors[key] = swatch.hex
                         model.settings.style.nameOnly = true
                         model.sendTestSubtitle()
                     }
+                    .padding(.leading, -DS.space("xxs"))
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, DS.space("s"))
                 .overlay(alignment: .bottom) { Rectangle().fill(Color.dsTileBorder).frame(height: 1) }
             }
@@ -559,7 +661,7 @@ private struct AdvancedSettings: View {
                 engineDetails.padding(.top, DS.space("s"))
             }
         } right: {
-            DSCard(spacing: DS.space("xs"), accent: .dsLive, scrolls: false) {
+            DSCard(accent: .dsLive, scrolls: false) {
                 DSCardHeader("Experimental", color: .dsLive)
                 Text("These settings may slow down or interrupt translation. If there's a problem, go back to the defaults.").dsMuted()
                 DSSwitchRow(title: "Translate On-Screen Text Automatically", subtitle: "Objectives, menus and other text on the screen.",
@@ -572,7 +674,7 @@ private struct AdvancedSettings: View {
                 DSSwitchRow(title: "Check Unchanged Subtitle Areas More Often",
                             subtitle: "When the subtitle area looks unchanged, read it again after 2 frames instead of 20. Uses more CPU.",
                             isOn: $model.settings.fastSubtitleDetection)
-                VStack(alignment: .leading, spacing: DS.space("l")) {
+                VStack(alignment: .leading, spacing: DS.unitGap) {
                     WaitSlider(title: "Wait for a Misread Line",
                                hint: "If the text is misread, a better reading is awaited for at most this long. Recommended: 0.8 s.",
                                ms: $model.settings.misreadWaitMs)
@@ -580,7 +682,6 @@ private struct AdvancedSettings: View {
                                hint: "If a line shows only in part, the whole line is awaited for at most this long. Recommended: 0.3 s.",
                                ms: $model.settings.partialWaitMs)
                 }
-                .padding(.vertical, DS.space("s"))
                 Button("Restore Defaults") { restoreDefaults() }
                     .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
             }
@@ -643,8 +744,8 @@ private struct AdvancedSettings: View {
         }
         if engine.aiProvider != nil { AIInstructionSection() }
         if engine == .gemini {
-            SwitchRow(title: "I use a paid Gemini API key", isOn: $model.settings.geminiPaidTier)
-            HintText(text: "Paid API keys may incur charges. Google still enforces quotas.")
+            SwitchRow(title: "I use a paid Gemini API key", isOn: $model.settings.geminiPaidTier,
+                      hint: "Paid API keys may incur charges. Google still enforces quotas.")
             HintText(text: FreeGemini.privacy)
             if !model.settings.geminiPaidTier { HintText(text: FreeGemini.limit) }
         }
@@ -684,8 +785,9 @@ private struct AreaSettings: View {
             // Otomatik telefon okumasına ve "Ekranı çevir"e uygulanır; varsayılan Yanda Panel (dört platformda aynı).
             DSCard(scrolls: false) {
                 DSCardHeader("GTA 6 phone messages")
-                DSTabs(selection: $model.settings.phoneMessagesPanel, items: [(true, "Side Panel"), (false, "On the Bubbles")])
-                Text("Side Panel: the chat is shown next to the phone, the other person on the left and you on the right. On the Bubbles: each message is translated on top of its own bubble.").dsMuted()
+                DSUnit(hint: "Side Panel: the chat is shown next to the phone, the other person on the left and you on the right. On the Bubbles: each message is translated on top of its own bubble.") {
+                    DSTabs(selection: $model.settings.phoneMessagesPanel, items: [(true, "Side Panel"), (false, "On the Bubbles")])
+                }
             }
             // Kısayol başlıkta değil, açıklamada (diğer kart başlıkları gibi yalnız ad).
             DSCard(scrolls: false) {
@@ -732,8 +834,11 @@ private struct OutputSettings: View {
         TwoColumns {
             DSCard(scrolls: false) {
                 DSCardHeader("Show subtitles on")
-                DSTabs(selection: $model.settings.output, items: [(SubtitleOutput.tv, "TV"), (.computer, "Computer Screen"),
-                                                                  (.both, "Both"), (.obs, "OBS Only (Streaming)")])
+                // Kısa etiketler dört sekmeye sığar; anlamı altındaki cümle verir.
+                DSUnit(hint: outputHint) {
+                    DSTabs(selection: $model.settings.output, items: [(SubtitleOutput.tv, "TV"), (.computer, "This Mac"),
+                                                                      (.both, "Both"), (.obs, "OBS")])
+                }
                 if model.settings.output.showsOnTV { tvSection }
                 if model.settings.output == .obs {
                     HintText(text: "Subtitles go only to the OBS overlay. The TV is not searched for or opened, and no subtitle window opens on this computer. In OBS add a Browser source with this address (width 1920, height 1080).")
@@ -796,6 +901,15 @@ private struct OutputSettings: View {
         }
         if model.settings.style.placement == .fixed {
             Text("In fixed position you can also move subtitles with the ▲ and ▼ buttons on the TV remote.").dsMuted()
+        }
+    }
+
+    private var outputHint: LocalizedStringKey {
+        switch model.settings.output {
+        case .tv: "Subtitles are shown on the TV."
+        case .computer: "Subtitles are shown in a window on this Mac's screen."
+        case .both: "Subtitles are shown on the TV and on this Mac's screen."
+        case .obs: "Only for streaming: subtitles go to the OBS overlay."
         }
     }
 

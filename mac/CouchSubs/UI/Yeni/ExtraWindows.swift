@@ -278,11 +278,11 @@ struct PopupAdView: View {
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
             .accessibilityLabel(Text("Close"))
-            .padding(12)
+            .padding(DS.space("s"))
         }
         .overlay(alignment: .bottomLeading) {
             Text("AD").font(.dsAdTag).tracking(0.9).foregroundStyle(.white.opacity(0.8))
-                .padding(.horizontal, 8).frame(height: 18).background(Color.black.opacity(0.35), in: Capsule()).padding(12)
+                .padding(.horizontal, DS.space("xs")).frame(height: 18).background(Color.black.opacity(0.35), in: Capsule(style: .circular)).padding(DS.space("s"))
         }
         .clipShape(RoundedRectangle(cornerRadius: DS.radius("card"), style: .continuous))
         .accessibilityLabel(Text("Advertisement"))

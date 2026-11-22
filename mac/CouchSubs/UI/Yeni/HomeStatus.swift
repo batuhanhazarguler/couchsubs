@@ -305,9 +305,8 @@ private extension View {
             .environment(\.csInsideCard, true)
             .padding(DS.space("m"))
             .frame(maxWidth: .infinity, alignment: .leading)
+            .dsAccentBorder(.dsAmber, cornerRadius: DS.radius("tile"))
             .background(Color.dsSurface, in: shape)
-            .overlay(shape.strokeBorder(Color.dsBorder))
-            .dsAccentStripe(.dsAmber, cornerRadius: DS.radius("tile"))
             .clipShape(shape)
     }
 }

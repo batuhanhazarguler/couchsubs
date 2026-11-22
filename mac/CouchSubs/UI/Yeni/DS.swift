@@ -82,6 +82,10 @@ enum DS {
     static func space(_ name: String) -> CGFloat { CGFloat(tokens.space[name] ?? 0) }
     static func radius(_ name: String) -> CGFloat { CGFloat(tokens.radius[name] ?? 0) }
     static func size(_ name: String) -> CGFloat { CGFloat(tokens.size[name] ?? 0) }
+    /// Dikey ritim (tasarim.json › space): ayar biriminde başlık → denetim 8, denetim → açıklama 6; birimler arası 24.
+    static var unitTitleGap: CGFloat { space("unitTitle") }
+    static var unitHintGap: CGFloat { space("unitHint") }
+    static var unitGap: CGFloat { space("unitGap") }
     static var mutedTracking: CGFloat { CGFloat(tokens.mutedTracking) }
 
     // MARK: Hareket
@@ -142,6 +146,11 @@ extension Color {
     static let dsLiveDot = DS.color("liveDot")
     static let dsScreenFrame = DS.color("screenFrame")
     static let dsScrim = DS.color("scrim")
+    static let dsPeach = DS.color("peach")
+    static let dsOlive = DS.color("olive")
+    static let dsTeal = DS.color("teal")
+    static let dsPlum = DS.color("plum")
+    static let dsSky = DS.color("sky")
 }
 
 extension Font {

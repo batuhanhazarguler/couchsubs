@@ -80,8 +80,8 @@ struct DSAdBand: View {
                 .font(.dsAdTag)
                 .tracking(DS.tracking("adTag"))
                 .foregroundStyle(Color.dsFaint)
-                .padding(.top, 6)
-                .padding(.trailing, 10)
+                .padding(.top, DS.space("unitHint"))
+                .padding(.trailing, DS.space("xs"))
                 .allowsHitTesting(false)
         }
         .clipShape(shape)
@@ -110,7 +110,7 @@ struct DSAdBand: View {
             .clipShape(RoundedRectangle(cornerRadius: DS.radius("small"), style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: DS.radius("small"), style: .continuous).strokeBorder(Color.dsBorder))
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.space("line")) {
                 Text(verbatim: ad.title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.dsText).lineLimit(1)
                 Text(verbatim: ad.text).font(.dsCaption).foregroundStyle(Color.dsMuted).tracking(DS.mutedTracking).lineLimit(1)
             }
@@ -121,7 +121,7 @@ struct DSAdBand: View {
                 StoreButton(name: "App Store", symbol: "apple.logo", url: ad.appStore)
                 StoreButton(name: "Google Play", symbol: "play.fill", url: ad.googlePlay)
             }
-            .padding(.top, 10)
+            .padding(.top, DS.space("xs"))
         }
         .padding(.leading, DS.space("s"))
         .padding(.trailing, DS.space("m"))
@@ -140,7 +140,7 @@ private struct StoreButton: View {
         Button {
             if let url { openURL(url) }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: DS.space("unitHint")) {
                 Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
                 Text(verbatim: name).font(.system(size: 12, weight: .semibold))
                 if url == nil {
@@ -151,9 +151,9 @@ private struct StoreButton: View {
             .foregroundStyle(url == nil ? Color.dsFaint : Color.dsText)
             .padding(.horizontal, DS.space("s"))
             .frame(height: 28)
-            .background(hovering && url != nil ? Color.dsField : Color.dsSurface, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.dsBorder))
-            .contentShape(Capsule())
+            .background(hovering && url != nil ? Color.dsField : Color.dsSurface, in: Capsule(style: .circular))
+            .overlay(Capsule(style: .circular).strokeBorder(Color.dsBorder))
+            .contentShape(Capsule(style: .circular))
         }
         .buttonStyle(.plain)
         .disabled(url == nil)

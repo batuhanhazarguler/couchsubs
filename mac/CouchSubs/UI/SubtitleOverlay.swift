@@ -390,7 +390,7 @@ struct SubtitleOverlayView: View {
     }
 
     private func heightHandle(_ edge: VerticalEdge) -> some View {
-        Capsule()
+        Capsule(style: .circular)
             .fill(Color.csAccent)
             .frame(width: 48, height: 6)
             .frame(width: 120, height: 14)
@@ -404,7 +404,7 @@ struct SubtitleOverlayView: View {
     }
 
     private func handle(_ edge: HorizontalEdge) -> some View {
-        Capsule()
+        Capsule(style: .circular)
             .fill(Color.csAccent)
             .frame(width: 6, height: 48)
             .padding(.horizontal, 6)

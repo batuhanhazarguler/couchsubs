@@ -90,7 +90,7 @@ private struct StreamControlBar: View {
                         .buttonStyle(BarButton(fill: .white.opacity(0.12)))
                 }
                 .padding(6)
-                .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.7), in: Capsule())
+                .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.7), in: Capsule(style: .circular))
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 16)
                 .transition(.opacity)
@@ -115,7 +115,7 @@ private struct StreamControlBar: View {
                 .foregroundStyle(text)
                 .padding(.horizontal, height < 36 ? 12 : 16)
                 .frame(height: height)
-                .background(fill, in: Capsule())
+                .background(fill, in: Capsule(style: .circular))
                 .opacity(configuration.isPressed ? 0.8 : 1)
         }
     }

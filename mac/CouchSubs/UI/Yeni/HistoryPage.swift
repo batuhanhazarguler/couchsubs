@@ -38,7 +38,7 @@ struct HistoryPage: View {
                         .dsMuted(.dsBody)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(48)
+                        .padding(DS.space("xxl"))
                 } else {
                     ScrollView(.vertical) {
                         LazyVStack(spacing: 0) {
@@ -198,10 +198,10 @@ private struct SmallSecondary: ButtonStyle {
                 .lineLimit(1)
                 .padding(.horizontal, DS.space("m"))
                 .frame(height: DS.size("tab"))
-                .background(hovering || configuration.isPressed ? Color.dsField : Color.dsSurface, in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.dsBorder))
+                .background(hovering || configuration.isPressed ? Color.dsField : Color.dsSurface, in: Capsule(style: .circular))
+                .overlay(Capsule(style: .circular).strokeBorder(Color.dsBorder))
                 .opacity(isEnabled ? 1 : 0.5)
-                .contentShape(Capsule())
+                .contentShape(Capsule(style: .circular))
                 .onHover { hovering = $0 }
         }
     }

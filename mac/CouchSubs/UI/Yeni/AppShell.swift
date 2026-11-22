@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import AppKit
 import CouchSubsCore
 import SwiftUI
 
@@ -42,6 +43,7 @@ struct AppShell: View {
             .clipped()
             DSAdBand()
                 .padding(.horizontal, DS.space("l"))
+                .padding(.top, DS.space("xs"))
                 .padding(.bottom, DS.space("m"))
         }
         .frame(maxWidth: DS.size("contentMax"))
@@ -85,14 +87,89 @@ private struct ShellHeader: View {
             DSBrand().frame(maxWidth: .infinity, alignment: .leading)
             DSTabs(selection: $tab, items: [(.home, "Home"), (.history, "History"), (.settings, "Settings")], fill: false)
                 .fixedSize()
-            HStack {
+            HStack(spacing: DS.space("xs")) {
                 let status = ShellStatus(model: model)
+                LogCopyButton()
                 DSStatusPill(text: status.text, dot: status.dot)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(.horizontal, DS.space("l"))
         .frame(height: DS.size("header"))
+    }
+}
+
+/// Durum hapının yanındaki "Günlüğü Kopyala": hapla aynı yükseklikte ikincil hap; günlükler maskelenip zip'lenir, zip
+/// dosyası panoya konur ve altında kısa onay + "Finder'da Göster" açılır. Dar pencerede yalnız simge (ipucu aynı).
+private struct LogCopyButton: View {
+    @State private var hovering = false
+    @State private var working = false
+    @State private var result: URL?
+    @State private var failed = false
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            pill(showsTitle: true)
+            pill(showsTitle: false)
+        }
+        .popover(isPresented: Binding(get: { result != nil || failed }, set: { if !$0 { result = nil; failed = false } }),
+                 arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: DS.space("s")) {
+                if let result {
+                    Label("Log copied; you can paste it into GitHub or an email.", systemImage: "checkmark.circle.fill")
+                        .font(.dsBody)
+                        .foregroundStyle(Color.dsText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([result]) }
+                        .buttonStyle(.link)
+                        .font(.dsSmall)
+                } else {
+                    Text("The log couldn't be collected. Try again.").font(.dsBody).foregroundStyle(Color.dsLive)
+                }
+            }
+            .padding(DS.space("m"))
+            .frame(width: 300, alignment: .leading)
+        }
+    }
+
+    private func pill(showsTitle: Bool) -> some View {
+        Button(action: copy) {
+            HStack(spacing: DS.space("xs")) {
+                Image(systemName: working ? "hourglass" : "doc.on.clipboard")
+                    .font(.system(size: 12, weight: .semibold))
+                    .accessibilityHidden(true)
+                if showsTitle { Text(working ? "Copying…" : "Copy Log").font(.dsSmall).lineLimit(1) }
+            }
+            .foregroundStyle(Color.dsMuted)
+            .padding(.horizontal, showsTitle ? DS.space("m") : 0)
+            .frame(width: showsTitle ? nil : DS.size("tab"), height: DS.size("tab"))
+            .background(hovering ? Color.dsField : Color.dsSurface, in: Capsule(style: .circular))
+            .overlay(Capsule(style: .circular).strokeBorder(Color.dsBorder))
+            .contentShape(Capsule(style: .circular))
+        }
+        .buttonStyle(.plain)
+        .disabled(working)
+        .onHover { hovering = $0 }
+        .help(Text("Copies CouchSubs's logs as a zip file (personal data masked) so you can paste them into a bug report."))
+        .accessibilityLabel(Text("Copy Log"))
+        .fixedSize()
+    }
+
+    private func copy() {
+        working = true
+        let header = "CouchSubs \(AppIdentity.version), macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
+        Task.detached(priority: .userInitiated) {
+            let file = try? LogArchive.make(header: header)
+            await MainActor.run {
+                working = false
+                if let file {
+                    LogArchive.copyToPasteboard(file)
+                    result = file
+                } else {
+                    failed = true
+                }
+            }
+        }
     }
 }
 

@@ -225,9 +225,8 @@ private struct TileBody<Content: View>: View {
     var body: some View {
         #if os(macOS)
         if newLook && insideCard && style == .plain {
-            // Kartın içindeki eski karo: çerçevesiz, zeminsiz; düz satırlar olarak durur.
+            // Kartın içindeki eski karo: çerçevesiz, zeminsiz; düz satırlar olarak durur (ek dikey boşluk yok: ritim kartın).
             content
-                .padding(.vertical, DS.space("xs"))
         } else if newLook {
             // Yeni arayüzde kendi başına duran eski karo: yeni kart gibi (24 köşe, 24 iç boşluk); seçili karo 2 pt amber.
             // İçindeki karolar düz çizilir.
@@ -268,17 +267,19 @@ struct Card<Content: View>: View {
     @Environment(\.csNewLook) private var newLook
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.space("m")) {
+        // Yeni arayüzde birimler arası her yerde 24 (DS.unitGap); başlık → ilk birim de 24.
+        VStack(alignment: .leading, spacing: newLook ? DS.unitGap : Theme.space("m")) {
             if let title {
                 if newLook {
-                    // Yeni arayüzde kart başlığı: sistem yazısı, cümle düzeni, 17 orta kalın (DSCardHeader ile aynı); altına 8 ek boşluk.
-                    Text(title).font(.system(size: 17, weight: .medium)).padding(.bottom, 8)
+                    // Yeni arayüzde kart başlığı: sistem yazısı, cümle düzeni, 17 orta kalın (DSCardHeader ile aynı).
+                    Text(title).font(.system(size: 17, weight: .medium))
                 } else {
                     Text(title).font(.csHeadline)
                 }
             }
             content
         }
+        .environment(\.dsCardSpacing, newLook ? DS.unitGap : Theme.space("m"))
         .frame(maxWidth: .infinity, alignment: .leading)
         .tile(style)
     }

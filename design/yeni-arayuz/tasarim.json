@@ -33,7 +33,12 @@
     "liveRing":     { "light": "#D9542F59", "dark": "#F07A5559" },
     "liveDot":      { "light": "#FF5A5A", "dark": "#FF5A5A" },
     "screenFrame":  { "light": "#5A5D66", "dark": "#3A3D45" },
-    "scrim":        { "light": "#17181B73", "dark": "#00000099" }
+    "scrim":        { "light": "#17181B73", "dark": "#00000099" },
+    "peach":        { "light": "#EE8F5E", "dark": "#F4A27A" },
+    "olive":        { "light": "#8E9A45", "dark": "#AEB866" },
+    "teal":         { "light": "#3A9E94", "dark": "#5CC2B7" },
+    "plum":         { "light": "#9C6CC4", "dark": "#B892DC" },
+    "sky":          { "light": "#4F8FCB", "dark": "#78AEE2" }
   },
   "font": {
     "h1":       { "size": 32, "weight": "semibold", "tracking": -0.64 },
@@ -55,7 +60,7 @@
     "adTag":    { "size": 9, "weight": "semibold", "tracking": 0.9, "design": "monospaced" }
   },
   "mutedTracking": -0.5,
-  "space": { "xxs": 4, "xs": 8, "s": 12, "m": 16, "l": 24, "xl": 32, "xxl": 40, "wizardSide": 120 },
+  "space": { "xxs": 4, "xs": 8, "s": 12, "m": 16, "l": 24, "xl": 32, "xxl": 40, "wizardSide": 120, "unitTitle": 8, "unitHint": 6, "unitGap": 24, "line": 2, "titleBody": 6, "related": 12, "section": 32 },
   "radius": { "chip": 8, "small": 10, "control": 12, "tile": 16, "card": 24, "hero": 32, "pill": 999 },
   "size": {
     "button": 48, "tab": 40, "tabMin": 112, "chip": 32, "input": 48, "row": 56, "option": 64,

@@ -139,7 +139,7 @@ private struct FreeAreaView: View {
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.75), in: Capsule())
+                        .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.75), in: Capsule(style: .circular))
                         .padding(.top, 16)
                     Spacer()
                     Text(verbatim: String(format: String(localized: "Press %@ while playing: the picture freezes; drag over any part of it to translate that part once. Translate the Screen (%@) always translates the whole screen."),
@@ -150,7 +150,7 @@ private struct FreeAreaView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
-                        .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.6), in: Capsule())
+                        .background(Color(red: 0.063, green: 0.063, blue: 0.078).opacity(0.6), in: Capsule(style: .circular))
                         .padding(.bottom, 24)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

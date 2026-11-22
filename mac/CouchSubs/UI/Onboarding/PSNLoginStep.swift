@@ -25,25 +25,52 @@ struct PSNLoginStep: View {
     @State private var showManual = false
     @State private var manualId = ""
     @State private var manualError: String?
+    /// "Diğer Giriş Yolları" açık mı (tarayıcıda giriş, hesap kimliğini elle girme).
+    @State private var showOthers = false
 
     var body: some View {
         StepLayout(title: "Sign in with the second account",
                    message: "Sign in to PlayStation Network with the second account you just created. Your password goes directly to Sony; CouchSubs only keeps the account ID.") {
-            VStack(alignment: .leading, spacing: Theme.space("m")) {
+            // Giriş yapıldıysa tek satır durum + küçük "Yeniden Giriş Yap"; yapılmadıysa tek ana düğme. Diğer iki yol
+            // "Diğer Giriş Yolları" altında (iPhone ve Windows aynı düzen). Birimler arası 24.
+            VStack(alignment: .leading, spacing: DS.unitGap) {
                 if model.accountId != nil {
-                    DoneLabel(text: String(localized: "Signed in"))
+                    HStack(spacing: DS.space("s")) {
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(Color.dsSuccess)
+                            .accessibilityHidden(true)
+                        Text("Signed In").font(.dsBodyStrong).foregroundStyle(Color.dsText)
+                        Spacer(minLength: DS.space("s"))
+                        Button("Sign In Again", action: openLogin).buttonStyle(.dsSecondary).disabled(working)
+                    }
+                } else {
+                    Button("Sign In with PlayStation", action: openLogin).buttonStyle(.dsPrimary).disabled(working)
                 }
-                Button(model.accountId == nil ? "Sign in" : "Sign in again") {
-                    redirected = false
-                    pageProblem = nil
-                    showLogin = true
-                }
-                .buttonStyle(CSButtonStyle(kind: model.accountId == nil ? .primary : .secondary))
-                .disabled(working)
                 if working { ProgressView().controlSize(.small) }
-                ErrorText(error: error).textSelection(.enabled)
-                browserEntry.padding(.top, Theme.space("s"))
-                manualEntry.padding(.top, Theme.space("s"))
+                if error != nil { ErrorText(error: error).textSelection(.enabled) }
+                VStack(alignment: .leading, spacing: DS.space("m")) {
+                    Button {
+                        withAnimation(DS.animation(.medium, reduced: false)) { showOthers.toggle() }
+                    } label: {
+                        HStack(spacing: DS.space("xs")) {
+                            Text("Other Sign-In Ways")
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .rotationEffect(.degrees(showOthers || showBrowser || showManual ? 90 : 0))
+                                .accessibilityHidden(true)
+                        }
+                        .font(.dsRow)
+                        .foregroundStyle(Color.dsAmberText)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if showOthers || showBrowser || showManual {
+                        VStack(alignment: .leading, spacing: DS.unitGap) {
+                            browserEntry
+                            manualEntry
+                        }
+                        .transition(.opacity)
+                    }
+                }
             }
         }
         // Kullanıcı tarayıcıdan dönünce panoda yönlendirme adresi varsa kendiliğinden alınır.
@@ -61,25 +88,30 @@ struct PSNLoginStep: View {
         }
     }
 
+    private func openLogin() {
+        redirected = false
+        pageProblem = nil
+        showLogin = true
+    }
+
     @ViewBuilder private var browserEntry: some View {
         if showBrowser {
-            VStack(alignment: .leading, spacing: Theme.space("s")) {
+            VStack(alignment: .leading, spacing: DS.space("s")) {
                 if browserAutomatic {
                     HintText(text: "Sony's sign-in page could not reach its server inside the app, so sign-in moved to your browser.")
                 }
                 HintText(text: "Sign in with your second account in the browser that opened. When you finish, the browser stays on a remoteplay.dl.playstation.net page that only says redirect. Click the address bar, copy the whole address and come back here. CouchSubs picks up the copied address by itself; if it does not, paste it below and press Save.")
-                HStack(spacing: Theme.space("m")) {
+                HStack(spacing: DS.space("s")) {
                     TextField("", text: $browserURL)
                         .textFieldStyle(CSTextFieldStyle())
-                        .frame(maxWidth: 340)
                         .onSubmit(submitBrowser)
-                    Button("Save", action: submitBrowser).buttonStyle(.primary).disabled(working)
+                    Button("Save", action: submitBrowser).buttonStyle(.dsPrimary).disabled(working)
                 }
-                Button("Open the browser again") { model.openInBrowser(PSNAccount.authorizeURL) }.buttonStyle(.secondary)
+                Button("Open the Browser Again") { model.openInBrowser(PSNAccount.authorizeURL) }.buttonStyle(.dsSecondary)
                 ErrorText(error: browserError)
             }
         } else {
-            Button("Sign in in the browser") { openBrowserLogin(automatic: false) }.buttonStyle(.secondary)
+            Button("Sign In in the Browser") { openBrowserLogin(automatic: false) }.buttonStyle(.dsSecondary)
         }
     }
 
@@ -128,19 +160,19 @@ struct PSNLoginStep: View {
     /// Sony girişi açılmıyorsa (ör. servis sağlayıcı engelliyor) hesap kimliği elle yazılır.
     @ViewBuilder private var manualEntry: some View {
         if showManual {
-            VStack(alignment: .leading, spacing: Theme.space("s")) {
+            VStack(alignment: .leading, spacing: DS.space("s")) {
                 HintText(text: "If Sony's sign-in page does not open (some internet providers block it), enter the second account's PSN account ID in base64 (12 characters, e.g. AbCdEfGhIjk=).")
-                HStack(spacing: Theme.space("m")) {
+                HStack(spacing: DS.space("s")) {
                     TextField("", text: $manualId)
                         .textFieldStyle(CSTextFieldStyle())
-                        .frame(maxWidth: 240)
+                        .frame(maxWidth: 320)
                         .onSubmit(saveManual)
-                    Button("Save", action: saveManual).buttonStyle(.primary)
+                    Button("Save", action: saveManual).buttonStyle(.dsPrimary)
                 }
                 ErrorText(error: manualError)
             }
         } else {
-            Button("Enter account ID manually") { showManual = true }.buttonStyle(.secondary)
+            Button("Enter Account ID Manually") { showManual = true }.buttonStyle(.dsSecondary)
         }
     }
 

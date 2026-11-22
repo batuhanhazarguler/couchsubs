@@ -17,7 +17,8 @@ struct AppearanceCard: View {
             // "ekrandaki konum ayarı işlemiyor").
             if model.settings.output.showsOnTV || model.settings.output == .obs {
                 DSSelectRow(title: "Placement", selection: $model.settings.style.placement,
-                            options: [(SubtitlePlacement.cover, String(localized: "Over the English subtitle")), (SubtitlePlacement.above, String(localized: "Above the English subtitle")), (SubtitlePlacement.below, String(localized: "Below the English subtitle")), (SubtitlePlacement.fixed, String(localized: "Fixed position"))])
+                            options: [(SubtitlePlacement.cover, String(localized: "Over the English subtitle")), (SubtitlePlacement.above, String(localized: "Above the English subtitle")), (SubtitlePlacement.below, String(localized: "Below the English subtitle")), (SubtitlePlacement.fixed, String(localized: "Fixed position"))],
+                            hint: model.settings.style.placement == .fixed ? nil : "The translation follows where the game shows its own subtitle.")
                 if model.settings.style.placement == .fixed {
                     // Sürüklerken TV'de örnek altyazı görünür; böylece yeri doğrudan ekranda ayarlanır.
                     DSSliderRow(title: "Position on Screen", valueText: percentText(Double(model.settings.style.bottomPercent)),
@@ -27,16 +28,14 @@ struct AppearanceCard: View {
                                 hint: "The left end is the bottom of the screen. You can also move subtitles with the ▲ and ▼ buttons on the TV remote.") { editing in
                         if editing { model.sendTestSubtitle() }
                     }
-                } else {
-                    HintText(text: "The translation follows where the game shows its own subtitle.")
                 }
             }
             DSSelectRow(title: "Background area", selection: $model.settings.style.backgroundShape,
-                        options: [(SubtitleBackgroundShape.fit, String(localized: "Fit the text")), (SubtitleBackgroundShape.band, String(localized: "Full-width band"))])
-            HintText(text: "Choose Dark under Subtitle Appearance to fully hide the English subtitle in the game. A full-width band also covers the sides.")
+                        options: [(SubtitleBackgroundShape.fit, String(localized: "Fit the text")), (SubtitleBackgroundShape.band, String(localized: "Full-width band"))],
+                        hint: "Choose Dark under Subtitle Appearance to fully hide the English subtitle in the game. A full-width band also covers the sides.")
             SwitchRow(title: "Bold text", isOn: $model.settings.style.bold)
-            SwitchRow(title: "Keep previous lines above in fast dialogue", isOn: $model.settings.style.stackPrevious)
-            HintText(text: "When off, each new line replaces the previous one. Needs TV app 0.9.16 or later.")
+            SwitchRow(title: "Keep previous lines above in fast dialogue", isOn: $model.settings.style.stackPrevious,
+                      hint: "When off, each new line replaces the previous one. Needs TV app 0.9.16 or later.")
             if model.settings.output.showsOnTV, model.tv?.brand == .androidTV {
                 AndroidDisplayModePicker(mode: $model.settings.style.displayMode)
             }
@@ -345,7 +344,7 @@ struct ExtraAreaEditor: View {
         if let area = settings.extraAreas.first(where: { $0.id == id }) {
             let shape = RoundedRectangle(cornerRadius: DS.radius("tile"), style: .continuous)
             let preset = ExtraAreaPreset.matching(area.region)
-            VStack(alignment: .leading, spacing: DS.space("m")) {
+            VStack(alignment: .leading, spacing: DS.unitGap) {
                 HStack(spacing: DS.space("s")) {
                     ExtraAreaNameField(name: Binding(get: { area.name }, set: { name in settings.updateExtraArea(id: id) { $0.name = name } }))
                     if let keys = shortcutKeys { DSKeys(keys: keys) } else { DSBadge(text: "No Shortcut") }
@@ -357,7 +356,7 @@ struct ExtraAreaEditor: View {
                 DSSwitchRow(title: "Keep Reading This Area", subtitle: "Read about once a second while translating.",
                             isOn: Binding(get: { area.enabled }, set: { on in settings.updateExtraArea(id: id) { $0.enabled = on } }),
                             divider: false)
-                VStack(alignment: .leading, spacing: DS.space("xs")) {
+                DSUnit(title: "Place", hint: placeHint(preset)) {
                     DSTabs(selection: Binding(get: { preset }, set: { next in
                         guard let next else { return }
                         settings.updateExtraArea(id: id) { area in
@@ -367,7 +366,6 @@ struct ExtraAreaEditor: View {
                             area.region = next.region
                         }
                     }), items: Self.presetTabs)
-                    Text(placeHint(preset)).dsMuted()
                 }
                 ExtraAreaPreview(region: area.region, preview: preview) { region in
                     settings.updateExtraArea(id: id) { $0.region = region }
@@ -410,25 +408,18 @@ private struct ExtraAreaNameField: View {
     @State private var hovering = false
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: DS.radius("control"), style: .continuous)
-        HStack(spacing: DS.space("xs")) {
+        // Uygulamadaki bütün giriş kutuları gibi tam yuvarlak (DSFieldChrome); kalem simgesi kutunun içinde sağda.
+        DSFieldChrome {
             TextField("Area Name", text: $name)
                 .textFieldStyle(.plain)
                 .font(.dsBodyStrong)
-                .foregroundStyle(Color.dsText)
-                .focused($focused)
+        } trailing: {
             Image(systemName: "pencil")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Color.dsFaint)
-                .opacity(hovering || focused ? 1 : 0)
+                .padding(.trailing, DS.space("xs"))
                 .accessibilityHidden(true)
         }
-        .padding(.horizontal, DS.space("s"))
-        .frame(height: DS.size("tab"))
-        .background(hovering || focused ? Color.dsField : Color.clear, in: shape)
-        .overlay(shape.strokeBorder(focused ? Color.dsAmber : hovering ? Color.dsBorder : Color.clear, lineWidth: focused ? 2 : 1))
-        .padding(.leading, -DS.space("s"))
-        .onHover { hovering = $0 }
     }
 }
 
@@ -438,10 +429,8 @@ struct ResultTargetPicker: View {
     var hint: LocalizedStringKey?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.space("xs")) {
-            Text("Show the Result").font(.dsBodyStrong).foregroundStyle(Color.dsText)
+        DSUnit(title: "Show the Result", hint: hint) {
             DSTabs(selection: $target, items: [(ResultTarget.tv, "On the TV"), (.pc, "On This Mac"), (.both, "On Both")])
-            if let hint { Text(hint).dsMuted() }
         }
     }
 }
@@ -487,21 +476,7 @@ struct OBSCard: View {
     var body: some View {
         Card {
             HintText(text: "Streaming with a capture card? In OBS add a Browser source with this address (width 1920, height 1080). The Turkish subtitles appear over the game on your screen and on the stream.")
-            HStack(spacing: Theme.space("m")) {
-                Text(verbatim: obsAddress)
-                    .font(.csBody.monospaced())
-                    .textSelection(.enabled)
-                    .padding(.horizontal, Theme.space("l"))
-                    .frame(maxWidth: .infinity, minHeight: Theme.size("buttonHeight"), alignment: .leading)
-                    .background(Color.csSurface2, in: RoundedRectangle(cornerRadius: Theme.radius("control"), style: .continuous))
-                Button(obsCopied ? "Copied" : "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(obsAddress, forType: .string)
-                    obsCopied = true
-                }
-                .buttonStyle(.secondary)
-                .resetsAfterDelay($obsCopied)
-            }
+            AddressRow(address: obsAddress)
             HintText(text: "If OBS runs on another computer, use this Mac's network address instead of localhost. The overlay only shows subtitles while the translation is running.")
             if let networkAddress {
                 HintText(text: "Your streaming app does not accept localhost (TikTok LIVE Studio, for example)? Use this address with the computer's network address:")
@@ -524,8 +499,18 @@ struct OBSCard: View {
 struct AddressRow: View {
     let address: String
     @State private var copied = false
+    @Environment(\.csNewLook) private var newLook
 
     var body: some View {
+        // Yeni arayüzde ayrı Kopyala düğmesi yok: tam yuvarlak kutu, kopyala simgesi kutunun içinde (DSCopyField).
+        if newLook {
+            DSCopyField(text: address)
+        } else {
+            legacy
+        }
+    }
+
+    private var legacy: some View {
         HStack(spacing: Theme.space("m")) {
             Text(verbatim: address)
                 .font(.csBody.monospaced())
@@ -551,8 +536,7 @@ struct StreamWindowCard: View {
     var body: some View {
         Card(title: "Stream window") {
             HintText(text: "For streaming apps without a transparent browser source (TikTok LIVE Studio, Streamlabs and others): open the stream window, add it with Window capture (the window is called CouchSubs Stream) and remove its background with a Chroma key filter.")
-            VStack(alignment: .leading, spacing: DS.space("xs")) {
-                Text("Background").font(.dsBodyStrong).foregroundStyle(Color.dsText)
+            DSUnit(title: "Background") {
                 DSTabs(selection: $model.streamBackground,
                        items: [(StreamBackground.green, "Green"), (.black, "Black"), (.magenta, "Magenta")])
             }
@@ -854,6 +838,7 @@ struct GamePackImportSheet: View {
             VStack(alignment: .leading, spacing: Theme.space("xs")) {
                 Text("Game title")
                 TextField("Game title", text: $title)
+                    .textFieldStyle(CSTextFieldStyle())
                     .labelsHidden()
                     .disabled(installing)
             }
@@ -1044,8 +1029,8 @@ struct ScreenTextKindRows: View {
     @Binding var settings: UserSettings
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.space("s")) {
-            Text("Which on-screen text to translate").font(.csBody).foregroundStyle(Color.csSecondary)
+        VStack(alignment: .leading, spacing: DS.space("s")) {
+            Text("Which on-screen text to translate").font(.dsBodyStrong).foregroundStyle(Color.dsText)
             SwitchRow(title: "Phone (GTA 6 phone)", isOn: $settings.screenTextPhone)
             SwitchRow(title: "Mission and objective text", isOn: $settings.screenTextMission)
             SwitchRow(title: "Help boxes and actions (button prompts)", isOn: $settings.screenTextHelp)
@@ -1060,21 +1045,19 @@ struct ScreenTextKindRows: View {
 struct SwitchRow: View {
     let title: LocalizedStringKey
     @Binding var isOn: Bool
+    /// Yeni arayüzde açıklama anahtarın birimine girer (başlığın altında); eski arayüzde çağıran ayrıca yazar.
+    var hint: LocalizedStringKey?
     @Environment(\.csNewLook) private var newLook
 
     var body: some View {
-        // Yeni arayüzde anahtar satırın başında, yazının solunda (amber).
+        // Yeni arayüzde anahtar satırın başında, yazının solunda (amber); DSSwitchRow ile aynı birim.
         if newLook {
-            HStack(spacing: DS.space("m")) {
-                DSSwitch(isOn: $isOn).accessibilityLabel(Text(title))
-                Text(title).font(.dsBody.weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { isOn.toggle() }
-            }
-            .frame(minHeight: 40)
+            DSSwitchRow(title: title, subtitle: hint, isOn: $isOn)
         } else {
-            legacy
+            VStack(alignment: .leading, spacing: Theme.space("s")) {
+                legacy
+                if let hint { HintText(text: hint) }
+            }
         }
     }
 

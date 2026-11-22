@@ -43,7 +43,7 @@ private struct IntroView: View {
     var body: some View {
         ZStack {
             Color(red: 0.071, green: 0.075, blue: 0.086).ignoresSafeArea()
-            VStack(spacing: 28) {
+            VStack(spacing: DS.space("xl")) {
                 IntroLogo(stage: stage)
                     .frame(width: 240, height: 185)
                 Text(verbatim: "CouchSubs")
@@ -52,33 +52,33 @@ private struct IntroView: View {
                     .foregroundStyle(Color(red: 0.953, green: 0.933, blue: 0.894))
                     .opacity(stage >= 1.15 ? 1 : 0)
                     .offset(y: stage >= 1.15 ? 0 : 10)
-                HStack(spacing: 8) {
+                HStack(spacing: DS.space("xs")) {
                     Text("by").font(.system(size: 11, design: .monospaced)).tracking(1.5)
                     Image("EnmeraWhite").resizable().aspectRatio(contentMode: .fit).frame(height: 11).opacity(0.75)
                         .accessibilityLabel(Text(verbatim: "Enmera"))
                 }
                 .foregroundStyle(Color(red: 0.553, green: 0.533, blue: 0.498))
                 .opacity(stage >= 1.5 ? 1 : 0)
-                VStack(spacing: 12) {
+                VStack(spacing: DS.space("s")) {
                     Button("Let's Get Started") { finish() }
                         .buttonStyle(DSButtonStyle(kind: .primary))
                         .keyboardShortcut(.defaultAction)
                     Text("Setup takes about 3 minutes.").font(.dsSmall).foregroundStyle(Color(red: 0.553, green: 0.533, blue: 0.498))
                 }
-                .padding(.top, 16)
+                .padding(.top, DS.space("m"))
                 .opacity(stage >= 2.3 ? 1 : 0)
                 .offset(y: stage >= 2.3 ? 0 : 10)
             }
         }
         .overlay(alignment: .bottomLeading) {
-            HStack(spacing: 8) {
+            HStack(spacing: DS.space("xs")) {
                 Button("Replay with Sound") { play(sound: true) }.buttonStyle(IntroGhost())
                 Button("Replay Silently") { play(sound: false) }.buttonStyle(IntroGhost())
             }
-            .padding(24)
+            .padding(DS.space("l"))
         }
         .overlay(alignment: .topTrailing) {
-            Button("Skip Intro") { finish() }.buttonStyle(IntroGhost()).padding(24).keyboardShortcut(.cancelAction)
+            Button("Skip Intro") { finish() }.buttonStyle(IntroGhost()).padding(DS.space("l")).keyboardShortcut(.cancelAction)
         }
         .onAppear { play(sound: model.settings.startupSound) }
         .onDisappear { StartupChime.shared.stop() }
@@ -136,7 +136,7 @@ private struct IntroLogo: View {
     }
 
     private func bar(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ s: CGFloat, open: Bool) -> some View {
-        Capsule().fill(Color.dsAmber)
+        Capsule(style: .circular).fill(Color.dsAmber)
             .frame(width: w * s, height: 50 * s)
             .scaleEffect(x: open ? 1 : 0, y: 1, anchor: .leading)
             .offset(x: (x - 192) * s, y: (y - 250) * s)
@@ -148,10 +148,10 @@ private struct IntroGhost: ButtonStyle {
         configuration.label
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(Color(red: 0.741, green: 0.722, blue: 0.682))
-            .padding(.horizontal, 18)
+            .padding(.horizontal, DS.space("m"))
             .frame(height: 40)
-            .background(Color(red: 0.11, green: 0.114, blue: 0.129), in: Capsule())
-            .overlay(Capsule().strokeBorder(Color(red: 0.2, green: 0.208, blue: 0.235)))
+            .background(Color(red: 0.11, green: 0.114, blue: 0.129), in: Capsule(style: .circular))
+            .overlay(Capsule(style: .circular).strokeBorder(Color(red: 0.2, green: 0.208, blue: 0.235)))
             .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
@@ -207,7 +207,7 @@ private struct ProgressDots: View {
     var body: some View {
         HStack(spacing: DS.space("xs")) {
             ForEach(1...4, id: \.self) { index in
-                Capsule().fill(index == position ? Color.dsAmber : index < position ? Color.dsAmberLine.opacity(0.6) : Color.dsBorder)
+                Capsule(style: .circular).fill(index == position ? Color.dsAmber : index < position ? Color.dsAmberLine.opacity(0.6) : Color.dsBorder)
                     .frame(width: index == position ? 24 : 8, height: 8)
             }
         }
@@ -411,32 +411,35 @@ private struct AccountStep: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.space("l")) {
-            DSCard(spacing: DS.space("xs"), scrolls: false) {
-                DSCardHeader("Done once")
-                ForEach(Array(items.enumerated()), id: \.offset) { index, text in
-                    let isDone = done.contains(index)
-                    Button {
-                        if isDone { done.remove(index) } else { done.insert(index) }
-                    } label: {
-                        HStack(spacing: DS.space("m")) {
-                            DSStepNumber(number: index + 1, done: isDone)
-                            Text(text).font(.dsBody).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
+            // Birimler: adım listesi (+ not), ikinci hesap olmadan seçeneği, önemli uyarı kutusu; aralar 24.
+            DSCard(scrolls: false) {
+                // Başlık → açıklama 6, açıklama → ilk adım 16 (birim içi); sonraki birimler 24 arayla.
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Done once").font(.dsCardTitle).foregroundStyle(Color.dsText).accessibilityAddTraits(.isHeader)
+                    Text("Sony's PS Remote Play app can't be used meanwhile.").dsMuted().padding(.top, DS.unitHintGap)
+                    // Adımlar tıklanınca tiklenir: tıklanabilir seçenek görünümü (kenarlık, üzerine gelince vurgu), sıkı ve eşit aralık.
+                    VStack(spacing: DS.space("xs")) {
+                        ForEach(Array(items.enumerated()), id: \.offset) { index, text in
+                            let isDone = done.contains(index)
+                            Button {
+                                if isDone { done.remove(index) } else { done.insert(index) }
+                            } label: {
+                                HStack(alignment: .center, spacing: DS.space("s")) {
+                                    DSStepNumber(number: index + 1, done: isDone)
+                                    Text(text).font(.dsBody).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .buttonStyle(DSOptionStyle(selected: isDone, minHeight: 52, radio: false))
                         }
-                        .padding(.horizontal, DS.space("s"))
-                        .padding(.vertical, DS.space("xs"))
-                        .frame(minHeight: DS.size("option"))
-                        .background(isDone ? Color.dsSuccessSoft : Color.clear, in: RoundedRectangle(cornerRadius: DS.radius("tile")))
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .padding(.top, DS.space("m"))
                 }
-                Text("Sony's PS Remote Play app can't be used meanwhile.").dsMuted().padding(.top, DS.space("xs"))
-                HStack(spacing: DS.space("xs")) {
+                .frame(maxWidth: .infinity, alignment: .leading)
+                DSUnit {
                     Button("I Don't Have a Second Account: Read the Remote Play Window") { model.useRemotePlayWindow() }
                         .buttonStyle(.dsSecondary)
                 }
-                Text("When you turn on the controller to play, choose your MAIN account on the PS5. Don't play with the second account CouchSubs signs in with, or the controller will turn off by itself or won't work in the game.").dsMuted()
+                DSCallout(text: "When you turn on the controller to play, choose your **main** account on the PS5. Don't play with the second account CouchSubs signs in with, or the controller will turn off by itself or won't work in the game.")
             }
             .frame(maxWidth: .infinity)
             DSCard(scrolls: false) {
@@ -537,7 +540,7 @@ private struct ConnectPS5Step: View {
                     HStack(spacing: DS.space("m")) {
                         Text(verbatim: "PS5").font(.system(size: 13, weight: .bold)).foregroundStyle(Color.dsCharcoal)
                             .frame(width: 48, height: 40).background(Color.dsField, in: RoundedRectangle(cornerRadius: DS.radius("small")))
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: DS.space("line")) {
                             Text(verbatim: console.name.isEmpty ? "PS5" : console.name).font(.dsBodyStrong)
                             Text(verbatim: "\(console.host) · \(String(localized: console.isAwake ? "On" : "In Rest Mode"))")
                                 .font(.system(size: 12, design: .monospaced)).foregroundStyle(Color.dsMuted)
@@ -556,10 +559,11 @@ private struct ConnectPS5Step: View {
             DSCardHeader("Can't Find the PS5?")
             Text("The PS5 and this Mac must be on the same Wi-Fi network. On the PS5, Stay Connected to the Internet must be on in Settings › System › Power Saving. Turn off any VPN. A 5 GHz network works better.").dsMuted()
             Button("Check What's Missing") { Task { await runChecks() } }.buttonStyle(.dsSecondary)
-            Text("Manual IP Address").font(.dsRow)
-            TextField("IP address, e.g. 192.168.1.20", text: $manualHost)
-                .textFieldStyle(DSTextFieldStyle(mono: true))
-                .onSubmit { selected = nil }
+            DSUnit(title: "Manual IP Address") {
+                TextField("IP address, e.g. 192.168.1.20", text: $manualHost)
+                    .textFieldStyle(DSTextFieldStyle(mono: true))
+                    .onSubmit { selected = nil }
+            }
         }
         .transition(.opacity.combined(with: .offset(y: 12)))
     }
@@ -592,8 +596,8 @@ private struct ConnectPS5Step: View {
                     Button("Check What's Missing") { Task { await runChecks() } }.buttonStyle(.dsSecondary)
                 }
             }
-            Text("Always start the game on the PS5 with your main account. CouchSubs only watches the picture and never touches the game.")
-                .dsMuted().padding(.top, DS.space("xs"))
+            DSCallout(text: "Always start the game on the PS5 with your main account. CouchSubs only watches the picture and never touches the game.")
+                .padding(.top, DS.space("s"))
         }
     }
 
@@ -682,8 +686,7 @@ private struct DiagnosticsView: View {
         HStack(alignment: .top, spacing: DS.space("l")) {
             DSCard(spacing: DS.space("xs"), scrolls: false) {
                 DSCardHeader("Couldn't connect to the PS5", color: .dsLive)
-                Text("Here's What We Checked").font(.dsH3)
-                Text("Fix the item with a problem and press Try Again. Things we couldn't read are shown as \"Unknown\".").dsMuted()
+                DSSectionTitle(title: "Here's What We Checked", message: "Fix the item with a problem and press Try Again. Things we couldn't read are shown as \"Unknown\".", font: .dsH3)
                 ForEach(checks) { check in
                     HStack(alignment: .top, spacing: DS.space("m")) {
                         DSTitleBlock(title: title(check.kind), subtitle: checking ? nil : fix(check), titleFont: .dsBodyStrong)
@@ -701,8 +704,7 @@ private struct DiagnosticsView: View {
             .frame(maxWidth: .infinity)
             VStack(spacing: DS.space("l")) {
                 DSCard(scrolls: false) {
-                    Text("Do You Know the PS5's Address?").font(.dsH3)
-                    Text("On the PS5, the IP address is shown in Settings › Network › Connection Status.").dsMuted()
+                    DSSectionTitle(title: "Do You Know the PS5's Address?", message: "On the PS5, the IP address is shown in Settings › Network › Connection Status.", font: .dsH3)
                     TextField("IP address, e.g. 192.168.1.20", text: $manualHost).textFieldStyle(DSTextFieldStyle(mono: true))
                     Button("Connect") { connect() }
                         .buttonStyle(DSButtonStyle(kind: .dark, fullWidth: true))
@@ -753,8 +755,8 @@ private struct TVWizardStep: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: DS.space("l")) {
-            TVStep().frame(maxWidth: .infinity)
-            PairingCodeCard().frame(width: 340)
+            // Yeni "Altyazı TV'de Görünsün" ekranı; eşleşme kodu kartı sağ sütunun en altında.
+            TVSetupStep()
         }
     }
 }
@@ -775,15 +777,17 @@ struct PairingCodeCard: View {
                             .transition(.scale(scale: 0.9).combined(with: .opacity))
                     }
                 }
-                Text("Do You See This Code on Your TV Too?").font(.dsBodyStrong)
-                Text("If you see the same code, you're on the right TV. Approving completes the pairing.").dsMuted()
-                Button("I See This Code on the TV") {
-                    model.resolveTVPairing(ticket, accept: true)
-                    approved = true
+                DSButtonStack {
+                    DSSectionTitle(title: "Do You See This Code on Your TV Too?",
+                                   message: "If you see the same code, you're on the right TV. Approving completes the pairing.")
+                    Button("I See This Code on the TV") {
+                        model.resolveTVPairing(ticket, accept: true)
+                        approved = true
+                    }
+                    .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
+                    Button("Reject") { model.resolveTVPairing(ticket, accept: false) }
+                        .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
                 }
-                .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
-                Button("Reject") { model.resolveTVPairing(ticket, accept: false) }
-                    .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
             } else if approved || model.tvClients > 0 {
                 DSSuccessBadge(text: "Paired", fullWidth: true)
                 Text("Approve the code on the TV, then let's try it.").dsMuted()
@@ -823,8 +827,7 @@ private struct HDMIStep: View {
                 }
                 .buttonStyle(DSOptionStyle(selected: trying, minHeight: 72))
                 DSCard(scrolls: false) {
-                    Text("How Do I Tell?").font(.dsBodyStrong)
-                    Text("The number is printed on the back of the TV next to the port the PS5 cable is plugged into. If the PS5 is plugged into a sound system (soundbar, amplifier), choose the input the sound system is connected to.").dsMuted()
+                    DSSectionTitle(title: "How Do I Tell?", message: "The number is printed on the back of the TV next to the port the PS5 cable is plugged into. If the PS5 is plugged into a sound system (soundbar, amplifier), choose the input the sound system is connected to.", font: .dsBodyStrong)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -832,15 +835,17 @@ private struct HDMIStep: View {
                 if let selected {
                     DSBadge(text: LocalizedStringKey(trying ? String(format: String(localized: "HDMI %lld · Trying"), selected) : "HDMI \(selected)"), tone: .amber)
                 }
-                Text("Do You See the Game Picture on the TV?").font(.dsH3)
-                if confirmed {
-                    DSSuccessBadge(text: "Confirmed", fullWidth: true)
-                } else {
-                    Button("Yes") { confirmed = true; trying = false }
-                        .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
-                        .disabled(selected == nil)
-                    Button("No, Next Input") { choose((selected ?? 0) % 4 + 1, auto: trying) }
-                        .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+                DSButtonStack {
+                    Text("Do You See the Game Picture on the TV?").font(.dsH3)
+                    if confirmed {
+                        DSSuccessBadge(text: "Confirmed", fullWidth: true)
+                    } else {
+                        Button("Yes") { confirmed = true; trying = false }
+                            .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
+                            .disabled(selected == nil)
+                        Button("No, Next Input") { choose((selected ?? 0) % 4 + 1, auto: trying) }
+                            .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+                    }
                 }
                 Text("The choice is remembered. You can change it later in Settings › Consoles.").dsMuted()
             }
@@ -894,18 +899,21 @@ private struct TryItStep: View {
                         .padding(DS.space("m"))
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
-                Text(onComputer ? "Do you see this subtitle on the screen?" : "Do you see this subtitle on the TV?").font(.dsBodyStrong)
-                Button("Yes, I See It") {
-                    model.commitOverlayEdit()
-                    model.advance()
-                }
-                .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
-                .disabled(!sent)
-                Button("I Don't See It") { model.step = .tv }
-                    .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+                DSButtonStack {
+                    Text(onComputer ? "Do you see this subtitle on the screen?" : "Do you see this subtitle on the TV?").font(.dsBodyStrong)
+                    Button("Yes, I See It") {
+                        model.commitOverlayEdit()
+                        model.advance()
+                    }
+                    .buttonStyle(DSButtonStyle(kind: .primary, fullWidth: true))
                     .disabled(!sent)
-                if onComputer {
-                    Button("Position the Subtitles") { model.overlayAdjusting = true }.buttonStyle(.dsSecondary)
+                    Button("I Don't See It") { model.step = .tv }
+                        .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+                        .disabled(!sent)
+                    if onComputer {
+                        Button("Position the Subtitles") { model.overlayAdjusting = true }
+                            .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+                    }
                 }
             }
             .frame(width: 380)
@@ -926,7 +934,7 @@ private struct CheckRow: View {
                     .foregroundStyle(done ? Color.white : Color.dsFaint)
             }
             .frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: DS.space("line")) {
                 Text(title).font(.dsBodyStrong)
                 Text(verbatim: sub).dsMuted()
             }

@@ -36,10 +36,15 @@ final class ScreenshotTests: XCTestCase {
         for section in SettingsSection.allCases {
             screens.append(("ayarlar-\(section)", { main.showHistory = false; main.settingsSection = section; main.showSettings = true }))
         }
+        // Tam ekran (1920 × 1080) görünümleri: içerik reklam bandının üstünde biter, orantı korunur.
+        let wide = CGSize(width: 1920, height: 1080)
+        screens += [("genis-ana", { main.showSettings = false; main.showHistory = false }),
+                    ("genis-ayarlar-basics", { main.showHistory = false; main.settingsSection = .basics; main.showSettings = true }),
+                    ("genis-ayarlar-appearance", { main.showHistory = false; main.settingsSection = .appearance; main.showSettings = true })]
         let only = ProcessInfo.processInfo.environment["COUCHSUBS_SCREENSHOT_ONLY"].flatMap { $0.isEmpty ? nil : $0 }
         for (name, prepare) in screens where only == nil || name.hasPrefix(only!) {
             prepare()
-            let window = show(AnyView(RootView().environmentObject(main)), size: size, offset: 0)
+            let window = show(AnyView(RootView().environmentObject(main)), size: name.hasPrefix("genis-") ? wide : size, offset: 0)
             try await Task.sleep(for: .seconds(1.5))
             try capture(window).write(to: folder.appendingPathComponent("\(name).png"))
             window.close()
@@ -55,7 +60,62 @@ final class ScreenshotTests: XCTestCase {
             try capture(window).write(to: folder.appendingPathComponent("\(name).png"))
             window.close()
         }
+        // "Altyazı TV'de Görünsün" durumları (sahte liste ve kurulum durumları).
+        let lg = LGTV(name: "LG OLED55C3", host: "192.168.1.153"), samsung = LGTV(name: "Samsung QE55Q80", host: "192.168.1.160", brand: .samsung)
+        let tvStates: [(String, TVSetupStep.Preview, LGTV?, TVAppState)] = [
+            ("tv-1-bos", .init(), nil, .unknown),
+            ("tv-2-tariyor", .init(searching: true), nil, .unknown),
+            ("tv-3-bulundu", .init(tvs: [lg, samsung]), nil, .unknown),
+            ("tv-4-onay", .init(tvs: [lg, samsung], pairingHost: lg.host), nil, .unknown),
+            ("tv-5-kuruluyor", .init(tvs: [lg, samsung]), lg, .working),
+            ("tv-6-hata", .init(tvs: [lg, samsung]), samsung, .failed(.certificateRejected)),
+            ("tv-7-samsung-onkosul", .init(tvs: [samsung]), samsung, .devModeOff),
+        ]
+        for (name, preview, tv, state) in tvStates where only == nil || name.hasPrefix(only!) {
+            TVSetupStep.preview = preview
+            let tvModel = AppModel(services: FakeServices(), store: MemoryStore(), defaults: .isolated())
+            tvModel.accountId = Data(repeating: 1, count: 8)
+            tvModel.step = .tv
+            tvModel.tv = tv
+            tvModel.tvApp = state
+            let window = show(AnyView(WizardView().environmentObject(tvModel)), size: size, offset: 40)
+            try await Task.sleep(for: .seconds(2))
+            try capture(window).write(to: folder.appendingPathComponent("kurulum-\(name).png"))
+            window.close()
+        }
+        TVSetupStep.preview = nil
         windows.forEach { $0.close() }
+    }
+
+    /// Ayarlar menüsünün renk geçişinin işlemci maliyeti: aynı pencere önce durağan, sonra oynarken 15'er sn ölçülür;
+    /// fark konsola yazılır. `COUCHSUBS_CPU` verilince çalışır; fark %5'i aşarsa başarısız (hedef %2'nin altı).
+    func testSettingsNavGlowCPU() async throws {
+        guard ProcessInfo.processInfo.environment["COUCHSUBS_CPU"] != nil else { throw XCTSkip("COUCHSUBS_CPU verilmedi") }
+        let model = AppModel(services: FakeServices(), store: MemoryStore(), defaults: .isolated())
+        let view = SettingsNavGlow().frame(width: 240, height: 560).environmentObject(model)
+        defer { SettingsNavGlow.forced = nil }
+        func cpu() -> Double {
+            var usage = rusage()
+            getrusage(RUSAGE_SELF, &usage)
+            return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+        }
+        func measure(_ animate: Bool) async throws -> Double {
+            SettingsNavGlow.forced = animate
+            let window = show(AnyView(view), size: CGSize(width: 240, height: 560), offset: 0)
+            try await Task.sleep(for: .seconds(2))
+            let (start, began) = (cpu(), Date())
+            try await Task.sleep(for: .seconds(15))
+            let percent = (cpu() - start) / Date().timeIntervalSince(began) * 100
+            window.close()
+            return percent
+        }
+        // Açılıştaki işler (paket yükleme vb.) ölçümü bozmasın: önce bekle; durağan ölçüm iki kez, ortalaması.
+        try await Task.sleep(for: .seconds(20))
+        let before = try await measure(false)
+        let moving = try await measure(true)
+        let still = (before + (try await measure(false))) / 2
+        print("CPU_NAV_GLOW still=\(String(format: "%.2f", still)) moving=\(String(format: "%.2f", moving)) cost=\(String(format: "%.2f", moving - still))")
+        XCTAssertLessThan(moving - still, 5)
     }
 
     /// Pencereyi çerçevesiyle (başlık çubuğu ve düğmeleri dahil) PNG olarak çizer.

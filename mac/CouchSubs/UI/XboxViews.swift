@@ -53,20 +53,9 @@ struct XboxLoginStep: View {
                 Text(title).font(.dsH2).fixedSize(horizontal: false, vertical: true)
                 Text(text).dsMuted(.system(size: 14))
                 if let code {
-                    HStack(spacing: DS.space("s")) {
-                        Text(verbatim: code.userCode)
-                            .font(.system(size: 28, weight: .semibold, design: .monospaced))
-                            .tracking(3.4)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(Color.dsField, in: RoundedRectangle(cornerRadius: DS.radius("tile")))
-                            .textSelection(.enabled)
-                        if copied {
-                            DSSuccessBadge(text: "Copied")
-                        } else {
-                            Button("Copy the Code") { copy(code) }.buttonStyle(.dsSecondary)
-                        }
-                    }
+                    // Kod tam yuvarlak kutuda, kopyala simgesi kutunun içinde (ayrı Kopyala düğmesi yok).
+                    DSCopyField(text: code.userCode, font: .system(size: 22, weight: .semibold, design: .monospaced))
+                        .frame(maxWidth: 320)
                     .transition(.opacity.combined(with: .offset(y: 12)))
                     Text("1. The code is copied and microsoft.com/link is open in your browser. If it didn't open, click the link above.\n2. Paste the code, sign in with the Microsoft account you use on your Xbox and allow access.\n3. Come back to CouchSubs; sign-in finishes on its own.").dsMuted()
                 }

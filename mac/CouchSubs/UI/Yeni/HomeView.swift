@@ -44,19 +44,25 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: DS.space("l")) {
-                StatusChips(choice: model.gameChoice)
-                GeometryReader { geometry in
-                    let gap = DS.space("l")
-                    let left = ((geometry.size.width - gap) * 2 / 3).rounded(.down)
-                    HStack(alignment: .top, spacing: gap) {
-                        PreviewCard(ticker: ticker).frame(width: left)
-                        RightColumn(ticker: ticker).frame(maxWidth: .infinity)
+            // Sayfa kayar: sol kart (16:9 önizleme kartın iç genişliğini tam doldurur) kısa pencerede de tamamıyla görülür,
+            // alttaki reklam bandının altına girmez. Sağ sütun sol kartla aynı yükseklikte.
+            GeometryReader { outer in
+                let gap = DS.space("l")
+                let width = max(outer.size.width - 2 * gap, 0)
+                let left = ((width - gap) * 2 / 3).rounded(.down)
+                let height = PreviewCard.height(width: left)
+                ScrollView(.vertical) {
+                    VStack(spacing: gap) {
+                        StatusChips(choice: model.gameChoice)
+                        HStack(alignment: .top, spacing: gap) {
+                            PreviewCard(ticker: ticker).frame(width: left, height: height)
+                            RightColumn(ticker: ticker).frame(maxWidth: .infinity).frame(height: height)
+                        }
                     }
-                    .frame(maxHeight: .infinity)
+                    .padding(gap)
                 }
+                .scrollIndicators(.automatic)
             }
-            .padding(DS.space("l"))
             GamePickerOverlay(choice: model.gameChoice, areas: model.gameAreas)
         }
         .task {
@@ -171,7 +177,7 @@ private struct StatusChip: View {
                         .foregroundStyle(tone == .good ? Color.dsSuccess : tone == .warning ? Color.dsLive : Color.dsFaint)
                 }
                 .frame(width: 24, height: 24)
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: DS.space("line")) {
                     Text(key).font(.dsCaption).foregroundStyle(Color.dsMuted).lineLimit(1)
                     HStack(spacing: DS.space("xxs")) {
                         Text(verbatim: value).font(.system(size: 14, weight: .semibold)).foregroundStyle(Color.dsText).lineLimit(1)
@@ -201,26 +207,25 @@ private struct PreviewCard: View {
     @ObservedObject var ticker: HomeTicker
 
     var body: some View {
-        DSCard(padding: DS.space("m"), spacing: DS.space("m"), scrolls: false) {
-            // Önizleme ile düğme satırı aynı genişlikte ve kenarları hizalı: önce 16:9 kutu sığdırılır, düğmeler onun eninde.
+        // Kart iç boşluğu her yönde 24 (ölçü sistemi); 16:9 önizleme iç genişliği tam doldurur, düğme satırı aynı genişlikte.
+        DSCard(padding: Self.padding, spacing: Self.gap, scrolls: false) {
             GeometryReader { geometry in
-                let gap = DS.space("m")
-                let size = Self.fit(CGSize(width: geometry.size.width, height: geometry.size.height - DS.size("button") - gap))
-                VStack(spacing: gap) {
-                    preview.frame(width: size.width, height: size.height)
-                    HomeButtons().frame(width: size.width)
+                let width = geometry.size.width
+                VStack(spacing: Self.gap) {
+                    preview.frame(width: width, height: (width * 9 / 16).rounded(.down))
+                    HomeButtons().frame(width: width)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxHeight: .infinity)
         }
-        .frame(maxHeight: .infinity)
     }
 
-    /// Görüntü hep 16:9; kartın içine sığan en büyük kutu.
-    static func fit(_ space: CGSize) -> CGSize {
-        let width = min(space.width, space.height * 16 / 9)
-        return CGSize(width: width.rounded(.down), height: (width * 9 / 16).rounded(.down))
+    static let padding = DS.space("l")
+    static let gap = DS.space("m")
+
+    /// Kartın yüksekliği: iç boşluk + 16:9 önizleme + aralık + düğme satırı + iç boşluk.
+    static func height(width: CGFloat) -> CGFloat {
+        let inner = max(width - 2 * padding, 0)
+        return 2 * padding + (inner * 9 / 16).rounded(.down) + gap + DS.size("button")
     }
 
     private var preview: some View {
@@ -277,7 +282,7 @@ private struct AreaFrame: View {
                     .foregroundStyle(Color.dsOnAmber)
                     .padding(.horizontal, DS.space("xs"))
                     .frame(height: 22)
-                    .background(Color.dsAmber, in: Capsule())
+                    .background(Color.dsAmber, in: Capsule(style: .circular))
                     .offset(x: DS.space("s"), y: -11)
             }
             .opacity(dim ? 0.55 : 1)
@@ -338,7 +343,7 @@ private struct LivePill: View {
         .foregroundStyle(.white)
         .padding(.horizontal, DS.space("s"))
         .frame(height: 28)
-        .background(Color.black.opacity(0.45), in: Capsule())
+        .background(Color.black.opacity(0.45), in: Capsule(style: .circular))
     }
 }
 
@@ -353,7 +358,7 @@ private struct OverlayPill: View {
             .foregroundStyle(.white)
             .padding(.horizontal, DS.space("s"))
             .frame(height: 28)
-            .background(Color.black.opacity(0.45), in: Capsule())
+            .background(Color.black.opacity(0.45), in: Capsule(style: .circular))
     }
 }
 
@@ -628,7 +633,7 @@ private struct LiveFeedCard: View {
                 ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(entries, id: \.id) { entry in
-                            VStack(alignment: .leading, spacing: 2) {
+                            VStack(alignment: .leading, spacing: DS.space("line")) {
                                 Text(verbatim: entry.translation).font(.system(size: 14, weight: .medium)).lineSpacing(2)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text(verbatim: entry.source).font(.dsCaption).foregroundStyle(Color.dsMuted).lineSpacing(2)
