@@ -20,7 +20,7 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Mac: yeni arayüz**
 
-Mac uygulaması yeni tasarımla geliyor; özellikler ve ayarlar aynı. Ana ekran, önizleme, Geçmiş, Ayarlar, Oyun Paketleri, Ekranı Çevir ve Xbox ekranları yenilendi. Kurulum sihirbazı baştan yazıldı; "Altyazı TV'de Görünsün" adımı durumu ve olası sorunları adım adım gösteriyor. "Günlüğü Kopyala" ile gizli bilgileri maskelenmiş günlük panoya alınabiliyor. Windows'un yeni arayüzü sonraki sürümlerde gelecek.
+Mac uygulaması yeni tasarımla geliyor; özellikler ve ayarlar aynı. Ana ekran, önizleme, Geçmiş, Ayarlar, Oyun Paketleri, Ekranı Çevir ve Xbox ekranları yenilendi. Kurulum sihirbazı baştan yazıldı; "Altyazı TV'de Görünsün" adımı durumu ve olası sorunları adım adım gösteriyor. "Günlüğü Kopyala" ile gizli bilgileri maskelenmiş günlük panoya alınabiliyor. Bilgisayarda seçilen zemin, yazı ve karakter adı renkleri TV'de de kullanılıyor; kurulumda seçilen TV girişi kendiliğinden açılıyor (TV uygulaması 0.9.77). Windows'un yeni arayüzü sonraki sürümlerde gelecek.
 
 **beta.84'te gelenler:** Android TV'de siyah ekran düzeltmesi (varsayılan Otomatik görüntü modu, TV uygulaması 0.9.74), güncelleme penceresinde yalnız yeni sürümün notları, imzalı paket indirme.
 
