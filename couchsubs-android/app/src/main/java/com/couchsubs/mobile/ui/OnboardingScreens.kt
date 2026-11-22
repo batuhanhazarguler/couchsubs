@@ -64,6 +64,8 @@ fun WelcomeScreen(onDemo: () -> Unit = {}, onDone: () -> Unit) {
     val pager = rememberPagerState { 3 }
     val scope = rememberCoroutineScope()
     val last = pager.currentPage == 2
+    // Açılış sesi yalnız ilk açılışta ve Ayarlar › Temel › Açılış Sesi açıkken (Mac ve iPhone ile aynı).
+    LaunchedEffect(Unit) { if (Services.settings.startupSound && !Services.settings.welcomeSeen) StartupChime.play() }
     ScreenScaffold(scroll = false, top = {
         TopBar { if (!last) GhostButton(stringResource(R.string.skip), onClick = onDone) }
     }, bottom = {

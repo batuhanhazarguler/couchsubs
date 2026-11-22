@@ -37,11 +37,13 @@ class AreasTest {
 
     @Test
     fun extraAreasRoundTripAndAreCapped() {
-        val areas = (1..5).map { ExtraArea(name = "Alan $it", region = ExtraAreaPreset.QUEST.region, enabled = it % 2 == 1) }
+        // Sınır Mac/iPhone ve Windows ile aynı: 50.
+        assertEquals(50, ExtraArea.MAX_COUNT)
+        val areas = (1..ExtraArea.MAX_COUNT + 2).map { ExtraArea(name = "Alan $it", region = ExtraAreaPreset.QUEST.region, enabled = it % 2 == 1) }
         val read = ExtraArea.listFromJson(ExtraArea.listToJson(areas))
         assertEquals(ExtraArea.MAX_COUNT, read.size)
-        assertEquals(areas.take(3), read)
-        assertEquals(listOf("Alan 1", "Alan 3"), read.active().map { it.name })
+        assertEquals(areas.take(ExtraArea.MAX_COUNT), read)
+        assertEquals(listOf("Alan 1", "Alan 3"), read.active().take(2).map { it.name })
         assertEquals(emptyList<ExtraArea>(), ExtraArea.listFromJson("bozuk"))
     }
 

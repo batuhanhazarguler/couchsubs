@@ -1015,7 +1015,9 @@ class AiTranslator(
     private val instruction: (() -> String?)? = null,
     // Yerel model sunucusu (yalnız LOCAL).
     private val server: LocalAiServer? = null,
-) : SentenceTranslator<List<AiRequest.ContextLine>>(fallback, cache, clock, budget ?: RequestBudget.shared(provider, model)) {
+    // "Ücretli Gemini API anahtarı kullanıyorum" (Mac/iPhone geminiPaidTier): ücretsiz katmanın dakikalık sınırı uygulanmaz.
+    paidTier: Boolean = false,
+) : SentenceTranslator<List<AiRequest.ContextLine>>(fallback, cache, clock, budget ?: RequestBudget.shared(provider, model, paidTier)) {
     companion object {
         /** Kalıcı önbellek dosyasındaki motor adı (iPhone ile aynı: "gemini:<model>"). */
         fun engineId(provider: AiProvider, model: AiModel) = "${provider.id}:${model.id}"

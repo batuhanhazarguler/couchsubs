@@ -43,7 +43,32 @@ data class SubtitleStyle(
     val displayMode: TvDisplayMode = TvDisplayMode.AUTO,
     /** Hızlı konuşmada önceki satır(lar) yeni satırın üstünde kısa süre soluk kalsın mı; kapalıysa yeni satır eskisinin yerine geçer. */
     val stackPrevious: Boolean = true,
-)
+    /** Zeminin rengi ("#RRGGBB"); koyuluğu [background]. TV'ye `backgroundColor`; eski TV uygulaması siyah çizer. */
+    val backgroundColor: String = DEFAULT_BACKGROUND_COLOR,
+    /** Yazının rengi ("#RRGGBB"); null ise [textColor] (beyaz/sarı). TV'ye `textHex`. */
+    val textHex: String? = null,
+    /** Karakter adının rengi (Mac/iPhone NameColorMode): yazıyla aynı, tek renk ya da karaktere göre. */
+    val nameColorMode: NameColorMode = NameColorMode.SPEAKER,
+    /** "Tek Renk"te adların rengi. */
+    val nameHex: String? = null,
+    /** "Karaktere Göre"de kullanıcının seçtiği renkler (küçük harfli ad → "#RRGGBB"). */
+    val characterColors: Map<String, String> = emptyMap(),
+    /** Konuşan rengi yalnız adı boyar; TV'ye `nameOnly`. */
+    val nameOnly: Boolean = false,
+    /** Kurulumda seçilen TV girişi (HDMI 1–4); TV uygulaması değer değişince o girişi açar. TV'ye `hdmiInput`. */
+    val hdmiInput: Int? = null,
+) {
+    companion object {
+        const val DEFAULT_BACKGROUND_COLOR = "#101014"
+
+        /** Geçerli "#RRGGBB" ise büyük harfle; değilse null (Mac SubtitleStyle.hex ile aynı). */
+        fun hex(value: String?): String? =
+            value?.takeIf { it.length == 7 && it[0] == '#' && it.drop(1).all { c -> c.isDigit() || c.lowercaseChar() in 'a'..'f' } }?.uppercase(Locale.ROOT)
+    }
+}
+
+/** Karakter adının rengi (Mac/iPhone NameColorMode, Windows NameColorMode ile aynı). */
+enum class NameColorMode { TEXT, SINGLE, SPEAKER }
 
 /** Altyazıları TV'ye ileten taraf. */
 interface SubtitleSender {
@@ -305,6 +330,12 @@ class SubtitleServer(
                 "setApart" to setApart,
                 "stackPrevious" to style.stackPrevious,
                 "textColor" to style.textColor.name.lowercase(Locale.ROOT),
+                // Mac/iPhone SubtitleStyle.json ile aynı alanlar; textHex ve hdmiInput yalnız seçildiyse gider.
+                "backgroundColor" to (SubtitleStyle.hex(style.backgroundColor) ?: SubtitleStyle.DEFAULT_BACKGROUND_COLOR),
+                "nameOnly" to style.nameOnly,
+            ) + listOfNotNull(
+                SubtitleStyle.hex(style.textHex)?.let { "textHex" to it },
+                style.hdmiInput?.takeIf { it in 1..4 }?.let { "hdmiInput" to it },
             )
         )
     }
@@ -506,6 +537,11 @@ class SubtitleServer(
 
     fun sendStyle(style: SubtitleStyle) {
         synchronized(lock) { lastStyle = style }
+        // Karakter adı renkleri (Mac SubtitleServer.updateStyle gibi): tek renk ya da kullanıcının seçtiği kişi renkleri.
+        SpeakerColors.session.configure(
+            fixed = if (style.nameColorMode == NameColorMode.SINGLE) SubtitleStyle.hex(style.nameHex) ?: SubtitlePalette.names[0].hex else null,
+            overrides = if (style.nameColorMode == NameColorMode.SPEAKER) style.characterColors else emptyMap(),
+        )
         broadcast(styleFrame(style, setApart), subtitle = true)
     }
 

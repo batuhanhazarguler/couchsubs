@@ -101,7 +101,7 @@ data class ExtraArea(
 ) {
     companion object {
         /** En çok bu kadar ek alan tanımlanır (her biri saniyede bir okunur). */
-        const val MAX_COUNT = 3
+        const val MAX_COUNT = 50
 
         fun listToJson(areas: List<ExtraArea>): String = JSONArray().also { array ->
             areas.forEach {

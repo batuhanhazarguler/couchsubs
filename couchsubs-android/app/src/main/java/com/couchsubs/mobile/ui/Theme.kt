@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Mobil tasarım sistemi (düz bento): design/tokens.json v3 ve TASARIM-MOBIL.md. Uygulama yalnız koyu temadır.
+// Mobil tasarım sistemi (düz bento): design/tokens.json v3 ve TASARIM-MOBIL.md. Açık ve koyu görünüm (Ayarlar › Temel › Görünüm).
 // Değerler yalnız buradan gelir; ekranlar bu dosyadaki bileşenleri kullanır. Parıltı, degrade ve renkli gölge yoktur.
 package com.couchsubs.mobile.ui
 
@@ -54,6 +54,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -85,33 +86,52 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 object Tokens {
-    /** design/tokens.json v3, koyu görünüm. Parıltı rengi yoktur. */
+    /**
+     * Koyu görünüm mü (Ayarlar › Temel › Görünüm: Açık / Koyu / Sisteme Uy; Mac ve iPhone ile aynı, varsayılan koyu).
+     * Renkler bu duruma göre okunur; değişince her ekran yeniden çizilir. [forceDark]: altyazı ekranı ve küçük pencere
+     * siyah zeminde olduğu için hep koyu renkleri kullanır.
+     */
+    var appearance by mutableStateOf(com.couchsubs.mobile.settings.AppAppearance.DARK)
+    var systemDark by mutableStateOf(true)
+    var forceDark by mutableStateOf(false)
+    val dark: Boolean
+        get() = forceDark || when (appearance) {
+            com.couchsubs.mobile.settings.AppAppearance.DARK -> true
+            com.couchsubs.mobile.settings.AppAppearance.LIGHT -> false
+            com.couchsubs.mobile.settings.AppAppearance.SYSTEM -> systemDark
+        }
+
+    /** Geçiş animasyonları (Ayarlar › Temel): kapalıyken yalnız kısa solma kullanılır. */
+    var transitionAnimations by mutableStateOf(true)
+
+    /** design/tokens.json v3 (açık ve koyu görünüm). Parıltı rengi yoktur. */
     object Color {
-        val bg = androidx.compose.ui.graphics.Color(0xFF141518)
-        val surface = androidx.compose.ui.graphics.Color(0xFF1C1E23)
-        val surface2 = androidx.compose.ui.graphics.Color(0xFF25282F)
+        private fun pick(light: Long, dark: Long) = androidx.compose.ui.graphics.Color(if (Tokens.dark) dark else light)
+        val bg get() = pick(0xFFF6F4EF, 0xFF141518)
+        val surface get() = pick(0xFFFFFFFF, 0xFF1C1E23)
+        val surface2 get() = pick(0xFFEFECE5, 0xFF25282F)
         /** Seçili segment gibi yükseltilmiş parça (surface2'nin bir basamak üstü). */
-        val raised = androidx.compose.ui.graphics.Color(0xFF30333A)
+        val raised get() = pick(0xFFFFFFFF, 0xFF30333A)
         /** Karo çerçevesi (tokens.json tileBorder). */
-        val border = androidx.compose.ui.graphics.Color(0xFF2C2E32)
+        val border get() = pick(0xFFE8E4DA, 0xFF2C2E32)
         /** Alan çerçevesi ve ayraçlar (tokens.json border). */
-        val borderStrong = androidx.compose.ui.graphics.Color(0xFF30333A)
-        val text = androidx.compose.ui.graphics.Color(0xFFF3EEE4)
-        val secondary = androidx.compose.ui.graphics.Color(0xFFA9A59C)
+        val borderStrong get() = pick(0xFFE2DED4, 0xFF30333A)
+        val text get() = pick(0xFF17181B, 0xFFF3EEE4)
+        val secondary get() = pick(0xFF5B5954, 0xFFA9A59C)
         /** Yalnız dolgu (birincil düğme, seçili şey, ilerleme); sarı yazı ve simge için [accentText]. */
         val accent = androidx.compose.ui.graphics.Color(0xFFF5B83D)
         val accentHi = androidx.compose.ui.graphics.Color(0xFFFFCF6B)
-        val accentText = androidx.compose.ui.graphics.Color(0xFFF5B83D)
+        val accentText get() = pick(0xFF7E5300, 0xFFF5B83D)
         val onAccent = androidx.compose.ui.graphics.Color(0xFF17181B)
-        /** Sarının koyu zemindeki yumuşak tonu; yalnız M3'ün kendi parçalarındaki (primaryContainer) mor yerine. */
-        val accentSoft = androidx.compose.ui.graphics.Color(0xFF3A3020)
+        /** Sarının yumuşak tonu; yalnız M3'ün kendi parçalarındaki (primaryContainer) mor yerine. */
+        val accentSoft get() = pick(0xFFFBEBC8, 0xFF3A3020)
         /** Yalnız oyun paketleri: düz mor simge ve yazı; [proSoft] paket etiketinin zemini. */
-        val pro = androidx.compose.ui.graphics.Color(0xFFA78BFA)
-        val proSoft = androidx.compose.ui.graphics.Color(0xFF322F45)
-        val success = androidx.compose.ui.graphics.Color(0xFF62C990)
-        val warning = androidx.compose.ui.graphics.Color(0xFFF2A55A)
-        val danger = androidx.compose.ui.graphics.Color(0xFFF28B82)
-        val dangerSoft = androidx.compose.ui.graphics.Color(0xFF2F2325)
+        val pro get() = pick(0xFF6941C6, 0xFFA78BFA)
+        val proSoft get() = pick(0xFFECE6FB, 0xFF322F45)
+        val success get() = pick(0xFF256B43, 0xFF62C990)
+        val warning get() = pick(0xFF9A4A08, 0xFFF2A55A)
+        val danger get() = pick(0xFFB3261E, 0xFFF28B82)
+        val dangerSoft get() = pick(0xFFF9E3E1, 0xFF2F2325)
     }
 
     /** Telefon ölçüleri (TASARIM-MOBIL.md): kenar 20, karolar arası 12, karo içi 16. */
@@ -167,15 +187,20 @@ object Tokens {
 }
 
 @Composable
-fun CouchSubsTheme(content: @Composable () -> Unit) {
+fun CouchSubsTheme(forceDark: Boolean = false, content: @Composable () -> Unit) {
+    // "Sisteme Uy" için sistemin görünümü; altyazı ekranı ve küçük pencere hep koyu.
+    val system = androidx.compose.foundation.isSystemInDarkTheme()
+    if (Tokens.systemDark != system) Tokens.systemDark = system
+    if (Tokens.forceDark != forceDark) Tokens.forceDark = forceDark
     val c = Tokens.Color
+    val base = if (Tokens.dark) darkColorScheme() else lightColorScheme()
     MaterialTheme(
         // M3'ün kendi parçaları (anahtar rayı, açılır menü, kaydırıcı, iletişim kutusu) varsayılan mor tonlara düşmesin:
         // her yüzey rolü tokens.json'daki bir basamağa bağlanır, yüzey tonlaması (surfaceTint) kapalıdır.
-        colorScheme = darkColorScheme(
+        colorScheme = base.copy(
             primary = c.accent, onPrimary = c.onAccent, primaryContainer = c.accentSoft, onPrimaryContainer = c.accentText,
-            // Ters yüzeyde (snackbar) sarı eylem: tokens.json accentText'in açık görünüm değeri.
-            inversePrimary = Color(0xFF7E5300),
+            // Ters yüzeyde (snackbar) sarı eylem: öbür görünümün accentText değeri.
+            inversePrimary = if (Tokens.dark) Color(0xFF7E5300) else Color(0xFFF5B83D),
             secondary = c.pro, onSecondary = c.onAccent, secondaryContainer = c.surface2, onSecondaryContainer = c.text,
             tertiary = c.pro, onTertiary = c.onAccent, tertiaryContainer = c.proSoft, onTertiaryContainer = c.pro,
             background = c.bg, onBackground = c.text, surface = c.surface, onSurface = c.text,
