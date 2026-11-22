@@ -4,11 +4,25 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **İndir:** [Mac (DMG)](https://github.com/yorulmazsinan/couchsubs/releases/latest/download/CouchSubs-macos.dmg) · [Windows (kurulum)](https://github.com/yorulmazsinan/couchsubs/releases/latest/download/CouchSubs-windows-Setup.exe) · [Android telefon (Google Play)](https://play.google.com/store/apps/details?id=com.couchsubs.mobile)
 
-**Bu sürümde yeni** (yalnız hata düzeltmeleri; gerçek oyun kareleriyle gerileme testinden geçti)
+**Bu sürümde yeni** (hata düzeltmeleri ve Mac'te yeni arayüz; gerçek oyun kareleriyle gerileme testinden geçti)
 
-- **Android TV'de siyah ekran** (Philips, TCL vb.): Görüntü modu artık varsayılan olarak Otomatik; TV uygulaması doğrudan Katman'da açılıyor, çeviri başlayınca ekran kararmıyor (TV uygulaması 0.9.74). İsteyen Ayarlar'dan Uygulama İçinde ya da Katman'ı seçebilir.
-- **Güncelleme penceresi:** Yalnız yeni sürümün notlarını gösteriyor, eski sürümlerin notları tekrar gelmiyor.
-- **Oyun paketleri:** Paket indirme istekleri uygulama tarafından imzalanıyor. Paketlerin kesintisiz inmesi için bu sürüme güncellemeniz önerilir.
+- **TV bağlantısı sessizce koparsa:** TV altyazıyı aldığını bildiriyor; bağlantı koptuğunda "Bağlı" yerine "Yeniden bağlanılıyor…" yazıyor ve TV uygulaması kendiliğinden yeniden açılıyor (TV uygulaması 0.9.76).
+- **Yapay zekâ çevirisinde kaybolan satırlar** (#893): Geç gelen çeviriler TV'ye gitmeden atılmıyor, sırasıyla gösteriliyor.
+- **GTA 6 telefon mesajları yanda panelde:** Mesajlar telefonun yanındaki sohbet panelinde okunaklı çıkıyor. Ayarlar'daki "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde" ile eski düzene dönülebilir (TV uygulaması 0.9.75).
+- **GTA 6'da sabit arka planda yeni satır** (#1019, #1027): Kamera oynatılmadan da okunuyor.
+- **Plaka ve tabela yazıları** (#1052): Çevrilmiyor, konuşmanın başına yapışmıyor.
+- **Samsung "Sunucu bakım altında (1544007)"** (#1039): TV'den silinmiş uygulamaya her 30 sn'de bir açma komutu gitmiyor, uyarı çıkmıyor.
+- **Android TV adres değiştirince** (#1031): Bağlantı yeni adrese geçiyor.
+- **TV'de aynı adlı başka uygulama** (#1050, #1051): CouchSubs'ın adını kullanan başka bir uygulama "güncel" sayılmıyor; onayınızla kaldırılıp CouchSubs kuruluyor.
+- **Windows'ta güncelleme döngüsü** (#1043, #1048): Yardımcı süreçler güncellemeden önce kapanıyor; uygulanamayan güncelleme açıkça söyleniyor.
+- **Xbox:** Bağlantı koptuktan sonra yeniden bağlanıyor.
+- **Oyun paketleri:** Death Stranding Director's Cut paketi kaldırıldı (oyunun resmî Türkçesi var).
+
+**Mac: yeni arayüz**
+
+Mac uygulaması yeni tasarımla geliyor; özellikler ve ayarlar aynı. Ana ekran, önizleme, Geçmiş, Ayarlar, Oyun Paketleri, Ekranı Çevir ve Xbox ekranları yenilendi. Kurulum sihirbazı baştan yazıldı; "Altyazı TV'de Görünsün" adımı durumu ve olası sorunları adım adım gösteriyor. "Günlüğü Kopyala" ile gizli bilgileri maskelenmiş günlük panoya alınabiliyor. Windows'un yeni arayüzü sonraki sürümlerde gelecek.
+
+**beta.84'te gelenler:** Android TV'de siyah ekran düzeltmesi (varsayılan Otomatik görüntü modu, TV uygulaması 0.9.74), güncelleme penceresinde yalnız yeni sürümün notları, imzalı paket indirme.
 
 **beta.83'te gelenler:** GTA 6 telefon mesajlarının kendi balonunda çevrilmesi, haber bandının konuşmanın önüne geçmemesi (#933), Samsung'da AS400 uyarısı düzeltmesi.
 
