@@ -29,6 +29,9 @@ public static class PopupAdWindow
 
     public static void Offer(Window owner, AppController controller, PopupAdMoment moment)
     {
+        // Gösterilmemiş ya da gizli ana pencereye sahip atanamaz (WPF hata verir; ekran görüntüsü kipinde pencere hiç
+        // gösterilmez). O an reklam açılmaz, günlük hak da harcanmaz.
+        if (!owner.IsVisible) return;
         var now = DateTime.Now;
         if (!PopupAdPolicy.ShouldShow(moment, now, UiPreferences.Current.LastPopupAd, controller.IsRunning, controller.Step == OnboardingStep.Done,
                 StreamWindow.IsOpen, Ads.Count > 0))
