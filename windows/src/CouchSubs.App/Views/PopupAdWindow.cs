@@ -31,13 +31,18 @@ public static class PopupAdWindow
     {
         // Gösterilmemiş ya da gizli ana pencereye sahip atanamaz (WPF hata verir; ekran görüntüsü kipinde pencere hiç
         // gösterilmez). O an reklam açılmaz, günlük hak da harcanmaz.
-        if (!owner.IsVisible) return;
+        // IsVisible tek başına yetmez: ekran görüntüsü kipinde ve açılışın ilk karelerinde pencere henüz gerçekten
+        // gösterilmemiş olabilir (WPF "Cannot set Owner property to a Window that has not been shown previously").
+        if (!owner.IsVisible || !owner.IsLoaded || PresentationSource.FromVisual(owner) is null) return;
         var now = DateTime.Now;
         if (!PopupAdPolicy.ShouldShow(moment, now, UiPreferences.Current.LastPopupAd, controller.IsRunning, controller.Step == OnboardingStep.Done,
                 StreamWindow.IsOpen, Ads.Count > 0))
             return;
         UiPreferences.Save(UiPreferences.Current with { LastPopupAd = now });
-        if (PopupAdPolicy.Pick(Ads, now) is { } ad) Show(owner, ad);
+        if (PopupAdPolicy.Pick(Ads, now) is not { } ad) return;
+        // Reklam hiçbir koşulda uygulamayı düşürmemeli.
+        try { Show(owner, ad); }
+        catch (Exception e) { SubtitleLog.Write($"Açılır reklam gösterilemedi: {e.GetType().Name}: {e.Message}"); }
     }
 
     private static void Show(Window owner, PopupAd ad)
