@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import CouchSubsCore
 import SwiftUI
 import UIKit
 
@@ -148,6 +149,23 @@ extension Color {
     static let dsLiveDot = DS.color("liveDot")
     static let dsScreenFrame = DS.color("screenFrame")
     static let dsScrim = DS.color("scrim")
+    // Ayarlar bölümlerinin simge tonları (Mac'teki SettingsSection.tint ile aynı palet).
+    static let dsPeach = DS.color("peach")
+    static let dsOlive = DS.color("olive")
+    static let dsTeal = DS.color("teal")
+    static let dsPlum = DS.color("plum")
+    static let dsSky = DS.color("sky")
+}
+
+extension AppAppearance {
+    /// Ayarlar › Temel › Görünüm: Sisteme Uy'da nil (iOS'un açık/koyu seçimi).
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        case .system: nil
+        }
+    }
 }
 
 extension Font {
@@ -180,7 +198,8 @@ extension View {
     }
 }
 
-/// Mac'teki hareket tercihi anahtarı (ortak bileşenler okur); telefonda yalnız sistemin "Hareketi azalt" ayarı vardır.
+/// Ayarlar › Temel › Geçiş Animasyonları kapalı (Mac'teki hareket tercihiyle aynı anahtar; ortak bileşenler okur). Sistemin
+/// "Hareketi azalt" ayarı ayrıca geçerlidir.
 private struct DSReducedMotionKey: EnvironmentKey {
     static let defaultValue = false
 }

@@ -50,7 +50,10 @@ enum AdCatalog {
 struct DSAdBand: View {
     var items: [AdItem] = AdCatalog.band
     @State private var index = 0
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
 
     var body: some View {
         if !items.isEmpty { band }

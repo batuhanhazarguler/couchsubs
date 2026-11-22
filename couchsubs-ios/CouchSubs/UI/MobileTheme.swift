@@ -134,7 +134,10 @@ private struct CompactButtonBody: View {
     let configuration: ButtonStyleConfiguration
     let kind: MobileButtonStyle.Kind
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: DS.radius("tile"), style: .continuous)
@@ -472,7 +475,10 @@ struct MobilePill: View {
 struct MobileLiveDot: View {
     var color: Color = Mobile.Palette.success
     var pulses = true
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @State private var pulse = false
 
     var body: some View {

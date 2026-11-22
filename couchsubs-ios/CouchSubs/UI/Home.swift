@@ -14,6 +14,8 @@ enum Route: Hashable {
     case platform
     /// TV uygulamasını bu telefondan kurmak; `tvUpdate` ana ekrandaki güncellemeyi kendiliğinden başlatır.
     case tvInstall, tvUpdate
+    /// Ayarlar'ın bölümleri (Mac'teki Ayarlar menüsüyle aynı sıra).
+    case settingsPage(PhoneSettingsSection)
 }
 
 extension Route {
@@ -21,7 +23,7 @@ extension Route {
     /// kurulumu) yok.
     var showsAdBand: Bool {
         switch self {
-        case .settings, .profile, .packs, .target, .about, .history: true
+        case .settings, .profile, .packs, .target, .about, .history, .settingsPage: true
         case .ps5, .psn, .platform, .tvInstall, .tvUpdate: false
         }
     }
@@ -245,7 +247,10 @@ struct HomeScreen: View {
 
 struct RunningScreen: View {
     @EnvironmentObject private var model: PhoneModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @Binding var path: [Route]
     @State private var showSubtitles = false
 
@@ -505,6 +510,7 @@ struct SubtitleScreen: View {
                     Self.subtitleText(wrapped.text, colored: model.settings.speakerColors && !previous && !line.paragraphs,
                                       base: previous ? Mobile.Palette.secondary : textColor, book: model.speakerBook)
                         .font(Mobile.TypeScale.subtitle(landscape: true, scale: scale * CGFloat(wrapped.scale)))
+                        .fontWeight(model.settings.style.bold ? .bold : nil)
                         .opacity(line.fading ? 0.4 : 1)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.5)
@@ -657,11 +663,9 @@ struct SubtitleScreen: View {
         return Color(.sRGB, red: rgb.red, green: rgb.green, blue: rgb.blue)
     }
 
+    /// Ayarlar › Altyazı Görünümü › Yazı Rengi (TV ile aynı renk; eski kayıtta beyaz ya da sarı).
     private var textColor: Color {
-        switch model.settings.style.textColor {
-        case .yellow: Mobile.Palette.accent
-        case .white: Mobile.Palette.text
-        }
+        SubtitlePalette.color(SubtitlePalette.textHex(model.settings.style)) ?? Mobile.Palette.text
     }
 
     /// Konuşana göre renkli altyazı: adlı satır (bölünmüş devamıyla) konuşanın renginde, diğerleri `base` renginde.

@@ -61,20 +61,32 @@ final class PromoController: ObservableObject {
         defer { busy = false }
         let now = Date()
         if fetchedAt.map({ now.timeIntervalSince($0) >= PromoPolicy.refetchInterval }) ?? true {
-            guard let data = await download(PromoPolicy.configURL, limit: PromoPolicy.maxConfigBytes) else { return }
-            popup = PromoPolicy.parse(data)
-            fetchedAt = now
+            // promo.json'a ulaşılamazsa uygulamayla gelen açılır reklam (Mac ve Windows'taki reklamlar.json › popups).
+            if let data = await download(PromoPolicy.configURL, limit: PromoPolicy.maxConfigBytes) {
+                popup = PromoPolicy.parse(data)
+                fetchedAt = now
+            } else {
+                popup = Self.bundledPopup
+            }
         }
-        guard let popup, PromoPolicy.due(popup, record: record, now: now),
-              let imageURL = PromoPolicy.httpsURL(popup.image) else {
+        guard let popup, PromoPolicy.due(popup, record: record, now: now) else {
             ready = nil
             return
         }
-        // Görsel zaten hazırsa yeniden inmez; yalnız yeni girişin 10 sn'si beklenir.
+        // Görsel zaten hazırsa yeniden inmez; yalnız yeni girişin 10 sn'si beklenir. Uygulamadaki görsel yüklenemezse
+        // açılır reklam hiç açılmaz (yer tutucu yok).
         let image: UIImage
         if let current = ready, current.popup == popup {
             image = current.image
+        } else if popup.bundled {
+            guard let url = Bundle.main.url(forResource: popup.image, withExtension: nil, subdirectory: "reklam"),
+                  let data = try? Data(contentsOf: url), let decoded = Self.decode(data) else { return }
+            image = decoded
         } else {
+            guard let imageURL = PromoPolicy.httpsURL(popup.image) else {
+                ready = nil
+                return
+            }
             guard let data = await download(imageURL, limit: PromoPolicy.maxImageBytes),
                   let decoded = Self.decode(data) else { return }
             image = decoded
@@ -90,6 +102,10 @@ final class PromoController: ObservableObject {
         }
         ready = Ready(popup: popup, image: image)
     }
+
+    /// Uygulamayla gelen açılır reklam (reklamlar.json, project.yml kaynaklarında); dosya yoksa nil.
+    private static let bundledPopup: PromoPopup? = Bundle.main.url(forResource: "reklamlar", withExtension: "json")
+        .flatMap { try? Data(contentsOf: $0) }.flatMap(PromoPolicy.bundled)
 
     /// Popup kapatıldı (X ya da görsele dokunma): gösterim kaydedilir, görsel bırakılır.
     func dismissed(_ popup: PromoPopup) {
@@ -143,7 +159,8 @@ struct PromoOverlay: View {
             GeometryReader { geometry in
                 let size = imageSize(in: geometry.size)
                 VStack(spacing: 0) {
-                    Text("Sponsored")
+                    // Mac ve Windows'taki açılır reklamla aynı etiket (REKLAM).
+                    Text("AD")
                         .font(Mobile.TypeScale.caption)
                         .foregroundStyle(Mobile.Palette.text)
                         .lineLimit(1)

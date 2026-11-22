@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Subtitles are shown on this phone's screen.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subtitles are shown on this phone's screen."}}, "tr": {"stringUnit": {"state": "translated", "value": "Altyazılar bu telefonun ekranında gösterilir."}}}},
+    "Subtitles are shown on the TV and on this phone's screen.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subtitles are shown on the TV and on this phone's screen."}}, "tr": {"stringUnit": {"state": "translated", "value": "Altyazılar hem TV'de hem bu telefonun ekranında gösterilir."}}}},
     "Not signed in": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not signed in"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş yapılmadı"}}}},
     "Microsoft Account": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Microsoft Account"}}, "tr": {"stringUnit": {"state": "translated", "value": "Microsoft Hesabı"}}}},
     "Sign In": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sign In"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yap"}}}},

@@ -256,6 +256,7 @@ struct GameProfilesTile: View {
 /// Ayarlar › Altyazı alanı: hazır seçimler, son kareyle canlı önizleme (çerçeve sürüklenir), Özel'de kaydırıcılar.
 struct AreaTile: View {
     @EnvironmentObject private var model: PhoneModel
+    var resetTitle: LocalizedStringKey?
 
     var body: some View {
         Tile {
@@ -285,6 +286,11 @@ struct AreaTile: View {
                 }
             }
             .font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary)
+            // Mac'teki Alanları Sıfırla: altyazı alanı Alt hazır seçimine döner (başlık Ayarlar › Altyazı Alanı'ndan gelir).
+            if let resetTitle {
+                Button(resetTitle) { model.settings.selectAreaPreset(.bottom) }
+                    .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+            }
         }
     }
 
@@ -294,15 +300,16 @@ struct AreaTile: View {
     }
 }
 
-/// Ayarlar › Ek alanlar: altyazının yanında sürekli okunan en çok üç küçük alan (görev, bildirim, telefon mesajı). Her biri
-/// adlandırılır, açılıp kapatılır; çerçevesi canlı önizlemede sürüklenir (Mac'teki ExtraAreasCard ile aynı).
+/// Ayarlar › Ek alanlar: altyazının yanında sürekli okunan küçük alanlar (görev, bildirim, telefon mesajı; en çok
+/// `ExtraArea.maxCount`, Mac ile aynı sınır). Her biri adlandırılır, açılıp kapatılır; çerçevesi canlı önizlemede sürüklenir
+/// (Mac'teki ExtraAreasCard ile aynı).
 struct ExtraAreasTile: View {
     @EnvironmentObject private var model: PhoneModel
 
     var body: some View {
         Tile {
             Text("Extra areas").font(Mobile.TypeScale.headline)
-            Text("Besides the subtitle, CouchSubs can keep reading up to three small areas, like a quest, a phone message or a notification. Each area is read about once a second and translated again only when its text changes. The translation shows on the TV next to the original text.")
+            Text("Also reads small text next to the subtitle, such as objectives, phone messages or notifications. Each area is read once a second and translated again when the text changes; the translation appears on the TV next to that text.")
                 .font(Mobile.TypeScale.caption).foregroundStyle(Mobile.Palette.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             // Tam ekranda ek alanlar okunmaz (bkz. activeExtraAreas); ayarları korunur, düzenlenebilir.

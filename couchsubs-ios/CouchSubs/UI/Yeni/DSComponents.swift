@@ -26,7 +26,10 @@ private struct DSButtonBody: View {
     let fullWidth: Bool
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
 
     var body: some View {
         let pressed = configuration.isPressed
@@ -84,7 +87,10 @@ private struct DSButtonBody: View {
 struct DSSuccessBadge: View {
     let text: LocalizedStringKey
     var fullWidth = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @State private var seated = false
 
     var body: some View {
@@ -109,7 +115,10 @@ struct DSSuccessBadge: View {
 struct DSPulseDot: View {
     var color: Color = .dsLive
     var size: CGFloat = 8
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @State private var dim = false
 
     var body: some View {
@@ -138,7 +147,10 @@ struct DSTabs<Value: Hashable>: View {
 
     @Binding var selection: Value
     let items: [Item]
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @Namespace private var namespace
 
     init(selection: Binding<Value>, items: [(Value, LocalizedStringKey)]) {
@@ -187,7 +199,10 @@ struct DSTabs<Value: Hashable>: View {
 struct DSSwitch: View {
     @Binding var isOn: Bool
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
 
     var body: some View {
         let width = DS.size("switchWidth"), height = DS.size("switchHeight"), knob = DS.size("switchKnob")
@@ -396,7 +411,10 @@ struct DSSlider: View {
     var step: Double?
     var onEditingChanged: (Bool) -> Void = { _ in }
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    /// Ayarlar › Geçiş Animasyonları kapalıyken de yalnız kısa solma.
+    @Environment(\.dsMotionOff) private var motionOff
+    private var reduceMotion: Bool { systemReduceMotion || motionOff }
     @State private var dragging = false
 
     static let knob: CGFloat = 24

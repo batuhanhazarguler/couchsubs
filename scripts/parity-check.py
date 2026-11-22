@@ -7,6 +7,12 @@
 #  2. Telefon ayar ekranları: iPhone Profil/Ayarlar ekranlarının (couchsubs-ios/CouchSubs/UI/Profile.swift, DubbingTile.swift) kullandığı
 #     Localizable.xcstrings anahtarları ile Android Profil/Ayarlar ekranlarının (ui/ProfileScreens.kt, DubbingTile.kt) kullandığı
 #     strings.xml metinleri. Eşleme İngilizce metinle yapılır (Android values-en metni = xcstrings anahtarı).
+#  4. Altyazı biçimi alanları (TV'ye giden `style`): core SubtitleStyle (Mac, iPhone), Windows SubtitleStyle kaydı ve Android
+#     SubtitleStyle veri sınıfı aynı alanları taşımalı.
+#  5. Ayar ekranı metinleri Mac ↔ iPhone: Mac yeni arayüzünün Ayarlar sayfasındaki (mac/CouchSubs/UI/Yeni/SettingsPage.swift) her
+#     katalog anahtarı iPhone uygulamasında da kullanılmalı (Android = iPhone kuralı 2. karşılaştırmayla Android'e taşır).
+#  6. Telefon ayar modeli: Android AppSettings'in kalıcı ayarları ile ortak UserSettings + SubtitleStyle alanları (iPhone).
+# Yeni bir ayar tek platformda birleşemez: bu altı karşılaştırmadan biri kırmızı olur.
 # Bir tarafta olup öbüründe olmayan her şey ya eşlenmeli ya da scripts/parity-allowlist.json'da gerekçesiyle yazılmalı.
 # İzin listesindeki bir kayıt artık fark değilse o da hatadır (liste eskimesin).
 # Kullanım: python3 scripts/parity-check.py   (fark varsa çıkış kodu 1)
@@ -18,10 +24,16 @@ ALLOWLIST = ROOT / "scripts" / "parity-allowlist.json"
 CATALOG = ROOT / "mac" / "CouchSubs" / "Resources" / "Localizable.xcstrings"
 WIN_SETTINGS = ROOT / "windows" / "src" / "CouchSubs.Shell" / "Contracts.cs"
 CORE_SETTINGS = ROOT / "core" / "Sources" / "CouchSubsCore" / "Pipeline" / "AppSettings.swift"
-IOS_SCREENS = [ROOT / "couchsubs-ios" / "CouchSubs" / "UI" / name for name in ("Profile.swift", "DubbingTile.swift", "LocalAISection.swift")] + [
-    ROOT / "mac" / "CouchSubs" / "UI" / name for name in ("DubbingVoiceText.swift", "LocalAIText.swift")]
+IOS_SCREENS = [ROOT / "couchsubs-ios" / "CouchSubs" / "UI" / name for name in ("Profile.swift", "SettingsPages.swift", "DubbingTile.swift", "LocalAISection.swift")] + [
+    ROOT / "mac" / "CouchSubs" / "UI" / name for name in ("DubbingVoiceText.swift", "LocalAIText.swift", "Yeni/SubtitlePalette.swift")]
 ANDROID_SCREENS = [ROOT / "couchsubs-android" / "app" / "src" / "main" / "java" / "com" / "couchsubs" / "mobile" / "ui" / name
-                   for name in ("ProfileScreens.kt", "DubbingTile.kt", "LocalAiSection.kt")]
+                   for name in ("ProfileScreens.kt", "SettingsPages.kt", "DubbingTile.kt", "LocalAiSection.kt")]
+CORE_STYLE = ROOT / "core" / "Sources" / "CouchSubsCore" / "SubtitleServer.swift"
+WIN_STYLE = ROOT / "windows" / "src" / "CouchSubs.Core" / "SubtitleServer.cs"
+ANDROID_STYLE = ROOT / "couchsubs-android" / "app" / "src" / "main" / "java" / "com" / "couchsubs" / "mobile" / "core" / "SubtitleServer.kt"
+ANDROID_SETTINGS = ROOT / "couchsubs-android" / "app" / "src" / "main" / "java" / "com" / "couchsubs" / "mobile" / "settings" / "AppSettings.kt"
+MAC_SETTINGS_PAGE = ROOT / "mac" / "CouchSubs" / "UI" / "Yeni" / "SettingsPage.swift"
+IOS_APP = ROOT / "couchsubs-ios" / "CouchSubs"
 ANDROID_EN = ROOT / "couchsubs-android" / "app" / "src" / "main" / "res" / "values-en" / "strings.xml"
 CORE_FIXTURES = ROOT / "core" / "Tests" / "CouchSubsCoreTests" / "Fixtures"
 ANDROID_FIXTURES = ROOT / "couchsubs-android" / "app" / "src" / "test" / "resources" / "fixtures"
@@ -210,6 +222,46 @@ def core_fields():
     return set(re.findall(r"^    public var (\w+)", struct, re.M))
 
 
+def core_style_fields():
+    struct = body(CORE_STYLE.read_text(), "public struct SubtitleStyle")
+    return set(re.findall(r"^    public var (\w+)", struct, re.M))
+
+
+def windows_style_fields():
+    text = WIN_STYLE.read_text()
+    start = text.index("public sealed record SubtitleStyle(")
+    params = text[start:text.index(")\n{", start)]
+    return set(re.findall(r"^\s*[\w<>\[\]?, .]+?\s+(\w+)\s*=", params, re.M))
+
+
+def android_style_fields():
+    text = ANDROID_STYLE.read_text()
+    start = text.index("data class SubtitleStyle(")
+    params = text[start:text.index("\n)", start)]
+    return set(re.findall(r"^\s*val (\w+)\s*:", params, re.M))
+
+
+def android_settings_fields():
+    cls = body(ANDROID_SETTINGS.read_text(), "class AppSettings(")
+    return set(re.findall(r"^    (?:override )?var (\w+)\s*:", cls, re.M))
+
+
+def catalog_keys(paths, catalog):
+    found = set()
+    for path in paths:
+        for match in re.findall(r'"((?:[^"\\]|\\.)*)"', path.read_text()):
+            key = match.replace('\\"', '"')
+            if key in catalog:
+                found.add(key)
+    return found
+
+
+def lowered(rules, left, right):
+    return {"pairs": {a.lower(): b.lower() for a, b in rules.get("pairs", {}).items()},
+            f"{left}_only": {k.lower(): v for k, v in rules.get(f"{left}_only", {}).items()},
+            f"{right}_only": {k.lower(): v for k, v in rules.get(f"{right}_only", {}).items()}}
+
+
 def normalized(text):
     """Biçim yer tutucuları platforma göre değişir (%@, %lld, %1$s, %d): hepsi %@ sayılır."""
     return re.sub(r"%(\d+\$)?(@|lld|ld|d|s)", "%@", text)
@@ -287,6 +339,32 @@ def main():
     compare("Telefon ayar ekranları (iPhone Profile.swift ↔ Android ProfileScreens.kt)", "iphone", ios, "android",
             set(android), mobile_rules, problems)
 
+    core_style = {name.lower() for name in core_style_fields()}
+    win_style = {name.lower() for name in windows_style_fields()}
+    android_style = {name.lower() for name in android_style_fields()}
+    style = rules["style_fields"]
+    compare("Altyazı biçimi (Windows SubtitleStyle ↔ core SubtitleStyle)", "windows", win_style, "mac", core_style,
+            lowered(style.get("windows_mac", {}), "windows", "mac"), problems)
+    compare("Altyazı biçimi (Android SubtitleStyle ↔ core SubtitleStyle)", "android", android_style, "iphone", core_style,
+            lowered(style.get("android_iphone", {}), "android", "iphone"), problems)
+
+    mac_page = catalog_keys([MAC_SETTINGS_PAGE], catalog)
+    iphone_all = catalog_keys(sorted(IOS_APP.rglob("*.swift")), catalog)
+    allowed = rules["mac_settings_on_iphone"]
+    for key in sorted(mac_page - iphone_all - set(allowed)):
+        problems.append(f"Mac Ayarlar ↔ iPhone: '{key}' Mac'in Ayarlar sayfasında var, iPhone'da yok. iPhone'a (ve Android'e) ekleyin "
+                        "ya da scripts/parity-allowlist.json › mac_settings_on_iphone'a gerekçesiyle yazın.")
+    for key, reason in allowed.items():
+        if not isinstance(reason, str) or not reason.strip():
+            problems.append(f"Mac Ayarlar ↔ iPhone: '{key}' için gerekçe yok.")
+        elif key not in mac_page or key in iphone_all:
+            problems.append(f"Mac Ayarlar ↔ iPhone: izin listesindeki '{key}' artık fark değil; listeden çıkarın.")
+
+    phone_core = {name.lower() for name in core_fields() | core_style_fields()}
+    android_settings = {name.lower() for name in android_settings_fields()}
+    compare("Telefon ayar modeli (Android AppSettings ↔ core UserSettings + SubtitleStyle)", "android", android_settings,
+            "iphone", phone_core, lowered(rules["phone_settings"], "android", "iphone"), problems)
+
     capabilities(problems)
 
     if problems:
@@ -294,7 +372,8 @@ def main():
         print("\n".join("  - " + p for p in problems))
         sys.exit(1)
     print(f"Tamam: {len(win)} Windows / {len(core)} ortak ayar alanı, {len(ios)} iPhone / {len(android)} Android ayar metni eşit; "
-          f"{len(CAPABILITIES)} ortak yetenek her platformda.")
+          f"{len(core_style)} altyazı biçimi alanı dört platformda, Mac Ayarlar'ın {len(mac_page)} metni iPhone'da, "
+          f"{len(android_settings)} Android ayarı eşli; {len(CAPABILITIES)} ortak yetenek her platformda.")
 
 
 main()

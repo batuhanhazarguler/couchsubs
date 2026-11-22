@@ -13,7 +13,8 @@ import XboxStream
 @MainActor
 final class PhoneModel: ObservableObject {
     enum Step: Int, CaseIterable {
-        case welcome, psnLogin, console, output, done
+        /// `hdmi`: TV girişi (Mac'teki kurulum adımı); yalnız TV eşli, altyazı TV'de ve TV Android TV değilken (`asksTVInput`).
+        case welcome, psnLogin, console, output, hdmi, done
     }
 
     @Published var step: Step {
@@ -63,7 +64,7 @@ final class PhoneModel: ObservableObject {
                 || settings.onlineEngine != oldValue.onlineEngine || settings.geminiModel != oldValue.geminiModel
                 || settings.openAIModel != oldValue.openAIModel || settings.claudeModel != oldValue.claudeModel
                 || settings.localAIBaseURL != oldValue.localAIBaseURL || settings.localAIModel != oldValue.localAIModel
-                || settings.aiInstruction != oldValue.aiInstruction
+                || settings.aiInstruction != oldValue.aiInstruction || settings.geminiPaidTier != oldValue.geminiPaidTier
             if translationChanged { Task { await refreshTranslatorStatus() } }
             if settings.readsGamePhone != oldValue.readsGamePhone { configureGamePhone() }
             if settings.dubbing != oldValue.dubbing { dubbingSettingsChanged() }
@@ -564,12 +565,14 @@ final class PhoneModel: ObservableObject {
         case .psnLogin: isXbox ? xboxSignedIn : accountId != nil
         case .console: isXbox ? xboxConsole != nil : console != nil
         case .output: hasTV || !settings.output.showsOnTV
+        case .hdmi: true
         case .done: false
         }
     }
 
     func advance() {
-        guard canAdvance, let next = Step(rawValue: step.rawValue + 1) else { return }
+        guard canAdvance, var next = Step(rawValue: step.rawValue + 1) else { return }
+        if next == .hdmi && !asksTVInput { next = .done }
         step = next
     }
 
@@ -582,11 +585,16 @@ final class PhoneModel: ObservableObject {
     var notifiesDisconnect: Bool { defaults.object(forKey: Self.notifyDisconnectKey) as? Bool ?? true }
 
     func back() {
-        guard let previous = Step(rawValue: step.rawValue - 1) else { return }
+        guard var previous = Step(rawValue: step.rawValue - 1) else { return }
+        if previous == .hdmi && !asksTVInput { previous = .output }
         step = previous
     }
 
     var hasTV: Bool { tv != nil && tvKeySaved }
+
+    /// TV girişi (HDMI) sorulur mu: TV eşli, altyazı TV'de ve TV Android TV değil (Android TV uygulaması görüntüyü kendi
+    /// gösterir; Mac'teki `asksTVInput` ile aynı kural).
+    var asksTVInput: Bool { hasTV && settings.output.showsOnTV && tv?.brand != .androidTV }
 
     func completePSNLogin(redirect: URL) async throws {
         do {
@@ -1437,7 +1445,8 @@ final class PhoneModel: ObservableObject {
             let sense = gameChoice.sense
             online = AITranslator(provider: provider, key: key, model: model, fallback: local,
                                   cache: Self.translationCache(engine: provider.engineID(model: model), source: source, target: target),
-                                  game: { sense.current?.name }, instruction: settings.aiInstruction)
+                                  game: { sense.current?.name }, instruction: settings.aiInstruction,
+                                  paidTier: provider == .gemini && settings.geminiPaidTier)
         } else if let key = store.load(String.self, for: storeKey) {
             online = DeepLTranslator(key: key, fallback: local,
                                      cache: Self.translationCache(engine: DeepLTranslator.engineID, source: source, target: target))

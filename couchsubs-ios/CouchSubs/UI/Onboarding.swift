@@ -10,6 +10,7 @@ import SwiftUI
 
 struct WelcomeFlow: View {
     let onFinish: () -> Void
+    @EnvironmentObject private var model: PhoneModel
     @State private var page = 0
 
     var body: some View {
@@ -36,6 +37,9 @@ struct WelcomeFlow: View {
             // Kurulumdan önce: konsolu olmayan (ve App Store incelemesi) uygulamayı örnek görüntülerle dener.
             DemoModeButton(kind: .ghost)
         }
+        // Ayarlar › Temel › Açılış Sesi: karşılama yalnız ilk açılışta görünür; ses Mac'teki açılış adımıyla aynı.
+        .onAppear { if model.settings.startupSound { StartupChime.shared.play() } }
+        .onDisappear { StartupChime.shared.stop() }
     }
 
     private var pageOne: some View {

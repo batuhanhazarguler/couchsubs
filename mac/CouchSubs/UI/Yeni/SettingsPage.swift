@@ -252,32 +252,6 @@ private struct TwoColumns<Left: View, Right: View>: View {
 
 // MARK: Temel
 
-/// Hızlı / Dengeli / Doğru: bozuk ve yarım okunan satır beklemelerinin hazır değerleri (Gelişmiş'teki kaydırıcılarla aynı
-/// iki ayar; Windows aynı değerleri kullanır, METINLER.md).
-enum TranslationPace: Hashable, CaseIterable {
-    case fast, balanced, accurate
-
-    var waits: (misread: Int, partial: Int) {
-        switch self {
-        case .fast: (400, 0)
-        case .balanced: (SubtitlePipeline.packWaitMs, SubtitlePipeline.cleanWaitMs)
-        case .accurate: (1000, 800)
-        }
-    }
-
-    static func of(_ settings: UserSettings) -> TranslationPace? {
-        allCases.first { $0.waits.misread == settings.misreadWaitMs && $0.waits.partial == settings.partialWaitMs }
-    }
-
-    var explanation: LocalizedStringKey {
-        switch self {
-        case .fast: "Subtitles arrive as fast as possible; you may rarely see half a sentence."
-        case .balanced: "Recommended for most games. Speed and accuracy balanced."
-        case .accurate: "Translated once the sentence is complete; arrives about half a second later."
-        }
-    }
-}
-
 private struct BasicsSettings: View {
     @Binding var section: SettingsSection
     @EnvironmentObject private var model: AppModel
@@ -332,70 +306,6 @@ private struct BasicsSettings: View {
 }
 
 // MARK: Altyazı Görünümü
-
-/// Tuvaldeki renk listeleri (Windows aynı değerleri kullanır).
-enum SubtitlePalette {
-    struct Swatch: Hashable {
-        /// Katalog anahtarı (İngilizce).
-        let name: String
-        let hex: String?
-
-        static func == (lhs: Swatch, rhs: Swatch) -> Bool { lhs.hex == rhs.hex }
-        func hash(into hasher: inout Hasher) { hasher.combine(hex) }
-    }
-
-    static let backgrounds: [Swatch] = [
-        Swatch(name: "Black", hex: "#101014"), Swatch(name: "Navy", hex: "#0E1A30"), Swatch(name: "Dark Gray", hex: "#2B2D33"),
-        Swatch(name: "Brown", hex: "#2A1F14"), Swatch(name: "White", hex: "#FFFFFF"), Swatch(name: "Cream", hex: "#F3EEE4"),
-        Swatch(name: "No Background", hex: nil),
-    ]
-    static let texts: [Swatch] = [
-        Swatch(name: "White", hex: "#FFFFFF"), Swatch(name: "Cream", hex: "#F3EEE4"), Swatch(name: "Yellow", hex: "#FFE066"),
-        Swatch(name: "Light Blue", hex: "#BFE3FF"), Swatch(name: "Black", hex: "#111114"), Swatch(name: "Navy", hex: "#0E1A30"),
-        Swatch(name: "Dark Gray", hex: "#2B2D33"),
-    ]
-    static let names: [Swatch] = [
-        Swatch(name: "Amber", hex: "#F5B83D"), Swatch(name: "Turquoise", hex: "#4FD1C5"), Swatch(name: "Pink", hex: "#FF8FAB"),
-        Swatch(name: "Purple", hex: "#B794F6"), Swatch(name: "Green", hex: "#68D391"), Swatch(name: "Orange", hex: "#F6874F"),
-        Swatch(name: "Red", hex: "#F56565"), Swatch(name: "Blue", hex: "#63B3ED"),
-    ]
-    /// Koyuluk: Açık / Orta / Koyu (Koyu tam örter, İngilizce altyazı görünmez).
-    static let darkness: [Int] = [45, 75, 100]
-
-    static func color(_ hex: String?) -> Color? {
-        guard let hex, let (r, g, b, a) = DSTokens.rgba(hex) else { return nil }
-        return Color(.sRGB, red: r, green: g, blue: b, opacity: a)
-    }
-
-    /// Yeni kaydırıcı (16–50) ile TV'nin yazı boyu (1920'de 16–90 piksel) arasında doğrusal eşleme; eski büyük boylar kaybolmaz.
-    static func display(_ fontSize: Int) -> Int { Int((16 + Double(min(max(fontSize, 16), 90) - 16) * 34 / 74).rounded()) }
-    static func fontSize(_ display: Int) -> Int { Int((16 + Double(min(max(display, 16), 50) - 16) * 74 / 34).rounded()) }
-
-    /// Seçili yazı rengi (eski kayıtta textHex yok: beyaz ya da sarı).
-    static func textHex(_ style: SubtitleStyle) -> String { style.textHex ?? (style.textColor == .yellow ? "#FFE066" : "#FFFFFF") }
-
-    /// Yarı saydam zemin TV görüntüsüyle karışır: kontrast karışık renge göre (WCAG 4.5).
-    static func lowContrast(_ style: SubtitleStyle) -> Bool {
-        let scene = (109.0 / 255, 106.0 / 255, 93.0 / 255)
-        let alpha = Double(max(0, min(100, style.background))) / 100
-        let bg = DSTokens.rgba(style.backgroundColor) ?? (0, 0, 0, 1)
-        let mixed = (bg.0 * alpha + scene.0 * (1 - alpha), bg.1 * alpha + scene.1 * (1 - alpha), bg.2 * alpha + scene.2 * (1 - alpha))
-        let text = DSTokens.rgba(textHex(style)) ?? (1, 1, 1, 1)
-        func lum(_ c: (Double, Double, Double)) -> Double {
-            func l(_ v: Double) -> Double { v <= 0.03928 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4) }
-            return 0.2126 * l(c.0) + 0.7152 * l(c.1) + 0.0722 * l(c.2)
-        }
-        let (x, y) = (lum((text.0, text.1, text.2)), lum(mixed))
-        return (max(x, y) + 0.05) / (min(x, y) + 0.05) < 4.5
-    }
-}
-
-/// Önizlemedeki örnek satırlar (tuvaldeki gibi).
-enum SubtitleSample {
-    static let lines: [(who: String, text: String)] = [
-        ("Jason", "Tamam. Gidelim."), ("Lucia", "Yakınımda kal. Bunu birlikte yapacağız."), ("Cal", "Bir sürü silah sesi duyuyorum!"),
-    ]
-}
 
 /// TV önizlemesi: oyun sahnesi üstünde altyazı kutuları, ayarların renk ve boyuyla.
 struct SubtitlePreviewBox: View {
