@@ -3,7 +3,8 @@
 // <video>'yu bırakıp yeniden kurar (webOS platform.showHdmi); TV uygulaması 0.9.80'den beri bilgisayarın/telefonun
 // bildirdiği giriş (açılış parametresi `hdmi`, stil `hdmiInput`) zaten gösterilen girişse görüntüye dokunulmaz. Kumandayla
 // seçim ve farklı giriş eskisi gibi açılır. Sayfa app.js'i ortak kullanır (scripts/tv-live-page.js).
-// Çalıştırma: node --test scripts/tv-hdmi-reselect.test.js
+// Çalıştırma: node --test --test-force-exit scripts/tv-hdmi-reselect.test.js (sayfanın yeniden bağlanma zamanlayıcıları
+// süreci açık tutar)
 'use strict';
 
 const test = require('node:test');

@@ -35,7 +35,7 @@ jobs:
       - name: Android TV sayfası gerçek ağla, Android 8 WebView kısıtlarıyla (eski adrese bağlı kalma, sub 0)
         run: node --test scripts/tv-live-stale.test.js
       - name: Bilgisayarın bildirdiği giriş zaten açıksa görüntü yeniden kurulmaz (#1055)
-        run: node --test scripts/tv-hdmi-reselect.test.js
+        run: node --test --test-force-exit scripts/tv-hdmi-reselect.test.js
       - name: Eski TV uygulaması (0.9.3, 0.9.16, 0.9.33) bugünkü olaylarla; eski TV'ye clear tutularak gider
         run: node --test scripts/tv-legacy-app.test.js
       - name: Gerçek çizim testleri
