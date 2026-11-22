@@ -84,6 +84,19 @@ final class ScreenshotTests: XCTestCase {
             window.close()
         }
         TVSetupStep.preview = nil
+        // Açılır reklam: reklamlar.json › popups (karartılmış zeminle, görselin oranında).
+        for ad in PopupAd.catalog where only == nil || "popup-\(ad.id)".hasPrefix(only!) {
+            let popup = ZStack {
+                Color.dsScrim
+                PopupAdView(ad: ad) {}.shadow(color: .black.opacity(0.28), radius: 32, y: 24)
+            }
+            .frame(width: 640, height: 720)
+            .newLook()
+            let window = show(AnyView(popup), size: CGSize(width: 640, height: 720), offset: 40)
+            try await Task.sleep(for: .seconds(1))
+            try capture(window).write(to: folder.appendingPathComponent("popup-\(ad.id).png"))
+            window.close()
+        }
         windows.forEach { $0.close() }
     }
 

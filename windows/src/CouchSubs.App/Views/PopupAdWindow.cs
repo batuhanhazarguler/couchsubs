@@ -12,8 +12,8 @@ using CouchSubs.Shell;
 
 namespace CouchSubs.App.Views;
 
-/// <summary>Açılır reklamın görseli ve bağlantısı (kendi uygulamalarımız; yazı ve düğme yok).</summary>
-public sealed record PopupAd(Uri Image, Uri Link);
+/// <summary>Açılır reklamın yüklenmiş görseli ve bağlantısı (Enmera; yazı ve düğme yok).</summary>
+public sealed record PopupAd(BitmapSource Image, Uri Link);
 
 /// <summary>
 /// Açılır reklam (tuval 18): yalnız görsel; görselin oranına göre yatay ya da dikey açılır; tıklanınca bağlantı tarayıcıda
@@ -21,8 +21,11 @@ public sealed record PopupAd(Uri Image, Uri Link);
 /// </summary>
 public static class PopupAdWindow
 {
-    /// <summary>Gösterilecek açılır reklamlar (içerikler sonra belirlenecek; boşken hiç açılmaz).</summary>
-    public static IReadOnlyList<PopupAd> Ads { get; set; } = [];
+    /// <summary>
+    /// Gösterilecek açılır reklamlar (reklamlar.json › popups; Mac aynı dosyayı okur). Görseli yüklenemeyen reklam listeye
+    /// girmez; liste boşken açılır reklam hiç açılmaz (yer tutucu ya da logo asla).
+    /// </summary>
+    public static IReadOnlyList<PopupAd> Ads { get; set; } = AdCatalog.LoadPopups();
 
     public static void Offer(Window owner, AppController controller, PopupAdMoment moment)
     {
@@ -31,13 +34,15 @@ public static class PopupAdWindow
                 StreamWindow.IsOpen, Ads.Count > 0))
             return;
         UiPreferences.Save(UiPreferences.Current with { LastPopupAd = now });
-        Show(owner, Ads[now.DayOfYear % Ads.Count]);
+        if (PopupAdPolicy.Pick(Ads, now) is { } ad) Show(owner, ad);
     }
 
     private static void Show(Window owner, PopupAd ad)
     {
-        var image = new BitmapImage(ad.Image);
-        var landscape = image.PixelWidth >= image.PixelHeight;
+        var image = ad.Image;
+        var aspect = (double)image.PixelWidth / image.PixelHeight;
+        // Dikey görsel 340 × 604'e kadar, yatay 720 genişlikte; oran korunur.
+        var width = aspect >= 1 ? 720 : Math.Min(340, 604 * aspect);
         var window = new Window
         {
             Owner = owner, WindowStyle = WindowStyle.None, AllowsTransparency = true, ShowInTaskbar = false, ResizeMode = ResizeMode.NoResize,
@@ -46,7 +51,7 @@ public static class PopupAdWindow
         };
         var picture = new Border
         {
-            Width = landscape ? 720 : 340, Height = landscape ? 405 : 604, CornerRadius = new CornerRadius(24), ClipToBounds = true, Cursor = Cursors.Hand,
+            Width = width, Height = width / aspect, CornerRadius = new CornerRadius(24), ClipToBounds = true, Cursor = Cursors.Hand,
             Background = new ImageBrush(image) { Stretch = Stretch.UniformToFill }, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
         };
         picture.MouseLeftButtonUp += (_, _) =>

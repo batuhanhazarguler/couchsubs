@@ -58,6 +58,8 @@
     <!-- Alt reklam bandı (Cebbin, Gramla, Bakkal): Mac ile ortak liste ve simgeler (Services/AdCatalog.cs). -->
     <EmbeddedResource Include="..\..\..\design\yeni-arayuz\reklamlar.json" LogicalName="reklamlar.json" />
     <Resource Include="..\..\..\design\yeni-arayuz\reklam\*.png" Link="Assets\reklam\%(Filename)%(Extension)" />
+    <!-- Açılır reklamın görseli (reklamlar.json › popups; Mac aynı dosyayı okur). -->
+    <Resource Include="..\..\..\design\yeni-arayuz\reklam\*.jpg" Link="Assets\reklam\%(Filename)%(Extension)" />
     <!-- ShellWindow.xaml pencere simgesi olarak bunu okur; ApplicationIcon yalnız exe simgesidir. -->
     <Resource Include="Assets\CouchSubs.ico" />
   </ItemGroup>

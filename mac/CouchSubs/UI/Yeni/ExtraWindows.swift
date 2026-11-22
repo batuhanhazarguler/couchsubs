@@ -222,18 +222,47 @@ struct MenuBarPanel: View {
 
 /// Açılır reklam: yalnız görsel (yazı/düğme yok), görselin oranına göre yatay ya da dikey, tıklanınca bağlantı; köşede ×
 /// ve küçük REKLAM. Günde en çok 1; yalnız açılışta ya da çeviri durunca; çeviri sürerken, kurulumda, deneme modunda
-/// asla. Üçüncü taraf reklam ağı yok. İçerik şimdilik yerel örnek (uzaktan liste sonra).
+/// asla. Üçüncü taraf reklam ağı yok. İçerik design/yeni-arayuz/reklamlar.json › popups (Windows aynı dosyayı okur);
+/// görseli yüklenemeyen reklam listeye girmez, liste boşsa açılır reklam hiç açılmaz (yer tutucu ya da logo asla).
 struct PopupAd: Identifiable, Equatable {
     let id: String
-    /// Görselin en-boy oranı (genişlik / yükseklik); 1'den büyükse yatay açılır.
-    let aspect: CGFloat
-    let art: [Color]
+    let image: NSImage
     let url: URL
 
-    static let samples: [PopupAd] = [
-        PopupAd(id: "ornek-yatay", aspect: 16 / 9, art: [Color(red: 0.169, green: 0.176, blue: 0.2), Color(red: 0.961, green: 0.722, blue: 0.239)],
-                url: AdCatalog.home),
-    ]
+    /// Görselin en-boy oranı (genişlik / yükseklik); 1'den büyükse yatay açılır.
+    var aspect: CGFloat { image.size.height > 0 ? image.size.width / image.size.height : 1 }
+
+    static func == (lhs: PopupAd, rhs: PopupAd) -> Bool { lhs.id == rhs.id }
+
+    private struct File: Decodable {
+        struct Popup: Decodable {
+            let id: String
+            let image: String
+            let link: String
+        }
+
+        let popups: [Popup]?
+    }
+
+    /// reklamlar.json'daki açılır reklamlar; görseli bulunamayan, açılamayan ya da bağlantısı bozuk olan atlanır.
+    static func load(json: Data?, image: (String) -> NSImage?) -> [PopupAd] {
+        guard let json, let file = try? JSONDecoder().decode(File.self, from: json) else { return [] }
+        return (file.popups ?? []).compactMap { popup in
+            guard let url = URL(string: popup.link), url.scheme == "https",
+                  let picture = image(popup.image), picture.isValid, picture.size.width > 0, picture.size.height > 0 else { return nil }
+            return PopupAd(id: popup.id, image: picture, url: url)
+        }
+    }
+
+    @MainActor static let catalog: [PopupAd] = load(
+        json: Bundle.main.url(forResource: "reklamlar", withExtension: "json").flatMap { try? Data(contentsOf: $0) },
+        image: { name in Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "reklam").flatMap(NSImage.init(contentsOf:)) })
+
+    /// O günün reklamı (birden çok varsa gün sırasıyla); liste boşsa nil.
+    static func pick(from ads: [PopupAd], date: Date = Date(), calendar: Calendar = .current) -> PopupAd? {
+        guard !ads.isEmpty else { return nil }
+        return ads[(calendar.ordinality(of: .day, in: .era, for: date) ?? 0) % ads.count]
+    }
 }
 
 @MainActor
@@ -244,7 +273,7 @@ enum PopupAdSchedule {
     static func next(model: AppModel, defaults: UserDefaults = .standard) -> PopupAd? {
         guard model.step == .done, !model.isRunning, !model.demoMode, !model.isStarting,
               ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil,
-              let ad = PopupAd.samples.first else { return nil }
+              let ad = PopupAd.pick(from: PopupAd.catalog) else { return nil }
         let today = Calendar.current.startOfDay(for: Date()).timeIntervalSince1970
         guard defaults.double(forKey: key) < today else { return nil }
         defaults.set(today, forKey: key)
@@ -258,16 +287,14 @@ struct PopupAdView: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        let width: CGFloat = ad.aspect >= 1 ? 560 : 340
+        // Dikey görsel 340 × 604'e kadar, yatay 560 genişlikte; oran korunur.
+        let width: CGFloat = ad.aspect >= 1 ? 560 : min(340, 604 * ad.aspect)
         Button {
             openURL(ad.url)
             close()
         } label: {
-            ZStack {
-                LinearGradient(colors: ad.art, startPoint: .topLeading, endPoint: .bottomTrailing)
-                DSLogoMark(height: 72, breathing: false)
-            }
-            .frame(width: width, height: width / ad.aspect)
+            Image(nsImage: ad.image).resizable().interpolation(.high).aspectRatio(contentMode: .fill)
+                .frame(width: width, height: width / ad.aspect)
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {

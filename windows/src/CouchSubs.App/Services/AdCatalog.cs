@@ -5,7 +5,9 @@ using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using CouchSubs.App.Controls;
+using CouchSubs.App.Views;
 using CouchSubs.Core;
+using CouchSubs.Shell;
 
 namespace CouchSubs.App.Services;
 
@@ -56,6 +58,47 @@ public static class AdCatalog
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or IOException)
         {
             return [];
+        }
+    }
+
+    /// <summary>
+    /// Açılır reklamlar (reklamlar.json › popups): görsel reklam/ klasöründen yüklenir; dosya yoksa, açılamıyorsa ya da
+    /// boyutu sıfırsa o reklam atlanır. Hiçbiri yüklenemezse liste boş ve açılır reklam açılmaz.
+    /// </summary>
+    public static IReadOnlyList<PopupAd> LoadPopups()
+    {
+        try
+        {
+            using var stream = typeof(AdCatalog).Assembly.GetManifestResourceStream("reklamlar.json");
+            if (stream is null) return [];
+            using var reader = new StreamReader(stream);
+            var list = new List<PopupAd>();
+            foreach (var entry in PopupAdPolicy.Parse(reader.ReadToEnd()))
+                if (Picture(entry.Image) is { PixelWidth: > 0, PixelHeight: > 0 } picture) list.Add(new PopupAd(picture, entry.Link));
+            return list;
+        }
+        catch (Exception error) when (error is IOException or InvalidOperationException)
+        {
+            return [];
+        }
+    }
+
+    private static BitmapSource? Picture(string file)
+    {
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri($"pack://application:,,,/CouchSubs;component/Assets/reklam/{file}", UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception error) when (error is IOException or UriFormatException or NotSupportedException or InvalidOperationException
+                                          or System.Runtime.InteropServices.ExternalException)
+        {
+            return null;
         }
     }
 

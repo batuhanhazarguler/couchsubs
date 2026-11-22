@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import AppKit
 import CouchSubsCore
 import XCTest
 @testable import CouchSubs
@@ -137,5 +138,23 @@ final class NewDesignTests: XCTestCase {
         let tail = try XCTUnwrap(LogArchive.tail(file))
         XCTAssertLessThanOrEqual(tail.utf8.count, LogArchive.maxBytesPerLog)
         XCTAssertTrue(tail.hasPrefix(line))
+    }
+
+    /// Açılır reklam reklamlar.json › popups'tan gelir (Enmera dikey görseli ve bağlantısı). Görsel yoksa, açılamıyorsa,
+    /// bağlantı bozuksa ya da liste boşsa açılır reklam hiç açılmaz: yer tutucu ya da logo asla gösterilmez.
+    func testPopupAdNeverShowsWithoutImage() throws {
+        let json = Data(#"{"popups":[{"id":"a","image":"a.jpg","link":"https://enmera.com.tr"},{"id":"b","image":"yok.jpg","link":"https://enmera.com.tr"}],"ads":[]}"#.utf8)
+        let picture = NSImage(size: NSSize(width: 9, height: 16), flipped: false) { _ in true }
+        XCTAssertEqual(PopupAd.load(json: json) { $0 == "a.jpg" ? picture : nil }.map(\.id), ["a"])
+        XCTAssertTrue(PopupAd.load(json: json) { _ in nil }.isEmpty)
+        XCTAssertTrue(PopupAd.load(json: nil) { _ in picture }.isEmpty)
+        XCTAssertTrue(PopupAd.load(json: Data(#"{"ads":[]}"#.utf8)) { _ in picture }.isEmpty)
+        XCTAssertTrue(PopupAd.load(json: Data("bozuk".utf8)) { _ in picture }.isEmpty)
+        XCTAssertNil(PopupAd.pick(from: []))
+        // Uygulamayla gelen gerçek reklam: dikey Enmera görseli yükleniyor, tıklanınca Enmera Commerce sayfası.
+        let ad = try XCTUnwrap(PopupAd.catalog.first)
+        XCTAssertLessThan(ad.aspect, 1)
+        XCTAssertEqual(ad.url.host, "enmera.com.tr")
+        XCTAssertEqual(PopupAd.pick(from: PopupAd.catalog)?.id, ad.id)
     }
 }
