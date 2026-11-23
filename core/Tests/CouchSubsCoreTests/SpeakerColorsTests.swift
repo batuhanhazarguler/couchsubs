@@ -54,4 +54,14 @@ final class SpeakerColorsTests: XCTestCase {
         ])
         XCTAssertEqual(SpeakerColors.segments(in: "Adsız"), [.init(text: "Adsız", color: nil)])
     }
+
+    /// Karakter Adı › Tüm Satır: ad ve cümle, devam satırıyla birlikte konuşanın renginde.
+    func testWholeLineColorsTheSentence() {
+        let text = "Görev başladı\nMattia: Buradan\ngidelim.\nLucia : Tamam."
+        XCTAssertEqual(SpeakerColors.segments(in: text, wholeLine: true), [
+            .init(text: "Görev başladı\n", color: nil),
+            .init(text: "Mattia: Buradan\ngidelim.\n", color: "#90CAF9"),
+            .init(text: "Lucia : Tamam.", color: "#F06292"),
+        ])
+    }
 }

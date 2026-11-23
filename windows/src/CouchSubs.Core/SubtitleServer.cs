@@ -87,6 +87,8 @@ public enum NameColorMode
     [JsonStringEnumMemberName("text")] Text,
     [JsonStringEnumMemberName("single")] Single,
     [JsonStringEnumMemberName("speaker")] Speaker,
+    /// <summary>"Tüm Satır": karaktere göre renk; ad ve cümle o karakterin renginde (TV'ye <c>style.wholeLine</c>).</summary>
+    [JsonStringEnumMemberName("line")] Line,
 }
 
 /// <summary>
@@ -779,7 +781,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         lock (gate) lastStyle = style;
         // Karakter adı rengi: "Tek Renk"te herkes aynı renk, "Karaktere Göre"de seçilen renkler (Mac ile aynı).
         SpeakerBook.Configure(style.NameColorMode == NameColorMode.Single ? SubtitleStyle.Hex(style.NameHex) : null,
-            style.NameColorMode == NameColorMode.Speaker ? style.CharacterColors ?? new Dictionary<string, string>() : new Dictionary<string, string>());
+            style.NameColorMode is NameColorMode.Speaker or NameColorMode.Line ? style.CharacterColors ?? new Dictionary<string, string>() : new Dictionary<string, string>());
         Broadcast(StyleFrame(style, SetApart), subtitle: true);
     }
 
@@ -1082,6 +1084,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             ["background"] = Math.Clamp(style.Background, 0, 100),
             ["backgroundColor"] = style.BackgroundRgb,
             ["nameOnly"] = style.NameOnly,
+            ["wholeLine"] = style.NameColorMode == NameColorMode.Line,
             ["backgroundShape"] = style.BackgroundShape.ToString().ToLowerInvariant(),
             ["bold"] = style.Bold,
             ["bottomPercent"] = style.BottomPercent,

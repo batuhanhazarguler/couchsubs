@@ -227,7 +227,7 @@ private fun SubtitlePreview(lines: Int, version: Int = 0) {
             }
             Text(buildAnnotatedString {
                 if (showNames) withStyle(SpanStyle(color = name)) { append("$who: ") }
-                withStyle(SpanStyle(color = text)) { append(line) }
+                withStyle(SpanStyle(color = if (speakerColors && style.nameColorMode == NameColorMode.LINE) name else text)) { append(line) }
             }, style = Tokens.Type.body.copy(fontSize = (display * 0.5f).sp, lineHeight = (display * 0.62f).sp,
                 fontWeight = if (style.bold) FontWeight.Bold else FontWeight.SemiBold,
                 shadow = if (style.background == 0) Shadow(Color.Black.copy(alpha = 0.85f), blurRadius = 3f) else null),
@@ -346,8 +346,9 @@ private fun AppearancePage() {
         // Karakter Adı: Yazıyla Aynı (konuşan rengi kapalı), Tek Renk ya da Karaktere Göre (Mac ve iPhone ile aynı).
         val mode = if (!settings.speakerColors) NameColorMode.TEXT else if (style.nameColorMode == NameColorMode.TEXT) NameColorMode.SPEAKER else style.nameColorMode
         SettingUnit(stringResource(R.string.set_character_name), if (mode == NameColorMode.TEXT) stringResource(R.string.set_name_same_note) else null) {
-            val modes = listOf(NameColorMode.TEXT, NameColorMode.SINGLE, NameColorMode.SPEAKER)
-            Segmented(listOf(stringResource(R.string.set_name_same), stringResource(R.string.set_name_single), stringResource(R.string.set_name_speaker)),
+            val modes = listOf(NameColorMode.TEXT, NameColorMode.SINGLE, NameColorMode.SPEAKER, NameColorMode.LINE)
+            Segmented(listOf(stringResource(R.string.set_name_same), stringResource(R.string.set_name_single), stringResource(R.string.set_name_speaker),
+                stringResource(R.string.set_name_line)),
                 modes.indexOf(mode)) { index ->
                 val chosen = modes[index]
                 look.change {
@@ -363,7 +364,7 @@ private fun AppearancePage() {
                     look.change { nameHex = swatch.hex }
                     test()
                 }
-                NameColorMode.SPEAKER -> CharacterColors(style.characterColors) { key, hex ->
+                NameColorMode.SPEAKER, NameColorMode.LINE -> CharacterColors(style.characterColors) { key, hex ->
                     look.change { characterColors = characterColors + (key to hex) }
                     test()
                 }

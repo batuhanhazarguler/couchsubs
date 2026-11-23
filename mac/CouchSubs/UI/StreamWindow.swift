@@ -223,7 +223,7 @@ struct StreamWindowView: View {
         let colored = model.settings.speakerColors && !line.paragraphs
         let text = SubtitleOverlayView.subtitleText(wrapped.text, colored: colored,
                                                     base: SubtitleOverlayView.textColor(style), book: model.speakerBook,
-                                                    nameOnly: style.nameOnly)
+                                                    nameOnly: style.nameOnly, wholeLine: style.nameColorMode == .line)
             .font(.system(size: size, weight: weight))
         return text
             .opacity(textOpacity)

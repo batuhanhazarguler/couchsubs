@@ -33,6 +33,11 @@ public enum SubtitleTextColor: String, Codable, CaseIterable, Sendable {
 /// Karakter adının rengi (Altyazı Görünümü › Karakter Adı): yazıyla aynı, herkes tek renk ya da karaktere göre.
 public enum NameColorMode: String, Codable, CaseIterable, Sendable {
     case text, single, speaker
+    /// "Tüm Satır": karaktere göre renk; ad ve cümle o karakterin renginde (TV'ye `style.wholeLine`).
+    case line
+
+    /// Ad renkleri karaktere göre mi (Karaktere Göre ya da Tüm Satır).
+    public var perCharacter: Bool { self == .speaker || self == .line }
 }
 
 /// Android TV'de PS5 görüntüsünün nasıl gösterildiği (Windows TvDisplayMode, Android TvDisplayMode ile aynı).
@@ -148,7 +153,7 @@ public struct SubtitleStyle: Codable, Equatable, Sendable {
         ["fontSize": fontSize, "bottomPercent": bottomPercent, "placement": placement.rawValue,
          "background": max(0, min(100, background)), "backgroundShape": backgroundShape.rawValue, "bold": bold, "textColor": textColor.rawValue,
          "displayMode": displayMode.rawValue, "stackPrevious": stackPrevious,
-         "backgroundColor": backgroundColor, "nameOnly": nameOnly]
+         "backgroundColor": backgroundColor, "nameOnly": nameOnly, "wholeLine": nameColorMode == .line]
             .merging(textHex.map { ["textHex": $0] } ?? [:]) { $1 }
             .merging(hdmiInput.map { ["hdmiInput": $0] } ?? [:]) { $1 }
     }
@@ -796,7 +801,7 @@ public final class SubtitleServer: @unchecked Sendable {
     public func sendStyle(_ style: SubtitleStyle) {
         queue.async { self.lastStyle = style }
         speakerBook.configure(fixed: style.nameColorMode == .single ? style.nameHex : nil,
-                              overrides: style.nameColorMode == .speaker ? style.characterColors : [:])
+                              overrides: style.nameColorMode.perCharacter ? style.characterColors : [:])
         var json = style.json
         json["setApart"] = setApart
         broadcast(event: "style", json: json)

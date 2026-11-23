@@ -446,7 +446,7 @@ struct SubtitleOverlayView: View {
         let shown: Double = line.fading ? 0 : opacity
         let colored = model.settings.speakerColors && !line.paragraphs
         let text = Self.subtitleText(wrapped.text, colored: colored, base: Self.textColor(style), book: model.speakerBook,
-                                     nameOnly: style.nameOnly)
+                                     nameOnly: style.nameOnly, wholeLine: style.nameColorMode == .line)
             .font(.system(size: size, weight: weight))
         let padded = text
             .multilineTextAlignment(alignment)
@@ -512,12 +512,14 @@ struct SubtitleOverlayView: View {
 
     /// Altyazı yazısı. Konuşana göre renk açıksa "Mattia: …" satırı (bölünmüş devamıyla) o konuşanın renginde
     /// (bkz. `SpeakerColors`); adsız satırlar ve görev paneli gibi paragraflar `base` renginde kalır.
-    static func subtitleText(_ text: String, colored: Bool, base: Color, book: SpeakerColorBook? = nil, nameOnly: Bool = false) -> Text {
+    /// `wholeLine` (Karakter Adı › Tüm Satır): ad ve cümle o konuşanın renginde.
+    static func subtitleText(_ text: String, colored: Bool, base: Color, book: SpeakerColorBook? = nil, nameOnly: Bool = false,
+                             wholeLine: Bool = false) -> Text {
         guard colored else { return Text(verbatim: text).foregroundColor(base) }
-        return SpeakerColors.segments(in: text, book: book).reduce(Text(verbatim: "")) { result, segment in
+        return SpeakerColors.segments(in: text, book: book, wholeLine: wholeLine).reduce(Text(verbatim: "")) { result, segment in
             let color = segment.color.flatMap(speakerColor) ?? base
             // Yeni arayüz (style.nameOnly): yalnız ad ve iki nokta renkli, cümle yazı renginde (TV uygulamasıyla aynı).
-            if nameOnly, segment.color != nil, let colon = segment.text.firstIndex(where: { $0 == ":" || $0 == "\u{FF1A}" }) {
+            if nameOnly, !wholeLine, segment.color != nil, let colon = segment.text.firstIndex(where: { $0 == ":" || $0 == "\u{FF1A}" }) {
                 let name = segment.text[...colon]
                 let rest = segment.text[segment.text.index(after: colon)...]
                 return result + Text(verbatim: String(name)).foregroundColor(color) + Text(verbatim: String(rest)).foregroundColor(base)

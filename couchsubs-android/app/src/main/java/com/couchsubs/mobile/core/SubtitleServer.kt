@@ -68,7 +68,11 @@ data class SubtitleStyle(
 }
 
 /** Karakter adının rengi (Mac/iPhone NameColorMode, Windows NameColorMode ile aynı). */
-enum class NameColorMode { TEXT, SINGLE, SPEAKER }
+enum class NameColorMode {
+    TEXT, SINGLE, SPEAKER,
+    /** "Tüm Satır": karaktere göre renk; ad ve cümle o karakterin renginde (TV'ye `style.wholeLine`). */
+    LINE,
+}
 
 /** Altyazıları TV'ye ileten taraf. */
 interface SubtitleSender {
@@ -336,6 +340,7 @@ class SubtitleServer(
                 // Mac/iPhone SubtitleStyle.json ile aynı alanlar; textHex ve hdmiInput yalnız seçildiyse gider.
                 "backgroundColor" to (SubtitleStyle.hex(style.backgroundColor) ?: SubtitleStyle.DEFAULT_BACKGROUND_COLOR),
                 "nameOnly" to style.nameOnly,
+                "wholeLine" to (style.nameColorMode == NameColorMode.LINE),
             ) + listOfNotNull(
                 SubtitleStyle.hex(style.textHex)?.let { "textHex" to it },
                 style.hdmiInput?.takeIf { it in 1..4 }?.let { "hdmiInput" to it },
@@ -651,7 +656,7 @@ class SubtitleServer(
         // Karakter adı renkleri (Mac SubtitleServer.updateStyle gibi): tek renk ya da kullanıcının seçtiği kişi renkleri.
         SpeakerColors.session.configure(
             fixed = if (style.nameColorMode == NameColorMode.SINGLE) SubtitleStyle.hex(style.nameHex) ?: SubtitlePalette.names[0].hex else null,
-            overrides = if (style.nameColorMode == NameColorMode.SPEAKER) style.characterColors else emptyMap(),
+            overrides = if (style.nameColorMode == NameColorMode.SPEAKER || style.nameColorMode == NameColorMode.LINE) style.characterColors else emptyMap(),
         )
         broadcast(styleFrame(style, setApart), subtitle = true)
     }

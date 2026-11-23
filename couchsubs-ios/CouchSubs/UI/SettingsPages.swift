@@ -194,7 +194,9 @@ struct PhoneSubtitlePreview: View {
             VStack(spacing: Mobile.Space.hair) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     (Text(verbatim: model.settings.showSpeakerNames ? line.who + ": " : "").foregroundColor(nameColor(line.who, index: index, style: style))
-                     + Text(verbatim: line.text).foregroundColor(SubtitlePalette.color(SubtitlePalette.textHex(style)) ?? .white))
+                     + Text(verbatim: line.text).foregroundColor(model.settings.speakerColors && style.nameColorMode == .line
+                                                                    ? nameColor(line.who, index: index, style: style)
+                                                                    : SubtitlePalette.color(SubtitlePalette.textHex(style)) ?? .white))
                         .font(.system(size: CGFloat(display) * 0.4, weight: style.bold ? .bold : .semibold))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, Mobile.Space.inline)
@@ -218,7 +220,7 @@ struct PhoneSubtitlePreview: View {
         switch model.settings.speakerColors ? style.nameColorMode : .text {
         case .text: return SubtitlePalette.color(SubtitlePalette.textHex(style)) ?? .white
         case .single: return SubtitlePalette.color(style.nameHex ?? SubtitlePalette.names[0].hex) ?? .dsAmber
-        case .speaker:
+        case .speaker, .line:
             let hex = style.characterColors[who.lowercased()] ?? SubtitlePalette.names[(index + 1) % SubtitlePalette.names.count].hex
             return SubtitlePalette.color(hex) ?? .dsAmber
         }
@@ -343,7 +345,7 @@ private struct AppearancePage: View {
         return SettingUnit(title: "Character Name",
                            hint: mode.wrappedValue == .text ? "The character name is shown in the same color as the text." : nil) {
             VStack(alignment: .leading, spacing: Mobile.Space.gap) {
-                DSTabs(selection: mode, items: [(NameColorMode.text, "Same as Text"), (.single, "Single Color"), (.speaker, "By Character")])
+                DSTabs(selection: mode, items: [(NameColorMode.text, "Same as Text"), (.single, "Single Color"), (.speaker, "By Character"), (.line, "Whole Line")])
                 switch mode.wrappedValue {
                 case .text:
                     EmptyView()
@@ -352,7 +354,7 @@ private struct AppearancePage: View {
                         update { $0.nameHex = swatch.hex }
                         model.sendTestSubtitle()
                     }
-                case .speaker:
+                case .speaker, .line:
                     CharacterColors()
                 }
             }

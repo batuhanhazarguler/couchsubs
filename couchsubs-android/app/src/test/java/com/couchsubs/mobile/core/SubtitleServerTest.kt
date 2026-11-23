@@ -38,7 +38,7 @@ class SubtitleServerTest {
         assertEquals("event: clear\ndata: {}\n\n", SubtitleServer.clearFrame())
         assertEquals(
             "event: style\ndata: {\"background\":90,\"backgroundColor\":\"#101014\",\"backgroundShape\":\"fit\",\"bold\":false,\"bottomPercent\":7,\"displayMode\":\"inApp\",\"fontSize\":46," +
-                "\"nameOnly\":false,\"placement\":\"cover\",\"setApart\":true,\"stackPrevious\":true,\"textColor\":\"white\"}\n\n",
+                "\"nameOnly\":false,\"placement\":\"cover\",\"setApart\":true,\"stackPrevious\":true,\"textColor\":\"white\",\"wholeLine\":false}\n\n",
             SubtitleServer.styleFrame(SubtitleStyle()),
         )
         assertTrue(SubtitleServer.styleFrame(SubtitleStyle(displayMode = TvDisplayMode.OVERLAY, textColor = SubtitleTextColor.YELLOW))

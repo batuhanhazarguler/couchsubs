@@ -55,13 +55,16 @@ object SpeakerColors {
      * metin) bulunur. Yalnız satır başındaki konuşan adı ve iki noktası ("Mattia:") konuşanın renginde; cümle ve bölünmüş
      * devam satırları renksizdir, kullanıcının seçtiği yazı renginde kalır (önceden bütün satır renkleniyor, "Yazı rengi"
      * beyazken altyazı renkli görünüyordu). Parçalar metnin tamamını kaplar. Konuşan yoksa boş liste.
+     * [wholeLine] (Karakter Adı › "Tüm Satır"): ad ve cümle, devam satırlarıyla birlikte sonraki konuşanın adına dek o
+     * konuşanın renginde (Mac, iPhone, Windows ve TV uygulamasıyla aynı).
      */
-    fun segments(display: String, source: String = display, book: SpeakerColorBook = session): List<Segment> {
+    fun segments(display: String, source: String = display, book: SpeakerColorBook = session, wholeLine: Boolean = false): List<Segment> {
         val names = speakers(source, book)
         if (names.isEmpty()) return emptyList()
         val result = mutableListOf<Segment>()
         var start = 0
         var lineStart = 0
+        var running: String? = null
         while (lineStart <= display.length) {
             val line = display.substring(lineStart).substringBefore('\n')
             val indent = line.length - line.trimStart().length
@@ -73,15 +76,20 @@ object SpeakerColors {
                 val nameStart = lineStart + indent
                 val colon = trimmed.drop(match.name.length).indexOfFirst { it == ':' || it == '：' }
                 val nameEnd = nameStart + match.name.length + colon + 1
-                if (nameStart > start) result += Segment(start, nameStart, null)
-                result += Segment(nameStart, nameEnd, match.color)
-                start = nameEnd
+                if (nameStart > start) result += Segment(start, nameStart, running)
+                if (wholeLine) {
+                    running = match.color
+                    start = nameStart
+                } else {
+                    result += Segment(nameStart, nameEnd, match.color)
+                    start = nameEnd
+                }
             }
             val next = display.indexOf('\n', lineStart)
             if (next < 0) break
             lineStart = next + 1
         }
-        if (display.length > start) result += Segment(start, display.length, null)
+        if (display.length > start) result += Segment(start, display.length, running)
         return result
     }
 }

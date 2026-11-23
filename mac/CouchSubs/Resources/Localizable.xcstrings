@@ -16025,6 +16025,7 @@
     "Same as Text": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Same as Text"}}, "tr": {"stringUnit": {"state": "translated", "value": "Yazıyla Aynı"}}}},
     "Single Color": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Single Color"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tek Renk"}}}},
     "By Character": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "By Character"}}, "tr": {"stringUnit": {"state": "translated", "value": "Karaktere Göre"}}}},
+    "Whole Line": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Whole Line"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tüm Satır"}}}},
     "The character name is shown in the same color as the text.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The character name is shown in the same color as the text."}}, "tr": {"stringUnit": {"state": "translated", "value": "Karakter adı yazıyla aynı renkte gösterilir."}}}},
     "New characters get colors in turn.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "New characters get colors in turn."}}, "tr": {"stringUnit": {"state": "translated", "value": "Yeni karakterlere sırayla renk verilir."}}}},
     "Navy": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Navy"}}, "tr": {"stringUnit": {"state": "translated", "value": "Lacivert"}}}},

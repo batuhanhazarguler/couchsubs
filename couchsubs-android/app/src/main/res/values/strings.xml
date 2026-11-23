@@ -808,6 +808,7 @@
     <string name="set_name_same">Yazıyla Aynı</string>
     <string name="set_name_single">Tek Renk</string>
     <string name="set_name_speaker">Karaktere Göre</string>
+    <string name="set_name_line">Tüm Satır</string>
     <string name="set_name_same_note">Karakter adı yazıyla aynı renkte gösterilir.</string>
     <string name="set_characters_empty">Oynarken karşılaştığınız karakterler burada görünür.</string>
     <string name="set_characters_more">Yeni karakterlere sırayla renk verilir.</string>

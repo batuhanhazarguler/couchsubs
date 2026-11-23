@@ -799,6 +799,7 @@
     <string name="set_name_same">Same as Text</string>
     <string name="set_name_single">Single Color</string>
     <string name="set_name_speaker">By Character</string>
+    <string name="set_name_line">Whole Line</string>
     <string name="set_name_same_note">The character name is shown in the same color as the text.</string>
     <string name="set_characters_empty">Characters you meet while playing appear here.</string>
     <string name="set_characters_more">New characters get colors in turn.</string>

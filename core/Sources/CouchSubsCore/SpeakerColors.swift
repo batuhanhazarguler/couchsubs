@@ -69,7 +69,10 @@ public enum SpeakerColors {
     /// Metnin parçaları. Yalnız satır başındaki konuşan adı ve iki noktası ("Mattia:") o konuşanın renginde; cümle ve
     /// bölünmüş devam satırları renksizdir, kullanıcının seçtiği yazı renginde kalır (önceden bütün satır renkleniyor,
     /// "Yazı rengi" beyazken altyazı renkli görünüyordu). Parçalar birleşince metnin kendisi çıkar.
-    public static func segments(in text: String, book: SpeakerColorBook? = nil) -> [Segment] {
+    ///
+    /// `wholeLine` (Karakter Adı › "Tüm Satır"): ad ve cümle, bölünmüş devam satırlarıyla birlikte sonraki konuşanın
+    /// adına dek o konuşanın renginde (Windows, Android ve TV uygulamasıyla aynı).
+    public static func segments(in text: String, book: SpeakerColorBook? = nil, wholeLine: Bool = false) -> [Segment] {
         var result: [Segment] = []
         func add(_ piece: String, _ color: String?) {
             guard !piece.isEmpty else { return }
@@ -79,15 +82,18 @@ public enum SpeakerColors {
                 result.append(Segment(text: piece, color: color))
             }
         }
+        var running: String?
         for (index, line) in text.components(separatedBy: "\n").enumerated() {
-            if index > 0 { add("\n", nil) }
+            if index > 0 { add("\n", running) }
             guard let name = speaker(line), let range = nameRange(name, in: line) else {
-                add(line, nil)
+                add(line, running)
                 continue
             }
-            add(String(line[..<range.lowerBound]), nil)
-            add(String(line[range]), book?.color(name) ?? color(for: name))
-            add(String(line[range.upperBound...]), nil)
+            let color = book?.color(name) ?? color(for: name)
+            add(String(line[..<range.lowerBound]), running)
+            add(String(line[range]), color)
+            if wholeLine { running = color }
+            add(String(line[range.upperBound...]), running)
         }
         return result
     }

@@ -64,6 +64,15 @@ for (const [name, file] of Object.entries(sources)) {
     ]);
   });
 
+  test(`${name}: Tüm Satır (wholeLine) ad ve cümleyi devam satırıyla birlikte konuşanın renginde verir`, () => {
+    const map = api.speakerMap([{ name: 'Mattia', color: '#90CAF9' }, { name: 'Lucia', color: '#F06292' }]);
+    const segments = api.speakerSegments('Mattia: Bu işi bugün\nbitirmeliyiz.\nLucia: Tamam.', map, true);
+    assert.deepEqual(JSON.parse(JSON.stringify(segments)), [
+      { text: 'Mattia: Bu işi bugün\nbitirmeliyiz.\n', color: '#90CAF9' },
+      { text: 'Lucia: Tamam.', color: '#F06292' },
+    ]);
+  });
+
   test(`${name}: ad yalnız satır başında aranır, adsız baş renksiz kalır`, () => {
     const map = api.speakerMap([{ name: 'ARTHUR', color: '#FFD54F' }]);
     const segments = api.speakerSegments('Dikkat et.\nARTHUR : Gidelim.\nSonra ARTHUR: değil', map);

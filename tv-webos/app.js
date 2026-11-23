@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.92';
+  var APP_VERSION = '0.9.93';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -606,11 +606,14 @@
   // Metnin parçaları: [{text, color}] (renksiz parçada color null). Ad yalnız satır başında aranır ve yalnız "Ad:"
   // boyanır; cümle ve bölünmüş devam satırları kullanıcının yazı renginde kalır (TV 0.9.79; önceden bütün satır
   // boyanıyor, "Yazı rengi" beyazken altyazı renkli görünüyordu).
-  function speakerSegments(text, map) {
+  // wholeLine (Karakter Adı › "Tüm Satır", style.wholeLine): ad ve cümle, devam satırlarıyla birlikte sonraki konuşanın
+  // adına dek o konuşanın renginde (Mac, iPhone, Windows ve Android ile aynı).
+  function speakerSegments(text, map, wholeLine) {
     if (!map) return [{ text: text, color: null }];
     var segments = [];
     var start = 0;
     var lineStart = 0;
+    var running = null;
     while (lineStart <= text.length) {
       var found = null;
       var end = 0;
@@ -626,24 +629,31 @@
         }
       }
       if (found) {
-        if (lineStart > start) segments.push({ text: text.slice(start, lineStart), color: null });
-        segments.push({ text: text.slice(lineStart, end), color: map[found] });
-        start = end;
+        if (lineStart > start) segments.push({ text: text.slice(start, lineStart), color: running });
+        if (wholeLine) {
+          running = map[found];
+          start = lineStart;
+        } else {
+          segments.push({ text: text.slice(lineStart, end), color: map[found] });
+          start = end;
+        }
       }
       var next = text.indexOf('\n', lineStart);
       if (next < 0) break;
       lineStart = next + 1;
     }
-    if (start < text.length || !segments.length) segments.push({ text: text.slice(start), color: null });
+    if (start < text.length || !segments.length) segments.push({ text: text.slice(start), color: running });
     return segments;
   }
 
   // Yeni arayüzdeki "Karakter Adı" rengi yalnız adı boyar (style.nameOnly). 0.9.79'dan beri speakerSegments zaten
   // yalnız "Ad:" bölümünü renkli verir; bu ayrım yeni arayüzle uyum için kalıyor (cümle hiçbir durumda boyanmaz).
   var speakerNameOnly = false;
+  // Karakter Adı › Tüm Satır (style.wholeLine): cümle de konuşanın renginde. Alanı göndermeyen bilgisayarda yalnız ad.
+  var speakerWholeLine = false;
 
   function paintSpeakers(el, text, map) {
-    var segments = speakerSegments(text, map);
+    var segments = speakerSegments(text, map, speakerWholeLine);
     if (segments.length === 1 && !segments[0].color) return;
     el.textContent = '';
     for (var i = 0; i < segments.length; i++) {
@@ -653,7 +663,7 @@
       }
       var colored = segments[i].text;
       var rest = '';
-      if (speakerNameOnly) {
+      if (speakerNameOnly && !speakerWholeLine) {
         var colon = colored.search(/[:：]/);
         if (colon >= 0) {
           rest = colored.slice(colon + 1);
@@ -2015,6 +2025,7 @@
       $('subtitle-prev2-text').style.background = 'rgba(' + base + ', ' + (alpha * 0.83).toFixed(2) + ')';
     }
     speakerNameOnly = style.nameOnly === true;
+    speakerWholeLine = style.wholeLine === true;
     // Ayarı göndermeyen bilgisayar (eski Windows sürümü, Mac) eski davranışı bekler: önceki satırlar üstte kalır.
     // Yoksa bir kez kapatılan ayar başka bilgisayara bağlanınca da kapalı kalırdı.
     stackPrevious = typeof style.stackPrevious === 'boolean' ? style.stackPrevious : true;

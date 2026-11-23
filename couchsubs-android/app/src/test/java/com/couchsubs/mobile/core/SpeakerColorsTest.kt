@@ -47,6 +47,15 @@ class SpeakerColorsTest {
         assertTrue(SpeakerColors.segments("Sadece cümle.").isEmpty())
     }
 
+    @Test
+    fun wholeLineColorsTheSentence() {
+        val two = "Lucia: Gidelim.\nJason : Tamam."
+        assertEquals(
+            listOf(SpeakerColors.Segment(0, 16, "#F06292"), SpeakerColors.Segment(16, two.length, "#4DD0E1")),
+            SpeakerColors.segments(two, book = SpeakerColorBook(), wholeLine = true),
+        )
+    }
+
     /** Telefon ekranındaki altyazı: ad renkli span, cümleye span yok (Text'in Yazı rengi geçerli). */
     @Test
     fun phoneSubtitleKeepsTheTextColorOnTheLine() {

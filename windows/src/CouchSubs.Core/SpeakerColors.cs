@@ -46,27 +46,39 @@ public static class SpeakerColors
     /// kalır (önceden bütün satır renkleniyor, "Yazı rengi" beyazken altyazı renkli görünüyordu). Ad yoksa tek renksiz parça.
     /// </summary>
     /// <param name="colorOf">Adın rengi (oturumun <see cref="SpeakerColorBook"/>'u); verilmezse <see cref="Color"/>.</param>
-    public static IReadOnlyList<Segment> Segments(string text, IReadOnlyList<string> names, Func<string, string?>? colorOf = null)
+    /// <param name="wholeLine">Karakter Adı › "Tüm Satır": ad ve cümle, devam satırlarıyla birlikte sonraki konuşanın adına
+    /// dek o konuşanın renginde (Mac, Android ve TV uygulamasıyla aynı).</param>
+    public static IReadOnlyList<Segment> Segments(string text, IReadOnlyList<string> names, Func<string, string?>? colorOf = null, bool wholeLine = false)
     {
         if (names.Count == 0) return [new Segment(text, null)];
         var result = new List<Segment>();
         var start = 0;
         var lineStart = 0;
+        string? running = null;
         while (lineStart <= text.Length)
         {
             var found = names.Where(name => NameEnd(text, lineStart, name) > 0).OrderByDescending(name => name.Length).FirstOrDefault();
             if (found is not null)
             {
                 var end = NameEnd(text, lineStart, found);
-                if (lineStart > start) result.Add(new Segment(text[start..lineStart], null));
-                result.Add(new Segment(text[lineStart..end], colorOf is null ? Color(found) : colorOf(found)));
-                start = end;
+                var color = colorOf is null ? Color(found) : colorOf(found);
+                if (lineStart > start) result.Add(new Segment(text[start..lineStart], running));
+                if (wholeLine)
+                {
+                    running = color;
+                    start = lineStart;
+                }
+                else
+                {
+                    result.Add(new Segment(text[lineStart..end], color));
+                    start = end;
+                }
             }
             var next = text.IndexOf('\n', lineStart);
             if (next < 0) break;
             lineStart = next + 1;
         }
-        if (start < text.Length) result.Add(new Segment(text[start..], null));
+        if (start < text.Length) result.Add(new Segment(text[start..], running));
         return result;
     }
 

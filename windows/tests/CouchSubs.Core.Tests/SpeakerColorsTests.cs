@@ -55,4 +55,13 @@ public class SpeakerColorsTests
             segments);
         Assert.Equal([new SpeakerColors.Segment("Düz metin", null)], SpeakerColors.Segments("Düz metin", []));
     }
+
+    [Fact]
+    public void WholeLineColorsTheSentence()
+    {
+        var segments = SpeakerColors.Segments("Kapıyı aç.\nJason: Geldim\nhemen.", ["Jason"], wholeLine: true);
+        Assert.Equal(
+            [new SpeakerColors.Segment("Kapıyı aç.\n", null), new SpeakerColors.Segment("Jason: Geldim\nhemen.", "#4DD0E1")],
+            segments);
+    }
 }
