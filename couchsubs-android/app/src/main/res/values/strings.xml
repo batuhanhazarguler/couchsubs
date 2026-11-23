@@ -656,6 +656,10 @@
     <string name="dubbing_output">Ses nereden çalsın</string>
     <string name="dubbing_narrator">Anlatıcı ve adı yazmayan satırlar</string>
     <string name="dubbing_partner">Karşılıklı konuşmada ikinci kişi</string>
+    <string name="dubbing_unknown">Tanınmayan karakterlerin sesi</string>
+    <string name="dubbing_unknown_hint">Karakterin adından kadın mı erkek mi olduğu anlaşılmazsa bu ses kullanılır. Her karakterin sesini aşağıdan değiştirebilirsiniz.</string>
+    <string name="dubbing_man">Erkek</string>
+    <string name="dubbing_woman">Kadın</string>
     <string name="dubbing_characters">Karakterler</string>
     <string name="dubbing_listen">Dinle</string>
     <string name="dubbing_voice_female_1">Kadın 1 (canlı)</string>

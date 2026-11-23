@@ -1,6 +1,11 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Voice for Unknown Characters": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Voice for Unknown Characters"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tanınmayan Karakterlerin Sesi"}}}},
+    "Voice for unknown characters": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Voice for unknown characters"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tanınmayan karakterlerin sesi"}}}},
+    "Used when the name doesn't show whether the character is a man or a woman. You can change each character's voice below.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Used when the name doesn't show whether the character is a man or a woman. You can change each character's voice below."}}, "tr": {"stringUnit": {"state": "translated", "value": "Karakterin adından kadın mı erkek mi olduğu anlaşılmazsa bu ses kullanılır. Her karakterin sesini aşağıdan değiştirebilirsiniz."}}}},
+    "Man": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Man"}}, "tr": {"stringUnit": {"state": "translated", "value": "Erkek"}}}},
+    "Woman": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Woman"}}, "tr": {"stringUnit": {"state": "translated", "value": "Kadın"}}}},
     "Not responding — searching again…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not responding — searching again…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Yanıt vermiyor — yeniden aranıyor…"}}}},
     "The TV isn't responding at this address (is it on and on the same network?)": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The TV isn't responding at this address (is it on and on the same network?)"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV bu adreste yanıt vermiyor (açık ve aynı ağda mı?)"}}}},
     "The TV Isn't Responding": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The TV Isn't Responding"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV Yanıt Vermiyor"}}}},

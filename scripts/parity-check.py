@@ -114,6 +114,25 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "InkToneTests.cs", r"dark-ink\.json"),
         ("android", _DROID_TESTS + "InkToneTest.kt", r"dark-ink\.json"),
     ],
+    # Dublajda adından cinsiyeti anlaşılmayan karakter kadın sesine düşüyordu (GTA 6 Jason): "Tanınmayan karakterlerin
+    # sesi" dört platformda aynı seçim, eski kayıt bir kez düzeltilir.
+    "Dublajda tanınmayan karakterin sesi (setUnknownGender) ve eski kaydın düzeltilmesi": [
+        ("mac", _CORE + "Dubbing/VoiceCast.swift", r"func setUnknownGender\("),
+        ("mac", _CORE + "Dubbing/VoiceCast.swift", r"func upgradingRules\("),
+        ("mac", "mac/CouchSubs/UI/DubbingCard.swift", r"setUnknownGender\("),
+        ("mac", "couchsubs-ios/CouchSubs/UI/DubbingTile.swift", r"setUnknownGender\("),
+        ("windows", _WIN + "Dubbing/VoiceCast.cs", r"public void SetUnknownGender\("),
+        ("windows", _WIN + "Dubbing/VoiceCast.cs", r"private void UpgradeRules\("),
+        ("windows", "windows/src/CouchSubs.App/Views/DubbingCard.xaml.cs", r"SetUnknownGender\("),
+        ("android", _DROID + "Dubbing.kt", r"fun setUnknownGender\("),
+        ("android", _DROID + "Dubbing.kt", r"fun upgradeRules\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/DubbingTile.kt", r"setUnknownGender\("),
+    ],
+    "Ortak deneme dosyası voice-cast.json": [
+        ("mac", _CORE_TESTS + "DubbingTests.swift", r"voice-cast\.json"),
+        ("windows", _WIN_TESTS + "DubbingTests.cs", r"voice-cast\.json"),
+        ("android", _DROID_TESTS + "DubbingTest.kt", r"voice-cast\.json"),
+    ],
     # Yalnız masaüstü (#853): Xbox seçiliyken görüntü Xbox uygulaması / play.xbox.com / capture card ile OBS penceresinden
     # okunur, CouchSubs Xbox'a bağlanmaz. iPhone ve Android'de okunacak bilgisayar penceresi yoktur; telefonlarda bu seçim
     # bilinçli olarak yoktur (Android = iPhone eşitliği bozulmaz). Windows = Mac eşitliği burada denetlenir.

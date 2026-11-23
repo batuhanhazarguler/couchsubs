@@ -647,6 +647,10 @@
     <string name="dubbing_output">Play the voice on</string>
     <string name="dubbing_narrator">Narrator and unnamed lines</string>
     <string name="dubbing_partner">Second speaker in dialogue</string>
+    <string name="dubbing_unknown">Voice for unknown characters</string>
+    <string name="dubbing_unknown_hint">Used when the name doesn\'t show whether the character is a man or a woman. You can change each character\'s voice below.</string>
+    <string name="dubbing_man">Man</string>
+    <string name="dubbing_woman">Woman</string>
     <string name="dubbing_characters">Characters</string>
     <string name="dubbing_listen">Listen</string>
     <string name="dubbing_voice_female_1">Woman 1 (bright)</string>
