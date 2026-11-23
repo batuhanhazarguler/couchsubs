@@ -1190,6 +1190,24 @@ final class AppModelRunTests: XCTestCase {
         XCTAssertEqual(store.load(RegisteredConsole.self, for: StoreKey.console)?.host, "192.168.1.71")
         model.stop()
     }
+
+    /// Ayarlar'da "IP Adresi Gir": PS5'in yeni adresi elle yazılır, kaydedilir ve yeni adresle yeniden bağlanılır.
+    func testEnteredConsoleAddressIsSavedAndReconnects() async throws {
+        let services = FakeServices()
+        let store = MemoryStore()
+        let model = AppModel(services: services, store: store, defaults: .isolated())
+        model.accountId = Data(repeating: 1, count: 8)
+        try await model.register(host: "192.168.1.70", pin: "12345678")
+        model.settings.output = .computer
+        await model.start()
+        XCTAssertFalse(model.enterConsoleAddress("192.168.1.300"))
+        XCTAssertEqual(model.console?.host, "192.168.1.70")
+        XCTAssertTrue(model.enterConsoleAddress("192.168.1.72"))
+        XCTAssertEqual(model.console?.host, "192.168.1.72")
+        XCTAssertEqual(model.console?.name, "PS5-789")
+        XCTAssertEqual(store.load(RegisteredConsole.self, for: StoreKey.console)?.host, "192.168.1.72")
+        model.stop()
+    }
 }
 
 final class LocalizationTests: XCTestCase {

@@ -1244,6 +1244,19 @@ final class PhoneModel: ObservableObject {
         if settings.output == .tv || settings.output == .both { settings.output = .computer }
     }
 
+    /// Ayarlar'da "IP Adresi Gir": PS5'in yeni adresi elle yazılır (modem adresi değiştirip PS5 ağda bulunamadığında).
+    /// Geçersiz adres ya da kayıtlı PS5 yoksa false. Kayıt (anahtar) korunur; bağlıysa yeni adresle yeniden bağlanılır.
+    @discardableResult
+    func enterConsoleAddress(_ text: String) -> Bool {
+        guard let host = ManualAddress.normalize(text), let current = console else { return false }
+        if host != current.host {
+            RemotePlayLog.write("PS5 adresi elle girildi: \(current.host) -> \(host)")
+            consoleMoved(RegisteredConsole(host: host, name: current.name, registKey: current.registKey, morning: current.morning))
+        }
+        reconnect(reason: "PS5 adresi elle girildi")
+        return true
+    }
+
     private func consoleMoved(_ moved: RegisteredConsole) {
         guard console != nil else { return }
         console = moved
@@ -2125,7 +2138,7 @@ final class PhoneModel: ObservableObject {
             case .registrationInvalid: return String(localized: "The PS5 didn't accept this pairing. Pair the PS5 again with the second account in Settings.")
             case .noPicture: return String(localized: "No picture from the PS5. Is Remote Play turned off, or is the PS5 in rest mode? Check, then start again.")
             case .notFound(let host):
-                return String(format: String(localized: "PS5 not found at %@. Make sure it is on and on the same network. Reconnecting…"), host)
+                return String(format: String(localized: "PS5 not found at %@. Searching the network for it. Make sure it is on and on the same network; if its address changed, use Enter IP Address in Settings > Console. Reconnecting…"), host)
             // Kablosuz ağda akış sık kopuyordu (GitHub #388, #401): yeniden bağlanılır, kalıcı çözüm kablodur.
             case .network:
                 return String(localized: "Lost the connection to the PS5. Reconnecting… If this keeps happening, connect the PS5 to the router with a cable.")

@@ -23,7 +23,7 @@
     <string name="phase_reconnecting">Bağlantı koptu, yeniden bağlanılıyor…</string>
     <string name="reconnect">Yeniden bağlan</string>
     <string name="phase_in_use">PS5 başka bir Remote Play bağlantısında. Diğer cihazı kapat.</string>
-    <string name="phase_not_found_host">PS5 %1$s adresinde bulunamadı. Açık ve aynı ağda olduğundan emin ol. Yeniden bağlanılıyor…</string>
+    <string name="phase_not_found_host">PS5 %1$s adresinde bulunamadı, ağda aranıyor. Açık ve aynı ağda olduğundan emin ol; adresi değiştiyse Ayarlar &gt; Konsol\'da IP Adresi Gir\'i kullan. Yeniden bağlanılıyor…</string>
     <string name="phase_network">PS5 ile bağlantı koptu, yeniden bağlanılıyor… Sık oluyorsa PS5\'i modeme kabloyla bağla.</string>
     <string name="phase_remote_play_disabled">PS5\'te Uzaktan Oynama kapalı (kod %1$s). PS5\'te Ayarlar › Sistem › Uzaktan Oynama\'ya gidip Uzaktan Oynama\'yı Etkinleştir\'i aç.</string>
     <string name="phase_rejected_code">PS5 bağlantıyı reddetti (kod %1$s). Başka bir Uzaktan Oynatma (PS Remote Play) açık olabilir ya da PS5 başka bir oturumda olabilir. PS Remote Play\'i kapat, PS5\'i yeniden başlatıp tekrar dene.</string>

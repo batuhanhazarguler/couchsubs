@@ -794,6 +794,7 @@ private struct ConsolePage: View {
             }
         }
         .buttonStyle(.plain)
+        if !model.isXbox && model.console != nil { ConsoleAddressTile() }
         if !model.isXbox { LoginPasscodeTile() }
         // Yalnız Xbox: uzaktan oynatmada Xbox sesi istemciye verip TV'yi susturabilir (PS5'te ses TV'de kalır).
         if model.isXbox {
@@ -823,6 +824,43 @@ private struct ConsolePage: View {
             }
         }
         DemoModeTile(path: $path)
+    }
+}
+
+/// Konsol ve Kaynak › "IP Adresi Gir": PS5'in yeni adresi elle yazılır (adres değişip PS5 ağda bulunamazsa; Mac
+/// ConsoleSettingsCard ve Android ile aynı). Kayıt korunur, bağlıysa yeni adresle yeniden bağlanılır.
+private struct ConsoleAddressTile: View {
+    @EnvironmentObject private var model: PhoneModel
+    @State private var entering = false
+    @State private var typed = ""
+    @State private var rejected = false
+
+    var body: some View {
+        Tile {
+            ListRow(symbol: "network", title: "PS5 and connection", detail: model.console?.host)
+            Button("Enter IP Address") { entering.toggle() }.buttonStyle(DSButtonStyle(kind: .secondary))
+            if entering {
+                DSFieldChrome {
+                    TextField("IP address, e.g. 192.168.1.20", text: $typed)
+                        .keyboardType(.numbersAndPunctuation).autocorrectionDisabled().textInputAutocapitalization(.never)
+                        .onChange(of: typed) { _ in rejected = false }
+                } trailing: {
+                    Button("Save") {
+                        rejected = !model.enterConsoleAddress(typed)
+                        if !rejected {
+                            entering = false
+                            typed = ""
+                        }
+                    }
+                    .font(Mobile.TypeScale.headline)
+                    .foregroundStyle(Mobile.Palette.accentText)
+                    .padding(.horizontal, Mobile.Space.gap)
+                    .frame(minHeight: Mobile.Control.icon)
+                    .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                if rejected { MobileNote(text: String(localized: "This is not a valid IP address. Type it like 192.168.1.20, without http:// or a port number.")) }
+            }
+        }
     }
 }
 

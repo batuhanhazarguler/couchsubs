@@ -65,6 +65,7 @@ import com.couchsubs.mobile.core.SubtitlePlacement
 import com.couchsubs.mobile.core.SubtitleTextColor
 import com.couchsubs.mobile.core.TranslationPace
 import com.couchsubs.mobile.core.TvDisplayMode
+import com.couchsubs.mobile.remoteplay.ConsoleIpEntry
 import com.couchsubs.mobile.remoteplay.LoginPasscode
 import com.couchsubs.mobile.service.LiveState
 import com.couchsubs.mobile.service.TranslationService
@@ -844,6 +845,38 @@ private fun ConsolePage(onPairing: () -> Unit, onPlatform: () -> Unit, onDemo: (
     ))
     XboxSignOutRow()
     PsnSignOutRow()
+    // "IP Adresi Gir": PS5'in ağdaki adresi değişince (modem yeni adres verdi) kayıtlı PS5 yazılan adrese taşınır; çeviri
+    // sürüyorsa yeni adresle yeniden bağlanılır. Eskiden elle adres yalnız ilk kurulumda giriliyordu (Mac, iPhone, Windows ile aynı).
+    val savedConsole = settings.console
+    if (!settings.xbox && savedConsole != null) {
+        var host by remember { mutableStateOf(savedConsole.host) }
+        var entering by remember { mutableStateOf(false) }
+        var typed by remember { mutableStateOf("") }
+        var invalid by remember { mutableStateOf(false) }
+        Tile(Modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TileLabel(stringResource(R.string.settings_ps5))
+                Spacer(Modifier.weight(1f))
+                Text(host, style = Tokens.Type.caption, color = Tokens.Color.secondary)
+            }
+            SecondaryButton(stringResource(R.string.tv_enter_ip)) { entering = !entering; invalid = false }
+            if (entering) {
+                Field(typed, { typed = it; invalid = false }, stringResource(R.string.tv_enter_ip),
+                    keyboard = KeyboardOptions(keyboardType = KeyboardType.Uri), placeholder = stringResource(R.string.target_ip_hint))
+                if (invalid) Text(stringResource(R.string.address_invalid), style = Tokens.Type.caption, color = Tokens.Color.secondary)
+                PrimaryButton(stringResource(R.string.save), enabled = typed.isNotBlank()) {
+                    val current = settings.console
+                    val moved = current?.let { ConsoleIpEntry.apply(it, typed) }
+                    if (moved == null) { invalid = true; return@PrimaryButton }
+                    settings.console = moved
+                    host = moved.host
+                    typed = ""
+                    entering = false
+                    TranslationService.reconnect()
+                }
+            }
+        }
+    }
     // İkinci hesabın PS5 giriş şifresi: yalnız 4 hane gizli depoya (Keystore) yazılır; silinince kaldırılır.
     if (!settings.xbox) {
         var passcode by remember { mutableStateOf(settings.loginPasscode ?: "") }

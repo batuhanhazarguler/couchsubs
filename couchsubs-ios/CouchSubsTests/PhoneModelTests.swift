@@ -587,4 +587,16 @@ final class TVRelocationTests: XCTestCase {
         XCTAssertEqual(moved, new)
         XCTAssertEqual(model.tv?.host, new)
     }
+
+    /// Ayarlar'da "IP Adresi Gir": PS5'in yeni adresi elle yazılır; kayıt korunur, geçersiz adres reddedilir.
+    func testEnteredConsoleAddressMovesTheRegisteredPS5() async throws {
+        let model = makeModel()
+        XCTAssertFalse(model.enterConsoleAddress("192.168.1.44"), "kayıtlı PS5 yokken adres yazılmaz")
+        try await model.register(host: "192.168.1.20", pin: "12345678")
+        XCTAssertFalse(model.enterConsoleAddress("192.168.1.300"))
+        XCTAssertEqual(model.console?.host, "192.168.1.20")
+        XCTAssertTrue(model.enterConsoleAddress(" 192.168.1.44 "))
+        XCTAssertEqual(model.console?.host, "192.168.1.44")
+        XCTAssertEqual(model.console?.name, "PS5")
+    }
 }
