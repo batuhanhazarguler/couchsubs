@@ -253,6 +253,16 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenStyleLockTests.cs", r"screen-style-lock\.json"),
         ("android", _DROID_TESTS + "ScreenStyleLockTest.kt", r"screen-style-lock\.json"),
     ],
+    # Çapa takibi: telefonun/kartın dörtgeni her karede OCR'sız, alt piksel izlenir (izdüşümsel Lucas-Kanade); çeviri
+    # katmanı bu dönüşümle taşınır (docs/ekran-capasi.md).
+    "Ekran çapası takibi (ScreenAnchor)": [
+        ("mac", _CORE + "ScreenAnchor.swift", r"public func track\("),
+        ("windows", _WIN + "ScreenAnchor.cs", r"public Fix\? Track\("),
+        ("android", _DROID + "ScreenAnchor.kt", r"fun track\("),
+        ("mac", _CORE_TESTS + "ScreenAnchorTests.swift", r"screen-anchor\.json"),
+        ("windows", _WIN_TESTS + "ScreenAnchorTests.cs", r"screen-anchor\.json"),
+        ("android", _DROID_TESTS + "ScreenAnchorTest.kt", r"screen-anchor\.json"),
+    ],
     # Bilgisayar/telefon ekranında özgün stilli ekran yazısı oyun karesindeki kendi yerinde (hizalı liste değil), ortak
     # satır yerleşimiyle.
     "Ekran yazısı masaüstünde/telefonda yerinde çizim": [
