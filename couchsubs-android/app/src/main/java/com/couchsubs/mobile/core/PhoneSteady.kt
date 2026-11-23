@@ -145,3 +145,107 @@ object PhoneSteady {
         }
     }
 }
+
+/**
+ * Yanda Panel'in yazı boyu ve yeri oturum boyunca kararlı (#1152, GTA 6: "telefon titreyince sohbet panelinin yazıları
+ * büyüyüp küçülüyor, balonlar yer değiştiriyor"). Panel ilk ölçümde kilitlenir: telefonun yeri ancak belirgin biçimde
+ * (boyu [SIZE_SHARE]'den, ortası boyunun [MOVE_SHARE]'inden fazla) ve kesintisiz [SETTLE_MS] boyunca başka yerdeyse,
+ * satır yüksekliği ancak kilitliden [SIZE_SHARE]'den fazla ve kesintisiz [SETTLE_MS] boyunca farklıysa yenilenir;
+ * telefonun boyu belirgin değişip yeni yer benimsenince yazı boyu yeniden ölçülür. Mac/iPhone (PhoneSteady.swift) ve
+ * Windows (PhoneSteady.cs) aynı kuralı, aynı eşikleri kullanır.
+ */
+class PhonePanelSteady {
+    companion object {
+        const val SIZE_SHARE = 0.25
+        const val MOVE_SHARE = 0.1
+        const val SETTLE_MS = 1000L
+
+        /** Kenarlar [PhoneSteady.POSE_SLACK] içinde ya da boy [SIZE_SHARE] içinde ve ortası az kaymış. */
+        fun sameSpot(a: GamePhoneGeometry.Pose, b: GamePhoneGeometry.Pose): Boolean {
+            val x = a.bounds
+            val y = b.bounds
+            val slack = PhoneSteady.POSE_SLACK
+            if (abs(x.left - y.left) <= slack && abs(x.right - y.right) <= slack &&
+                abs(x.top - y.top) <= slack && abs(x.bottom - y.bottom) <= slack) return true
+            val height = y.bottom - y.top
+            val width = y.right - y.left
+            if (height <= 0 || width <= 0 || resized(a, b)) return false
+            return abs((x.top + x.bottom) - (y.top + y.bottom)) / 2 <= MOVE_SHARE * height &&
+                abs((x.left + x.right) - (y.left + y.right)) / 2 <= 2 * MOVE_SHARE * width
+        }
+
+        /** Telefonun boyu belirgin değişti mi. */
+        fun resized(a: GamePhoneGeometry.Pose, b: GamePhoneGeometry.Pose): Boolean {
+            val x = a.bounds.bottom - a.bounds.top
+            val y = b.bounds.bottom - b.bounds.top
+            return y <= 0 || abs(x / y - 1) > SIZE_SHARE
+        }
+    }
+
+    /** Panelin dayanacağı telefon yeri; [resized]: boyu belirgin değişti (ya da ilk yer). */
+    data class Placed(val pose: GamePhoneGeometry.Pose, val resized: Boolean)
+
+    var pose: GamePhoneGeometry.Pose? = null
+        private set
+    var line: Double? = null
+        private set
+    private var poseSince: Long? = null
+    private var lineSince: Long? = null
+
+    fun steadyPose(found: GamePhoneGeometry.Pose, now: Long): Placed {
+        val locked = pose
+        if (locked == null) {
+            pose = found
+            poseSince = null
+            return Placed(found, true)
+        }
+        if (sameSpot(found, locked)) {
+            poseSince = null
+            return Placed(locked, false)
+        }
+        val since = poseSince
+        if (since == null || now - since < SETTLE_MS) {
+            if (since == null) poseSince = now
+            return Placed(locked, false)
+        }
+        val resized = resized(found, locked)
+        pose = found
+        poseSince = null
+        if (resized) {
+            line = null
+            lineSince = null
+        }
+        return Placed(found, resized)
+    }
+
+    /** Panelin satır yüksekliği ([ScreenPhoneCard.measuredLine]); ölçüm yoksa kilitli değer. */
+    fun steadyLine(measured: Double?, now: Long): Double? {
+        if (measured == null || measured <= 0) return line
+        val locked = line
+        if (locked == null) {
+            line = measured
+            lineSince = null
+            return measured
+        }
+        if (abs(measured / locked - 1) <= SIZE_SHARE) {
+            lineSince = null
+            return locked
+        }
+        val since = lineSince
+        if (since == null || now - since < SETTLE_MS) {
+            if (since == null) lineSince = now
+            return locked
+        }
+        line = measured
+        lineSince = null
+        return measured
+    }
+
+    /** Telefon kayboldu: sonraki bulunuşta her şey yeniden ölçülür. */
+    fun reset() {
+        pose = null
+        line = null
+        poseSince = null
+        lineSince = null
+    }
+}

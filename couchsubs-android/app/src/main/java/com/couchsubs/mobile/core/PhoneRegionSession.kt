@@ -34,9 +34,10 @@ internal class PhoneRegionSession(
          * olanlar atılır). Telefonun yeri bilinmiyorsa balonlar yerinde kalır (Mac: PhoneRegionSession.arranged).
          */
         fun arranged(items: List<ScreenTranslation.Item>, pose: GamePhoneGeometry.Pose?, aspect: Double,
-                     options: PhonePanelOptions): List<ScreenTranslation.Item> {
+                     options: PhonePanelOptions, line: Double? = null): List<ScreenTranslation.Item> {
             if (!options.enabled || pose == null || items.isEmpty()) return items.filter { !it.unchanged }
-            return ScreenPhoneCard.layout(items, ScreenPhoneCard.Handset(pose, aspect), options.textScale).filter { !it.unchanged }
+            return ScreenPhoneCard.layout(items, ScreenPhoneCard.Handset(pose, aspect), options.textScale, line)
+                .filter { !it.unchanged }
         }
 
         /**
@@ -131,14 +132,14 @@ internal class PhoneRegionSession(
     /** Okumanın art arda doğrulanamadığı tur sayısı ([missed]). */
     private var absences = 0
     private var recheck = false
-    /** Son gönderilen bloklar ve o anki telefon boyu ([steady]). */
+    /** Son gönderilen bloklar ([steady]). */
     private var sent: List<ScreenTranslation.Item> = emptyList()
-    private var sentScale = 0.0
     /** Son gönderinin ayarı: ayar değişince aynı mesajlar yeni düzende yeniden gönderilir. */
     private var sentOptions: PhonePanelOptions? = null
     /** Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri ([PhoneSteady.steadyPose], [PhoneSteady.samePicture]). */
     private var sentShown: List<ScreenTranslation.Item> = emptyList()
-    private var anchor: GamePhoneGeometry.Pose? = null
+    /** Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez. */
+    private val panelSteady = PhonePanelSteady()
     /** Boş okumanın art arda kaç turdur sürdüğü: [PhoneSteady.MISS_TURNS] tur (~1,35 sn) sürmeden ekran silinmez. */
     private var empties = 0
 
@@ -419,16 +420,14 @@ internal class PhoneRegionSession(
     private fun publish(fresh: List<ScreenTranslation.Item>): Unit = synchronized(this) {
         // Kapanan telefonun bekleyen çevirisi oyunun üstüne çizilmez.
         if (closed && fresh.isNotEmpty()) return
-        // Telefon gerçekten yakınlaşıp uzaklaşınca (%3) yeni boyutlar hemen kullanılır; yoksa aynı balonun görünüşü sabit.
-        page?.region?.let { region ->
-            val scale = region.bottom - region.top
-            if (abs(scale - sentScale) > sentScale * 0.03) {
-                sentScale = scale
-                sent = emptyList()
-                anchor = null
-            }
-        }
+        // Panelin dayandığı telefon yeri el titremesiyle değişmez ([PhonePanelSteady]); telefon belirgin biçimde ve kalıcı
+        // olarak yakınlaşıp uzaklaşınca yeni boyutlar kullanılır, yoksa aynı balonun görünüşü sabit kalır. Ekran silinince
+        // sonraki gönderi her şeyi yeniden ölçer.
+        val now = lastPass ?: 0L
         val capture = latest
+        if (fresh.isEmpty()) panelSteady.reset()
+        val placed = if (fresh.isEmpty()) null else capture?.pose?.let { panelSteady.steadyPose(it, now) }
+        if (placed?.resized == true) sent = emptyList()
         val aspect = capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9)
         val items = if (sent.isEmpty()) fresh else PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
         sent = items
@@ -437,10 +436,9 @@ internal class PhoneRegionSession(
         val sameOptions = sentOptions == options
         rendered = items
         sentOptions = options
-        // Panel telefonun el titremesiyle kaymaz ([PhoneSteady.steadyPose]); aynı görünen gönderi yinelenmez.
-        val pose = capture?.pose?.let { PhoneSteady.steadyPose(it, anchor) }
-        if (pose != null) anchor = pose
-        val shown = arranged(items, pose, aspect, options)
+        // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez ([PhonePanelSteady]); aynı görünen gönderi yinelenmez.
+        val line = panelSteady.steadyLine(ScreenPhoneCard.measuredLine(items), now)
+        val shown = arranged(items, placed?.pose, aspect, options, line)
         if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) return
         sentShown = shown
         val box = shown.map { it.box }.reduceOrNull { a, b -> a.union(b) }
