@@ -1,1 +1,1 @@
-0.9.92: Long translated screen text and in-game dialogue subtitles are no longer squeezed horizontally; lines wrap and the text size stays the same. Short menu labels narrow by at most 10%.
+0.9.92: Dialogue subtitles are never squeezed or shrunk in any mode; long lines wrap and the text size stays the same. Long translated screen text is no longer squeezed; short labels narrow by at most 10%.
