@@ -38,6 +38,13 @@ final class PhoneModel: ObservableObject {
     @Published var tvAppMissing = false
     /// TV'deki uygulama telefondaki paketten eski: ana ekranda "TV uygulamasını güncelle".
     @Published private(set) var tvAppUpdate: TVAppUpdate?
+    /// LG: TV'deki paket güncel ama açık uygulama kapatıp açtıktan sonra da eski sürümde (beta.89); değer çalışan sürüm.
+    /// Ana ekran "TV'de CouchSubs'ı kapatıp yeniden açın" der.
+    @Published private(set) var tvAppStaleRunning: String?
+    /// LG: kurulumdan ya da kapat-aç'tan sonra çalışan uygulamanın sürümü bekleniyor (masaüstündeki runningCheck).
+    private var lgRunningCheck: TVAppRunningCheck?
+    /// Bağlı TV uygulamasının son bildirdiği sürüm (boş: sürüm bildirmeyen eski uygulama); kurulum ekranı LG'ye verir.
+    private(set) var runningTVAppVersion: String?
     /// Bu telefonun TV uygulamasını kurduğu ya da sürümünü okuduğu son TV.
     @Published private(set) var installedTVApp: InstalledTVApp?
     private var tvAppCheckedAt: Date?
@@ -549,6 +556,7 @@ final class PhoneModel: ObservableObject {
                     let connected = self.tvClients == 0 && count > 0
                     let lost = self.tvClients > 0 && count == 0
                     self.tvClients = count
+                    if count == 0 { self.runningTVAppVersion = nil }
                     if count > 0 { self.endTVReconnecting() } else if lost { self.tvLost(stale: false) }
                     if count > 0 {
                         self.tvWaitingLong = false
@@ -2177,6 +2185,8 @@ final class PhoneModel: ObservableObject {
     /// geliştirici modu kapalıyken ya da anahtar bu telefonda değilken `checkTVApp` TV'deki sürümü okuyamıyor, TV uygulaması
     /// eski kalıyor ve hiç öneri çıkmıyordu (GitHub #884, #891). Eskiyse ana ekran "TV uygulamasını güncelle" önerir.
     func tvAppReported(_ version: String) {
+        runningTVAppVersion = version
+        if lgRunningReported(version) { return }
         let target: (TVBrand, String, UInt16?)
         if let installed = installedTVApp {
             target = (installed.brand, installed.host, installed.port)
@@ -2198,8 +2208,49 @@ final class PhoneModel: ObservableObject {
         }
     }
 
+    /// LG, kurulumdan ya da kapat-aç'tan sonraki ilk sürüm bildirimi: çalışan uygulama kurulan sürümdeyse denetim biter;
+    /// eskiyse bir kez daha kapatılıp açılır, yine eskiyse ana ekran "TV'de CouchSubs'ı kapatıp yeniden açın" der (fiş
+    /// çekmek gerekmez). true: bildirim burada ele alındı. Mac, Windows ve Android ile aynı.
+    private func lgRunningReported(_ version: String) -> Bool {
+        guard var check = lgRunningCheck, let installed = installedTVApp, installed.brand == .lg else { return false }
+        let verdict = check.report(version)
+        lgRunningCheck = check
+        let shown = version.isEmpty ? SubtitleServer.unreportedTVAppVersion : version
+        switch verdict {
+        case .running:
+            lgRunningCheck = nil
+            tvAppStaleRunning = nil
+            InstallLog.shared.write("TV'de çalışan CouchSubs: \(shown) (kurulan \(check.expected)).")
+            return false
+        case .restartAgain:
+            InstallLog.shared.write("TV'de çalışan CouchSubs hâlâ \(shown), kurulu \(check.expected); uygulama bir kez daha kapatılıp açılıyor.")
+            let host = installed.host
+            let expected = check.expected
+            Task { [weak self] in
+                let restarted = await Task.detached(priority: .userInitiated) { LGPhoneInstall.restartApp(host: host) }.value
+                // Anahtar yok ya da geliştirici modu kapalı: kapatılamadı, kullanıcıya söylenir.
+                if !restarted { self?.showLGStaleRunning(shown, expected: expected) }
+            }
+            return true
+        case .stale:
+            showLGStaleRunning(shown, expected: check.expected)
+            return true
+        }
+    }
+
+    private func showLGStaleRunning(_ running: String, expected: String) {
+        lgRunningCheck = nil
+        InstallLog.shared.write("TV'de çalışan CouchSubs kapatıp açtıktan sonra da \(running), kurulu \(expected); kullanıcıdan TV'de kapatıp açması isteniyor.")
+        tvAppStaleRunning = running
+    }
+
     /// Telefondan kurulum ya da sürüm denetimi bitti: TV hatırlanır. Android TV onaysız eşlendiği için altyazı hedefi olur.
     func tvAppInstalled(brand: TVBrand, host: String, port: UInt16?, version: String) async {
+        // LG: kurulum (ya da kapat-aç) açık uygulamayı kapatıp açtı; açılan uygulamanın bildirdiği sürüm denetlenir.
+        if brand == .lg {
+            lgRunningCheck = TVAppRunningCheck(expected: version)
+            tvAppStaleRunning = nil
+        }
         saveInstalledTVApp(InstalledTVApp(brand: brand, host: host, port: port, version: version))
         if tvAppUpdate?.brand == brand, !Versions.isNewer(tvAppUpdate?.bundled ?? "", than: version) { tvAppUpdate = nil }
         tvAppMissing = false

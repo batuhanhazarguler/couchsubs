@@ -99,6 +99,8 @@ protocol AppServices: AnyObject {
     func fetchDevKey(host: String, passphrase: String) async throws -> String
     func installedTVAppVersion(host: String, devKey: String) async throws -> String?
     func installTVApp(host: String, devKey: String) async throws
+    /// LG: TV'de açık CouchSubs'ı kapatır (eski sürümde çalışıyorsa; kurulum bunu kendisi de yapar).
+    func closeTVApp(host: String, devKey: String) async
     /// LG geliştirici modunun süresini baştan başlatır; kalan saati döner (bilinmiyorsa nil).
     func renewDevSession(host: String, devKey: String) async -> Int?
 
@@ -125,6 +127,8 @@ protocol AppServices: AnyObject {
 }
 
 extension AppServices {
+    func closeTVApp(host: String, devKey: String) async {}
+
     func installTVApp(host: String, devKey: String, replaceForeign: Bool) async throws {
         try await installTVApp(host: host, devKey: devKey)
     }
@@ -192,6 +196,12 @@ protocol KeeperControlling: AnyObject {
     func start(interval: Duration)
     func stop()
     func reconnect()
+    /// LG: uygulama kapatıldı (kurulumdan sonra); bağlı görünse de bir kez açılır (TVKeeper.reopenApp).
+    func reopenApp()
+}
+
+extension KeeperControlling {
+    func reopenApp() { reconnect() }
 }
 
 extension StreamSession: StreamControlling {}
@@ -373,6 +383,13 @@ final class LiveServices: AppServices {
                 TVInstallLog.write("LG: kullanıcı onayıyla TV'deki com.couchsubs.tv kaldırıldı: \(try await installer.removeApp())")
             }
             try await installer.install(package: package, version: version)
+        }
+    }
+
+    func closeTVApp(host: String, devKey: String) async {
+        _ = try? await withKeyFile(devKey) { file in
+            let reply = await DevModeInstaller(host: host, keyFile: file, runner: ProcessRunner()).closeApp()
+            TVInstallLog.write("LG: TV'deki CouchSubs kapatıldı: \(reply)")
         }
     }
 
@@ -633,7 +650,16 @@ final class AppModel: ObservableObject {
     /// TV'ye bağlı uygulama bu Mac'teki TV paketinden eski (sürümü altyazı akışıyla öğrenilir; bildirmeyen TV 0.9.69'den
     /// eskidir). LG'de geliştirici modu kapalıyken ya da anahtar bu Mac'te değilken TV'deki sürüm başka yoldan okunamıyor,
     /// TV uygulaması eski kalıyor ve hiç uyarı çıkmıyordu (GitHub #884, #891). Ana ekrandaki TV kartı güncellemeyi önerir.
-    @Published private(set) var tvAppOutdated: TVAppOutdated?
+    @Published private(set) var tvAppOutdated: TVAppOutdated? {
+        didSet { if tvAppOutdated == nil { tvAppStaleRunning = false } }
+    }
+    /// LG: TV'deki paket güncel ama çalışan uygulama kapatıp açtıktan sonra da eski sürümde (beta.89). Ana ekrandaki not
+    /// "TV'de CouchSubs'ı kapatıp yeniden açın" der (tvAppOutdated o sürümleri taşır).
+    @Published private(set) var tvAppStaleRunning = false
+    /// LG: kurulumdan ya da kapat-aç'tan sonra çalışan uygulamanın sürümü bekleniyor.
+    private var runningCheck: TVAppRunningCheck?
+    /// Bağlı TV uygulamasının son bildirdiği sürüm (boş: sürüm bildirmeyen eski uygulama); bağlı uygulama yoksa nil.
+    private var runningTVAppVersion: String?
     /// LG geliştirici modunun kalan süresi (saat); CouchSubs uzattıktan sonra bilinir.
     @Published var devModeHoursLeft: Int?
     /// Son eşleşmede TV uygulaması açılamadı.
@@ -742,7 +768,10 @@ final class AppModel: ObservableObject {
     @Published var tvClients = 0 {
         // Eski uygulama TV'den kalktı (silindi, kapandı): "TV uygulamasını güncelle" bellekte kalmıyor; ana ekran "TV
         // uygulaması bekleniyor / Yeniden kur" der. Eski uygulama yeniden bağlanırsa sürümünü yine bildirir.
-        didSet { if tvClients == 0, tvAppOutdated != nil { tvAppOutdated = nil } }
+        didSet {
+            if tvClients == 0, tvAppOutdated != nil { tvAppOutdated = nil }
+            if tvClients == 0 { runningTVAppVersion = nil }
+        }
     }
     /// TV uygulamasını kendiliğinden açmanın son denemesi neden olmadı (ana ekranda tek satır); açıldıysa nil.
     @Published private(set) var tvOpenProblem: TVOpenProblem?
@@ -1619,6 +1648,8 @@ final class AppModel: ObservableObject {
     /// Eskiyse ana ekran "TV uygulamasını güncelle" der; geliştirici modu açık ve anahtar kayıtlıysa (LG) ya da TV'ye
     /// ulaşılıyorsa (Samsung, Android TV) güncelleme hemen, sorulmadan kurulur (önceki sürüm denetimiyle aynı yol).
     func tvAppReported(_ version: String) {
+        runningTVAppVersion = version
+        if tv?.brand == .lg, lgRunningReported(version) { return }
         guard let bundled = bundledVersionForTV, SubtitleServer.isTVAppOutdated(reported: version, bundled: bundled) else {
             tvAppOutdated = nil
             return
@@ -1636,6 +1667,42 @@ final class AppModel: ObservableObject {
         lastTVAppAutoUpdate = Date()
         SubtitleLog.write("TV uygulaması eski: TV \(installed), bu Mac'teki paket \(bundled); güncelleme deneniyor.")
         Task { await refreshTVApp() }
+    }
+
+    /// LG, kurulumdan ya da kapat-aç'tan sonraki ilk sürüm bildirimi (`runningCheck`): çalışan uygulama kurulan sürümdeyse
+    /// denetim biter; eskiyse bir kez daha kapatılıp açılır, yine eskiyse ana ekran "TV'de CouchSubs'ı kapatıp yeniden
+    /// açın" der (fiş çekmek gerekmez). true: bildirim burada ele alındı. iPhone, Windows ve Android ile aynı.
+    private func lgRunningReported(_ version: String) -> Bool {
+        guard var check = runningCheck else { return false }
+        let verdict = check.report(version)
+        runningCheck = check
+        let shown = version.isEmpty ? TVAppOutdated.unreported : version
+        switch verdict {
+        case .running:
+            runningCheck = nil
+            tvAppStaleRunning = false
+            TVInstallLog.write("TV'de çalışan CouchSubs: \(shown) (kurulan \(check.expected)).")
+            return false
+        case .restartAgain:
+            if let tv, let devKey = store.load(String.self, for: StoreKey.tvDevKey) {
+                TVInstallLog.write("TV'de çalışan CouchSubs hâlâ \(shown), kurulu \(check.expected); uygulama bir kez daha kapatılıp açılıyor.")
+                Task { await restartLGApp(tv, devKey: devKey) }
+                return true
+            }
+            fallthrough
+        case .stale:
+            runningCheck = nil
+            TVInstallLog.write("TV'de çalışan CouchSubs kapatıp açtıktan sonra da \(shown), kurulu \(check.expected); kullanıcıdan TV'de kapatıp açması isteniyor.")
+            tvAppOutdated = TVAppOutdated(installed: shown, bundled: check.expected)
+            tvAppStaleRunning = true
+            return true
+        }
+    }
+
+    /// LG: TV'deki CouchSubs'ı kapatır ve yeniden açar (adres ve anahtar parametreyle).
+    private func restartLGApp(_ tv: LGTV, devKey: String) async {
+        await services.closeTVApp(host: tv.host, devKey: devKey)
+        await openTVAppAfterInstall(tv)
     }
 
     /// Eski TV uygulamasının sessiz güncellemesi en son ne zaman denendi (en çok saatte bir).
@@ -2077,6 +2144,13 @@ final class AppModel: ObservableObject {
             if force { TVInstallLog.write("Yeniden kurulum istendi; TV'deki sürüme bakılmadan kuruluyor.") }
             if !force, let installed, !DevModeInstaller.isNewer(bundled, than: installed) {
                 tvApp = .upToDate(installed)
+                // Paket güncel ama TV'de çalışan uygulama eski (beta.89: webOS kurulumdan sonra eski süreci tuttu):
+                // yeniden kurmak gerekmez, uygulama kapatılıp açılır.
+                if tvClients > 0, let running = runningTVAppVersion, TVAppRunningCheck.isStale(running: running, installed: installed) {
+                    TVInstallLog.write("TV'deki paket \(installed), çalışan CouchSubs \(running.isEmpty ? TVAppOutdated.unreported : running); uygulama kapatılıp yeniden açılıyor.")
+                    runningCheck = TVAppRunningCheck(expected: installed)
+                    await restartLGApp(tv, devKey: devKey)
+                }
                 await renewDevSessionIfDue(tv: tv, devKey: devKey)
                 return
             }
@@ -2084,6 +2158,8 @@ final class AppModel: ObservableObject {
             TVInstallLog.write("Kurulum tamam.")
             tvApp = .upToDate(bundled)
             tvAppMissing = false
+            // Açılan uygulamanın bildirdiği sürüm denetlenir (lgRunningReported).
+            runningCheck = TVAppRunningCheck(expected: bundled)
             await renewDevSessionIfDue(tv: tv, devKey: devKey)
             await openTVAppAfterInstall(tv)
         } catch DevModeError.keyRefused {
@@ -2116,7 +2192,8 @@ final class AppModel: ObservableObject {
 
     private func openTVAppAfterInstall(_ tv: LGTV) async {
         if let keeper {
-            keeper.reconnect()
+            // Kurulum uygulamayı kapattı: sunucu kopan akışı henüz fark etmese de uygulama açılır.
+            keeper.reopenApp()
         } else {
             _ = try? await services.pairTV(tv, key: store.load(String.self, for: StoreKey.tvKey), server: serverAddress(for: tv), accessKey: server.accessKey)
         }

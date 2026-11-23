@@ -834,8 +834,69 @@
     return text;
   }
 
+  // --- Eski sürümde kalan sayfa ---
+  // beta.89 (LG, Mac): TV uygulaması 0.9.81'den 0.9.84'e güncellendi; TV'deki appinfo.json 0.9.84 diyordu, açık uygulama
+  // ise 0.9.81'i gösteriyor ve 0.9.81'in kodunu çalıştırıyordu (LG kararma düzeltmesi devreye girmiyordu). Kurulumdan
+  // sonra çalışan uygulama kapatılmıyordu; bilgisayarın ve telefonun açma komutu açık uygulamayı yalnız öne getirip
+  // webOSRelaunch gönderiyor, sayfa diskten yeniden okunmuyordu. Açılışta ve her webOSRelaunch'ta kurulu paketin sürümü
+  // (appinfo.json, diskten) okunur; bu sayfanın sürümünden yeniyse sayfa yeniden yüklenir. Aynı sürüm çifti için yalnız
+  // bir kez: yeniden yüklenen sayfa yine eskiyse döngüye girilmez (bilgisayar/telefon "kapatıp açın" der).
+  var STALE_RELOAD_KEY = 'couchsubs.staleReload';
+
+  function versionIsNewer(a, b) {
+    var x = String(a).split('.');
+    var y = String(b).split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = parseInt(x[i], 10) || 0;
+      var q = parseInt(y[i], 10) || 0;
+      if (p !== q) return p > q;
+    }
+    return false;
+  }
+
+  // Kurulu paketin sürümü (appinfo.json); okunamazsa null.
+  function readInstalledVersion(callback) {
+    var done = false;
+    function finish(version) {
+      if (done) return;
+      done = true;
+      callback(version);
+    }
+    var xhr;
+    try {
+      xhr = new XMLHttpRequest();
+      xhr.open('GET', 'appinfo.json?t=' + nowMs(), true);
+    } catch (e) {
+      finish(null);
+      return;
+    }
+    xhr.onreadystatechange = function () {
+      if (xhr.readyState !== 4) return;
+      var version = null;
+      try { version = JSON.parse(xhr.responseText).version; } catch (e) {}
+      finish(typeof version === 'string' && version ? version : null);
+    };
+    try { xhr.send(); } catch (e) { finish(null); }
+  }
+
   window.COUCHSUBS_PLATFORM = {
     backKey: 461,
+
+    // Kurulu paket bu sayfadan yeniyse sayfa bir kez yeniden yüklenir (yukarıdaki açıklama).
+    reloadIfStale: function (pageVersion) {
+      readInstalledVersion(function (installed) {
+        if (!installed || !versionIsNewer(installed, pageVersion)) return;
+        var pair = installed + '>' + pageVersion;
+        try {
+          if (window.localStorage.getItem(STALE_RELOAD_KEY) === pair) return;
+          window.localStorage.setItem(STALE_RELOAD_KEY, pair);
+        } catch (e) {
+          // Kayıt tutulamıyorsa yeniden yüklenmez: döngüye girebilirdi.
+          return;
+        }
+        window.location.reload(true);
+      });
+    },
 
     // HDMI görüntüsü gelmezse app.js nedenini ve giriş seçimini gösterir (Android TV bunu kendi ekranında yapar).
     noPictureHelp: true,

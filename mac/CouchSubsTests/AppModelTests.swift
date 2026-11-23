@@ -159,6 +159,8 @@ final class FakeServices: AppServices {
         if let lgInstallError { throw lgInstallError }
         appOnTV = bundledTVAppVersion
     }
+    var closes = 0
+    func closeTVApp(host: String, devKey: String) async { closes += 1 }
     var renewedHours: Int? = 999
     var renewals = 0
     func renewDevSession(host: String, devKey: String) async -> Int? {
@@ -1566,6 +1568,48 @@ final class TVAppInstallTests: XCTestCase {
         XCTAssertTrue(log.contains("Ana ekrandan") && log.contains("Kurulum tamam."), log)
         model.dismissTVAppUpdate()
         XCTAssertFalse(model.tvAppUpdating)
+    }
+
+    /// beta.89 (LG): TV'de 0.6.1 kurulu ama açık uygulama 0.5.0'ı çalıştırıyor. Yeniden kurulmaz; uygulama kapatılıp açılır,
+    /// yine eskiyse bir kez daha, sonra ana ekran "TV'de CouchSubs'ı kapatıp yeniden açın" der. Yeni sürüm bağlanınca kalkar.
+    func testUpToDatePackageWithAnOldRunningAppIsRestartedThenReported() async throws {
+        let services = FakeServices()
+        services.devMode = true
+        services.appOnTV = "0.6.1"
+        let store = MemoryStore()
+        store.save("dev-key", for: StoreKey.tvDevKey)
+        let model = model(services, store: store)
+        model.tv = tv
+        model.tvClients = 1
+        model.tvAppReported("0.5.0")
+        for _ in 0..<200 where services.closes == 0 { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(services.closes, 1)
+        XCTAssertEqual(services.installs, 0, "paket güncel: yeniden kurulmaz")
+        model.tvAppReported("0.5.0")
+        for _ in 0..<200 where services.closes == 1 { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(services.closes, 2)
+        XCTAssertFalse(model.tvAppStaleRunning)
+        model.tvAppReported("0.5.0")
+        XCTAssertTrue(model.tvAppStaleRunning)
+        XCTAssertEqual(model.tvAppOutdated, TVAppOutdated(installed: "0.5.0", bundled: "0.6.1"))
+        XCTAssertEqual(services.closes, 2, "üçüncüde yalnız söylenir")
+        model.tvAppReported("0.6.1")
+        XCTAssertFalse(model.tvAppStaleRunning)
+        XCTAssertNil(model.tvAppOutdated)
+    }
+
+    /// Kurulumdan sonra açılan uygulama yeni sürümü bildirirse kapat-aç tekrarlanmaz.
+    func testFreshInstallIsCheckedAgainstTheRunningVersion() async throws {
+        let services = FakeServices()
+        services.devMode = true
+        services.appOnTV = "0.5.0"
+        let model = try await updateScenario(services, key: true, reported: nil)
+        await model.updateTVApp()
+        XCTAssertEqual(services.installs, 1)
+        model.tvAppReported("0.6.1")
+        XCTAssertFalse(model.tvAppStaleRunning)
+        XCTAssertNil(model.tvAppOutdated)
+        XCTAssertEqual(services.closes, 0, "kapatmayı kurulum yaptı; ayrıca kapatılmaz")
     }
 
     /// Eski + geliştirici modu kapalı: Developer Mode adımları; açılınca kullanıcı bir şey yapmadan kurulum sürer.

@@ -159,6 +159,13 @@ internal fun tvAppSummary(): String? {
 @Composable
 internal fun TvAppUpdateCard(onUpdate: (InstalledTv) -> Unit) {
     val status by TvAppUpdate.status.collectAsState()
+    (status as? TvAppStatus.RunningStale)?.let { stale ->
+        // LG: paket güncel ama TV eski sürümü çalıştırmayı sürdürüyor (kapatıp açtıktan sonra da).
+        Tile(Modifier.fillMaxWidth(), style = TileStyle.ACTIVE) {
+            Text(stringResource(R.string.tvapp_stale_running, stale.running), style = Tokens.Type.body, color = Tokens.Color.text)
+        }
+        return
+    }
     val outdated = status as? TvAppStatus.Outdated ?: return
     Tile(Modifier.fillMaxWidth(), style = TileStyle.ACTIVE) {
         Text(stringResource(R.string.tvapp_update_title), style = Tokens.Type.headline, color = Tokens.Color.text)

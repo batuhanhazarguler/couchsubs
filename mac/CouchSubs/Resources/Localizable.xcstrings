@@ -14177,6 +14177,7 @@
         }
       }
     },
+    "CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again."}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'deki CouchSubs eski sürümde çalışıyor (%@). TV'de CouchSubs'ı kapatıp yeniden açın."}}}},
     "TV: %@ → this phone: %@": {
       "localizations": {
         "en": {

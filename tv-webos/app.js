@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.87';
+  var APP_VERSION = '0.9.88';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -3215,12 +3215,15 @@
   // Uygulama zaten açıkken yeniden başlatılırsa (ör. CouchSubs onu öne getirdiğinde) parametreler burada gelir.
   // Aynı adresle yeniden açılış (bekçi PS tuşundan sonra uygulamayı öne getirdi): bağlantı açık değilse hemen kurulur.
   platform.onRelaunch(function (raw) {
+    // LG: kurulumdan sonra webOS eski sayfayı tuttuysa öne gelişte diskteki yeni sürüm yüklenir (tv-webos/platform.js).
+    if (platform.reloadIfStale) platform.reloadIfStale(APP_VERSION);
     var before = connectionGeneration;
     applyParams(parseParams(raw));
     if (connectionGeneration === before && !document.hidden) reviveStream();
   });
 
   platform.init();
+  if (platform.reloadIfStale) platform.reloadIfStale(APP_VERSION);
   window.applyI18n();
   formatKeys();
   var savedBottom = load('bottom') || load('appBottom');

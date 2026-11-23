@@ -424,6 +424,7 @@
     <string name="tvapp_update_body">%1$s TV\'deki CouchSubs %2$s, bu telefondaki %3$s. Güncelleme bir dakika kadar sürer; TV açık ve aynı Wi-Fi\'da kalsın.</string>
     <string name="tvapp_update_button">TV uygulamasını güncelle</string>
     <string name="tvapp_update_short">Güncelleme var: %1$s</string>
+    <string name="tvapp_stale_running">TV\'deki CouchSubs eski sürümde çalışıyor (%1$s). TV\'de CouchSubs\'ı kapatıp yeniden açın.</string>
     <string name="tvinstall_title">TV uygulamasını kur</string>
     <string name="tvinstall_body">CouchSubs TV uygulamasını Samsung TV\'ne bilgisayar olmadan, bu telefondan kurar. Telefon ve TV aynı Wi-Fi\'da olmalı.</string>
     <string name="tvinstall_supported">Samsung TV\'ler ve akıllı monitörler (2016 ve sonrası; 2016–2018 modelleri deneysel).</string>

@@ -175,7 +175,10 @@ struct HomeScreen: View {
                 .buttonStyle(.plain)
                 .bentoWide()
             }
-            if let update = model.tvAppUpdate {
+            if let running = model.tvAppStaleRunning {
+                // LG: paket güncel ama TV eski sürümü çalıştırmayı sürdürüyor (kapatıp açtıktan sonra da).
+                MobileNote(text: String(format: String(localized: "CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again."), running))
+            } else if let update = model.tvAppUpdate {
                 TVAppUpdateTile(update: update) { path.append(.tvUpdate) }
             } else if model.tvAppMissing {
                 Button { path.append(.tvInstall) } label: {

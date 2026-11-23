@@ -308,9 +308,21 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         {
             if (tvAppOutdated == value) return;
             tvAppOutdated = value;
-            Changed(nameof(TvAppOutdated), nameof(ShowTvAppUpdate), nameof(TvStatusText), nameof(TvTone));
+            if (value is null) tvAppStaleRunning = false;
+            Changed(nameof(TvAppOutdated), nameof(ShowTvAppUpdate), nameof(TvStatusText), nameof(TvTone), nameof(TvAppStaleRunning));
         }
     }
+
+    /// <summary>
+    /// LG: TV'deki paket güncel ama çalışan uygulama kapatıp açtıktan sonra da eski sürümde (beta.89). Ana ekran "TV'de
+    /// CouchSubs'ı kapatıp yeniden açın" der (<see cref="TvAppOutdated"/> o sürümleri taşır). Mac ile aynı.
+    /// </summary>
+    public bool TvAppStaleRunning => tvAppStaleRunning;
+    private bool tvAppStaleRunning;
+    /// <summary>LG: kurulumdan ya da kapat-aç'tan sonra çalışan uygulamanın sürümü bekleniyor.</summary>
+    private TvAppRunningCheck? runningCheck;
+    /// <summary>Bağlı TV uygulamasının son bildirdiği sürüm (boş: eski uygulama); bağlı uygulama yoksa null.</summary>
+    private string? runningTvAppVersion;
 
     /// <summary>Ana ekranda "TV uygulamasını güncelle" görünür.</summary>
     public bool ShowTvAppUpdate => HasTv && tvAppOutdated is not null;
@@ -326,6 +338,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public void TvAppReported(string version)
     {
+        runningTvAppVersion = version;
+        if (tv?.Brand == TvBrand.Lg && LgRunningReported(version)) return;
         if (BundledVersionForTv is not { } bundled || !SubtitleServer.IsTvAppOutdated(version, bundled))
         {
             TvAppOutdated = null;
@@ -345,6 +359,43 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         lastTvAppAutoUpdate = DateTime.UtcNow;
         SubtitleLog.Write($"TV uygulaması eski: TV {installed}, bu bilgisayardaki paket {bundled}; güncelleme deneniyor.");
         _ = RefreshTvAppAsync();
+    }
+
+    /// <summary>
+    /// LG, kurulumdan ya da kapat-aç'tan sonraki ilk sürüm bildirimi: çalışan uygulama kurulan sürümdeyse denetim biter;
+    /// eskiyse bir kez daha kapatılıp açılır, yine eskiyse ana ekran "TV'de CouchSubs'ı kapatıp yeniden açın" der (fiş
+    /// çekmek gerekmez). true: bildirim burada ele alındı. Mac, iPhone ve Android ile aynı.
+    /// </summary>
+    private bool LgRunningReported(string version)
+    {
+        if (runningCheck is not { } check) return false;
+        var shown = version.Length == 0 ? Shell.TvAppOutdated.Unreported : version;
+        switch (check.Report(version))
+        {
+            case TvAppRunningVerdict.Running:
+                runningCheck = null;
+                tvAppStaleRunning = false;
+                services.WriteTvInstallLog($"TV'de çalışan CouchSubs: {shown} (kurulan {check.Expected}).");
+                return false;
+            case TvAppRunningVerdict.RestartAgain when tv is { } target && store.Load<string>(StoreKeys.TvDevKey) is { } devKey:
+                services.WriteTvInstallLog($"TV'de çalışan CouchSubs hâlâ {shown}, kurulu {check.Expected}; uygulama bir kez daha kapatılıp açılıyor.");
+                _ = RestartLgAppAsync(target, devKey);
+                return true;
+            default:
+                runningCheck = null;
+                services.WriteTvInstallLog($"TV'de çalışan CouchSubs kapatıp açtıktan sonra da {shown}, kurulu {check.Expected}; kullanıcıdan TV'de kapatıp açması isteniyor.");
+                TvAppOutdated = new TvAppOutdated(shown, check.Expected);
+                tvAppStaleRunning = true;
+                Changed(nameof(TvAppStaleRunning), nameof(TvStatusText));
+                return true;
+        }
+    }
+
+    /// <summary>LG: TV'deki CouchSubs'ı kapatır ve yeniden açar (adres ve anahtar parametreyle).</summary>
+    private async Task RestartLgAppAsync(LgTv target, string devKey)
+    {
+        await services.CloseTvAppAsync(target.Host, devKey);
+        await OpenTvAppAfterInstallAsync(target);
     }
 
     /// <summary>Eski TV uygulamasının sessiz güncellemesi en son ne zaman denendi (en çok saatte bir).</summary>
@@ -690,6 +741,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public StatusTone TvTone => !HasTv ? StatusTone.Idle
         : tvAppOutdated is not null || (tvNotResponding && tvClients == 0) ? StatusTone.Warning : TvToneFor(tvClients, isRunning);
     public string TvStatusText => !HasTv ? text["Not set up"]
+        : tvAppOutdated is { } stale && tvAppStaleRunning
+            ? text.Format("CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again.", stale.Installed)
         : tvAppOutdated is { } outdated ? text.Format("TV app is out of date (%@ → %@)", outdated.Installed, outdated.Bundled)
         : tvClients > 0 ? text["Connected"]
         // TV'nin adresi sessizse "TV uygulaması bekleniyor" yanlış olur: TV yeniden aranırken bu söylenir.
@@ -1708,12 +1761,22 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             if (!force && installed is not null && !DevModeInstaller.IsNewer(bundled, installed))
             {
                 TvApp = new TvAppState(TvAppKind.UpToDate, installed);
+                // Paket güncel ama TV'de çalışan uygulama eski (beta.89: webOS kurulumdan sonra eski süreci tuttu):
+                // yeniden kurmak gerekmez, uygulama kapatılıp açılır (Mac ile aynı).
+                if (tvClients > 0 && runningTvAppVersion is { } running && TvAppRunningCheck.IsStale(running, installed))
+                {
+                    services.WriteTvInstallLog($"TV'deki paket {installed}, çalışan CouchSubs {(running.Length == 0 ? Shell.TvAppOutdated.Unreported : running)}; uygulama kapatılıp yeniden açılıyor.");
+                    runningCheck = new TvAppRunningCheck(installed);
+                    await RestartLgAppAsync(target, devKey);
+                }
                 await RenewDevSessionIfDueAsync(target, devKey);
                 return;
             }
             await services.InstallTvAppAsync(target.Host, devKey, replace);
             TvApp = new TvAppState(TvAppKind.UpToDate, bundled);
             tvAppMissing = false;
+            // Kurulum açık uygulamayı kapattı; açılan uygulamanın bildirdiği sürüm denetlenir (LgRunningReported).
+            runningCheck = new TvAppRunningCheck(bundled);
             await RenewDevSessionIfDueAsync(target, devKey);
             await OpenTvAppAfterInstallAsync(target);
         }
@@ -1750,7 +1813,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         if (keeper is not null)
         {
-            keeper.Reconnect();
+            // Kurulum uygulamayı kapattı: sunucu kopan akışı henüz fark etmese de uygulama açılır.
+            keeper.ReopenApp();
             return;
         }
         try { await services.PairTvAsync(target, store.Load<string>(StoreKeys.TvKey), ServerAddress(target), server.AccessKey); }
@@ -4258,6 +4322,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         else if (count > 0 && tvReconnecting) SetTvReconnecting(false);
         // Eski uygulama TV'den kalktı (silindi, kapandı): "TV uygulamasını güncelle" bellekte kalmıyor (Mac ile aynı).
         if (count == 0) TvAppOutdated = null;
+        if (count == 0) runningTvAppVersion = null;
         if (count > 0) OpenProblem = null;
         UpdateTroubleClocks();
     });

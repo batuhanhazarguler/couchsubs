@@ -255,8 +255,12 @@ struct HomeNotices: View {
             }
             .noticeCard()
         case .tvOutdated:
-            NoticeCard(text: String(format: String(localized: "TV app is out of date (%@ → %@)"),
-                                    model.tvAppOutdated?.installed ?? "", model.tvAppOutdated?.bundled ?? "")) {
+            // LG: paket güncel ama TV eski sürümü çalıştırmayı sürdürüyor (kapatıp açtıktan sonra da): TV'de kapatıp açın.
+            NoticeCard(text: model.tvAppStaleRunning
+                       ? String(format: String(localized: "CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again."),
+                                model.tvAppOutdated?.installed ?? "")
+                       : String(format: String(localized: "TV app is out of date (%@ → %@)"),
+                                model.tvAppOutdated?.installed ?? "", model.tvAppOutdated?.bundled ?? "")) {
                 Button("Update the TV App") { Task { await model.updateTVApp() } }
                     .buttonStyle(.dsSecondary)
                     .disabled(model.tvAppUpdating && model.tvApp == .working)

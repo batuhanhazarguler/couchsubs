@@ -757,6 +757,8 @@ public interface IKeeper
     void Start(TimeSpan interval);
     void Stop();
     void Reconnect();
+    /// <summary>LG: uygulama kapatıldı (kurulumdan sonra); bağlı görünse de bir kez açılır (TvKeeper.ReopenApp).</summary>
+    void ReopenApp() => Reconnect();
 }
 
 public enum GameConsoleKind { PlayStation, Xbox }
@@ -851,6 +853,8 @@ public interface IAppServices
     /// önce kaldırılır. Üç markada da (bu ve aşağıdaki iki yük) onay yoksa hiçbir şey silinmez, ForeignApp fırlatılır.
     /// </summary>
     Task InstallTvAppAsync(string host, string devKey, bool replaceForeign) => InstallTvAppAsync(host, devKey);
+    /// <summary>LG: TV'de açık CouchSubs'ı kapatır (eski sürümde çalışıyorsa; kurulum bunu kendisi de yapar).</summary>
+    Task CloseTvAppAsync(string host, string devKey) => Task.CompletedTask;
     /// <summary>LG geliştirici modunun süresini baştan başlatır; kalan saati döner (bilinmiyorsa null).</summary>
     Task<int?> RenewDevSessionAsync(string host, string devKey);
     /// <summary>Samsung ve Android TV için uygulamayla gelen paket (geliştirici derlemesinde olmayabilir).</summary>

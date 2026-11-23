@@ -313,6 +313,12 @@ internal sealed class FakeServices : IAppServices
         AppOnTv = BundledTvAppVersion;
         return Task.CompletedTask;
     }
+    public int Closes { get; private set; }
+    public Task CloseTvAppAsync(string host, string devKey)
+    {
+        Closes++;
+        return Task.CompletedTask;
+    }
     public int? RenewedHours { get; set; } = 999;
     public int Renewals { get; private set; }
     public Task<int?> RenewDevSessionAsync(string host, string devKey)
@@ -3280,6 +3286,42 @@ public class TvAppInstallTests
         services.AppOnTv = app;
         services.InstallLog.Clear();
         return controller;
+    }
+
+    /// <summary>
+    /// beta.89 (LG): kurulumdan sonra açılan uygulama hâlâ eski sürümü bildiriyor. Bir kez daha kapatılıp açılır, yine eskiyse
+    /// ana ekran "TV'de CouchSubs'ı kapatıp yeniden açın" der; yeni sürüm bağlanınca kalkar (Mac ile aynı).
+    /// </summary>
+    [Fact]
+    public async Task OldRunningAppAfterInstallIsRestartedOnceThenReported()
+    {
+        var services = new FakeServices { DevMode = true, AppOnTv = "0.5.0" };
+        var controller = await UpdateScenario(services, key: true);
+        await controller.UpdateTvAppAsync();
+        Assert.Equal(1, services.Installs);
+        controller.TvAppReported("0.5.0");
+        Assert.Equal(1, services.Closes);
+        Assert.False(controller.TvAppStaleRunning);
+        controller.TvAppReported("0.5.0");
+        Assert.True(controller.TvAppStaleRunning);
+        Assert.Equal(new TvAppOutdated("0.5.0", "0.6.1"), controller.TvAppOutdated);
+        Assert.Equal(1, services.Closes);
+        Assert.Equal(1, services.Installs);
+        controller.TvAppReported("0.6.1");
+        Assert.False(controller.TvAppStaleRunning);
+        Assert.Null(controller.TvAppOutdated);
+    }
+
+    [Fact]
+    public async Task FreshInstallRunningTheNewVersionIsNotRestarted()
+    {
+        var services = new FakeServices { DevMode = true, AppOnTv = "0.5.0" };
+        var controller = await UpdateScenario(services, key: true);
+        await controller.UpdateTvAppAsync();
+        controller.TvAppReported("0.6.1");
+        Assert.Equal(0, services.Closes);
+        Assert.False(controller.TvAppStaleRunning);
+        Assert.Null(controller.TvAppOutdated);
     }
 
     [Fact]

@@ -177,6 +177,26 @@ CAPABILITIES = {
         ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func tvAppReported\("),
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvAppUpdate.kt", r"fun reported\("),
     ],
+    # beta.89 (LG): kurulumdan sonra webOS eski süreci tutuyordu (paket 0.9.84, açık uygulama 0.9.81). Dört platform da kurulumdan
+    # sonra açık uygulamayı kapatır (closeByAppId), çalışan sürümü denetler, eskiyse bir kez daha kapatıp açar, yine eskiyse
+    # "TV'de CouchSubs'ı kapatıp yeniden açın" der. TV sayfası (tv-webos/platform.js) da diskteki sürüm yeniyse yeniden yüklenir.
+    "LG kurulumdan sonra açık uygulamayı kapatıp açma ve çalışan sürüm denetimi": [
+        ("mac", _CORE + "LGTV/DevModeInstaller.swift", r"public func closeApp\("),
+        ("mac", _CORE + "LGTV/TVAppRunningCheck.swift", r"public mutating func report\("),
+        ("mac", _CORE + "LGTV/SSAPClient.swift", r"public func reopenApp\("),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"private func lgRunningReported\("),
+        ("windows", _WIN + "LgTv/DevModeInstaller.cs", r"public async Task<string> CloseAppAsync\("),
+        ("windows", _WIN + "LgTv/TvAppRunningCheck.cs", r"public TvAppRunningVerdict Report\("),
+        ("windows", _WIN + "LgTv/TvKeeper.cs", r"public void ReopenApp\("),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"private bool LgRunningReported\("),
+        ("ios", "couchsubs-ios/CouchSubs/TVInstall/LGPhoneInstall.swift", r"static let closeCommand"),
+        ("ios", "couchsubs-ios/CouchSubs/TVInstall/LGPhoneInstall.swift", r"runningVersion: String\? = nil"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"private func lgRunningReported\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/lg/LgInstaller.kt", r"const val CLOSE_COMMAND"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/lg/LgInstaller.kt", r"runningVersion: String\? = null"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/lg/TvAppRunningCheck.kt", r"fun report\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvAppUpdate.kt", r"internal fun lgRunningReported\("),
+    ],
     # "Ekranı çevir" özgün yazının birebir yerinde ve boyunda: kutunun genişleyebileceği alan simgelere kadar (room), kutu
     # yalnız yazıyı kapsar, sütun/şerit hizası, eş öğeler aynı boyda. TV (tv-webos fitStyled) bu alanlarla çizer.
     "Ekran yazısı yerleşimi (ScreenFit: room, rows, hiza, eş boy)": [
