@@ -585,7 +585,7 @@ class XboxSessionMachineTest {
     }
 
     @Test fun pictureResetsTheNoPictureStreak() {
-        var now = 0L
+        var now = 1_000L
         val m = XboxSessionMachine(clock = { now })
         assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NO_FIRST_FRAME, "görüntü yok"))
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
@@ -617,7 +617,7 @@ class XboxSessionMachineTest {
      * Android beta.85).
      */
     @Test fun realDropReconnectsAtMostOnceWithBackoff() {
-        var now = 0L
+        var now = 1_000L
         val m = XboxSessionMachine(clock = { now })
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
         now += 120_000
