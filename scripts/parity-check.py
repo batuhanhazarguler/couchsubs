@@ -99,6 +99,21 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "MissionCardTests.cs", r"mission-card\.json"),
         ("android", _DROID_TESTS + "MissionCardTest.kt", r"mission-card\.json"),
     ],
+    # GitHub #1124: altyazı alanındaki duvar ilanı (açık zeminde koyu yazı) altyazı sayılıyordu; kural ve oturumda kendini
+    # kapatması (koyu altyazılı oyun) her platformun altyazı hattında olmalı.
+    "Açık zeminde koyu yazı altyazı değil (InkTone, DarkInkStyle)": [
+        ("mac", _CORE + "InkTone.swift", r"static func isDarkOnLight\("),
+        ("mac", _CORE + "Pipeline/SubtitlePipeline.swift", r"InkTone\.sampler\("),
+        ("windows", _WIN + "InkTone.cs", r"public static bool IsDarkOnLight\("),
+        ("windows", _WIN + "SubtitlePipeline.cs", r"InkTone\.Sampler\("),
+        ("android", _DROID + "InkTone.kt", r"fun isDarkOnLight\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/TranslationService.kt", r"InkTone\.sampler\("),
+    ],
+    "Ortak deneme dosyası dark-ink.json": [
+        ("mac", _CORE_TESTS + "InkToneTests.swift", r"dark-ink\.json"),
+        ("windows", _WIN_TESTS + "InkToneTests.cs", r"dark-ink\.json"),
+        ("android", _DROID_TESTS + "InkToneTest.kt", r"dark-ink\.json"),
+    ],
     # Yalnız masaüstü (#853): Xbox seçiliyken görüntü Xbox uygulaması / play.xbox.com / capture card ile OBS penceresinden
     # okunur, CouchSubs Xbox'a bağlanmaz. iPhone ve Android'de okunacak bilgisayar penceresi yoktur; telefonlarda bu seçim
     # bilinçli olarak yoktur (Android = iPhone eşitliği bozulmaz). Windows = Mac eşitliği burada denetlenir.

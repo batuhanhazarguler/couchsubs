@@ -126,6 +126,8 @@ public final class SubtitlePipeline {
     private var stickyRows = StickyRows()
     /// Bu oturumda kesin altyazının okunduğu yükseklikler: oradaki kısa satır sahne yazısı sayılmaz (`SceneText`).
     private var subtitleBand = SubtitleBand()
+    /// Oyunun altyazısı koyu yazı mı (açık zemindeki koyu yazı kuralı o oturumda kapanır, `InkTone`; GitHub #1124).
+    private var darkInkStyle = DarkInkStyle()
     /// Günlüğe yazılmış son sahne yazıları (her karede yeniden yazılmasın).
     private var loggedSceneText: [String] = []
     private var mission = MissionLine()
@@ -340,11 +342,19 @@ public final class SubtitlePipeline {
         var sceneTexts: [String] = []
         var staleTexts: [String] = []
         let sticky = stickyRows, readAt = now()
-        let reading = rows.subtitleBlock(in: place, band: subtitleBand, dropped: { [weak self] block, reason in
+        // Açık zemindeki koyu yazı (duvardaki kâğıt ilan) altyazı değildir (`InkTone`, GitHub #1124); oyunun altyazısı koyu
+        // yazıysa (`DarkInkStyle`) renge bakılmaz.
+        var darkBlocks: [Reading] = []
+        let darkInk = darkInkStyle.isGameStyle ? nil : InkTone.sampler(area)
+        let reading = rows.subtitleBlock(in: place, band: subtitleBand, darkInk: darkInk, dropped: { [weak self] block, reason in
             sceneTexts += block.lines.map(\.text)
+            if reason == InkTone.reason { darkBlocks.append(block) }
             self?.logSceneText(block.text, reason)
         }, notices: { edge.append($0.placed(in: place)) },
            age: { sticky.unchangedMs($0, at: readAt) }, stale: { staleTexts += $0.lines.map(\.text) })
+        for block in darkBlocks where darkInkStyle.observe(block, in: place) {
+            log("koyu yazılı altyazı: bu oyunun altyazısı koyu yazı sayıldı, açık zemindeki koyu yazı bu oturumda atılmıyor")
+        }
         logStale(staleTexts)
         logLeftOut(rows, chosen: reading, logged: sceneTexts + staleTexts + edge.flatMap { $0.lines.map(\.text) })
         // Kenardaki bildirim kartı altyazının yerinde (ekranın ortasında) değil, kendi yerinde çevrilir.
@@ -957,6 +967,7 @@ public final class SubtitlePipeline {
         scheduler.reset()
         stickyRows.reset()
         subtitleBand.reset()
+        darkInkStyle.reset()
         loggedSceneText.removeAll()
         mission.reset()
         notices.reset()

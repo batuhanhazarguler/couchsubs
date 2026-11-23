@@ -93,6 +93,8 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
     private readonly StickyRows stickyRows = new();
     /// <summary>Bu oturumda kesin altyazının okunduğu yükseklikler: oradaki kısa satır sahne yazısı sayılmaz (SceneText).</summary>
     private readonly SubtitleBand subtitleBand = new();
+    /// <summary>Oyunun altyazısı koyu yazı mı (açık zemindeki koyu yazı kuralı o oturumda kapanır, InkTone; GitHub #1124).</summary>
+    private readonly DarkInkStyle darkInkStyle = new();
     /// <summary>Günlüğe yazılmış son sahne yazıları (her karede yeniden yazılmasın).</summary>
     private readonly List<string> loggedSceneText = [];
     /// <summary>Son günlüğe yazılan sabit blok (<see cref="LogStale"/>; aynı bant her karede yazılmasın).</summary>
@@ -311,7 +313,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
             if (looksForPhone) phoneLookedAt = captured;
         }
         // Yazı tanıma uzun sürebilir; çağıranı (arayüzü) bekletmemek için iş parçacığı havuzunda yapılır.
-        var (raw, ocrMs, signature) = await Task.Run(() =>
+        var (raw, ocrMs, signature, cropped) = await Task.Run(() =>
         {
             if (looksForPhone)
             {
@@ -320,9 +322,11 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                 lock (gate) phone = found;
             }
             byte[]? signature = null;
+            Frame? cropped = null;
             try
             {
                 var area = RegionCropper.Crop(frame, region);
+                cropped = area;
                 signature = RegionCropper.Signature(area);
                 ReadPlan plan;
                 Reading recognized;
@@ -333,7 +337,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                     recognized = lastOcrReading;
                     readMs = lastReadMs;
                 }
-                if (plan.Reuse) return (recognized, readMs, signature);
+                if (plan.Reuse) return (recognized, readMs, signature, cropped);
 
                 var readStarted = now();
                 lock (gate) quiet.Reads++;
@@ -350,7 +354,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                         lastReadMs = readMs;
                     }
                 }
-                return (read, readMs, signature);
+                return (read, readMs, signature, cropped);
             }
             catch (Exception error)
             {
@@ -359,7 +363,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                     quiet.Failures++;
                     quiet.LastError = error.Message;
                 }
-                return (Reading.Empty, (int?)null, signature);
+                return (Reading.Empty, (int?)null, signature, cropped);
             }
         });
         lock (gate)
@@ -435,10 +439,22 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
         {
             var staleTexts = new List<string>();
             var readAt = now();
-            reading = rows.SubtitleBlock(area, subtitleBand, (block, reason) => LogSceneText(block.Text, reason),
+            // Açık zemindeki koyu yazı (duvardaki kâğıt ilan) altyazı değildir (InkTone, GitHub #1124); oyunun altyazısı koyu
+            // yazıysa (DarkInkStyle) renge bakılmaz.
+            var darkBlocks = new List<Reading>();
+            var darkInk = darkInkStyle.IsGameStyle || cropped is null ? null : InkTone.Sampler(cropped);
+            reading = rows.SubtitleBlock(area, subtitleBand, (block, reason) =>
+                                         {
+                                             if (reason == InkTone.Reason) darkBlocks.Add(block);
+                                             LogSceneText(block.Text, reason);
+                                         },
                                          block => edge.Add(block.PlacedIn(area)),
                                          line => stickyRows.UnchangedMs(line, readAt),
-                                         block => staleTexts.AddRange(block.Lines.Select(line => line.Text)));
+                                         block => staleTexts.AddRange(block.Lines.Select(line => line.Text)),
+                                         darkInk);
+            foreach (var block in darkBlocks)
+                if (darkInkStyle.Observe(block, area))
+                    Write("koyu yazılı altyazı: bu oyunun altyazısı koyu yazı sayıldı, açık zemindeki koyu yazı bu oturumda atılmıyor");
             LogStale(staleTexts);
             subtitleBand.Record(reading, area);
             noticesMoved = notices.Observe(edge, now());
@@ -1280,6 +1296,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
             schedule.Reset();
             stickyRows.Reset();
             subtitleBand.Reset();
+            darkInkStyle.Reset();
             loggedSceneText.Clear();
             loggedStale = "";
             mission.Reset();

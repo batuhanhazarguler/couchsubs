@@ -134,6 +134,8 @@ class SubtitlePipeline(
     private val stickyRows = StickyRows()
     /** Bu oturumda kesin altyazının okunduğu yükseklikler: oradaki kısa satır sahne yazısı sayılmaz ([SceneText]). */
     private val subtitleBand = SubtitleBand()
+    /** Oyunun altyazısı koyu yazı mı (açık zemindeki koyu yazı kuralı o oturumda kapanır, [InkTone]; GitHub #1124). */
+    private val darkInkStyle = DarkInkStyle()
     /** Günlüğe yazılmış son sahne yazıları (her karede yeniden yazılmasın). */
     private val loggedSceneText = ArrayDeque<String>()
     /** Son günlüğe yazılan sabit blok ([logStale]; aynı bant her karede yazılmasın). */
@@ -281,10 +283,11 @@ class SubtitlePipeline(
 
     /**
      * Bir karenin okuması ve okunan alanın karedeki yeri. [signature]: bölgenin izi ([RegionSignature.of]); okuma boş
-     * dönse de satırın yeri değişmediyse satır silinmez (parlak zemin).
+     * dönse de satırın yeri değişmediyse satır silinmez (parlak zemin). [darkInk]: okunan alanın görüntüsünde satır kutusu
+     * açık zeminde koyu yazı mı ([InkTone.sampler]; kâğıt ilan altyazı değildir, GitHub #1124).
      */
     fun process(raw: Reading, area: TextBox, signature: ByteArray? = null, capturedAt: Long? = null, ocrMs: Int? = null,
-                phone: ScreenPhoneCard.Handset? = null, reused: Boolean = false) {
+                phone: ScreenPhoneCard.Handset? = null, reused: Boolean = false, darkInk: ((TextBox) -> Boolean)? = null) {
         frameAt = capturedAt
         frameOcrMs = ocrMs
         synchronized(lock) {
@@ -334,11 +337,20 @@ class SubtitlePipeline(
             val edge = mutableListOf<Reading>()
             val staleTexts = mutableListOf<String>()
             val readAt = now()
+            // Açık zemindeki koyu yazı (duvardaki kâğıt ilan) altyazı değildir ([InkTone], GitHub #1124); oyunun altyazısı
+            // koyu yazıysa ([DarkInkStyle]) renge bakılmaz.
+            val darkBlocks = mutableListOf<Reading>()
             filtered.subtitleBlock(area, subtitleBand, notices = { block ->
                 edge.add(Reading(block.lines.map { it.copy(box = it.box?.placedIn(area)) }))
-            }, age = { stickyRows.unchangedMs(it, readAt) }, stale = { block -> staleTexts += block.lines.map { it.text } }) {
-                block, reason -> logSceneText(block.text, reason)
+            }, age = { stickyRows.unchangedMs(it, readAt) }, stale = { block -> staleTexts += block.lines.map { it.text } },
+                darkInk = if (darkInkStyle.isGameStyle) null else darkInk) { block, reason ->
+                if (reason == InkTone.REASON) darkBlocks += block
+                logSceneText(block.text, reason)
             }.also {
+                for (block in darkBlocks) {
+                    if (darkInkStyle.observe(block, area)) onLog?.invoke(
+                        "koyu yazılı altyazı: bu oyunun altyazısı koyu yazı sayıldı, açık zemindeki koyu yazı bu oturumda atılmıyor")
+                }
                 logStale(staleTexts)
                 subtitleBand.record(it, area)
                 if (notices.observe(edge, now())) {
@@ -806,6 +818,7 @@ class SubtitlePipeline(
         pairs.clear()
         stickyRows.reset()
         subtitleBand.reset()
+        darkInkStyle.reset()
         loggedSceneText.clear()
         loggedStale = ""
         mission.reset()
