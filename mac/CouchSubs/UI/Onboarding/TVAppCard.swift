@@ -94,7 +94,8 @@ struct TVAppCard: View {
                     ErrorText(error: Self.message(for: error, brand: brand, reason: reason, address: model.computerAddress))
                     // TV bu Mac'i kabul etmediyse Host PC IP'ye yazılacak adres de görünür (#343).
                     if brand == .samsung, error == .unreachable {
-                        HintText(text: "This computer's address (Host PC IP): \(model.computerAddress ?? "?")")                        otherAddresses
+                        HintText(text: "This computer's address (Host PC IP): \(model.computerAddress ?? "?")")
+                        otherAddresses
                     }
                     Button("Try again") { Task { await model.refreshTVApp() } }.buttonStyle(.secondary)
                     logActions
