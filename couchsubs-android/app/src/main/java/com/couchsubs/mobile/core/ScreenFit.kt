@@ -173,4 +173,58 @@ object ScreenFit {
         }
         item.copy(room = TextBox(min(box.left, left), box.top, max(box.right, right), box.bottom))
     }
+
+    // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Windows ile aynı) ---
+
+    /** Bir çevirinin çizimi: satırları, yalnız yatay ölçeği (en az [MIN_SQUEEZE]) ve yazının alanının yeri (piksel). */
+    data class Lines(val lines: List<String>, val squeeze: Double, val left: Double, val width: Double)
+
+    const val FIRST_SQUEEZE = 0.8
+    const val MIN_SQUEEZE = 0.7
+
+    /**
+     * Çeviriyi özgün yazının alanına yerleştirir; yazı boyu hiç değişmez. [measure]: yazının çizicinin kendi yazı tipiyle,
+     * sabit boyda genişliği (piksel). [room]: genişleyebileceği alan (sol, sağ; piksel), yoksa kutunun kendisi. [rows]:
+     * özgün satır sayısı; tek satırlık uzun yazı son çare olarak gerektiği kadar satıra iner.
+     */
+    fun lines(text: String, left: Double, width: Double, room: Pair<Double, Double>?, rows: Int, align: String,
+              measure: (String) -> Double): Lines {
+        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        var lines = text.split("\n")
+        val count = max(rows, lines.size)
+        if (lines.size == 1 && (count > 1 || (words.size > 2 && measure(text) > width / MIN_SQUEEZE))) {
+            val cap = if (count > 1) count else Int.MAX_VALUE
+            val target = max(width / FIRST_SQUEEZE, measure(text) / max(1, count))
+            val made = mutableListOf<String>()
+            var current = ""
+            for (word in words) {
+                val next = if (current.isEmpty()) word else "$current $word"
+                if (current.isNotEmpty() && measure(next) > target && made.size < cap - 1) {
+                    made.add(current)
+                    current = word
+                } else current = next
+            }
+            if (current.isNotEmpty()) made.add(current)
+            lines = made
+        }
+        val widest = lines.maxOfOrNull(measure) ?: 0.0
+        var a = left
+        var b = left + width
+        val r0 = min(left, room?.first ?: left)
+        val r1 = max(left + width, room?.second ?: (left + width))
+        var squeeze = if (widest > 0) min(1.0, (b - a) / widest) else 1.0
+        if (squeeze < FIRST_SQUEEZE) {
+            val extra = widest * FIRST_SQUEEZE - (b - a)
+            var l = when (align) { "right" -> extra; "center" -> extra / 2; else -> 0.0 }
+            var r = extra - l
+            val freeL = a - r0
+            val freeR = r1 - b
+            if (r > freeR) { l += r - freeR; r = freeR }
+            if (l > freeL) { r = min(freeR, r + l - freeL); l = freeL }
+            a -= l
+            b += r
+            squeeze = max(MIN_SQUEEZE, min(1.0, (b - a) / widest))
+        }
+        return Lines(lines, squeeze, a, b - a)
+    }
 }

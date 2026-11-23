@@ -163,6 +163,15 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"screen-fit\.json"),
         ("android", _DROID_TESTS + "ScreenFitTest.kt", r"screen-fit\.json"),
     ],
+    # Çizicilerin ortak satır yerleşimi: yazı boyu sabit, önce yatay sıkıştırma, sonra room içinde genişleme (TV fitStyled).
+    "Ekran yazısı çizici yerleşimi (ScreenFit.lines)": [
+        ("mac", _CORE + "ScreenFit.swift", r"public static func lines\("),
+        ("windows", _WIN + "ScreenFit.cs", r"public static Lines Layout\("),
+        ("android", _DROID + "ScreenFit.kt", r"fun lines\("),
+        ("mac", _CORE_TESTS + "ScreenFitTests.swift", r"func testSharedLineVectors\("),
+        ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"public void SharedLineVectors\("),
+        ("android", _DROID_TESTS + "ScreenFitTest.kt", r"fun sharedLineVectors\("),
+    ],
     "Gerçek kare ekran yazısı ölçütü (menü, görev listesi)": [
         ("mac", "tools/frame-regression/Sources/frame-regression/ScreenCheck.swift", r"func checkScreen\("),
         ("android", _DROID_TESTS + "ScreenFramesTest.kt", r"ocr/screen/"),

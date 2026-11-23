@@ -127,4 +127,25 @@ public class ScreenFitTests
         Assert.Contains(final, item => item.Translation == "yeni gelen çeviri");
         Assert.Contains(final, item => item.Translation == "ADA HAYALLERİ");
     }
+
+    /// <summary>Çizicilerin ortak satır yerleşimi (screen-fit.json → lines; Mac ve Android aynı vakalar).</summary>
+    [Fact]
+    public void SharedLineVectors()
+    {
+        using var document = JsonDocument.Parse(File.ReadAllText(PackFixtures.Path("screen-fit.json")));
+        foreach (var vector in document.RootElement.GetProperty("lines").EnumerateArray())
+        {
+            (double, double)? room = vector.GetProperty("room").ValueKind == JsonValueKind.Array
+                ? (vector.GetProperty("room")[0].GetDouble(), vector.GetProperty("room")[1].GetDouble()) : null;
+            var got = ScreenFit.Layout(vector.GetProperty("text").GetString()!, vector.GetProperty("left").GetDouble(),
+                vector.GetProperty("width").GetDouble(), room, vector.GetProperty("rows").GetInt32(), vector.GetProperty("align").GetString()!,
+                text => text.Length * 10.0);
+            var want = vector.GetProperty("expect");
+            var name = vector.GetProperty("id").GetString();
+            Assert.Equal(want.GetProperty("lines").EnumerateArray().Select(line => line.GetString()!).ToList(), got.Rows);
+            Assert.True(Math.Abs(want.GetProperty("squeeze").GetDouble() - got.Squeeze) <= 0.001, $"{name}: {got.Squeeze}");
+            Assert.True(Math.Abs(want.GetProperty("left").GetDouble() - got.Left) <= 0.01, $"{name}: {got.Left}");
+            Assert.True(Math.Abs(want.GetProperty("width").GetDouble() - got.Width) <= 0.01, $"{name}: {got.Width}");
+        }
+    }
 }

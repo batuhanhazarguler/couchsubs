@@ -244,4 +244,22 @@ final class ScreenFitTests: XCTestCase {
         XCTAssertTrue(final.contains { $0.translation == "yeni gelen çeviri" })
         XCTAssertGreaterThan(final.count, early.count)
     }
+
+    /// Çizicilerin ortak satır yerleşimi (Fixtures/screen-fit.json → lines; Windows ve Android aynı vakalar).
+    func testSharedLineVectors() throws {
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/screen-fit.json")
+        let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as! [String: Any]
+        for vector in fixture["lines"] as! [[String: Any]] {
+            let room = (vector["room"] as? [Double]).map { ($0[0], $0[1]) }
+            let align = TextLook.Align(rawValue: vector["align"] as! String)!
+            let got = ScreenFit.lines(vector["text"] as! String, left: vector["left"] as! Double, width: vector["width"] as! Double,
+                                      room: room, rows: vector["rows"] as! Int, align: align) { Double($0.count) * 10 }
+            let want = vector["expect"] as! [String: Any]
+            let name = vector["id"] as! String
+            XCTAssertEqual(got.lines, want["lines"] as! [String], name)
+            XCTAssertEqual(got.squeeze, want["squeeze"] as! Double, accuracy: 0.001, name)
+            XCTAssertEqual(got.left, want["left"] as! Double, accuracy: 0.01, name)
+            XCTAssertEqual(got.width, want["width"] as! Double, accuracy: 0.01, name)
+        }
+    }
 }

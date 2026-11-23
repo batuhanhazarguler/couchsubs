@@ -168,4 +168,58 @@ public static class ScreenFit
         }
         return result;
     }
+
+    // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Android ile aynı) ---
+
+    /// <summary>Bir çevirinin çizimi: satırları, yalnız yatay ölçeği ve yazının alanının yeri (piksel).</summary>
+    public sealed record Lines(IReadOnlyList<string> Rows, double Squeeze, double Left, double Width);
+
+    public const double FirstSqueeze = 0.8;
+    public const double MinSqueeze = 0.7;
+
+    /// <summary>
+    /// Çeviriyi özgün yazının alanına yerleştirir; yazı boyu hiç değişmez. <paramref name="measure"/>: yazının çizicinin
+    /// kendi yazı tipiyle, sabit boyda genişliği (piksel). <paramref name="room"/>: genişleyebileceği alan (piksel), yoksa
+    /// kutunun kendisi. <paramref name="rows"/>: özgün satır sayısı; tek satırlık uzun yazı son çare olarak satıra iner.
+    /// </summary>
+    public static Lines Layout(string text, double left, double width, (double Left, double Right)? room, int rows, string align,
+                               Func<string, double> measure)
+    {
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        IReadOnlyList<string> lines = text.Split('\n');
+        var count = Math.Max(rows, lines.Count);
+        if (lines.Count == 1 && (count > 1 || (words.Length > 2 && measure(text) > width / MinSqueeze)))
+        {
+            var cap = count > 1 ? count : int.MaxValue;
+            var target = Math.Max(width / FirstSqueeze, measure(text) / Math.Max(1, count));
+            var made = new List<string>();
+            var current = "";
+            foreach (var word in words)
+            {
+                var next = current.Length == 0 ? word : current + " " + word;
+                if (current.Length > 0 && measure(next) > target && made.Count < cap - 1) { made.Add(current); current = word; }
+                else current = next;
+            }
+            if (current.Length > 0) made.Add(current);
+            lines = made;
+        }
+        var widest = lines.Count == 0 ? 0 : lines.Max(measure);
+        double a = left, b = left + width;
+        var r0 = Math.Min(left, room?.Left ?? left);
+        var r1 = Math.Max(left + width, room?.Right ?? left + width);
+        var squeeze = widest > 0 ? Math.Min(1, (b - a) / widest) : 1;
+        if (squeeze < FirstSqueeze)
+        {
+            var extra = (widest * FirstSqueeze) - (b - a);
+            var l = align == "right" ? extra : align == "center" ? extra / 2 : 0;
+            var r = extra - l;
+            double freeL = a - r0, freeR = r1 - b;
+            if (r > freeR) { l += r - freeR; r = freeR; }
+            if (l > freeL) { r = Math.Min(freeR, r + l - freeL); l = freeL; }
+            a -= l;
+            b += r;
+            squeeze = Math.Max(MinSqueeze, Math.Min(1, (b - a) / widest));
+        }
+        return new Lines(lines, squeeze, a, b - a);
+    }
 }

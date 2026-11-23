@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import CoreGraphics
+import CoreText
 import Foundation
 
 /// "Ekranı çevir" öğelerinin yerleşimi: çeviri özgün yazının birebir yerinde ve boyunda çizilsin, simgeleri örtmesin
@@ -35,7 +36,7 @@ public enum ScreenFit {
     }
 
     /// Yerleşime giren öğe: özgün stilli, telefon kartının ya da balonun parçası değil.
-    static func takesPart(_ item: ScreenTranslation.Item) -> Bool {
+    public static func takesPart(_ item: ScreenTranslation.Item) -> Bool {
         item.look != nil && !ScreenTranslation.isCardPart(item) && !item.bubble
     }
 
@@ -159,5 +160,71 @@ public enum ScreenFit {
             result[i].room = TextBox(left: min(box.left, left), top: box.top, right: max(box.right, right), bottom: box.bottom)
         }
         return result
+    }
+    // MARK: - Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra)
+
+    /// Bir çevirinin çizimi: satırları, yatay sıkıştırması ve yazının alanının yeri (piksel). Yazı boyu hiç değişmez.
+    public struct Lines: Equatable, Sendable {
+        public var lines: [String]
+        /// Yalnız yatay ölçek (1 = sıkıştırma yok, en az `minSqueeze`).
+        public var squeeze: Double
+        public var left: Double
+        public var width: Double
+    }
+
+    /// Önce yalnız yatay sıkıştırma bu orana kadar, sonra genişleme, en son `minSqueeze`'e kadar (TV ile aynı).
+    public static let firstSqueeze = 0.8
+    public static let minSqueeze = 0.7
+
+    /// Çeviriyi özgün yazının alanına yerleştirir. `measure`: yazının çizicinin kendi yazı tipiyle, sabit yazı boyunda
+    /// genişliği (piksel). `room`: genişleyebileceği alan (piksel; yoksa kutunun kendisi). `rows`: özgün satır sayısı.
+    /// Özgün tek satırlık kısa etiket (en çok iki sözcük) tek satır kalır; uzun yazı özgün satır sayısına bölünür.
+    public static func lines(_ text: String, left: Double, width: Double, room: (left: Double, right: Double)?, rows: Int,
+                             align: TextLook.Align, measure: (String) -> Double) -> Lines {
+        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        var lines = text.components(separatedBy: "\n")
+        let count = max(rows, lines.count)
+        if lines.count == 1, count > 1 || (words.count > 2 && measure(text) > width / minSqueeze) {
+            // Sözcükler eşit uzunlukta satırlara: özgün yazı çok satırlıysa en çok o kadar satır; tek satırlık uzun yazı
+            // (son çare) gerektiği kadar satıra iner.
+            let cap = count > 1 ? count : Int.max
+            let target = max(width / firstSqueeze, measure(text) / Double(max(1, count)))
+            lines = []
+            var current = ""
+            for word in words {
+                let next = current.isEmpty ? word : current + " " + word
+                if !current.isEmpty, measure(next) > target, lines.count < cap - 1 { lines.append(current); current = word }
+                else { current = next }
+            }
+            if !current.isEmpty { lines.append(current) }
+        }
+        let widest = lines.map(measure).max() ?? 0
+        var a = left, b = left + width
+        let r0 = min(left, room?.left ?? left), r1 = max(left + width, room?.right ?? left + width)
+        var squeeze = widest > 0 ? min(1, (b - a) / widest) : 1
+        if squeeze < firstSqueeze {
+            // Hizanın tersine genişleme; alan bitince öbür yana.
+            let extra = widest * firstSqueeze - (b - a)
+            var l = align == .right ? extra : align == .center ? extra / 2 : 0
+            var r = extra - l
+            let freeL = a - r0, freeR = r1 - b
+            if r > freeR { l += r - freeR; r = freeR }
+            if l > freeL { r = min(freeR, r + l - freeL); l = freeL }
+            a -= l
+            b += r
+            squeeze = max(minSqueeze, min(1, (b - a) / widest))
+        }
+        return Lines(lines: lines, squeeze: squeeze, left: a, width: b - a)
+    }
+
+    /// Mac ve iPhone çizicilerinin ölçüsü: sistem yazı tipiyle (SwiftUI `.system`) yazının genişliği. Kalın değilse
+    /// çiziciler yarı kalın çizer; düz yazı tipiyle ölçülüp %4 pay bırakılır.
+    public static func textWidth(_ text: String, size: CGFloat, bold: Bool) -> CGFloat {
+        let font = CTFontCreateUIFontForLanguage(bold ? .emphasizedSystem : .system, size, nil)
+            ?? CTFontCreateWithName("Helvetica" as CFString, size, nil)
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+            NSAttributedString.Key(kCTFontAttributeName as String): font,
+        ]))
+        return CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil)) * (bold ? 1 : 1.04)
     }
 }

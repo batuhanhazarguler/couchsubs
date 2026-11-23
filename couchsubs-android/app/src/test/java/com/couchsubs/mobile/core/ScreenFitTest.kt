@@ -100,4 +100,23 @@ class ScreenFitTest {
         assertTrue(final.any { it.translation == "yeni gelen çeviri" })
         assertTrue(final.any { it.translation == "ADA HAYALLERİ" })
     }
+
+    /** Çizicilerin ortak satır yerleşimi (fixtures/screen-fit.json → lines; Mac ve Windows aynı vakalar). */
+    @Test
+    fun sharedLineVectors() {
+        val list = fixture.getJSONArray("lines")
+        for (k in 0 until list.length()) {
+            val vector = list.getJSONObject(k)
+            val room = vector.optJSONArray("room")?.let { it.getDouble(0) to it.getDouble(1) }
+            val got = ScreenFit.lines(vector.getString("text"), vector.getDouble("left"), vector.getDouble("width"), room,
+                vector.getInt("rows"), vector.getString("align")) { it.length * 10.0 }
+            val want = vector.getJSONObject("expect")
+            val name = vector.getString("id")
+            val lines = want.getJSONArray("lines")
+            assertEquals(name, (0 until lines.length()).map { lines.getString(it) }, got.lines)
+            assertEquals(name, want.getDouble("squeeze"), got.squeeze, 0.001)
+            assertEquals(name, want.getDouble("left"), got.left, 0.01)
+            assertEquals(name, want.getDouble("width"), got.width, 0.01)
+        }
+    }
 }
