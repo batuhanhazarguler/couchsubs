@@ -6,13 +6,13 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
-- **LG'de kararma:** Çeviri başlarken ve PS tuşundan dönünce ekranın 2 sn aralıkla kararması giderildi (TV uygulaması 0.9.82).
-- **Android TV'de çökme:** Bazı Android TV'lerde altyazı katmanı çizilirken uygulama çöküyorsa bir sonraki açılışta daha güvenli çizime geçiyor (TV uygulaması 0.9.83).
-- **Android TV'de "Uygulama içinde":** Görüntü modu "Uygulama içinde" seçiliyse TV uygulaması kendiliğinden katmana geçmiyor (TV uygulaması 0.9.84).
-- **LG'de "TV bağlantıyı reddetti":** TV bağlantıyı reddettiğinde "TV yanıt vermedi" yerine TV'yi yeniden başlatma önerisi ve webOS Hub uyarısı çıkıyor.
-- **Xbox'ta oyun seçimi:** Oyun tanınmazsa son seçtiğiniz oyun kullanılıyor; GTA 6 telefonu seçilince hemen açılıyor.
-- **Açık zeminde koyu yazı:** Duvardaki kâğıt ilan gibi açık zemin üstündeki koyu yazılar da okunup çevriliyor (#1124).
-- **Eksik Türkçe metinler** tamamlandı.
+- **Ekranı çevir:** Çeviri özgün yazının tam yerinde ve boyunda çiziliyor; tuş simgelerini ve fotoğrafları örtmüyor, menü sekmeleri aynı boyda kalıyor (TV uygulaması 0.9.85). Daha önce görülen yazıların çevirisi beklemeden anında çıkıyor. Mac yayın penceresi, iPhone ve Android'de de yerleşim TV ile aynı.
+- **TV'nin adresi değişince:** TV ağda yeni adres alırsa yeniden bulunuyor, "Key Server kapalı" denmiyor. Eşli TV'yi Ayarlar'dan değiştirebilir ya da eşleşmeyi kaldırabilirsiniz.
+- **LG'de ilk oturumda kararma:** Çeviri ilk kez başladığında görüntünün durup yeniden kurulması (ekranın kararması) giderildi (TV uygulaması 0.9.87).
+- **PS5'in Türkçe menü yazıları:** PS5 menüsündeki Türkçe satırlar ve bozuk okunan parçalar altyazı sanılıp çevrilmiyor.
+- **Açık mavi kâğıttaki ilan:** Açık mavi kâğıt üstündeki lacivert ilan, ışık şeridi olsa da altyazı sanılmıyor.
+
+**beta.89'da gelenler:** LG'de 2 sn aralıkla kararma (TV uygulaması 0.9.82), Android TV'de çökme ve "Uygulama içinde" modu, LG "TV bağlantıyı reddetti" uyarısı, Xbox'ta oyun seçimi, açık zeminde koyu yazı, eksik Türkçe metinler.
 
 **beta.88'de gelenler:** yeni tasarım (Mac, Windows), Xbox'ta "Uzaktan yürütme başlatıldı / durdu" döngüsü, PS5'te bağlan-kop döngüsü, Windows'ta nadir çökmeye karşı önlem.
 
