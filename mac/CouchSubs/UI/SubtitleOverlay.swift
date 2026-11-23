@@ -427,7 +427,7 @@ struct SubtitleOverlayView: View {
             ? model.overlayCover : nil
         let cover: CGSize? = coverLine.flatMap { OverlayCover.size(of: $0.box, screen: geometry.screen, scale: scale) }
         // Uzun çeviri en çok 3 satıra dengeli bölünür; 3 satıra sığmazsa yazı biraz küçülür (bkz. SubtitleWrap). "Örtsün"de
-        // yazı seçilen boyda kalır, en çok bir kademe küçülür ve satırdan satıra zıplamaz (CoverFontScale).
+        // yazı seçilen boyda kalır, hiç küçülmez; sığmazsa daha çok satıra bölünür (CoverFontScale).
         let wrapped = coverLine.map { SubtitleWrap.fit(line.text, scale: $0.scale) } ?? line.wrapped
         let size = CGFloat(style.fontSize) * scale * (current ? 1 : 0.8) * CGFloat(wrapped.scale)
         let alpha = Double(max(0, min(100, style.background))) / 100 * (current ? 1 : 0.83)

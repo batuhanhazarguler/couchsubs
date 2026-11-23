@@ -41,8 +41,8 @@ extension AppModel {
         switch event {
         case .subtitle(let text, let durationMs, let paragraphs, let replaces, let box):
             overlayScreenUntil = 0
-            // "Örtsün": oyundaki altyazının yeri gelmezse son bilinen yer örtülür; yazı boyu seçilen boyda kalır, ancak
-            // 3 satıra sığmazsa bir kademe küçülür (bkz. CoverFontScale; TV ve OBS sayfası da aynı).
+            // "Örtsün": oyundaki altyazının yeri gelmezse son bilinen yer örtülür; yazı boyu hep seçilen boyda kalır;
+            // 3 satıra sığmazsa küçülmez, daha çok satıra bölünür (bkz. CoverFontScale; TV ve OBS sayfası da aynı).
             let style = settings.style
             let covering = style.placement == .cover && style.backgroundShape != .band && !paragraphs
             overlayCover = (text: text, box: box ?? overlayCover?.box,
