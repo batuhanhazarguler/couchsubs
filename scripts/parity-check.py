@@ -140,6 +140,30 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "OcrCrumbsTests.cs", r"ocr-crumbs\.json"),
         ("android", _DROID_TESTS + "OcrCrumbsTest.kt", r"ocr-crumbs\.json"),
     ],
+    # beta.89 (Mac, PS5 Türkçe ana ekranı): harfleri düz okunan Türkçe menü satırı paketle eşleşip çevriliyor, bozuk
+    # parçası ("One [Ikan Ipufl") TV'de altyazı oluyor, döngü değişmeyen ekranda her 2,5 sn'de bir yineleniyordu.
+    "Türkçe menü satırı, parçası ve çöp okuma altyazı sayılmaz; karara bağlanan satır ekranda durdukça sessiz (SettledText)": [
+        ("mac", _CORE + "Pipeline/SettledText.swift", r"func isTargetFragment\("),
+        ("windows", _WIN + "SettledText.cs", r"public bool IsTargetFragment\("),
+        ("android", _DROID + "SettledText.kt", r"fun isTargetFragment\("),
+        ("mac", _CORE + "TurkishText.swift", r"static func isFolded\("),
+        ("windows", _WIN + "TurkishText.cs", r"public static bool IsFolded\("),
+        ("android", _DROID + "TurkishText.kt", r"fun isFolded\("),
+        ("mac", _CORE + "OcrNoise.swift", r"static func looksBracketGarbled\("),
+        ("windows", _WIN + "OcrNoise.cs", r"public static bool LooksBracketGarbled\("),
+        ("android", _DROID + "OcrNoise.kt", r"fun looksBracketGarbled\("),
+        ("mac", _CORE + "Pipeline/SubtitlePipeline.swift", r"if quietDrop\(source, box: box\) \{ return \}"),
+        ("windows", _WIN + "SubtitlePipeline.cs", r"if \(QuietDrop\(source, box\)\) return null;"),
+        ("android", _DROID + "SubtitlePipeline.kt", r"if \(quietDrop\(source, box\)\) return null"),
+        ("mac", _CORE + "GamePacks.swift", r"if TurkishText\.looksTurkish\(text\) \{ return nil \}"),
+        ("windows", "windows/src/CouchSubs.Translation/PackLookup.cs", r"if \(TurkishText\.LooksTurkish\(text\)\) return null;"),
+        ("android", _DROID + "SubtitleSegmenter.kt", r"if \(TurkishText\.looksTurkish\(text\)\) return null"),
+    ],
+    "Ortak deneme dosyası settled-text.json": [
+        ("mac", _CORE_TESTS + "SettledTextTests.swift", r"settled-text\.json"),
+        ("windows", _WIN_TESTS + "SettledTextTests.cs", r"settled-text\.json"),
+        ("android", _DROID_TESTS + "SettledTextTest.kt", r"settled-text\.json"),
+    ],
     # GitHub #884/#891: TV uygulaması sürümünü altyazı akışıyla bildirir (/events?v=); eskiyse dört platformda da ana
     # ekranda "TV uygulamasını güncelle" çıkar (LG geliştirici modu kapalı / anahtar başka cihazdayken de).
     "Eski TV uygulamasını akıştaki sürümden tanıma ve ana ekranda güncelleme önerisi": [
