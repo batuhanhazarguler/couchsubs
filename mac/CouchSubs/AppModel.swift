@@ -184,11 +184,15 @@ protocol StreamControlling: AnyObject {
     func setPlayAudio(_ enabled: Bool)
     /// PS5: bağlanırken son adım; "Bağlanıyor…" 30 sn'yi geçince nedeni söylenir (Xbox ve pencereden okumada yok).
     var connectStep: ConnectStep? { get }
+    /// Karelerin kopyalanma sıklığı (`FrameCadence`; Windows IStreamSession.UseCadence ile aynı): oturum kareyi kendi
+    /// belleğimize kopyalamadan önce sorar. Vermeyen oturum kendi hızında gönderir.
+    func useCadence(_ cadence: FrameCadence)
 }
 
 extension StreamControlling {
     func setPlayAudio(_ enabled: Bool) {}
     var connectStep: ConnectStep? { nil }
+    func useCadence(_ cadence: FrameCadence) {}
 }
 
 /// TV uygulamasını açık tutan görevli (gerçekte `TVKeeper`).
@@ -887,6 +891,8 @@ final class AppModel: ObservableObject {
     private var lastSubtitleBox: TextBox?
     /// Hatta aynı anda tek kare girer. Durdurma ve yeni hat kapıyı sıfırlar; takılan okuma hattı yeniden kurdurur.
     private var frameGate = FrameGate()
+    /// Oturumların kare kopyalama sıklığı (oyun takılmasın): okuma süresi buradan bildirilir (bkz. `FrameCadence`).
+    let frameCadence = FrameCadence()
     /// Okuma sürerken atlanan son kare; okuma bitince okunur (bkz. `FrameGate.leave`).
     private var skippedFrame: (frame: CGImage, capturedAt: Int)?
     private var wakeObserver: NSObjectProtocol?
@@ -2425,6 +2431,7 @@ final class AppModel: ObservableObject {
                 await self.handle(frame, capturedAt: capturedAt)
             }
         }
+        session.useCadence(frameCadence)
     }
 
     /// "Yeniden bağlan" (ve oturumun bıraktığı bağlantıda uykudan uyanış): konsol oturumu kapatılıp yenisi açılır, TV
@@ -2440,6 +2447,7 @@ final class AppModel: ObservableObject {
         session?.stop()
         session = nil
         frameGate.reset()
+        frameCadence.reset()
         skippedFrame = nil
         guard let session = makeConsoleSession(xbox: xbox) else { return }
         attach(session)
@@ -3018,6 +3026,7 @@ final class AppModel: ObservableObject {
         pipeline?.reset()
         // Eski hatta süren okuma beklenmez; yeni hat ilk karesini hemen alır.
         frameGate.reset()
+        frameCadence.reset()
         skippedFrame = nil
         let scheduler = ReadScheduler(maxReuse: settings.fastSubtitleDetection
             ? ReadScheduler.fastMaxReuse : ReadScheduler.defaultMaxReuse)
@@ -3326,6 +3335,7 @@ final class AppModel: ObservableObject {
         gamePhoneTracker = nil
         // Yeni "Başlat" eski oturumdan kalan (belki takılmış) okumayı beklemeden temiz başlar.
         frameGate.reset()
+        frameCadence.reset()
         skippedFrame = nil
         activeLanguages = nil
         subtitlesPaused = false
@@ -3650,6 +3660,8 @@ final class AppModel: ObservableObject {
         var next = (frame: frame, capturedAt: capturedAt)
         while true {
             await pipeline.process(next.frame, region: settings.region, capturedAt: next.capturedAt)
+            // Okuma kare aralığından uzun sürüyorsa oturum kareleri o kadar seyrek kopyalar (atılacak kare kopyalanmaz).
+            frameCadence.reportReadMs(pipeline.lastOcrMs)
             // Okuma sürerken atlanan son kare hemen okunur: pencere yakalaması değişmeyen ekranda kare göndermez; altyazı
             // belirirken gelen son kare atlanınca yeni satır kamera oynatılana dek okunmuyordu (GitHub #1019).
             guard frameGate.leave(token), let skipped = skippedFrame else { return }

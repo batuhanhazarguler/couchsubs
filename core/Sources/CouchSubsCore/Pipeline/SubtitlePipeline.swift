@@ -168,6 +168,8 @@ public final class SubtitlePipeline {
     private var phoneLookedAt: Int?
     /// Son yazı tanımanın süresi (ms); kare değişmeyip okuma yeniden kullanılınca da o okumanın süresi geçerlidir.
     private var lastReadMs: Int?
+    /// Son yazı tanımanın süresi (ms): kare sıklığı okuma yavaşsa seyrekleşir (`FrameCadence`).
+    public var lastOcrMs: Int? { lastReadMs }
     /// İşlenen karenin okunması (satır kararlı olunca isteğe geçer).
     private var currentRead = ReadInfo(capturedAt: 0)
 

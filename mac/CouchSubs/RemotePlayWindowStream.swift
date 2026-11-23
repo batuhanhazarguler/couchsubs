@@ -50,7 +50,15 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
     /// Bu kaynakta PS5'in adresi bilinmez; hiç çağrılmaz.
     var onConsoleMoved: ((RegisteredConsole) -> Void)?
 
-    private let queue = DispatchQueue(label: "com.couchsubs.remoteplay-window", qos: .userInitiated)
+    /// Yakalama kuyruğu düşük öncelikte: kare kopyası oyunun (Remote Play) önüne geçmez (Windows'ta süreç "normalin altı").
+    private let queue = DispatchQueue(label: "com.couchsubs.remoteplay-window", qos: .utility)
+    /// Karelerin kopyalanma sıklığı; okuma hattı kendi örneğini verir (`useCadence`).
+    private var cadence = FrameCadence()
+    private let cpu = SystemCpuLoad()
+    /// Sıklık sınırına takılan son kare. Görüntü durunca ScreenCaptureKit yeni kare göndermez: altyazı belirirken gelen son
+    /// kare atılsaydı yeni satır kamera oynayana dek okunmazdı (#1019). Sınır dolunca o okunur. Yalnız `queue`'da değişir.
+    private var held: (stream: SCStream, buffer: CMSampleBuffer)?
+    private var heldScheduled = false
     let lock = NSLock()
     /// Her başlatma/durdurma bir numara alır; eski aramanın ya da yakalamanın geç gelen sonucu yenisine karışmaz.
     private var generation = 0
@@ -344,6 +352,10 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
 
     // MARK: - SCStreamOutput, SCStreamDelegate
 
+    func useCadence(_ cadence: FrameCadence) {
+        lock.withLock { self.cadence = cadence }
+    }
+
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         let capture = lock.withLock { self.stream === stream ? selectedCapture : nil }
         if let capture {
@@ -358,6 +370,48 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
             frameCounts.idle()
             return
         }
+        // Sıklık sınırı dolmadıysa kare kopyalanmaz; son kare tutulur, sınır dolunca okunur (oyun takılmasın).
+        let cadence = lock.withLock { self.cadence }
+        let now = SubtitleStabilizer.uptimeMs()
+        cpu.report(to: cadence, now: now)
+        guard cadence.admit(now: now) else {
+            frameCounts.idle()
+            hold(sampleBuffer, from: stream, cadence: cadence)
+            return
+        }
+        held = nil
+        deliver(sampleBuffer, pixels: pixels, from: stream, capture: capture)
+    }
+
+    /// Kareyi tutar (öncekini havuza bırakır) ve sıklık sınırı dolunca okunmasını zamanlar. `queue`'da çağrılır.
+    private func hold(_ sampleBuffer: CMSampleBuffer, from stream: SCStream, cadence: FrameCadence) {
+        held = (stream, sampleBuffer)
+        guard !heldScheduled else { return }
+        heldScheduled = true
+        queue.asyncAfter(deadline: .now() + .milliseconds(cadence.intervalMs)) { [weak self] in
+            guard let self else { return }
+            self.heldScheduled = false
+            guard let pending = self.held else { return }
+            let (stream, buffer) = pending
+            let current = self.lock.withLock { self.stream === stream ? self.cadence : nil }
+            guard let current else {
+                self.held = nil
+                return
+            }
+            guard current.admit(now: SubtitleStabilizer.uptimeMs()) else {
+                self.hold(buffer, from: stream, cadence: current)
+                return
+            }
+            self.held = nil
+            guard let pixels = buffer.imageBuffer else { return }
+            let capture = self.lock.withLock { self.stream === stream ? self.selectedCapture : nil }
+            if let capture, capture.usesFallback { return }
+            self.deliver(buffer, pixels: pixels, from: stream, capture: capture)
+        }
+    }
+
+    /// Kareyi kendi belleğimize kopyalayıp okumaya verir.
+    private func deliver(_ sampleBuffer: CMSampleBuffer, pixels: CVPixelBuffer, from stream: SCStream, capture: SelectedCapture?) {
         capture?.watch.copyStarted(at: capture?.elapsed ?? 0)
         var image: CGImage?
         let status = VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &image)

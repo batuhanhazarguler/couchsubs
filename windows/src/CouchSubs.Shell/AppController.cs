@@ -82,6 +82,10 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private TextBox? lastSubtitleBox;
     /// <summary>Hatta aynı anda tek kare girer; durdurma ve yeni hat kapıyı sıfırlar, takılan okuma hattı yeniden kurdurur.</summary>
     private readonly FrameGate frameGate = new();
+    /// <summary>Oturumların kare kopyalama sıklığı (oyun takılmasın): okuma süresi buradan bildirilir (bkz. <see cref="FrameCadence"/>).</summary>
+    private readonly FrameCadence frameCadence = new();
+    /// <summary>Kare kopyalama sıklığı; testler ve tanı için.</summary>
+    public FrameCadence FrameCadence => frameCadence;
     /// <summary>Okuma sürerken atlanan son kare; okuma bitince okunur (bkz. <see cref="FrameGate.Leave"/>).</summary>
     private (Frame Frame, long Arrived)? skippedFrame;
     private readonly object skippedGate = new();
@@ -2836,6 +2840,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         UpdateRegionWatcher();
         // Yeni "Başlat" eski oturumdan kalan (belki takılmış) okumayı beklemeden temiz başlar.
         frameGate.Reset();
+        frameCadence.Reset();
         lock (skippedGate) skippedFrame = null;
         activeReader = null;
         screenWork?.Cancel();
@@ -2899,6 +2904,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         {
             if (ReferenceEquals(session, stream)) HandleFrame(frame);
         };
+        stream.UseCadence(frameCadence);
     }
 
     /// <summary>
@@ -2917,6 +2923,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         old?.Stop();
         old?.Dispose();
         frameGate.Reset();
+        frameCadence.Reset();
         lock (skippedGate) skippedFrame = null;
         framesSince = null;
         IStreamSession stream;
@@ -3614,6 +3621,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         ResetRegionWatcher(discard: true);
         // Eski hatta süren okuma beklenmez; yeni hat ilk karesini hemen alır.
         frameGate.Reset();
+        frameCadence.Reset();
         lock (skippedGate) skippedFrame = null;
         ActiveSourceLanguage = settings.SourceLanguage;
         var reader = services.MakeReader(settings.SourceLanguage, settings.OcrEngine);
@@ -4249,6 +4257,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
                 finally
                 {
                     skipped = frameGate.Leave(token);
+                    // Okuma kare aralığından uzun sürüyorsa oturum kareleri o kadar seyrek kopyalar (atılacak kare kopyalanmaz).
+                    frameCadence.ReportReadMs(current.LastReadMs);
                 }
                 // Okuma sürerken atlanan son kare hemen okunur: pencere yakalaması değişmeyen ekranda kare göndermez;
                 // altyazı belirirken gelen son kare atlanınca yeni satır kamera oynatılana dek okunmuyordu (GitHub #1019).
