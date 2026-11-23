@@ -866,7 +866,7 @@
     var size = Math.round(baseSize * wrapped.scale);
     el.style.fontSize = size + 'px';
     if (paragraphs) return fitBox(el);
-    // Konuşma altyazısı hiçbir modda küçülmez ve sıkıştırılmaz (TV uygulaması 0.9.90): uzun satır bölünür, kutu büyür.
+    // Konuşma altyazısı hiçbir modda küçülmez ve sıkıştırılmaz (TV uygulaması 0.9.92): uzun satır bölünür, kutu büyür.
     // Önceden "Üstünde" ve bantta sığmayan satır %75'e, yükseklik sınırına göre daha da küçülüyordu.
     fitBox(el);
   }

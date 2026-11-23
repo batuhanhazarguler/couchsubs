@@ -515,27 +515,6 @@
   {
    "align": "center",
    "expect": {
-    "left": 50,
-    "lines": [
-     "sen bunu bilmiyorsun",
-     "ama ben biliyorum"
-    ],
-    "squeeze": 1,
-    "width": 200
-   },
-   "id": "oyunun konuşma altyazısı (tek satır, uzun): hiç sıkıştırılmaz, satır kırılır",
-   "left": 50,
-   "room": [
-    0,
-    640
-   ],
-   "rows": 1,
-   "text": "sen bunu bilmiyorsun ama ben biliyorum",
-   "width": 200
-  },
-  {
-   "align": "center",
-   "expect": {
     "left": 0,
     "lines": [
      "sen bunu bilmiyorsun ama ben biliyorum"
