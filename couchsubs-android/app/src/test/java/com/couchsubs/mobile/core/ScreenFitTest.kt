@@ -70,4 +70,34 @@ class ScreenFitTest {
         val h = listOf(have.left, have.top, have.right, have.bottom)
         for (i in 0 until 4) assertTrue("$name: $h ≠ $want", abs(want[i] - h[i]) <= fixture.getDouble("tolerance"))
     }
+
+    /**
+     * Önbellekteki yazı anında: menü başlığı önceki oturumdan önbellekte, görev açıklaması yeni. Önbellekteki grup çeviri
+     * isteği gitmeden çizilir; çevirmene yalnız yeni yazı gider (Mac ScreenFitTests, Windows ScreenFitTests ile aynı).
+     */
+    @Test
+    fun cachedScreenTextIsDrawnBeforeTheRequest() {
+        val reading = Reading(listOf(
+            TextLine("ISLAND DREAMS", TextBox(0.18, 0.19, 0.35, 0.24)),
+            TextLine("Keep an eye on the bachelor party while searching for treasure.", TextBox(0.14, 0.27, 0.46, 0.31)),
+        ))
+        var latest: List<ScreenTranslation.Item> = emptyList()
+        var drawnWhileAsking: List<ScreenTranslation.Item> = emptyList()
+        val asked = mutableListOf<String>()
+        val translator = object : TextTranslator {
+            override fun translate(text: String) = "yeni gelen çeviri"
+            override val translatesTogether: Boolean get() = true
+            override fun cachedTranslation(text: String) = if (text == "ISLAND DREAMS") "ADA HAYALLERİ" else null
+            override fun translateAll(texts: List<String>): List<String> {
+                asked += texts
+                drawnWhileAsking = latest
+                return texts.map { "yeni gelen çeviri" }
+            }
+        }
+        val final = ScreenTranslation.translate(reading, translator, progress = { latest = it })
+        assertTrue(drawnWhileAsking.any { it.translation == "ADA HAYALLERİ" })
+        assertTrue("ISLAND DREAMS" !in asked)
+        assertTrue(final.any { it.translation == "yeni gelen çeviri" })
+        assertTrue(final.any { it.translation == "ADA HAYALLERİ" })
+    }
 }

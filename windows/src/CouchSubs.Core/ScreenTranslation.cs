@@ -128,33 +128,63 @@ public static class ScreenTranslation
             if (sources.Count == 0) return items;
             // Daha önce görülen sohbetin mesajları da (memory) gitmez.
             var owners = groups.SelectMany(group => group.Paragraphs.Select(_ => group)).ToList();
-            var knowns = Enumerable.Range(0, sources.Count)
-                .Select(i => Known(sources[i], owners[i]) ?? Remembered(sources[i], owners[i], chat, memory)).ToList();
             var prices = protectedGroups.SelectMany(group => group.Select(p => PriceText.Protect(p.Text))).ToList();
+            // Diskteki çeviri önbelleğinde duran yazı (menü satırları oturumdan oturuma tekrar eder) da çevirmene gitmez.
+            var knowns = Enumerable.Range(0, sources.Count)
+                .Select(i => Known(sources[i], owners[i]) ?? Remembered(sources[i], owners[i], chat, memory)
+                    ?? (translator.CachedTranslation(prices[i].Text) is { } cached ? PriceText.Restore(cached, prices[i].Values) : null))
+                .ToList();
             var asked = Enumerable.Range(0, sources.Count).Where(i => knowns[i] is null).ToList();
+            // Gruplar: hazır olanlar (bütün parçaları biliniyor) çeviri isteğini beklemeden hemen çizilir.
+            IReadOnlyList<Item> Laid(IReadOnlyList<string?> translations)
+            {
+                var laid = new List<Item>();
+                var next = 0;
+                for (var g = 0; g < groups.Count; g++)
+                {
+                    var group = groups[g];
+                    var part = Enumerable.Range(next, group.Paragraphs.Count).Select(i => i < translations.Count ? translations[i] : null).ToList();
+                    next += group.Paragraphs.Count;
+                    if (part.Any(text => text is null)) continue;
+                    if (Build(group, protectedGroups[g], [.. part.Select(text => text!)], keep) is { } item) laid.Add(Styled(item, frame));
+                }
+                return ScreenFit.Fitted(Present(laid, phone, phoneCard, panelScale), frame);
+            }
+            if (asked.Count > 0)
+            {
+                var early = Laid(knowns);
+                if (early.Count > 0) progress?.Invoke(early);
+            }
             var answers = asked.Count == 0 ? []
                 : await translator.TranslateAllAsync([.. asked.Select(i => prices[i].Text)], cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            var translations = knowns.Select(known => known ?? "").ToList();
             for (var k = 0; k < asked.Count && k < answers.Count; k++)
             {
-                translations[asked[k]] = PriceText.Restore(answers[k], prices[asked[k]].Values);
-                memory?.Remember(MemoryChat(owners[asked[k]], chat), sources[asked[k]], translations[asked[k]]);
+                knowns[asked[k]] = PriceText.Restore(answers[k], prices[asked[k]].Values);
+                memory?.Remember(MemoryChat(owners[asked[k]], chat), sources[asked[k]], knowns[asked[k]]!);
             }
-            var next = 0;
-            for (var g = 0; g < groups.Count; g++)
-            {
-                var group = groups[g];
-                var translated = Enumerable.Range(next, group.Paragraphs.Count)
-                    .Select(i => i < translations.Count ? translations[i] : "").ToList();
-                next += group.Paragraphs.Count;
-                if (Build(group, protectedGroups[g], translated, keep) is { } item) items.Add(Styled(item, frame));
-            }
-            var all = ScreenFit.Fitted(Present(items, phone, phoneCard, panelScale), frame);
+            // Gelmeyen çeviri boş kalır: parça aslıyla gösterilir.
+            var all = Laid([.. knowns.Select(known => known ?? "")]);
             if (all.Count > 0) progress?.Invoke(all);
             return all;
         }
+        var made = new SortedDictionary<int, Item>();
+        IReadOnlyList<Item> Shown() => ScreenFit.Fitted(Present([.. made.Values], phone, phoneCard, panelScale), frame);
+        // Önce çevirmene gitmeyecek gruplar (sözlük, bu ekranda daha önce çevrilmiş yazı): çeviri beklemeden hemen çizilir.
+        var waiting = new List<int>();
         for (var g = 0; g < groups.Count; g++)
+        {
+            var group = groups[g];
+            var ready = group.Paragraphs.Select(source => Known(source, group) ?? Remembered(source, group, chat, memory)).ToList();
+            if (ready.Any(text => text is null)) { waiting.Add(g); continue; }
+            if (Build(group, protectedGroups[g], [.. ready.Select(text => text!)], keep) is { } item) made[g] = Styled(item, frame);
+        }
+        if (made.Count > 0 && waiting.Count > 0)
+        {
+            var early = Shown();
+            if (early.Count > 0) progress?.Invoke(early);
+        }
+        foreach (var g in waiting)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var group = groups[g];
@@ -174,11 +204,11 @@ public static class ScreenTranslation
                 translated.Add(result);
             }
             if (Build(group, protectedGroups[g], translated, keep) is not { } item) continue;
-            items.Add(Styled(item, frame));
-            var shown = ScreenFit.Fitted(Present(items, phone, phoneCard, panelScale), frame);
+            made[g] = Styled(item, frame);
+            var shown = Shown();
             if (shown.Count > 0) progress?.Invoke(shown);
         }
-        return ScreenFit.Fitted(Present(items, phone, phoneCard, panelScale), frame);
+        return Shown();
     }
 
     /// <summary>

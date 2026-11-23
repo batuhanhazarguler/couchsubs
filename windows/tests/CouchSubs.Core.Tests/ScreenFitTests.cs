@@ -91,4 +91,40 @@ public class ScreenFitTests
             for (var i = 0; i < 4; i++) Assert.True(Math.Abs(w[i] - h[i]) <= tolerance, $"{name}: {string.Join(", ", h)} ≠ {string.Join(", ", w)}");
         }
     }
+
+    /// <summary>Yapay zekâ çevirmeni yerine: önbelleğinde olanı istek göndermeden verir; istek anında neyin çizildiğini kaydeder.</summary>
+    private sealed class HeldTranslator(Dictionary<string, string> cache, Func<IReadOnlyList<ScreenTranslation.Item>> drawn) : ITextTranslator
+    {
+        public List<string> Asked { get; } = [];
+        public IReadOnlyList<ScreenTranslation.Item> DrawnWhileAsking { get; private set; } = [];
+        public Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default) => Task.FromResult("yeni gelen çeviri");
+        public bool TranslatesTogether => true;
+        public string? CachedTranslation(string text) => cache.TryGetValue(text, out var known) ? known : null;
+        public Task<IReadOnlyList<string>> TranslateAllAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken = default)
+        {
+            Asked.AddRange(texts);
+            DrawnWhileAsking = drawn();
+            return Task.FromResult<IReadOnlyList<string>>([.. texts.Select(_ => "yeni gelen çeviri")]);
+        }
+    }
+
+    /// <summary>
+    /// Önbellekteki yazı anında: menü satırı önceki oturumdan önbellekte, görev açıklaması yeni. Önbellekteki grup çeviri
+    /// isteği gitmeden çizilir; çevirmene yalnız yeni yazı gider (Mac ScreenFitTests, Android ScreenFitTest ile aynı).
+    /// </summary>
+    [Fact]
+    public async Task CachedScreenTextIsDrawnBeforeTheRequest()
+    {
+        var reading = new Reading([
+            new TextLine("ISLAND DREAMS", new TextBox(0.18, 0.19, 0.35, 0.24)),
+            new TextLine("Keep an eye on the bachelor party while searching for treasure.", new TextBox(0.14, 0.27, 0.46, 0.31)),
+        ]);
+        IReadOnlyList<ScreenTranslation.Item> latest = [];
+        var translator = new HeldTranslator(new() { ["ISLAND DREAMS"] = "ADA HAYALLERİ" }, () => latest);
+        var final = await ScreenTranslation.TranslateAsync(reading, translator, items => latest = items);
+        Assert.Contains(translator.DrawnWhileAsking, item => item.Translation == "ADA HAYALLERİ");
+        Assert.DoesNotContain("ISLAND DREAMS", translator.Asked);
+        Assert.Contains(final, item => item.Translation == "yeni gelen çeviri");
+        Assert.Contains(final, item => item.Translation == "ADA HAYALLERİ");
+    }
 }

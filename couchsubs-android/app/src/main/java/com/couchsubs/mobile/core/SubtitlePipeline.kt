@@ -19,6 +19,12 @@ fun interface TextTranslator {
      * sonraki cümlelerin içinde geçince çeviriden korunur (#287).
      */
     fun noteSpeaker(name: String) {}
+
+    /**
+     * Diskteki önbellekte duran çevirisi (istek göndermeden); yoksa null. "Ekranı çevir" önbellekteki yazıları çeviri
+     * isteğini beklemeden hemen çizer (Mac ve Windows ile aynı).
+     */
+    fun cachedTranslation(text: String): String? = null
 }
 
 /**

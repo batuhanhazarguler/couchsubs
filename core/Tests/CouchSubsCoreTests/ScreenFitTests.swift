@@ -196,4 +196,52 @@ final class ScreenFitTests: XCTestCase {
             try data.write(to: source)
         }
     }
+
+    // MARK: - Önbellekteki yazı anında (okuma → çizim gecikmesi)
+
+    /// Yapay zekâ çevirmeni yerine: önbelleğinde olanı istek göndermeden verir; `translateAll` serbest bırakılana kadar bekler.
+    final class HeldTranslator: TextTranslator, @unchecked Sendable {
+        let cache: [String: String]
+        private let lock = NSLock()
+        private var gate: CheckedContinuation<Void, Never>?
+        private(set) var asked: [String] = []
+        init(cache: [String: String]) { self.cache = cache }
+        func translate(_ text: String) async throws -> String { "çeviri: " + text }
+        var translatesTogether: Bool { true }
+        func cachedTranslation(_ text: String) -> String? { cache[text] }
+        func translateAll(_ texts: [String]) async throws -> [String] {
+            lock.withLock { asked += texts }
+            await withCheckedContinuation { continuation in lock.withLock { gate = continuation } }
+            return texts.map { _ in "yeni gelen çeviri" }
+        }
+        var waiting: Bool { lock.withLock { gate != nil } }
+        func release() { lock.withLock { () -> CheckedContinuation<Void, Never>? in defer { gate = nil }; return gate }?.resume() }
+    }
+
+    /// Gerçek GTA 6 harita menüsü: menü satırları önceki oturumdan önbellekte; görev açıklaması yeni. Önbellekteki gruplar
+    /// çeviri isteği dönmeden (sıfır kare gecikmeyle) çizilir; yalnız yeni yazı çevirmene gider.
+    func testCachedScreenTextIsDrawnBeforeTheRequestReturns() async throws {
+        let frame = try XCTUnwrap(Self.frames().first { $0.id == "gta6-menu-harita" })
+        let menu = ["RECENTER", "2D VIEW", "ADD MARKER", "SET DESTINATION", "MAP", "BRIEF", "PROGRESS", "ISLAND DREAMS"]
+        let translator = HeldTranslator(cache: Dictionary(uniqueKeysWithValues: menu.map { ($0, Self.translateWord($0)) }))
+        final class Shown: @unchecked Sendable { var batches: [[ScreenTranslation.Item]] = [] }
+        let shown = Shown()
+        let task = Task {
+            try await ScreenTranslation.translate(frame.reading, using: translator, frame: frame.image) { shown.batches.append($0) }
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while !translator.waiting, Date() < deadline { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertTrue(translator.waiting, "çeviri isteği gitmedi")
+        // İstek beklerken önbellekteki menü satırları zaten çizildi.
+        let early = try XCTUnwrap(shown.batches.first, "önbellekteki gruplar istek dönmeden çizilmedi")
+        XCTAssertTrue(early.contains { $0.translation == "HEDEF BELİRLE" }, early.map(\.translation).joined(separator: " | "))
+        XCTAssertTrue(early.contains { $0.translation == "ADA HAYALLERİ" }, early.map(\.translation).joined(separator: " | "))
+        XCTAssertFalse(early.contains { $0.translation == "yeni gelen çeviri" })
+        // Çevirmene yalnız önbellekte olmayan yazı gitti.
+        XCTAssertFalse(translator.asked.contains { menu.contains($0) }, translator.asked.joined(separator: " | "))
+        translator.release()
+        let final = try await task.value
+        XCTAssertTrue(final.contains { $0.translation == "yeni gelen çeviri" })
+        XCTAssertGreaterThan(final.count, early.count)
+    }
 }
