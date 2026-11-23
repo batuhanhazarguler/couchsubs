@@ -8,10 +8,17 @@ import Foundation
 /// beyaz kâğıt, siyah yazı) altyazı sanılıp çevriliyordu; plaka/tabela kuralı (`SceneText.isSign`, #1052) uzun cümleli
 /// ilanı yakalamıyor. Oyun altyazısı açık renkli yazıdır (beyaz/sarı), koyu dış çizgiyle ya da yarı saydam koyu zeminde.
 ///
-/// Satır kutusunun içindeki ve hemen dışındaki şeridin parlaklığına bakılır (`isDarkOnLight`): şerit (yerel zemin) açık
-/// (ortancası en az `lightGround`) ve düz (`groundSpread`), kutunun içindeki koyu küme (Otsu eşiği) hem koyu (ortalaması
-/// en çok `darkInk`) hem zeminden belirgin koyu (en az `inkGap`), yazı payı makul (`minInk`–`maxInk`) ve kutuda zeminden parlak harf yoksa
-/// (`glowShare`; koyu dış çizgili beyaz yazı açık gökyüzünün önünde de parlak harf taşır) yazı koyu, zemin açıktır.
+/// Satır kutusunun içindeki ve hemen dışındaki şeridin parlaklığına bakılır (`isDarkOnLight`). Zemin tek bir sayı değil,
+/// satır boyunca değişen bir çizgidir: kutunun üstündeki ve altındaki şeridin her sütunu için komşu sütunların ortancası
+/// (`profileReach`; üst/alt satırın şeride değen harfleri ortancayı bozmaz), kutunun içinde üst ile alt arasında doğrusal.
+/// Kâğıda vuran ışık şeridi ve satır boyunca kararan kâğıt böylece zemin sayılır (kullanıcı bildirimi #1124, beta.89: açık
+/// mavi kâğıtta lacivert yazı, çapraz ışık şeridi; düz zemin ve sabit zemin parlaklığıyla ölçülünce kaçıyordu). Zemin açık
+/// (ortancası en az `lightGround`, en koyu yeri en az `lightGround − groundSpread`; açık mavi/pastel kâğıt da açıktır),
+/// yumuşak (komşu sütunlar arası en çok `groundStep`) ve düz (şeridin zemin çizgisinden sapmasının çeyrekler açıklığı en
+/// çok `groundSpread`) olmalı. Kutunun içindeki noktalar zemin çizgisine göre ölçülür: koyu küme (Otsu eşiği) zeminden en
+/// az `inkGap` koyu ve zeminin en çok `inkShade` katı parlaklıkta (renkli/lacivert mürekkep de kontrastıyla koyu sayılır),
+/// yazı payı makul (`minInk`–`maxInk`) ve kutuda zeminden parlak harf yoksa (`glowShare`; koyu dış çizgili beyaz yazı açık
+/// gökyüzünün önünde de parlak harf taşır) yazı koyu, zemin açıktır.
 /// Bloğun satırlarının yarıdan çoğu böyleyse blok sahne yazısıdır (`isDarkBlock`); konuşan adlı blok hep altyazıdır.
 ///
 /// Koyu altyazılı oyun bozulmasın diye kural oturumda kendini kapatır (`DarkInkStyle`): ortalanmış, birbirinden farklı
@@ -20,10 +27,10 @@ import Foundation
 /// Windows (InkTone.cs) ve Android (InkTone.kt) aynı kuralları ve eşikleri uygular; ortak deneme dosyası
 /// Tests/CouchSubsCoreTests/Fixtures/dark-ink.json.
 public enum InkTone {
-    /// Yerel zemin (kutunun dışındaki şeridin ortanca parlaklığı) en az bu kadarsa açıktır.
-    public static let lightGround = 150
-    /// Yazı kümesinin ortalama parlaklığı en çok bu kadarsa koyudur.
-    public static let darkInk = 110
+    /// Yerel zemin (zemin çizgisinin ortancası) en az bu kadarsa açıktır (açık mavi kâğıt #BFE0F0 ≈ 216).
+    public static let lightGround = 140
+    /// Yazı kümesinin ortalama parlaklığı, altındaki zeminin en çok bu katıysa koyudur (kontrast; lacivert mürekkep de).
+    public static let inkShade = 0.66
     /// Yazı kümesi zeminden en az bu kadar koyu olmalı.
     public static let inkGap = 70
     /// Kutudaki yazı noktalarının payı bu aralıkta olmalı (boş kâğıt ya da tümü koyu kutu yazı değildir).
@@ -33,9 +40,14 @@ public enum InkTone {
     public static let glow = 20
     public static let glowCeiling = 250
     public static let glowShare = 0.03
-    /// Yerel zemin düz olmalı: şeridin çeyrekler açıklığı (üst çeyrek − alt çeyrek) en çok bu kadar (kâğıt düzdür; oyun
-    /// sahnesi çoğu zaman değil).
+    /// Yerel zemin düz olmalı: şeridin zemin çizgisinden sapmasının çeyrekler açıklığı (üst çeyrek − alt çeyrek) en çok bu
+    /// kadar (kâğıt düzdür, ışık degradesi zemin çizgisindedir; oyun sahnesi çoğu zaman düz değil).
     public static let groundSpread = 40
+    /// Zemin çizgisi yumuşak olmalı: komşu iki sütun arasındaki fark en çok bu kadar (ışık degradesi yumuşaktır, sahnedeki
+    /// kenar değil).
+    public static let groundStep = 40
+    /// Zemin çizgisinin bir sütunu, iki yanındaki bu kadar sütunla birlikte şeridin ortancasıdır.
+    public static let profileReach = 4
     /// Kutunun dışındaki şeridin kalınlığı (satır yüksekliğine oranla).
     public static let ringShare = 0.3
     /// Altyazı günlüğündeki atılma nedeni.
@@ -55,37 +67,73 @@ public enum InkTone {
         guard right - left >= 2, bottom - top >= 2 else { return false }
         let inside = grid(left, top, right, bottom, samplesX, samplesY, width, height, luma)
         let d = (bottom - top) * ringShare
-        var ring: [Int] = []
+        // Şeritler: üst ve alt (samplesX × ringSamples), sol ve sağ (ringSamples × samplesY); görüntüden taşan şerit yok.
+        var strips: [[Int]?] = [nil, nil, nil, nil]
         if d >= 1 {
-            let strips = [
+            let bounds = [
                 (left, top - d, right, top, samplesX, ringSamples),
                 (left, bottom, right, bottom + d, samplesX, ringSamples),
                 (left - d, top, left, bottom, ringSamples, samplesY),
                 (right, top, right + d, bottom, ringSamples, samplesY),
             ]
-            for (l, t, r, b, nx, ny) in strips where l >= 0 && t >= 0 && r <= w && b <= h {
-                ring += grid(l, t, r, b, nx, ny, width, height, luma)
+            for (i, (l, t, r, b, nx, ny)) in bounds.enumerated() where l >= 0 && t >= 0 && r <= w && b <= h {
+                strips[i] = grid(l, t, r, b, nx, ny, width, height, luma)
             }
         }
-        return decide(inside: inside, ring: ring)
+        return decide(inside: inside, top: strips[0], bottom: strips[1], left: strips[2], right: strips[3])
     }
 
-    /// Kutunun içindeki (`inside`) ve dışındaki şeridin (`ring`) parlaklıklarıyla karar.
-    static func decide(inside: [Int], ring: [Int]) -> Bool {
-        guard inside.count >= minSamples, ring.count >= minSamples else { return false }
-        let sorted = ring.sorted()
-        let ground = sorted[sorted.count / 2]
-        guard ground >= lightGround, sorted[sorted.count * 3 / 4] - sorted[sorted.count / 4] <= groundSpread else { return false }
-        let threshold = otsu(inside)
-        let ink = inside.filter { $0 <= threshold }
+    /// Kutunun içindeki (`inside`, samplesX × samplesY) ve dışındaki şeritlerin parlaklıklarıyla karar.
+    static func decide(inside: [Int], top: [Int]?, bottom: [Int]?, left: [Int]?, right: [Int]?) -> Bool {
+        let ringCount = [top, bottom, left, right].reduce(0) { $0 + ($1?.count ?? 0) }
+        guard inside.count == samplesX * samplesY, ringCount >= minSamples else { return false }
+        // Zemin çizgisi: üst ve alt şeridin sütun sütun ortancası; biri yoksa öteki, ikisi de yoksa yan şeritlerin ortancası.
+        var upper = top.map(profile), lower = bottom.map(profile)
+        if upper == nil && lower == nil {
+            let sides = ((left ?? []) + (right ?? [])).sorted()
+            upper = [Int](repeating: sides[sides.count / 2], count: samplesX)
+        }
+        let up = upper ?? lower!, down = lower ?? upper!
+        let ground = { (column: Int, row: Int) -> Int in
+            up[column] + (down[column] - up[column]) * (2 * row + 1) / (2 * samplesY)
+        }
+        let line = (up + down).sorted()
+        guard line[line.count / 2] >= lightGround, line[0] >= lightGround - groundSpread else { return false }
+        for p in [up, down] {
+            for c in 1..<samplesX where abs(p[c] - p[c - 1]) > groundStep { return false }
+        }
+        var residuals: [Int] = []
+        if let top { residuals += top.indices.map { top[$0] - up[$0 % samplesX] } }
+        if let bottom { residuals += bottom.indices.map { bottom[$0] - down[$0 % samplesX] } }
+        if let left { residuals += left.indices.map { left[$0] - ground(0, $0 / ringSamples) } }
+        if let right { residuals += right.indices.map { right[$0] - ground(samplesX - 1, $0 / ringSamples) } }
+        residuals.sort()
+        guard residuals[residuals.count * 3 / 4] - residuals[residuals.count / 4] <= groundSpread else { return false }
+        let grounds = inside.indices.map { ground($0 % samplesX, $0 / samplesX) }
+        // Zemine göre parlaklık (128 zemin); Otsu eşiğinin altı yazıdır.
+        let relative = inside.indices.map { max(0, min(255, inside[$0] - grounds[$0] + 128)) }
+        let threshold = otsu(relative)
+        let ink = inside.indices.filter { relative[$0] <= threshold }
         guard !ink.isEmpty, ink.count < inside.count else { return false }
         let share = Double(ink.count) / Double(inside.count)
         guard share >= minInk, share <= maxInk else { return false }
-        let inkMean = Double(ink.reduce(0, +)) / Double(ink.count)
-        guard inkMean <= Double(darkInk), Double(ground) - inkMean >= Double(inkGap) else { return false }
-        let bright = min(ground + glow, glowCeiling)
-        let glowing = inside.filter { $0 >= bright }.count
+        let inkMean = Double(ink.reduce(0) { $0 + inside[$1] }) / Double(ink.count)
+        let groundMean = Double(ink.reduce(0) { $0 + grounds[$1] }) / Double(ink.count)
+        guard groundMean - inkMean >= Double(inkGap), inkMean <= groundMean * inkShade else { return false }
+        let glowing = inside.indices.filter { inside[$0] >= min(grounds[$0] + glow, glowCeiling) }.count
         return Double(glowing) / Double(inside.count) < glowShare
+    }
+
+    /// Şeridin (samplesX × ringSamples) zemin çizgisi: her sütun için `profileReach` komşusuyla birlikte ortanca.
+    private static func profile(_ strip: [Int]) -> [Int] {
+        (0..<samplesX).map { c in
+            var values: [Int] = []
+            for r in 0..<ringSamples {
+                for k in max(0, c - profileReach)...min(samplesX - 1, c + profileReach) { values.append(strip[r * samplesX + k]) }
+            }
+            values.sort()
+            return values[values.count / 2]
+        }
     }
 
     /// Bloğun kutulu satırlarının yarıdan çoğu açık zeminde koyu yazı mı (`dark`: satır kutusu için `isDarkOnLight`).

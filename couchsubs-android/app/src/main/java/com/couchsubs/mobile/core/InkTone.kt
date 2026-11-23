@@ -7,18 +7,22 @@ package com.couchsubs.mobile.core
  * beyaz kâğıt, siyah yazı) altyazı sanılıp çevriliyordu; plaka/tabela kuralı ([SceneText.isSign], #1052) uzun cümleli
  * ilanı yakalamıyor. Oyun altyazısı açık renkli yazıdır (beyaz/sarı), koyu dış çizgiyle ya da yarı saydam koyu zeminde.
  *
- * Satır kutusunun içindeki ve hemen dışındaki şeridin parlaklığına bakılır ([isDarkOnLight]): şerit (yerel zemin) açık
- * ve düz, kutunun içindeki koyu küme (Otsu eşiği) hem koyu hem zeminden belirgin koyu, yazı payı makul ve kutuda
- * zeminden parlak harf yoksa yazı koyu, zemin açıktır. Bloğun satırlarının yarıdan çoğu böyleyse blok sahne yazısıdır
- * ([isDarkBlock]); konuşan adlı blok hep altyazıdır. Koyu altyazılı oyun bozulmasın diye kural oturumda kendini kapatır
- * ([DarkInkStyle]). Mac/iPhone (InkTone.swift) ve Windows (InkTone.cs) aynı kuralları ve eşikleri uygular; ortak deneme
- * dosyası fixtures/dark-ink.json (core/Tests/CouchSubsCoreTests/Fixtures kopyası).
+ * Satır kutusunun içindeki ve hemen dışındaki şeridin parlaklığına bakılır ([isDarkOnLight]). Zemin satır boyunca
+ * değişen bir çizgidir: üst ve alt şeridin her sütunu için komşu sütunların ortancası ([PROFILE_REACH]), kutunun içinde
+ * üst ile alt arasında doğrusal; kâğıda vuran ışık şeridi ve satır boyunca kararan kâğıt zemin sayılır (#1124, beta.89:
+ * açık mavi kâğıtta lacivert yazı, çapraz ışık şeridi). Zemin açık (pastel kâğıt da), yumuşak ve düz; kutunun içindeki
+ * koyu küme (Otsu eşiği, zemine göre) zeminden belirgin koyu ve zeminin en çok [INK_SHADE] katı (renkli mürekkep
+ * kontrastıyla koyu sayılır), yazı payı makul ve kutuda zeminden parlak harf yoksa yazı koyu, zemin açıktır. Bloğun
+ * satırlarının yarıdan çoğu böyleyse blok sahne yazısıdır ([isDarkBlock]); konuşan adlı blok hep altyazıdır. Koyu altyazılı
+ * oyun bozulmasın diye kural oturumda kendini kapatır ([DarkInkStyle]). Mac/iPhone (InkTone.swift) ve Windows
+ * (InkTone.cs) aynı kuralları ve eşikleri uygular; ortak deneme dosyası fixtures/dark-ink.json
+ * (core/Tests/CouchSubsCoreTests/Fixtures kopyası).
  */
 object InkTone {
-    /** Yerel zemin (kutunun dışındaki şeridin ortanca parlaklığı) en az bu kadarsa açıktır. */
-    const val LIGHT_GROUND = 150
-    /** Yazı kümesinin ortalama parlaklığı en çok bu kadarsa koyudur. */
-    const val DARK_INK = 110
+    /** Yerel zemin (zemin çizgisinin ortancası) en az bu kadarsa açıktır (açık mavi kâğıt #BFE0F0 ≈ 216). */
+    const val LIGHT_GROUND = 140
+    /** Yazı kümesinin ortalama parlaklığı, altındaki zeminin en çok bu katıysa koyudur (kontrast; lacivert mürekkep de). */
+    const val INK_SHADE = 0.66
     /** Yazı kümesi zeminden en az bu kadar koyu olmalı. */
     const val INK_GAP = 70
     /** Kutudaki yazı noktalarının payı bu aralıkta olmalı. */
@@ -28,8 +32,12 @@ object InkTone {
     const val GLOW = 20
     const val GLOW_CEILING = 250
     const val GLOW_SHARE = 0.03
-    /** Yerel zemin düz olmalı: şeridin çeyrekler açıklığı en çok bu kadar. */
+    /** Yerel zemin düz olmalı: şeridin zemin çizgisinden sapmasının çeyrekler açıklığı en çok bu kadar. */
     const val GROUND_SPREAD = 40
+    /** Zemin çizgisi yumuşak olmalı: komşu iki sütun arasındaki fark en çok bu kadar. */
+    const val GROUND_STEP = 40
+    /** Zemin çizgisinin bir sütunu, iki yanındaki bu kadar sütunla birlikte şeridin ortancasıdır. */
+    const val PROFILE_REACH = 4
     /** Kutunun dışındaki şeridin kalınlığı (satır yüksekliğine oranla). */
     const val RING_SHARE = 0.3
     /** Altyazı günlüğündeki atılma nedeni. */
@@ -52,38 +60,73 @@ object InkTone {
         if (right - left < 2 || bottom - top < 2) return false
         val inside = grid(left, top, right, bottom, SAMPLES_X, SAMPLES_Y, width, height, luma)
         val d = (bottom - top) * RING_SHARE
-        val ring = mutableListOf<Int>()
+        // Şeritler: üst ve alt (SAMPLES_X × RING_SAMPLES), sol ve sağ (RING_SAMPLES × SAMPLES_Y); görüntüden taşan şerit yok.
+        val strips = arrayOfNulls<List<Int>>(4)
         if (d >= 1) {
-            val strips = listOf(
+            val bounds = listOf(
                 Strip(left, top - d, right, top, SAMPLES_X, RING_SAMPLES),
                 Strip(left, bottom, right, bottom + d, SAMPLES_X, RING_SAMPLES),
                 Strip(left - d, top, left, bottom, RING_SAMPLES, SAMPLES_Y),
                 Strip(right, top, right + d, bottom, RING_SAMPLES, SAMPLES_Y),
             )
-            for (s in strips) {
-                if (s.l >= 0 && s.t >= 0 && s.r <= w && s.b <= h) ring += grid(s.l, s.t, s.r, s.b, s.nx, s.ny, width, height, luma)
+            for ((i, s) in bounds.withIndex()) {
+                if (s.l >= 0 && s.t >= 0 && s.r <= w && s.b <= h) strips[i] = grid(s.l, s.t, s.r, s.b, s.nx, s.ny, width, height, luma)
             }
         }
-        return decide(inside, ring)
+        return decide(inside, strips[0], strips[1], strips[2], strips[3])
     }
 
     private class Strip(val l: Double, val t: Double, val r: Double, val b: Double, val nx: Int, val ny: Int)
 
-    internal fun decide(inside: List<Int>, ring: List<Int>): Boolean {
-        if (inside.size < MIN_SAMPLES || ring.size < MIN_SAMPLES) return false
-        val sorted = ring.sorted()
-        val ground = sorted[sorted.size / 2]
-        if (ground < LIGHT_GROUND || sorted[sorted.size * 3 / 4] - sorted[sorted.size / 4] > GROUND_SPREAD) return false
-        val threshold = otsu(inside)
-        val ink = inside.filter { it <= threshold }
+    /** Kutunun içindeki ([inside], SAMPLES_X × SAMPLES_Y) ve dışındaki şeritlerin parlaklıklarıyla karar. */
+    internal fun decide(inside: List<Int>, top: List<Int>?, bottom: List<Int>?, left: List<Int>?, right: List<Int>?): Boolean {
+        val ringCount = listOf(top, bottom, left, right).sumOf { it?.size ?: 0 }
+        if (inside.size != SAMPLES_X * SAMPLES_Y || ringCount < MIN_SAMPLES) return false
+        // Zemin çizgisi: üst ve alt şeridin sütun sütun ortancası; biri yoksa öteki, ikisi de yoksa yan şeritlerin ortancası.
+        var upper = top?.let(::profile)
+        val lower = bottom?.let(::profile)
+        if (upper == null && lower == null) {
+            val sides = ((left ?: emptyList()) + (right ?: emptyList())).sorted()
+            upper = List(SAMPLES_X) { sides[sides.size / 2] }
+        }
+        val up = upper ?: lower!!
+        val down = lower ?: upper!!
+        fun ground(column: Int, row: Int) = up[column] + (down[column] - up[column]) * (2 * row + 1) / (2 * SAMPLES_Y)
+        val line = (up + down).sorted()
+        if (line[line.size / 2] < LIGHT_GROUND || line[0] < LIGHT_GROUND - GROUND_SPREAD) return false
+        for (p in listOf(up, down)) {
+            for (c in 1 until SAMPLES_X) if (kotlin.math.abs(p[c] - p[c - 1]) > GROUND_STEP) return false
+        }
+        val residuals = mutableListOf<Int>()
+        top?.let { s -> s.indices.mapTo(residuals) { s[it] - up[it % SAMPLES_X] } }
+        bottom?.let { s -> s.indices.mapTo(residuals) { s[it] - down[it % SAMPLES_X] } }
+        left?.let { s -> s.indices.mapTo(residuals) { s[it] - ground(0, it / RING_SAMPLES) } }
+        right?.let { s -> s.indices.mapTo(residuals) { s[it] - ground(SAMPLES_X - 1, it / RING_SAMPLES) } }
+        residuals.sort()
+        if (residuals[residuals.size * 3 / 4] - residuals[residuals.size / 4] > GROUND_SPREAD) return false
+        val grounds = inside.indices.map { ground(it % SAMPLES_X, it / SAMPLES_X) }
+        // Zemine göre parlaklık (128 zemin); Otsu eşiğinin altı yazıdır.
+        val relative = inside.indices.map { (inside[it] - grounds[it] + 128).coerceIn(0, 255) }
+        val threshold = otsu(relative)
+        val ink = inside.indices.filter { relative[it] <= threshold }
         if (ink.isEmpty() || ink.size == inside.size) return false
         val share = ink.size.toDouble() / inside.size
         if (share < MIN_INK || share > MAX_INK) return false
-        val inkMean = ink.sum().toDouble() / ink.size
-        if (inkMean > DARK_INK || ground - inkMean < INK_GAP) return false
-        val bright = minOf(ground + GLOW, GLOW_CEILING)
-        val glowing = inside.count { it >= bright }
+        val inkMean = ink.sumOf { inside[it] }.toDouble() / ink.size
+        val groundMean = ink.sumOf { grounds[it] }.toDouble() / ink.size
+        if (groundMean - inkMean < INK_GAP || inkMean > groundMean * INK_SHADE) return false
+        val glowing = inside.indices.count { inside[it] >= minOf(grounds[it] + GLOW, GLOW_CEILING) }
         return glowing.toDouble() / inside.size < GLOW_SHARE
+    }
+
+    /** Şeridin (SAMPLES_X × RING_SAMPLES) zemin çizgisi: her sütun için [PROFILE_REACH] komşusuyla birlikte ortanca. */
+    private fun profile(strip: List<Int>): List<Int> = List(SAMPLES_X) { c ->
+        val values = mutableListOf<Int>()
+        for (r in 0 until RING_SAMPLES) {
+            for (k in maxOf(0, c - PROFILE_REACH)..minOf(SAMPLES_X - 1, c + PROFILE_REACH)) values += strip[r * SAMPLES_X + k]
+        }
+        values.sort()
+        values[values.size / 2]
     }
 
     /** Bloğun kutulu satırlarının yarıdan çoğu açık zeminde koyu yazı mı. */

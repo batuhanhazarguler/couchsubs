@@ -92,6 +92,7 @@
         0.3314
       ],
       "confidence" : 1,
+      "dark" : true,
       "text" : "Comprendo?",
       "words" : [
         {
@@ -262,6 +263,7 @@
         0.69429
       ],
       "confidence" : 1,
+      "dark" : true,
       "text" : "Thx amigo! U find",
       "words" : [
         {
