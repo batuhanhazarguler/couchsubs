@@ -825,6 +825,36 @@ test('webOS HDMI 0.9.87: kare sayacı duran görüntü (siyah ekran) gözcü tar
   assert.match(tv.platform.diagnostics(), /rebuilt 1 \(stalled\)/);
 });
 
+test('webOS HDMI 0.9.94 (#1055): kare sayacı hep 0 olan TV\'de (t= fr 0) çeviri başında ve PS tuşundan dönüşte görüntü yeniden kurulmaz', () => {
+  // LG 65UR91006LA webOS 33.31.75: getVideoPlaybackQuality var ama totalVideoFrames hep 0, currentTime hep 0.
+  const tv = startTv({ storage: {} });
+  tv.show(2);
+  tv.video.webkitDecodedFrameCount = 0;
+  tv.video.start();
+  tv.advance(3000);
+  tv.video.fire('stalled');
+  tv.advance(30000);
+  assert.strictEqual(tv.videos.length, 1, 'taze stalled kurdurmadı');
+  for (let press = 0; press < 3; press++) {
+    tv.hide();
+    tv.advance(8000);
+    tv.unhide();
+    tv.document.fire('webOSRelaunch');
+    tv.focus();
+    tv.video.fire('stalled');
+    tv.advance(60000);
+  }
+  assert.strictEqual(tv.videos.length, 1, 'PS tuşundan dönüşte (resume) kurulmadı');
+  assert.match(tv.platform.diagnostics(), /hdmi playing rs4 1920x1080 t= fr 0 · ev stalled · stall \d+ blind/);
+  assert.doesNotMatch(tv.platform.diagnostics(), /rebuilt/);
+
+  // Gerçek hata olunca yine kurulur.
+  tv.video.error = { code: 4 };
+  tv.video.fire('error');
+  tv.advance(5000);
+  assert.strictEqual(tv.videos.length, 2, 'hata verince kuruldu');
+});
+
 test('webOS HDMI #643: ses adımları açıkken stalled olursa adımlar kapanır, yeni <video>\'ya dokunulmaz', () => {
   const tv = startTv({ steps: {}, luna: () => ({ returnValue: true }) });
   tv.show(2);

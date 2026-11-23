@@ -279,6 +279,18 @@
     return hdmi.flowing || flow.known;
   }
 
+  // 0.9.94 (#1055; LG 65UR91006LA webOS 33.31.75, OLED65C46LA): "hdmi playing rs4 1920x1080 t= fr 0 · rebuilt 1 (resume)
+  // · ev stalled · stall 2 noise". Bu TV'ler kare sayacını veriyor ama hep 0 (fr 0) ve currentTime'ı ilerletmiyor (t=):
+  // sayfa akışı hiç ölçemiyor. Öne gelişin sıkı denetimi "sayaç ilerlemedi" diye sağlam görüntüyü her PS tuşunda yeniden
+  // kuruyor, 'stalled' da çeviri başında kurduruyordu (ekran art arda kararıyordu). Artık böyle bir TV'de görüntü
+  // "oynuyor" (rs>=2, duraklamamış, hata yok) iken ne öne geliş ne 'stalled' kurdurur ("stall <n> blind"); kurma yalnız
+  // <video> hatası/bitmesi/boşalması (gözcü), giriş değişmesi ya da kullanıcının girişi yeniden seçmesiyle olur. Kare
+  // sayacı hiç olmayan (#643) ya da akışı ölçülebilen (#1153) TV'lerde davranış aynı.
+  function flowBlind(video) {
+    return !!video && !flowMeasurable() && frameCount(video) === 0 && !video.error && !video.paused && !video.ended &&
+      (video.readyState >= 2 || video.videoWidth > 0);
+  }
+
   // Görüntünün ilk karesinden bu yana STALL_FRESH_MS geçmedi.
   function freshPicture(now) {
     return !!hdmi.firstFrameAt && now - hdmi.firstFrameAt < STALL_FRESH_MS;
@@ -573,6 +585,10 @@
     }
     // Denetim zaten bekliyorsa ya da kurma sıradaysa art arda gelen olay onu ertelemez.
     if (hdmi.stallTimer !== null || hdmi.pending !== null || hdmi.building !== null) return;
+    if (flowBlind(video)) {
+      hdmi.stallNote = 'blind';
+      return;
+    }
     var now = nowMs();
     var fresh = freshPicture(now);
     // Bu TV her yeni <video>'da 'stalled' gönderiyor ve görüntü sağlam kalıyordu (0.9.82, öğrenildi): taze olaya dokunulmaz.
@@ -774,7 +790,7 @@
         hdmi.soonTimer = null;
         hdmi.soonStrict = false;
         if (pageHidden() || hdmi.video !== video || hdmi.pending !== null || hdmi.building !== null) return;
-        if (progressedSince(video, before)) return;
+        if (progressedSince(video, before) || flowBlind(video)) return;
         schedule('resume', true);
       }, 1500);
     }, delay);
