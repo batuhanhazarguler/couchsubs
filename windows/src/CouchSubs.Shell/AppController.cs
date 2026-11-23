@@ -1316,7 +1316,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// </summary>
     private static TvAppState FailedState(DevModeException error, bool alwaysShowDetail = false) =>
         new(TvAppKind.Failed, Error: error.Error,
-            Reason: (alwaysShowDetail || error.Error is DevModeError.InstallFailed or DevModeError.NotEnoughSpace) &&
+            Reason: (alwaysShowDetail || error.Error is DevModeError.InstallFailed or DevModeError.NotEnoughSpace
+                        or DevModeError.DevConnectionClosed) &&
                     !string.IsNullOrWhiteSpace(error.Detail)
                 ? error.Detail.Trim() : null);
 

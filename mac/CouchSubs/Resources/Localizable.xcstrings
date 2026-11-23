@@ -204,22 +204,23 @@
     "Menus (pause, map, settings)": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Menus (pause, map, settings)"}},"tr":{"stringUnit":{"state":"translated","value":"Menüler (duraklatma, harita, ayarlar)"}}}},
     "Other on-screen text": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Other on-screen text"}},"tr":{"stringUnit":{"state":"translated","value":"Diğer ekran yazıları"}}}},
     "Translate the screen always translates everything.": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Translate the screen always translates everything."}},"tr":{"stringUnit":{"state":"translated","value":"Ekranı çevir her zaman her şeyi çevirir."}}}},
-    "The TV's Key Server is on, but its developer connection is closed. After Dev Mode Status is turned on the TV has to restart: press RESTART in the Developer Mode app (or unplug the TV and plug it back in), then open the app again, turn on Key Server and try again.": {
+    "Developer mode looks on (the TV's Key Server answers), but the TV refuses the install connection. Unplug the TV for 30 seconds and plug it back in (or press RESTART in the Developer Mode app), then open the Developer Mode app, check that Dev Mode Status is on, turn on Key Server and try again. On some TVs that use webOS Hub this connection may be closed in the TV's software; the TV app then cannot be installed this way.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The TV's Key Server is on, but its developer connection is closed. After Dev Mode Status is turned on the TV has to restart: press RESTART in the Developer Mode app (or unplug the TV and plug it back in), then open the app again, turn on Key Server and try again."
+            "value": "Developer mode looks on (the TV's Key Server answers), but the TV refuses the install connection. Unplug the TV for 30 seconds and plug it back in (or press RESTART in the Developer Mode app), then open the Developer Mode app, check that Dev Mode Status is on, turn on Key Server and try again. On some TVs that use webOS Hub this connection may be closed in the TV's software; the TV app then cannot be installed this way."
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "TV'de Key Server açık ama geliştirici bağlantısı kapalı. Dev Mode Status açıldıktan sonra TV yeniden başlamalı: Developer Mode uygulamasında RESTART'a basın (ya da TV'yi fişten çekip takın), sonra uygulamayı yeniden açıp Key Server'ı açın ve tekrar deneyin."
+            "value": "Geliştirici modu açık görünüyor (TV'nin Key Server'ı yanıt veriyor) ama TV kurulum bağlantısını reddediyor. TV'yi fişten çekin, 30 saniye bekleyip yeniden takın (ya da Developer Mode uygulamasında RESTART'a basın); sonra Developer Mode uygulamasını açıp Dev Mode Status'un açık olduğuna bakın, Key Server'ı açın ve tekrar deneyin. webOS Hub kullanan bazı TV'lerde bu bağlantı TV'nin yazılımında kapalı olabilir; o zaman TV uygulaması bu yolla kurulamaz."
           }
         }
       }
     },
+    "The TV Refused the Connection": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The TV Refused the Connection"}},"tr":{"stringUnit":{"state":"translated","value":"TV Bağlantıyı Reddetti"}}}},
     "The TV is on at this address, but developer mode is off. Open the Developer Mode app on the TV: Dev Mode Status must be on (it turns off by itself when its time runs out; turn it on again and the TV restarts). Then turn on Key Server and try again.": {
       "localizations": {
         "en": {

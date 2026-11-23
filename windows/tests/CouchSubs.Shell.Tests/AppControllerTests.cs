@@ -2559,6 +2559,22 @@ public class TvAppInstallTests
         Assert.NotEqual(key, Localizer.ForLanguage("tr")[key]);
     }
 
+    /// #200, #1116: LG'de Key Server yanıt veriyor ama 9922 reddediyor; genel "TV yanıt vermedi" yerine yeniden başlatma
+    /// ve webOS Hub uyarısı (Mac, iPhone ve Android'dekiyle aynı katalog metni) ve TV'nin sebebi gösterilir.
+    [Fact]
+    public void LgClosedDeveloperConnectionSaysToRestartAndMentionsWebOsHub()
+    {
+        var text = Localizer.ForLanguage("tr");
+        var state = new TvAppState(TvAppKind.Failed, Error: DevModeError.DevConnectionClosed, Reason: "Connection refused");
+        var problem = TvAppMessages.Problem(state, TvBrand.Lg, text, "x.log");
+        Assert.StartsWith(text[TvAppMessages.DevConnectionClosedMessage], problem);
+        Assert.NotEqual(TvAppMessages.DevConnectionClosedMessage, text[TvAppMessages.DevConnectionClosedMessage]);
+        Assert.Contains("fişten çekin", problem);
+        Assert.Contains("webOS Hub", problem);
+        Assert.Contains("Connection refused", problem);
+        Assert.DoesNotContain(text["The TV did not respond. Make sure it is on and on the same network."], problem);
+    }
+
     [Fact]
     public void SamsungPairingSaysWhetherThePermissionBoxWasMissedOrRefused()
     {
