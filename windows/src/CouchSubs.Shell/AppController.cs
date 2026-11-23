@@ -4216,6 +4216,9 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
                 LastFrame = frame;
                 UpdateSubtitleOffTip(frameArrived: true);
             });
+            // Çevirisi gösterilen ekran yazıları hâlâ yerinde mi: özgün yazı kalkınca çevirisi de bu karede kalkar
+            // (ScreenPresence; Mac/iPhone/Android aynı).
+            server.Observe(frame);
             // Duraklatıldıysa kare yalnız ek bölgeler ve serbest alan için saklanır; altyazı okunmaz.
             if (subtitlesPaused) return;
             // Önceki kare hâlâ işleniyorsa bu kare atlanır; okuma kareleri biriktirmez.

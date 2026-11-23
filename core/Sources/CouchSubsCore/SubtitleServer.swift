@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import CoreGraphics
 import Foundation
 import Network
 
@@ -580,6 +581,15 @@ public final class SubtitleServer: @unchecked Sendable {
     /// uygulamaları alanı yok sayıp düz metni gösterir (Windows ile aynı).
     public func sendScreen(_ items: [ScreenTranslation.Item], durationMs: Int) {
         let items = steadied(items.filter { Self.area($0.box) <= Self.maxBoxArea })
+        let shown: [ScreenTranslation.Item] = screenStyleGuard.withLock {
+            screenShown = (items, Self.uptimeMs() + durationMs)
+            screenVisible = items.map { !presence.hidden($0) }
+            return items.filter { !presence.hidden($0) }
+        }
+        emitScreen(shown, durationMs: durationMs)
+    }
+
+    private func emitScreen(_ items: [ScreenTranslation.Item], durationMs: Int) {
         broadcast(event: "screen", json: ["duration": durationMs, "items": items.map { Self.json($0) }])
         // Altyazı yalnız bilgisayardaysa (TV yok) çeviriler başka hiçbir yere gitmiyordu: tuşa basınca yalnız
         // "Ekran çevriliyor…" görünüyordu.
@@ -608,6 +618,23 @@ public final class SubtitleServer: @unchecked Sendable {
                            blocks: [ScreenTranslation.Item]?) {
         var (text, blocks) = Self.guarded(text: text, box: box, blocks: blocks)
         if id != "game-phone", let shown = blocks { blocks = steadied(shown) }
+        if id != "game-phone" {
+            let sent = (text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks)
+            let visible: [ScreenTranslation.Item]? = screenStyleGuard.withLock {
+                regionShown[id] = text.isEmpty || (blocks ?? []).isEmpty ? nil : sent
+                regionVisible[id] = regionShown[id] == nil ? nil : blocks?.map { !presence.hidden($0) }
+                return blocks?.filter { !presence.hidden($0) }
+            }
+            if let all = blocks, let visible, visible.count != all.count {
+                emitRegion(id: id, text: visible.isEmpty ? "" : text, box: box, lineHeight: lineHeight, icons: icons, blocks: visible)
+                return
+            }
+        }
+        emitRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks)
+    }
+
+    private func emitRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
+                            blocks: [ScreenTranslation.Item]?) {
         var json: [String: Any] = ["id": id, "text": text]
         if let icons, !icons.isEmpty { json["icons"] = Self.json(icons) }
         if let blocks, !blocks.isEmpty, !text.isEmpty { json["blocks"] = blocks.map { Self.json($0, phone: id == "game-phone") } }
@@ -624,6 +651,63 @@ public final class SubtitleServer: @unchecked Sendable {
     /// yazısı aynı kilidi paylaşır (Windows: SubtitleServer.Steadied, Android: SubtitleServer.steadied).
     private let screenStyleGuard = NSLock()
     private var screenStyle = ScreenStyleLock()
+    /// Ekrandaki çeviriler ve özgün yazılarının takibi (`ScreenPresence`): yazı kalkınca çevirisi de aynı karede kalkar.
+    private var presence = ScreenPresence()
+    private var screenShown: (items: [ScreenTranslation.Item], until: Int)?
+    private var screenVisible: [Bool] = []
+    private var regionShown: [String: (text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
+                                       blocks: [ScreenTranslation.Item]?)] = [:]
+    private var regionVisible: [String: [Bool]] = [:]
+
+    static func uptimeMs() -> Int { Int(ProcessInfo.processInfo.systemUptime * 1000) }
+
+    /// Her karede çağrılır: çevirisi gösterilen yazılar hâlâ yerinde mi (`ScreenPresence`). Özgün yazısı kalkan öğe TV'den
+    /// ve masaüstünden aynı karede kalkar; geri gelirse yeniden gösterilir. Windows: SubtitleServer.Observe, Android:
+    /// SubtitleServer.observe.
+    public func observe(_ frame: CGImage) {
+        observe { box in ScreenPresence.patch(frame, box: box) }
+    }
+
+    func observe(patch: (TextBox) -> [Int]?) {
+        let now = Self.uptimeMs()
+        screenStyleGuard.lock()
+        if let shown = screenShown, shown.until <= now { screenShown = nil }
+        let screen = screenShown?.items ?? []
+        let regions = regionShown.sorted { $0.key < $1.key }
+        let all = screen + regions.flatMap { $0.value.blocks ?? [] }
+        guard all.contains(where: ScreenPresence.tracks) || !screenVisible.isEmpty || !regionVisible.isEmpty else {
+            screenStyleGuard.unlock()
+            return
+        }
+        let visible = presence.visible(all, patch: patch)
+        var screenChange: [ScreenTranslation.Item]?
+        let screenFlags = Array(visible.prefix(screen.count))
+        if screenFlags != (screenVisible.isEmpty ? screen.map { _ in true } : screenVisible), !screen.isEmpty {
+            screenChange = zip(screen, screenFlags).filter(\.1).map(\.0)
+        }
+        screenVisible = screen.isEmpty ? [] : screenFlags
+        var regionChanges: [(String, String, TextBox?, Double?, [IconPlacement]?, [ScreenTranslation.Item])] = []
+        var offset = screen.count
+        var flagsById: [String: [Bool]] = [:]
+        for (id, sent) in regions {
+            let blocks = sent.blocks ?? []
+            let flags = Array(visible[offset..<(offset + blocks.count)])
+            offset += blocks.count
+            flagsById[id] = flags
+            if flags != (regionVisible[id] ?? blocks.map { _ in true }) {
+                let kept = zip(blocks, flags).filter(\.1).map(\.0)
+                regionChanges.append((id, kept.isEmpty ? "" : sent.text, sent.box, sent.lineHeight, sent.icons, kept))
+            }
+        }
+        regionVisible = flagsById
+        let until = screenShown?.until ?? now
+        screenStyleGuard.unlock()
+        if let screenChange { emitScreen(screenChange, durationMs: max(1, until - now)) }
+        for change in regionChanges {
+            emitRegion(id: change.0, text: change.1, box: change.2, lineHeight: change.3, icons: change.4,
+                       blocks: change.5.isEmpty ? nil : change.5)
+        }
+    }
 
     func steadied(_ items: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
         let now = Int(ProcessInfo.processInfo.systemUptime * 1000)
@@ -636,6 +720,7 @@ public final class SubtitleServer: @unchecked Sendable {
     public func resetScreenStyle() {
         screenStyleGuard.lock()
         screenStyle.reset()
+        presence.reset()
         screenStyleGuard.unlock()
     }
 
@@ -667,12 +752,20 @@ public final class SubtitleServer: @unchecked Sendable {
 
     /// Bütün ek alan kutularını kaldırır.
     public func clearRegions() {
+        screenStyleGuard.withLock {
+            regionShown = [:]
+            regionVisible = [:]
+        }
         broadcast(event: "region-clear", json: [:])
         onEvent?(.regionClear)
     }
 
     /// TV'deki "ekranı çevir" çevirilerini kaldırır (altyazıya dokunmaz).
     public func clearScreen() {
+        screenStyleGuard.withLock {
+            screenShown = nil
+            screenVisible = []
+        }
         broadcast(event: "screen-clear", json: [:])
         onEvent?(.screenClear)
     }

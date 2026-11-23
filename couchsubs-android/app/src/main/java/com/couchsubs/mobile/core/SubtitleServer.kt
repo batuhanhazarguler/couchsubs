@@ -488,6 +488,29 @@ class SubtitleServer(
         blocks: List<ScreenTranslation.Item>?,
     ) {
         val blocks = if (id != GAME_PHONE_ID && blocks != null) steadied(blocks.filter { area(it.box) <= MAX_BOX_AREA }) else blocks
+        if (id != GAME_PHONE_ID) {
+            val visible = synchronized(screenStyle) {
+                if (text.isEmpty() || blocks.isNullOrEmpty()) {
+                    regionShown.remove(id)
+                    regionVisible.remove(id)
+                } else {
+                    regionShown[id] = RegionSent(text, box, lineHeight, icons, blocks)
+                    regionVisible[id] = blocks.map { !presence.hidden(it) }
+                }
+                blocks?.filter { !presence.hidden(it) }
+            }
+            if (blocks != null && visible != null && visible.size != blocks.size) {
+                emitRegion(id, if (visible.isEmpty()) "" else text, box, lineHeight, icons, visible)
+                return
+            }
+        }
+        emitRegion(id, text, box, lineHeight, icons, blocks)
+    }
+
+    private fun emitRegion(
+        id: String, text: String, box: TextBox?, lineHeight: Double?, icons: List<IconPlacement>?,
+        blocks: List<ScreenTranslation.Item>?,
+    ) {
         broadcast(regionFrame(id, text, box, lineHeight, icons, blocks), subtitle = true)
         if (id == GAME_PHONE_ID) {
             // Telefon ekranında oyun telefonunun çevirisi ek alan kutusu gibi tek kutuda görünür (iPhone ile aynı); büyük
@@ -502,6 +525,10 @@ class SubtitleServer(
     }
 
     override fun clearRegions() {
+        synchronized(screenStyle) {
+            regionShown.clear()
+            regionVisible.clear()
+        }
         broadcast(frame("region-clear", emptyMap()), subtitle = true)
         onEvent?.invoke(SubtitleEvent.RegionsCleared)
     }
@@ -516,17 +543,84 @@ class SubtitleServer(
         synchronized(screenStyle) { screenStyle.steady(items, monotonicClock()) }
 
     /** Ekran yazısının görünüşü yeniden ölçülsün (oturum yeniden başladı). */
-    fun resetScreenStyle() = synchronized(screenStyle) { screenStyle.reset() }
+    fun resetScreenStyle() = synchronized(screenStyle) {
+        screenStyle.reset()
+        presence.reset()
+    }
+
+    /** Ekrandaki çeviriler ve özgün yazılarının takibi ([ScreenPresence]). */
+    private val presence = ScreenPresence()
+    private var screenShown: Pair<List<ScreenTranslation.Item>, Long>? = null
+    private var screenVisible: List<Boolean> = emptyList()
+    private data class RegionSent(
+        val text: String, val box: TextBox?, val lineHeight: Double?, val icons: List<IconPlacement>?,
+        val blocks: List<ScreenTranslation.Item>,
+    )
+    private val regionShown = java.util.TreeMap<String, RegionSent>()
+    private val regionVisible = mutableMapOf<String, List<Boolean>>()
+
+    /**
+     * Her karede çağrılır: çevirisi gösterilen yazılar hâlâ yerinde mi ([ScreenPresence]). Özgün yazısı kalkan öğe TV'den ve
+     * telefon ekranından aynı karede kalkar; geri gelirse yeniden gösterilir (Mac: SubtitleServer.observe, Windows:
+     * SubtitleServer.Observe). [patch]: kutunun bu karedeki izi ([ScreenPresence.patch]).
+     */
+    fun observe(patch: (TextBox) -> List<Int>?) {
+        val now = monotonicClock()
+        var screenChange: List<ScreenTranslation.Item>? = null
+        val regionChanges = mutableListOf<Triple<String, RegionSent, List<ScreenTranslation.Item>>>()
+        var until = now
+        synchronized(screenStyle) {
+            screenShown?.let { if (it.second <= now) screenShown = null }
+            val screen = screenShown?.first ?: emptyList()
+            val regions = regionShown.entries.map { it.key to it.value }
+            val all = screen + regions.flatMap { it.second.blocks }
+            if (all.none { ScreenPresence.tracks(it) } && screenVisible.isEmpty() && regionVisible.isEmpty()) return
+            val visible = presence.visible(all, patch)
+            val flags = visible.take(screen.size)
+            val before = if (screenVisible.isEmpty()) screen.map { true } else screenVisible
+            if (screen.isNotEmpty() && flags != before) screenChange = screen.filterIndexed { i, _ -> flags[i] }
+            screenVisible = if (screen.isEmpty()) emptyList() else flags
+            var offset = screen.size
+            val previous = regionVisible.toMap()
+            regionVisible.clear()
+            for ((id, sent) in regions) {
+                val part = visible.subList(offset, offset + sent.blocks.size).toList()
+                offset += sent.blocks.size
+                regionVisible[id] = part
+                if (part != (previous[id] ?: sent.blocks.map { true })) {
+                    regionChanges.add(Triple(id, sent, sent.blocks.filterIndexed { i, _ -> part[i] }))
+                }
+            }
+            until = screenShown?.second ?: now
+        }
+        screenChange?.let { emitScreen(it, maxOf(1L, until - now).toInt()) }
+        for ((id, sent, kept) in regionChanges) {
+            emitRegion(id, if (kept.isEmpty()) "" else sent.text, sent.box, sent.lineHeight, sent.icons, kept.ifEmpty { null })
+        }
+    }
 
     /** "Ekranı çevir" sonuçlarını TV'ye (ve telefon ekranına) gönderir. */
     fun sendScreen(items: List<ScreenTranslation.Item>, durationMs: Int) {
         val items = steadied(items.filter { area(it.box) <= MAX_BOX_AREA })
+        val shown = synchronized(screenStyle) {
+            screenShown = items to monotonicClock() + durationMs
+            screenVisible = items.map { !presence.hidden(it) }
+            items.filter { !presence.hidden(it) }
+        }
+        emitScreen(shown, durationMs)
+    }
+
+    private fun emitScreen(items: List<ScreenTranslation.Item>, durationMs: Int) {
         broadcast(screenFrame(items, durationMs), subtitle = true)
         onEvent?.invoke(SubtitleEvent.Screen(items, durationMs))
     }
 
     /** TV'deki ve telefondaki "ekranı çevir" çevirilerini kaldırır (altyazıya dokunmaz). */
     fun clearScreen() {
+        synchronized(screenStyle) {
+            screenShown = null
+            screenVisible = emptyList()
+        }
         broadcast(frame("screen-clear", emptyMap()), subtitle = true)
         onEvent?.invoke(SubtitleEvent.ScreenCleared)
     }

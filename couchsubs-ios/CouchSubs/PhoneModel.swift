@@ -1455,6 +1455,9 @@ final class PhoneModel: ObservableObject {
     /// işinde beklenir. Eskiden kare işi okumayı bekliyordu; sonraki kareler de ayrı işlerde birikiyordu.
     private func handle(_ frame: CGImage, capturedAt: Int) {
         framePreview.image = frame
+        // Çevirisi gösterilen ekran yazıları hâlâ yerinde mi: özgün yazı kalkınca çevirisi de bu karede kalkar
+        // (`ScreenPresence`; Mac/Windows/Android aynı).
+        server.observe(frame)
         subtitleOffTip.frameArrived(at: Date(), streaming: sessionState == .streaming)
         updateSubtitleOffTip()
         guard let current = pipeline else { return }

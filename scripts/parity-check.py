@@ -226,6 +226,20 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"screen-fit\.json"),
         ("android", _DROID_TESTS + "ScreenFitTest.kt", r"screen-fit\.json"),
     ],
+    # Ekran yazısı takibi: özgün yazı kalkınca çevirisi aynı karede kalkar (kutunun gri izinin ilintisi), her uygulama her
+    # karede sunucuya verir.
+    "Ekran yazısı takibi (ScreenPresence)": [
+        ("mac", _CORE + "ScreenPresence.swift", r"mutating func visible\("),
+        ("windows", _WIN + "ScreenPresence.cs", r"public IReadOnlyList<bool> Visible\("),
+        ("android", _DROID + "ScreenPresence.kt", r"fun visible\("),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"server\.observe\(frame\)"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"server\.observe\(frame\)"),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"server\.Observe\(frame\)"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/TranslationService.kt", r"live\.observe"),
+        ("mac", _CORE_TESTS + "ScreenPresenceTests.swift", r"screen-presence\.json"),
+        ("windows", _WIN_TESTS + "ScreenPresenceTests.cs", r"screen-presence\.json"),
+        ("android", _DROID_TESTS + "ScreenPresenceTest.kt", r"screen-presence\.json"),
+    ],
     # Ekran yazısının görünüşü oturum boyunca kilitli: öğe türü başına boy, kalınlık, renk ilk ölçümde; yalnız belirgin
     # (%25+) ve kalıcı (1 sn+) değişimde yenilenir. "Ekranı çevir" ve otomatik ekran yazısı sunucuda aynı kilitten geçer.
     "Ekran yazısı kararlı stil kilidi (ScreenStyleLock)": [

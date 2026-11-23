@@ -868,6 +868,18 @@ class TranslationService : Service() {
             if (screenRequested.compareAndSet(true, false)) startScreen(frame)
             else if (screenRefreshRequested.compareAndSet(true, false)) startScreen(frame, refresh = true)
             else followTick(frame, now)
+            // Çevirisi gösterilen ekran yazıları hâlâ yerinde mi: özgün yazı kalkınca çevirisi de bu karede kalkar
+            // (ScreenPresence; Mac/iPhone/Windows aynı). Parlaklık karenin Y düzleminden okunur.
+            server?.let { live ->
+                val buffer = frame.buffer
+                val limit = buffer.capacity()
+                live.observe { box ->
+                    com.couchsubs.mobile.core.ScreenPresence.patch(box, frame.width, frame.height) { x, y ->
+                        val index = y * frame.rowStride + x
+                        if (index < limit) buffer.get(index).toInt() and 0xFF else 0
+                    }
+                }
+            }
             // Menü açıkken (tekerlek, duraklatma menüsü) altyazı okunmaz: menünün alt ortadaki etiketleri altyazı sanılmasın.
             val inMenu = detector.menu
             if (inMenu != loggedMenu) {

@@ -3622,6 +3622,9 @@ final class AppModel: ObservableObject {
         lastFrame = frame
         frameCount &+= 1
         lastFrameAt = Date()
+        // Çevirisi gösterilen ekran yazıları hâlâ yerinde mi: özgün yazı kalkınca çevirisi de bu karede kalkar
+        // (`ScreenPresence`; Windows/Android aynı).
+        server.observe(frame)
         subtitleOffTip.frameArrived(at: Date(), streaming: sessionState == .streaming)
         updateSubtitleOffTip()
         // Num 0 ile duraklatıldı: altyazı da ek alanlar da okunmaz (kare yine alınır: kısayolla tek seferlik okuma ve
