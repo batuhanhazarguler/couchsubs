@@ -1486,22 +1486,23 @@
     el.style.lineHeight = pitch;
     el.style.top = (y0 - padY) + 'px';
     el.style.minHeight = '';
-    var origin = align === 'right' ? '100% 50%' : align === 'center' ? '50% 50%' : '0 50%';
-    inner.style.transformOrigin = origin;
-    inner.style.webkitTransformOrigin = origin;
+    // Sıkıştırılan yazının kutusu sağ kenarı yerinde kalarak sola doğru genişletilir ve sağ kenarından ölçeklenir: görünen
+    // yeri yazının alanıdır, sığmayan yarı sola taşar (kaydırma payına girmez; eski Chromium dönüşümü saymıyordu).
+    inner.style.transformOrigin = '100% 50%';
+    inner.style.webkitTransformOrigin = '100% 50%';
     var a = x0, b = x1, squeeze = 1;
     function place() {
       var pl = Math.min(padX, Math.max(0, a - r0)), pr = Math.min(padX, Math.max(0, r1 - b));
       el.style.left = (a - pl) + 'px';
       el.style.width = (b - a + pl + pr) + 'px';
       el.style.padding = padY + 'px ' + pr + 'px ' + padY + 'px ' + pl + 'px';
-      el.style.height = (y1 - y0 + 2 * padY) + 'px';
+      // Yükseklik en az özgün kutununki; kesirli piksel yuvarlaması yazıyı kutudan taşırmasın diye sabit değil.
+      el.style.minHeight = (y1 - y0 + 2 * padY) + 'px';
       inner.style.width = ((b - a) / squeeze) + 'px';
       var scale = squeeze === 1 ? '' : 'scaleX(' + squeeze + ')';
       inner.style.transform = scale;
       inner.style.webkitTransform = scale;
-      if (align === 'right') inner.style.marginLeft = ((b - a) - (b - a) / squeeze) + 'px';
-      else if (align === 'center') inner.style.marginLeft = (((b - a) - (b - a) / squeeze) / 2) + 'px';
+      inner.style.marginLeft = ((b - a) - (b - a) / squeeze) + 'px';
     }
     function fits() {
       return label ? inner.scrollWidth <= (b - a) / squeeze + 1 : inner.scrollHeight <= (y1 - y0) + 1;
@@ -1557,10 +1558,8 @@
       r1 = width;
       widen(inner.scrollWidth * squeeze - (b - a) + 1);
       place();
-    } else {
-      el.style.height = '';
-      el.style.minHeight = (y1 - y0 + 2 * padY) + 'px';
     }
+    // Uzun yazıda kutunun yüksekliği sabit değil (en az özgün kutununki): yazı sığana kadar aşağı uzar.
   }
 
   function showScreen(items, duration) {

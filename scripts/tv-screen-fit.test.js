@@ -5,7 +5,7 @@
 //    yüksekliğinin %10'u kadar uzak (kutunun kendi kenar payı hariç);
 //  - yazı boyu: çizilen yazı boyu / özgün satırın yazı boyu 1,0 (±%5); küçültme yok;
 //  - kumanda simgesi ve görev fotoğrafı (frames.json → screen.clear) hiç örtülmez;
-//  - kutular birbirine binmez.
+//  - kutular birbirine binmez, yazı kendi kutusundan taşmaz (eski Chromium dönüşümü kaydırma payına saymıyordu).
 // Ölçüler 1080p, 720p ve 4K ekranlarda aynı olmalı.
 // node --test scripts/tv-screen-fit.test.js — tarayıcı yolu: COUCHSUBS_TEST_BROWSER.
 'use strict';
@@ -67,7 +67,9 @@ function render(width, height, zoom, shot) {
             // Yazının alanı (kenar payı hariç): özgün yazının kutusuyla karşılaştırılır.
             area: { left: (b.left + parseFloat(cs.paddingLeft)) / z / W, top: (b.top + parseFloat(cs.paddingTop)) / z / H,
               right: (b.right - parseFloat(cs.paddingRight)) / z / W, bottom: (b.bottom - parseFloat(cs.paddingBottom)) / z / H },
-            scroll: el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1 };
+            // İki piksel pay: kenar payının kesirli pikselleri iki yanda yuvarlanır.
+            scroll: el.scrollWidth > el.clientWidth + 2 || el.scrollHeight > el.clientHeight + 2,
+            dims: [el.scrollWidth, el.clientWidth, el.scrollHeight, el.clientHeight] };
         });
         result.push({ id: frame.id, drawn: drawn, H: H });
       });
@@ -99,7 +101,7 @@ const intersects = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.lef
 function measure(rendered) {
   return rendered.map((frame, f) => {
     const source = frames[f];
-    const out = { id: frame.id, shift: 0, minRatio: Infinity, maxRatio: 0, covered: [], overlaps: 0 };
+    const out = { id: frame.id, shift: 0, minRatio: Infinity, maxRatio: 0, covered: [], overlaps: 0, spill: frame.drawn.filter(el => el.scroll).map(el => el.text + " " + el.dims.join("/")) };
     frame.drawn.forEach((el, i) => {
       const item = source.items[i];
       const box = item.box, line = item.line;
@@ -153,6 +155,7 @@ test('ekranı çevir: çeviri özgün yazının yerinde, boyunda; simge örtmez,
       if (m.minRatio < 0.95 || m.maxRatio > 1.05) failures.push(`${at}: yazı boyu oranı ${m.minRatio.toFixed(2)}–${m.maxRatio.toFixed(2)}`);
       if (m.covered.length) failures.push(`${at}: simge/fotoğraf örtülüyor: ${m.covered.join(', ')}`);
       if (m.overlaps) failures.push(`${at}: ${m.overlaps} kutu üst üste`);
+      if (m.spill.length) failures.push(`${at}: kutusundan taşan yazı: ${m.spill.join(', ')}`);
     }
   }
   assert.deepEqual(failures, []);
