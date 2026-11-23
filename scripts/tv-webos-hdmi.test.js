@@ -725,6 +725,106 @@ test('webOS HDMI 0.9.82: localStorage yoksa ya da hata verirse ilk oturum 0.9.73
   assert.strictEqual(stallOnEveryBuild(tv2, 5 * 60).length - 1, 3);
 });
 
+// 0.9.87 (#1055, 0.9.84 + beta.89): öğrenme ilk oturumda sınır dolduktan sonra yazıldığı için ilk oturum hâlâ üç
+// kurmaydı. Akışı ölçülebilen TV'de (kare sayacı ya da currentTime ilerliyor) 'stalled' akan görüntüyü kurdurmaz.
+// Kare sayacını (webkitDecodedFrameCount) ilerleten, currentTime'ı ilerletmeyen sağlam görüntü.
+function decoding(tv) {
+  return () => {
+    const v = tv.video;
+    if (v && v.readyState >= 2 && !v.frozen) v.webkitDecodedFrameCount = (v.webkitDecodedFrameCount || 0) + 30;
+  };
+}
+
+// stallOnEveryBuild gibi, ama her adımda eachStep çağrılır (sayaç ilerler).
+function stallOnEveryBuildFlowing(tv, seconds, eachStep) {
+  const built = [];
+  let seen = tv.videos.length - 1;
+  for (let t = 0; t < seconds; t++) {
+    if (tv.videos.length > seen) {
+      seen = tv.videos.length;
+      tv.video.start();
+      tv.video.stallAt = t + 3;
+      built.push(t);
+    } else if (tv.video && tv.video.stallAt === t) {
+      tv.video.fire('stalled');
+    }
+    eachStep();
+    tv.advance(1000, eachStep);
+  }
+  return built;
+}
+
+test('webOS HDMI 0.9.87 (#1055): kare sayacı ilerleyen TV\'de ilk oturumda da taze stalled sağlam görüntüyü kurdurmaz', () => {
+  const storage = {};
+  const tv = startTv({ storage });
+  tv.show(2);
+  const built = stallOnEveryBuildFlowing(tv, 5 * 60, decoding(tv));
+  assert.deepStrictEqual(built, [0], 'ilk oturumda kurma yok: ' + built.join(','));
+  assert.match(tv.platform.diagnostics(), /t\+ fr \d+ · ev stalled · stall 1 ok/);
+  assert.strictEqual(storage['couchsubs.hdmiFlowCounter'], '1', 'akış ölçülebilir diye saklandı');
+  assert.strictEqual(storage[NOISE_KEY], undefined, 'gürültü öğrenmesine gerek kalmadı');
+});
+
+test('webOS HDMI 0.9.87: currentTime\'ı ilerleten TV\'de ilk oturumda üç kurma yok; PS tuşundan dönüşte de kurulmaz', () => {
+  const tv = startTv({ storage: {} });
+  tv.show(2);
+  const step = ticking(tv);
+  assert.deepStrictEqual(stallOnEveryBuildFlowing(tv, 3 * 60, step), [0]);
+  for (let press = 0; press < 3; press++) {
+    tv.hide();
+    tv.advance(8000);
+    tv.unhide();
+    tv.document.fire('webOSRelaunch');
+    tv.focus();
+    tv.video.fire('stalled');
+    for (let s = 0; s < 60; s++) { step(); tv.advance(1000, step); }
+  }
+  assert.strictEqual(tv.videos.length, 1, 'akan görüntüye hiç dokunulmadı');
+});
+
+test('webOS HDMI 0.9.87: sayaç stalled\'dan 1,5 sn sonra değil ama birkaç sn içinde ilerlerse görüntü akıyordur', () => {
+  const storage = { 'couchsubs.hdmiFlowCounter': '1' };
+  const tv = startTv({ storage });
+  tv.show(2);
+  tv.video.start();
+  tv.advance(3000);
+  assert.match(tv.platform.diagnostics(), /t= flow/, 'önceki oturumdan biliniyor');
+  tv.video.fire('stalled');
+  tv.advance(2500);
+  assert.strictEqual(tv.videos.length, 1, 'akışı bilinen TV\'de 1,5 sn sonra kurulmaz');
+  tv.video.webkitDecodedFrameCount = 90;
+  tv.advance(10000);
+  assert.strictEqual(tv.videos.length, 1);
+  assert.match(tv.platform.diagnostics(), /stall 1 ok/);
+});
+
+test('webOS HDMI 0.9.87: akan görüntü gerçekten donarsa (birkaç sn kare yok) stalled yine kurdurur', () => {
+  const tv = startTv({ storage: {} });
+  tv.show(2);
+  const step = decoding(tv);
+  tv.video.start();
+  for (let s = 0; s < 30; s++) { step(); tv.advance(1000, step); }
+  tv.video.frozen = true;
+  tv.video.fire('stalled');
+  tv.advance(3500);
+  assert.strictEqual(tv.videos.length, 1, 'donma birkaç sn sürmeden kurulmaz');
+  tv.advance(2000);
+  assert.strictEqual(tv.videos.length, 2, 'donan görüntü yeniden kuruldu');
+  assert.match(tv.platform.diagnostics(), /rebuilt 1 \(ev stalled\)/);
+});
+
+test('webOS HDMI 0.9.87: kare sayacı duran görüntü (siyah ekran) gözcü tarafından kurulur', () => {
+  const tv = startTv();
+  tv.show(2);
+  const step = decoding(tv);
+  tv.video.start();
+  for (let s = 0; s < 30; s++) { step(); tv.advance(1000, step); }
+  tv.video.frozen = true;
+  tv.advance(30000);
+  assert.strictEqual(tv.videos.length, 2);
+  assert.match(tv.platform.diagnostics(), /rebuilt 1 \(stalled\)/);
+});
+
 test('webOS HDMI #643: ses adımları açıkken stalled olursa adımlar kapanır, yeni <video>\'ya dokunulmaz', () => {
   const tv = startTv({ steps: {}, luna: () => ({ returnValue: true }) });
   tv.show(2);
