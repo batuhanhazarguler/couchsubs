@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.91';
+  var APP_VERSION = '0.9.92';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1428,8 +1428,11 @@
   // taşmaz: simgeyi örtmez.
   // Önceden sığmayan sekme %60'a kadar küçülüyor (şerit iki ayrı boyda), kenar payı ve genişleme tuş simgesinin üstüne
   // biniyordu (#859, #860). Satır aralığı özgün satırlarınki (rows): iki satırlık açıklama iki satırda kalır.
-  var FIT_FIRST_SQUEEZE = 0.8;
-  var FIT_MIN_SQUEEZE = 0.7;
+  // Yatay sıkıştırma yalnız tek satırlık kısa etikette (menü sekmesi, düğme) ve en çok %10 (TV uygulaması 0.9.92). Çok
+  // satırlı ya da uzun yazı (görev açıklaması, oyunun konuşma altyazısı) hiç sıkıştırılmaz: satır kırılır, yazı boyu aynı
+  // kalır, kutu aşağı uzar. Önceden paragraf da %30'a kadar sıkışıyor, altyazının harfleri yatayda ezik görünüyordu (X, beta.90).
+  var FIT_FIRST_SQUEEZE = 0.9;
+  var FIT_MIN_SQUEEZE = 0.85;
   var FIT_SQUEEZE_STEP = 0.05;
 
   function fitStyled(el, item, box, width, height, pad, line) {
@@ -1525,6 +1528,9 @@
       label = false;
       inner.style.whiteSpace = 'normal';
       el.style.whiteSpace = '';
+      // Satıra inen yazı sıkıştırılmaz.
+      squeeze = 1;
+      place();
     }
     if (label) {
       r0 = 0;

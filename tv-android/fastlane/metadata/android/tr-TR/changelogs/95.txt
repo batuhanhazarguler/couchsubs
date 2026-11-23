@@ -1,0 +1,1 @@
+0.9.92: Çevrilen uzun ekran yazısı ve oyunun konuşma altyazısı artık yatayda sıkışmıyor; satır kırılıyor, yazı boyu aynı kalıyor. Kısa menü etiketleri en çok %10 daralıyor.
