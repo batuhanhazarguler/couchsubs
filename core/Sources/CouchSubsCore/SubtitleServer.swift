@@ -43,7 +43,7 @@ public enum NameColorMode: String, Codable, CaseIterable, Sendable {
 public enum TVDisplayMode: String, Codable, CaseIterable, Sendable {
     /// Varsayılan: TV uygulaması katmana izin veriyorsa (bilgisayarın/telefonun kurduğu APK) katman, yoksa uygulama içi.
     case auto = "inApp"
-    /// Bilerek seçilmiş uygulama içi: HDMI CouchSubs'ın içinde; görüntü hiç gelmezse TV uygulaması kendiliğinden katmana geçer.
+    /// Bilerek seçilmiş uygulama içi: HDMI CouchSubs'ın içinde; TV uygulaması (0.9.84+) hiçbir durumda kendiliğinden katmana geçmez.
     case inApp = "inAppOnly"
     /// TV HDMI'yı kendi ekranında gösterir, altyazı üstteki şeffaf katmanda (bazı TV'lerde uygulama içi görüntü siyah kalıyor).
     case overlay

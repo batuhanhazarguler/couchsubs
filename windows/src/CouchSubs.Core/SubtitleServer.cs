@@ -102,7 +102,7 @@ public enum TvDisplayMode
     /// </summary>
     [JsonStringEnumMemberName("InApp")]
     Auto,
-    /// <summary>Bilerek seçilmiş uygulama içi; görüntü hiç gelmezse TV uygulaması kendiliğinden katmana geçer. TV'ye "inAppOnly".</summary>
+    /// <summary>Bilerek seçilmiş uygulama içi; TV uygulaması (0.9.84+) hiçbir durumda kendiliğinden katmana geçmez. TV'ye "inAppOnly".</summary>
     InAppOnly,
     /// <summary>TV HDMI'yı kendi ekranında gösterir, altyazı üstteki şeffaf katmanda (bazı TV'lerde uygulama içi görüntü siyah kalıyor).</summary>
     Overlay,
