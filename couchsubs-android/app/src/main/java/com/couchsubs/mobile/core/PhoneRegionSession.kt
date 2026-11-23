@@ -132,8 +132,9 @@ internal class PhoneRegionSession(
     /** Okumanın art arda doğrulanamadığı tur sayısı ([missed]). */
     private var absences = 0
     private var recheck = false
-    /** Son gönderilen bloklar ([steady]). */
+    /** Son gönderilen bloklar ve o anki telefon boyu ([steady]). */
     private var sent: List<ScreenTranslation.Item> = emptyList()
+    private var sentScale = 0.0
     /** Son gönderinin ayarı: ayar değişince aynı mesajlar yeni düzende yeniden gönderilir. */
     private var sentOptions: PhonePanelOptions? = null
     /** Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri ([PhoneSteady.steadyPose], [PhoneSteady.samePicture]). */
@@ -420,14 +421,20 @@ internal class PhoneRegionSession(
     private fun publish(fresh: List<ScreenTranslation.Item>): Unit = synchronized(this) {
         // Kapanan telefonun bekleyen çevirisi oyunun üstüne çizilmez.
         if (closed && fresh.isNotEmpty()) return
-        // Panelin dayandığı telefon yeri el titremesiyle değişmez ([PhonePanelSteady]); telefon belirgin biçimde ve kalıcı
-        // olarak yakınlaşıp uzaklaşınca yeni boyutlar kullanılır, yoksa aynı balonun görünüşü sabit kalır. Ekran silinince
-        // sonraki gönderi her şeyi yeniden ölçer.
+        // Telefon gerçekten yakınlaşıp uzaklaşınca (%3) balonların yerindeki görünüşü hemen yenilenir (Balonların Üstünde).
+        page?.region?.let { region ->
+            val scale = region.bottom - region.top
+            if (abs(scale - sentScale) > sentScale * 0.03) {
+                sentScale = scale
+                sent = emptyList()
+            }
+        }
+        // Yanda Panel'in dayandığı telefon yeri ve yazı boyu ise el titremesiyle değişmez ([PhonePanelSteady]): yalnız
+        // belirgin ve kalıcı yakınlaşma/kaymada yenilenir. Ekran silinince sonraki gönderi baştan ölçer.
         val now = lastPass ?: 0L
         val capture = latest
         if (fresh.isEmpty()) panelSteady.reset()
         val placed = if (fresh.isEmpty()) null else capture?.pose?.let { panelSteady.steadyPose(it, now) }
-        if (placed?.resized == true) sent = emptyList()
         val aspect = capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9)
         val items = if (sent.isEmpty()) fresh else PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
         sent = items

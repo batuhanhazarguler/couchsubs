@@ -52,6 +52,8 @@ final class PhoneRegionSession {
     private var holds = 0
     /// Telefonun art arda bulunamadığı tur sayısı (`missed`).
     private var absences = 0
+    /// Telefonun boyu (bölgenin yüksekliği): gerçek yakınlaşmada balonların görünüşü hemen yenilenir.
+    private var scale = 0.0
     /// Kare boyu (piksel): yarım piksellik kutu oynaması yeniden gönderilmez.
     private var frameSize = (width: 1920, height: 1080)
 
@@ -403,15 +405,20 @@ final class PhoneRegionSession {
     private func publish(_ fresh: [ScreenTranslation.Item]) {
         var items = fresh
         let now = lastPass ?? 0
-        // Panelin dayandığı telefon yeri el titremesiyle değişmez (`PhonePanelSteady`); telefon belirgin biçimde ve
-        // kalıcı olarak yakınlaşıp uzaklaşınca yeni boyutlar kullanılır, yoksa aynı balonun görünüşü sabit kalır.
-        // Ekran silinince (telefon kayboldu, sohbet boş) sonraki gönderi her şeyi yeniden ölçer.
+        if let region = latest?.region {
+            let height = region.bottom - region.top
+            // Telefon gerçekten yakınlaşıp uzaklaşınca balonların yerindeki görünüşü hemen yenilenir (Balonların Üstünde).
+            if abs(height - scale) > scale * 0.03 {
+                scale = height
+            } else if !rendered.isEmpty {
+                items = PhoneSteady.steadyPositions(Self.stableBlocks(items, previous: rendered), previous: rendered,
+                                                    aspect: Double(frameSize.width) / Double(max(1, frameSize.height)))
+            }
+        }
+        // Yanda Panel'in dayandığı telefon yeri ve yazı boyu ise el titremesiyle değişmez (`PhonePanelSteady`): yalnız
+        // belirgin ve kalıcı yakınlaşma/kaymada yenilenir. Ekran silinince (telefon kayboldu) sonraki gönderi baştan ölçer.
         if fresh.isEmpty { steady.reset() }
         let placed = fresh.isEmpty ? nil : latest.map { steady.steadyPose($0.pose, now: now) }
-        if placed?.resized != true, !rendered.isEmpty {
-            items = PhoneSteady.steadyPositions(Self.stableBlocks(items, previous: rendered), previous: rendered,
-                                                aspect: Double(frameSize.width) / Double(max(1, frameSize.height)))
-        }
         let options = panel()
         let sameOptions = sentOptions == options
         guard rendered != items || (!sameOptions && !items.isEmpty) else { return }

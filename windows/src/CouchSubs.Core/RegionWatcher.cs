@@ -89,6 +89,7 @@ public sealed partial class RegionWatcher
         public PhonePanelOptions? SentPhoneOptions;
         /// <summary>Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez.</summary>
         public PhonePanelSteady PhonePanelSteady = new();
+        public double PhoneScale;
         /// <summary>Boş okumanın art arda kaç turdur sürdüğü: <see cref="PhoneSteady.MissTurns"/> tur sürmeden ekran silinmez.</summary>
         public int PhoneEmpties;
         /// <summary>Telefonun okunduğu karenin eni / boyu (sohbet panelinin yeri için).</summary>
@@ -895,13 +896,19 @@ public sealed partial class RegionWatcher
                 || !map.TryGetValue(area.Id, out var current) || !ReferenceEquals(state, current)) return;
             if (area.PanelLifetime.HasValue)
             {
-                // Panelin dayandığı telefon yeri el titremesiyle değişmez (PhonePanelSteady); telefon belirgin biçimde ve kalıcı
-                // olarak yakınlaşıp uzaklaşınca yeni boyutlar kullanılır. Ekran silinince sonraki gönderi her şeyi yeniden ölçer.
+                double scale = area.Region.Bottom - area.Region.Top;
+                // Telefon gerçekten yakınlaşıp uzaklaşınca balonların yerindeki görünüşü hemen yenilenir (Balonların Üstünde).
+                if (Math.Abs(scale - state.PhoneScale) > state.PhoneScale * 0.03)
+                {
+                    state.PhoneScale = scale;
+                    state.SentPhoneBlocks = null;
+                }
+                // Yanda Panel'in dayandığı telefon yeri ve yazı boyu ise el titremesiyle değişmez (PhonePanelSteady): yalnız
+                // belirgin ve kalıcı yakınlaşma/kaymada yenilenir. Ekran silinince sonraki gönderi baştan ölçer.
                 var time = now();
                 if (blocks is not { Count: > 0 }) state.PhonePanelSteady.Reset();
                 var placed = blocks is { Count: > 0 } && area.PhonePose is { } seen
                     ? state.PhonePanelSteady.SteadyPose(seen, time) : ((GamePhoneGeometry.Pose Pose, bool Resized)?)null;
-                if (placed is { Resized: true }) state.SentPhoneBlocks = null;
                 if (blocks is not null && state.SentPhoneBlocks is { } previous)
                     blocks = PhoneSteady.SteadyPositions(StablePhoneBlocks(blocks, previous), previous, state.PhoneAspect);
                 state.SentPhoneBlocks = blocks;
