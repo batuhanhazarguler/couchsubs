@@ -556,6 +556,15 @@ struct SubtitleScreen: View {
                         .onAppear { screenHeight = proxy.size.height }
                         .onChange(of: proxy.size.height) { screenHeight = $0 }
                 })
+            // "Arka planda sürdür" açıkken PiP katmanı altyazının arkasında, tam ekran ve neredeyse saydam: kullanıcı
+            // görmez (siyah zeminde %1), iOS ise görünür sayar; bu ekrandan çıkınca görüntü küçük pencerede sürer.
+            if model.backgroundPiP && BackgroundPiP.isSupported {
+                PiPPreview()
+                    .ignoresSafeArea()
+                    .opacity(0.01)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
             VStack(spacing: Mobile.Space.inline) {
                 ForEach(Array(model.phoneLines.enumerated()), id: \.element.id) { index, line in
                     // Uzun çeviri en çok 3 satıra dengeli bölünür; sığmazsa yazı biraz küçülür (bkz. SubtitleWrap).
@@ -663,13 +672,6 @@ struct SubtitleScreen: View {
                                 .buttonStyle(MobileButtonStyle(kind: .secondary, compact: true))
                         }
                     }
-                }
-                // "Arka planda sürdür" açıkken küçük önizleme: bu ekrandan çıkınca da görüntü küçük pencerede sürer.
-                if model.backgroundPiP && BackgroundPiP.isSupported {
-                    PiPPreview()
-                        .frame(width: 112, height: 63)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .accessibilityHidden(true)
                 }
             }
             .padding(Mobile.Space.screen)
