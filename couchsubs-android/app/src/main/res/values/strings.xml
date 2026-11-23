@@ -477,6 +477,7 @@
     <string name="tvinstall_err_not_restarted">TV\'deki ayar doğru (Geliştirici modu açık, Host PC IP %1$s), ama TV o zamandan beri tam yeniden başlamadığı için telefonu henüz kabul etmiyor. Kumandanın güç tuşunu TV kapanıp Samsung logosuyla yeniden açılana kadar (yaklaşık 5 saniye) basılı tut ya da TV\'nin fişini 30 saniye çek, sonra tekrar dene.</string>
     <string name="tvinstall_err_other_ip">TV\'deki Host PC IP %1$s, bu telefonun adresi %2$s. TV\'deki geliştirici modu penceresinde Host PC IP\'yi %2$s yap, sonra TV\'yi tam yeniden başlat (güç tuşunu Samsung logosu görünene kadar, yaklaşık 5 saniye basılı tut).</string>
     <string name="tvinstall_err_dev_off">TV\'de geliştirici modu kapalı. Yukarıdaki adımlarla aç, Host PC IP olarak bu telefonun adresini (%1$s) yaz, sonra TV\'yi tam yeniden başlat (güç tuşunu Samsung logosu görünene kadar, yaklaşık 5 saniye basılı tut).</string>
+    <string name="tvinstall_host_pc_steps">TV\'de: Uygulamalar › kumandada 1 2 3 4 5 › Developer Mode Açık, Host PC IP = bu cihazın IP\'si (%1$s), sonra TV\'yi yeniden başlat.</string>
     <string name="tvinstall_err_too_old">Bu Samsung TV, CouchSubs TV uygulaması için çok eski (2016 ve sonraki modeller destekleniyor).</string>
     <string name="tvinstall_err_login">Samsung girişi tamamlanmadı. Tekrar dene ve açılan sayfada girişi bitir.</string>
     <string name="tvinstall_err_certificate">Samsung imza sertifikasını vermedi. Birkaç dakika sonra tekrar dene.</string>

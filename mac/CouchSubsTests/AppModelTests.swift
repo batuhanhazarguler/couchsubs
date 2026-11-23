@@ -1447,6 +1447,31 @@ final class TVAppInstallTests: XCTestCase {
         XCTAssertFalse(TVAppCard.message(for: .unreachable, brand: .lg, reason: nil).contains(restart))
     }
 
+    /// "IP hatası" (#1158): Samsung kurulum bağlantısını reddedince metin menüyü, iki ayarı ve bu Mac'in adresini söyler.
+    func testSamsungUnreachableGivesHostPcStepsWithThisAddress() {
+        let text = TVAppCard.message(for: .unreachable, brand: .samsung, reason: nil, address: "192.168.1.34")
+        XCTAssertTrue(text.contains(TVAppCard.hostPcSteps("192.168.1.34")))
+        XCTAssertTrue(text.contains("192.168.1.34"))
+        XCTAssertTrue(text.contains("1 2 3 4 5"))
+        XCTAssertTrue(TVAppCard.hostPcSteps(nil).contains("(?)"))
+        XCTAssertFalse(TVAppCard.message(for: .unreachable, brand: .lg, reason: nil, address: "192.168.1.34").contains("192.168.1.34"))
+    }
+
+    /// TV'nin listesi CouchSubs'ın silindiğini söyleyince (#1158) bu Mac'in kurduğu sürümün kaydı silinir: kart artık
+    /// "güncel" göstermez, kurulum adımları çıkar. Başka TV'nin bildirimi kaydı silmez.
+    func testSamsungAppMissingForgetsTheInstalledVersion() {
+        let services = FakeServices()
+        let store = MemoryStore()
+        let tv = LGTV(name: "Samsung", host: "192.168.1.40", brand: .samsung)
+        store.save(tv, for: StoreKey.tv)
+        store.save("0.9.80", for: StoreKey.tvAppVersion)
+        let model = AppModel(services: services, store: store, defaults: .isolated())
+        model.samsungAppMissing(host: "192.168.1.99")
+        XCTAssertEqual(store.load(String.self, for: StoreKey.tvAppVersion), "0.9.80")
+        model.samsungAppMissing(host: " 192.168.1.40 ")
+        XCTAssertNil(store.load(String.self, for: StoreKey.tvAppVersion))
+    }
+
     func testOlderAppIsUpdatedWithoutAsking() async throws {
         let services = FakeServices()
         services.appOnTV = "0.4.0"

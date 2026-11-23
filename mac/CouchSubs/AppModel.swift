@@ -1286,6 +1286,11 @@ final class AppModel: ObservableObject {
         }
         // Bu Mac'in daha önce kurduğu Samsung uygulaması da bilinen sayılır.
         if let tv, tv.brand == .samsung, installedAppVersion != nil { SamsungAppKnowledge.shared.mark(host: tv.host) }
+        // TV'nin listesi uygulamanın silindiğini söyledi (#1158): bu Mac'in kurduğu sürümün kaydı da silinir; yoksa açılışta
+        // bilgi yeniden işaretleniyor, kart "güncel" gösteriyor ve sdb reddedilince kurulum adımı hiç çıkmıyordu.
+        SamsungAppKnowledge.onMissing = { [weak self] host in
+            Task { @MainActor [weak self] in self?.samsungAppMissing(host: host) }
+        }
         server.onTVStale = { [weak self] in
             Task { @MainActor [weak self] in self?.tvLost(stale: true) }
         }
@@ -1746,6 +1751,15 @@ final class AppModel: ObservableObject {
 
     /// Samsung ya da Android TV'ye daha önce CouchSubs'ın kurduğu sürüm.
     private var installedAppVersion: String? { store.load(String.self, for: StoreKey.tvAppVersion) }
+
+    /// Samsung TV'nin kurulu uygulama listesi CouchSubs'ın silindiğini söyledi (bkz. `SamsungAppKnowledge.appMissing`):
+    /// "kurulu" kaydı silinir, kart kurulum adımlarını gösterir. iPhone, Windows ve Android ile aynı.
+    func samsungAppMissing(host: String) {
+        guard let tv, tv.brand == .samsung, SamsungAppKnowledge.sameHost(tv.host, host) else { return }
+        store.remove(StoreKey.tvAppVersion)
+        tvAppMissing = true
+        if case .upToDate = tvApp { tvApp = .unknown }
+    }
 
     private func needsInstall(_ bundled: BundledTVApp) -> Bool {
         guard let installed = installedAppVersion else { return true }

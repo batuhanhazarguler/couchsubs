@@ -545,6 +545,8 @@ private fun failureText(failure: InstallState.Failed, phoneIp: String?): String 
         SamsungInstallError.INSTALL_FAILED, null -> context.getString(R.string.tvinstall_err_failed)
     }
     var text = advice
+    // Kurulum bağlantısı reddedildi ("IP hatası", #1158): hangi menüde ne yapılacağı bu cihazın adresiyle tek satırda.
+    if (failure.error == SamsungInstallError.UNREACHABLE) text += "\n\n" + context.getString(R.string.tvinstall_host_pc_steps, phoneIp ?: "?")
     failure.detail?.takeIf { it.isNotBlank() }?.let { text += "\n\n" + context.getString(R.string.tvinstall_details, it) }
     if (failure.error == SamsungInstallError.INSTALL_FAILED || failure.error == SamsungInstallError.CERTIFICATE_REJECTED)
         text += "\n\n" + context.getString(R.string.tvinstall_maintenance)

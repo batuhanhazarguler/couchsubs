@@ -2684,6 +2684,43 @@ public class TvAppInstallTests
         Assert.DoesNotContain("192.168.1.34", TvAppMessages.Problem(state, TvBrand.Lg, Localizer.ForLanguage("tr"), "x.log", "192.168.1.34"));
     }
 
+    /// <summary>"IP hatası" (#1158): metin menüyü, iki ayarı ve bu cihazın adresini tek satırda söyler (Türkçesi de var).</summary>
+    [Fact]
+    public void SamsungUnreachableGivesHostPcStepsWithThisAddress()
+    {
+        var state = new TvAppState(TvAppKind.Failed, Error: DevModeError.Unreachable);
+        var tr = Localizer.ForLanguage("tr");
+        Assert.NotEqual(TvAppMessages.HostPcStepsLine, tr[TvAppMessages.HostPcStepsLine]);
+        Assert.Contains(tr.Format(TvAppMessages.HostPcStepsLine, "192.168.1.34"), TvAppMessages.Problem(state, TvBrand.Samsung, tr, "x.log", "192.168.1.34"));
+        Assert.Contains(tr.Format(TvAppMessages.HostPcStepsLine, "?"), TvAppMessages.Problem(state, TvBrand.Samsung, tr, "x.log"));
+        Assert.Contains("1 2 3 4 5", tr.Format(TvAppMessages.HostPcStepsLine, "192.168.1.34"));
+    }
+
+    /// <summary>
+    /// TV'nin listesi CouchSubs'ın silindiğini söyleyince (#1158) bu bilgisayarın kurduğu sürümün ve "bağlandı" kaydı
+    /// silinir: kart "güncel" göstermez, geliştirici modu kapalıysa kurulum adımları çıkar. Başka TV'nin bildirimi silmez.
+    /// </summary>
+    [Fact]
+    public async Task SamsungAppMissingOnTheTvForgetsTheInstalledVersion()
+    {
+        var services = new FakeServices();
+        services.Bundled[TvBrand.Samsung] = SamsungApp;
+        var store = new MemoryStore();
+        var controller = Make(services, store);
+        await controller.PairAsync(Samsung);
+        store.Save(StoreKeys.TvAppVersion, "0.7.0");
+        store.Save(StoreKeys.TvAppSeen, Samsung.Host);
+        await controller.RefreshTvAppAsync();
+        Assert.Equal(new TvAppState(TvAppKind.UpToDate, "0.7.0"), controller.TvApp);
+        controller.SamsungAppMissing("192.168.1.99");
+        Assert.Equal("0.7.0", store.Load<string>(StoreKeys.TvAppVersion));
+        controller.SamsungAppMissing(" " + Samsung.Host + " ");
+        Assert.Null(store.Load<string>(StoreKeys.TvAppVersion));
+        Assert.Null(store.Load<string>(StoreKeys.TvAppSeen));
+        await controller.RefreshTvAppAsync();
+        Assert.Equal(TvAppKind.DevModeOff, controller.TvApp.Kind);
+    }
+
     [Fact]
     public async Task SamsungFailureIsShown()
     {

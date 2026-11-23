@@ -4305,9 +4305,25 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private void LoadSamsungAppKnowledge()
     {
         SamsungAppKnowledge.Changed = host => store.Save(StoreKeys.TvAppSeen, host);
+        // TV'nin listesi uygulamanın silindiğini söyledi (#1158): kayıtlar da silinir; yoksa açılışta bilgi yeniden
+        // işaretleniyor, kart "güncel" gösteriyor ve sdb reddedilince kurulum adımı hiç çıkmıyordu.
+        SamsungAppKnowledge.Missing = host => post(() => SamsungAppMissing(host));
         SamsungAppKnowledge.Log = SubtitleLog.Write;
         SamsungAppKnowledge.Mark(store.Load<string>(StoreKeys.TvAppSeen), notify: false);
         if (tv is { Brand: TvBrand.Samsung } known && InstalledAppVersion is not null) SamsungAppKnowledge.Mark(known.Host, notify: false);
+    }
+
+    /// <summary>
+    /// Samsung TV'nin kurulu uygulama listesi CouchSubs'ın silindiğini söyledi (bkz. <see cref="SamsungAppKnowledge.AppMissing"/>):
+    /// bu bilgisayarın kurduğu sürümün ve "uygulama bağlandı" kaydı silinir, kart kurulum adımlarını gösterir. Mac, iPhone
+    /// ve Android ile aynı.
+    /// </summary>
+    public void SamsungAppMissing(string host)
+    {
+        if (SamsungAppKnowledge.SameHost(store.Load<string>(StoreKeys.TvAppSeen), host)) store.Remove(StoreKeys.TvAppSeen);
+        if (tv is not { Brand: TvBrand.Samsung } paired || !SamsungAppKnowledge.SameHost(paired.Host, host)) return;
+        store.Remove(StoreKeys.TvAppVersion);
+        if (TvApp.Kind == TvAppKind.UpToDate) TvApp = new TvAppState(TvAppKind.Unknown);
     }
 
     private void OnClientsChanged(int count) => post(() =>

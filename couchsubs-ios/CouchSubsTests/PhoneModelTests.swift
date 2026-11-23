@@ -162,6 +162,24 @@ final class PhoneModelTests: XCTestCase {
         model.stop()
     }
 
+    /// #1158: uygulama TV'den silinince telefon onu "kurulu" gösteriyor, kurulum önerilmiyordu. TV "CouchSubs yok" deyince
+    /// kayıt silinir, ana ekran kurulumu önerir; başka TV'nin bildirimi kayda dokunmaz.
+    func testSamsungAppMissingForgetsTheInstalledRecord() async throws {
+        let model = makeModel()
+        await model.tvAppInstalled(brand: .samsung, host: "192.168.1.50", port: nil, version: "0.9.80")
+        XCTAssertEqual(model.installedTVApp?.version, "0.9.80")
+        XCTAssertTrue(SamsungAppKnowledge.shared.isKnown(host: "192.168.1.50"))
+        XCTAssertFalse(model.tvAppMissing)
+        model.samsungAppMissing(host: "192.168.1.99")
+        XCTAssertNotNil(model.installedTVApp)
+        model.samsungAppMissing(host: " 192.168.1.50 ")
+        XCTAssertNil(model.installedTVApp)
+        XCTAssertNil(defaults.data(forKey: StoreKey.tvAppInstalled))
+        XCTAssertFalse(SamsungAppKnowledge.shared.isKnown(host: "192.168.1.50"))
+        XCTAssertTrue(model.tvAppMissing)
+        model.stop()
+    }
+
     private func pairCall(_ method: String, _ model: PhoneModel, _ query: String = "") async throws -> (Int, [String: String]) {
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(model.serverPort)/pair\(query)")!)
         request.httpMethod = method

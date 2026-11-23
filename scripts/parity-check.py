@@ -331,6 +331,25 @@ CAPABILITIES = {
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun useTvAddress\("),
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun removeTvPairing\("),
     ],
+    # #1158: Samsung'da TV'den silinen uygulama "kurulu" görünüyordu; liste/vd_applist "yok" deyince kayıt silinir ve
+    # kurulum bağlantısı reddedilince metin menüyü, iki ayarı ve bu cihazın adresini söyler.
+    "Samsung: TV'den silinen uygulamanın \"kurulu\" kaydı silinir, Host PC IP adımı adresle yazılır": [
+        ("mac", _CORE + "LGTV/SamsungTV.swift", r"public func appMissing\(host: String\?\) -> Bool"),
+        ("mac", _CORE + "LGTV/SamsungTV.swift", r"SamsungAppKnowledge\.forgetsOnList\(presence\)"),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func samsungAppMissing\(host: String\)"),
+        ("mac", "mac/CouchSubs/UI/Onboarding/TVAppCard.swift", r"static func hostPcSteps\("),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func samsungAppMissing\(host: String\)"),
+        ("ios", "couchsubs-ios/CouchSubs/TVInstall/SamsungInstall.swift", r"func installedPresence\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/UI/TVInstallScreen.swift", r"TVText\.hostPcSteps\("),
+        ("windows", _WIN + "LgTv/SamsungTv.cs", r"public static bool AppMissing\(string\? host\)"),
+        ("windows", _WIN + "LgTv/SamsungTv.cs", r"SamsungAppKnowledge\.ForgetsOnList\(presence\)"),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"public void SamsungAppMissing\(string host\)"),
+        ("windows", "windows/src/CouchSubs.Shell/TvAppMessages.cs", r"HostPcStepsLine"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvAppUpdate.kt", r"fun samsungAppMissing\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvSessionLauncher.kt", r"samsungForgetsOnList\(knownStale, presence\)"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/samsung/SamsungInstaller.kt", r"fun installedPresence\(\)"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/TvInstallScreen.kt", r"R\.string\.tvinstall_host_pc_steps"),
+    ],
 }
 
 

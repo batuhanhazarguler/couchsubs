@@ -7,6 +7,7 @@ import android.content.Context
 import android.util.Log
 import com.couchsubs.mobile.BuildConfig
 import com.couchsubs.mobile.Services
+import com.couchsubs.mobile.settings.AppSettings
 import com.couchsubs.mobile.settings.SubtitleTarget
 import com.couchsubs.mobile.tv.android.AndroidTvInstaller
 import com.couchsubs.mobile.tv.lg.JschShell
@@ -188,12 +189,21 @@ object TvAppUpdate {
         if (!running.compareAndSet(false, true)) return
         try {
             val bundled = bundledVersion(context, tv.brand) ?: return
-            val onTv = try {
-                readVersion(context, tv)
+            val presence = try {
+                readPresence(context, tv)
             } catch (error: Exception) {
                 Log.i(TAG, "TV'deki sürüm okunamadı (${tv.brand} ${tv.host}): ${error.message}")
-                null
-            } ?: return
+                SamsungInstaller.InstalledPresence.Unknown
+            }
+            val onTv = when (presence) {
+                is SamsungInstaller.InstalledPresence.Version -> presence.version
+                SamsungInstaller.InstalledPresence.Unknown -> return
+                SamsungInstaller.InstalledPresence.Missing -> {
+                    // TV'ye bağlanıldı ve listede CouchSubs yok: uygulama silinmiş (#1158); "kurulu" kaydı silinir.
+                    samsungAppMissing(tv.host, InstallLog(File(context.filesDir, "tvinstall.log"))::write)
+                    return
+                }
+            }
             Services.settings.installedTv = tv.copy(version = onTv)
             state.value = if (SamsungDiagnostics.isNewer(bundled, onTv)) TvAppStatus.Outdated(tv, onTv, bundled) else TvAppStatus.UpToDate(onTv)
         } finally {
@@ -201,20 +211,43 @@ object TvAppUpdate {
         }
     }
 
+    /**
+     * Samsung TV'de CouchSubs yok (sessiz sürüm denetiminde `vd_applist` ya da bekçide TV'nin kurulu uygulama listesi):
+     * uygulama güncelleme sırasında ya da elle silinmiş (#1158). Önceden "kurulu" kaydı kalıyordu: Ayarlar sürümü
+     * gösteriyor, bekçi listesiz açmayı deniyor, ana ekran kurulumu önermiyordu. Eşli TV korunur, yalnız sürümü ve
+     * "uygulama bağlandı" kaydı silinir. Mac, iPhone ve Windows ile aynı.
+     */
+    fun samsungAppMissing(host: String, log: (String) -> Unit = {}, settings: AppSettings = Services.settings) {
+        val (tv, seen) = TvSessionLauncher.samsungForgetMissing(settings.installedTv, settings.samsungAppSeenHost, host)
+        if (tv != settings.installedTv) {
+            log("Samsung $host: TV'de CouchSubs yok; telefondaki \"kurulu\" kaydı (${settings.installedTv?.version}) silindi.")
+            settings.installedTv = tv
+        }
+        if (seen != settings.samsungAppSeenHost) settings.samsungAppSeenHost = seen
+        TvSessionLauncher.samsungForget(host)
+        if ((state.value as? TvAppStatus.Outdated)?.tv?.brand == TvBrand.SAMSUNG) state.value = TvAppStatus.Unknown
+    }
+
+    private fun readPresence(context: Context, tv: InstalledTv): SamsungInstaller.InstalledPresence {
+        if (tv.brand != TvBrand.SAMSUNG) {
+            return readVersion(context, tv)?.let { SamsungInstaller.InstalledPresence.Version(it) } ?: SamsungInstaller.InstalledPresence.Unknown
+        }
+        val log = InstallLog(File(context.filesDir, "tvinstall.log"))
+        if (!AndroidTvInstaller.isReachable(tv.host, SdbConnection.PORT)) return SamsungInstaller.InstalledPresence.Unknown
+        return SamsungInstaller(
+            host = tv.host,
+            profilesDirectory = File(context.noBackupFilesDir, "samsung"),
+            adbKey = { AdbKey.loadOrCreate(File(context.noBackupFilesDir, "sdb/adbkey")) },
+            certificates = SamsungCertificates(log = log::write),
+            signIn = null,
+            log = log,
+        ).installedPresence()
+    }
+
     private fun readVersion(context: Context, tv: InstalledTv): String? {
         val log = InstallLog(File(context.filesDir, "tvinstall.log"))
         return when (tv.brand) {
-            TvBrand.SAMSUNG -> {
-                if (!AndroidTvInstaller.isReachable(tv.host, SdbConnection.PORT)) return null
-                SamsungInstaller(
-                    host = tv.host,
-                    profilesDirectory = File(context.noBackupFilesDir, "samsung"),
-                    adbKey = { AdbKey.loadOrCreate(File(context.noBackupFilesDir, "sdb/adbkey")) },
-                    certificates = SamsungCertificates(log = log::write),
-                    signIn = null,
-                    log = log,
-                ).installedVersion()
-            }
+            TvBrand.SAMSUNG -> (readPresence(context, tv) as? SamsungInstaller.InstalledPresence.Version)?.version
             TvBrand.LG -> {
                 val key = LgKeys(File(context.noBackupFilesDir, "lg")).load(tv.host) ?: return null
                 if (!LgInstaller.isDevModeOn(tv.host)) return null

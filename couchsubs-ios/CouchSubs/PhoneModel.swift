@@ -532,6 +532,10 @@ final class PhoneModel: ObservableObject {
     }
 
     private func attachServer() {
+        // Bekçi TV'nin listesinde CouchSubs'ın silindiğini gördü (#1158): telefondaki "kurulu" kaydı da silinir.
+        SamsungAppKnowledge.onMissing = { [weak self] host in
+            Task { @MainActor [weak self] in self?.samsungAppMissing(host: host) }
+        }
         server.onPairingRequest = { [weak self] ticket in
             Task { @MainActor [weak self] in
                 SubtitleLog.write("TV eşleştirme istedi; onay bekleniyor")
@@ -2172,7 +2176,15 @@ final class PhoneModel: ObservableObject {
         checkingTVApp = true
         tvAppCheckedAt = Date()
         defer { checkingTVApp = false }
-        guard let version = await TVAppVersionCheck.installedVersion(brand: target.0, host: target.1, port: target.2) else { return }
+        let version: String
+        switch await TVAppVersionCheck.check(brand: target.0, host: target.1, port: target.2) {
+        case .unknown: return
+        case .missing:
+            // TV'ye bağlanıldı ve listede CouchSubs yok: uygulama silinmiş (#1158); "kurulu" kaydı silinir.
+            samsungAppMissing(host: target.1)
+            return
+        case .version(let value): version = value
+        }
         if Versions.isNewer(bundled, than: version) {
             tvAppUpdate = TVAppUpdate(brand: target.0, host: target.1, port: target.2, installed: version, bundled: bundled)
         } else {
@@ -2275,6 +2287,21 @@ final class PhoneModel: ObservableObject {
         if hasTV, tv?.host == host, step == .output {
             store.save(true, for: StoreKey.setupComplete)
         }
+    }
+
+    /// Samsung TV'de CouchSubs yok (sessiz sürüm denetiminde `vd_applist` ya da bekçide TV'nin kurulu uygulama listesi):
+    /// uygulama güncelleme sırasında ya da elle silinmiş (#1158). Önceden "kurulu" kaydı kalıyordu: Ayarlar sürümü
+    /// gösteriyor, bekçi listesiz açmayı deniyor, ana ekran kurulumu önermiyordu. Kayıt silinir, ana ekran kurulumu önerir.
+    /// Mac, Windows ve Android ile aynı.
+    func samsungAppMissing(host: String) {
+        SamsungAppKnowledge.shared.forget(host: host)
+        if let installed = installedTVApp, installed.brand == .samsung, SamsungAppKnowledge.sameHost(installed.host, host) {
+            InstallLog.shared.write("Samsung \(host): TV'de CouchSubs yok; telefondaki \"kurulu\" kaydı (\(installed.version)) silindi.")
+            installedTVApp = nil
+            defaults.removeObject(forKey: StoreKey.tvAppInstalled)
+        }
+        if tvAppUpdate?.brand == .samsung, SamsungAppKnowledge.sameHost(tvAppUpdate?.host, host) { tvAppUpdate = nil }
+        if let tv, tv.brand == .samsung, SamsungAppKnowledge.sameHost(tv.host, host) { tvAppMissing = true }
     }
 
     private func saveInstalledTVApp(_ value: InstalledTVApp) {
