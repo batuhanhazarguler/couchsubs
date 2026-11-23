@@ -72,12 +72,9 @@ struct Main {
         for frame in manifest.frames {
             guard let image = Images.load(directory.appendingPathComponent(frame.file)) else { continue }
             let region = frame.cropRegion
-            let area = RegionCropper.crop(image, to: region)
-            let reading = try reader.readLines(area, deep: false)
-            // Açık zemindeki koyu yazı (`InkTone`): Android ve Windows seçimi bu işaretle koşar.
-            let dark = InkTone.sampler(area)
+            let reading = try reader.readLines(RegionCropper.crop(image, to: region), deep: false)
             var fixture = OcrFixture(id: frame.id, region: [region.left, region.top, region.right, region.bottom],
-                                     lines: reading.lines.map { OcrFixture.Line($0, dark: dark) })
+                                     lines: reading.lines.map(OcrFixture.Line.init))
             // Karede GTA 6 telefonu: ekranındaki satırlar altyazı hattına girmez (`ScreenPhoneCard.holds`).
             if let pose = GamePhoneGeometry.locate(image),
                GamePhoneTracker.plausible(pose.bounds, width: image.width, height: image.height) {
@@ -219,18 +216,12 @@ struct OcrFixture: Encodable {
         var box: [Double]?
         var confidence: Double?
         var words: [Word]?
-        /// Satır açık zeminde koyu yazı (`InkTone.isDarkOnLight`); değilse yazılmaz.
-        var dark: Bool?
 
-        init(_ line: TextLine) { self.init(line, dark: nil) }
-
-        init(_ line: TextLine, dark: ((TextBox) -> Bool)?) {
+        init(_ line: TextLine) {
             text = line.text
             box = line.box.map(OcrFixture.rounded)
             confidence = line.confidence.map { ($0 * 1000).rounded() / 1000 }
             words = line.words?.map { Word(text: $0.text, box: OcrFixture.rounded($0.box)) }
-            let tone = box.flatMap { values in dark?(TextBox(left: values[0], top: values[1], right: values[2], bottom: values[3])) }
-            self.dark = tone == true ? true : nil
         }
     }
     var id: String

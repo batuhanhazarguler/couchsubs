@@ -85,7 +85,9 @@ final class FrameReplayTests: XCTestCase {
 
     /// Kayıtlı okumalardaki `dark` işareti karenin gerçek pikselleriyle aynı (`InkTone.sampler`, altyazı hattının yolu):
     /// gerçek oyun karelerindeki altyazı satırlarının hiçbiri koyu yazı sayılmıyor (GTA 6, GTA V, RDR2, Elden Ring, AC
-    /// Shadows, pencere varyantları); yalnız açık zemindeki koyu yazı işaretli (GitHub #1124).
+    /// Shadows, pencere varyantları); yalnız açık zemindeki koyu yazı işaretli (GitHub #1124). Kayıt aracı (frame-regression
+    /// record) önceki etiketlerin çekirdeğiyle de derlendiği için işareti yazmaz: okumalar yeniden kaydedilince bu test
+    /// eksik işaretli satırları listeler, `"dark": true` elle geri konur.
     func testDarkInkMatchesPixels() throws {
         let manifest = try JSONDecoder().decode(Manifest.self, from: Data(contentsOf: Self.directory.appendingPathComponent("frames.json")))
         var mismatches: [String] = []
