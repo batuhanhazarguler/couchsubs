@@ -1029,6 +1029,8 @@ final class AppModel: ObservableObject {
             if game != nil { self?.packsForGame() }
         }
         gameChoice.onPublish = { [weak self] game, source in self?.gameAreas.follow(game: game, source: source) }
+        // Xbox'ta oyunun tanınmadığı ya da elle seçildiği günlükte tek satır (Windows, iPhone, Android ile aynı).
+        gameChoice.onLog = { SubtitleLog.write($0) }
         // Ayarlar'da oyun profili seçilince ya da yeni profil açılınca oynanan oyun o olur.
         gameAreas.onChoose = { [weak self] name in self?.gameChoice.choose(name) }
         // Jeton yenilenince (ya da çıkış yapılınca) Anahtarlık güncellenir.
@@ -2223,8 +2225,10 @@ final class AppModel: ObservableObject {
         if !demoMode {
             gameAreas.start()
             // Remote Play penceresinden okurken PS5 eşleşmesi olmayabilir; son oyun o zaman PS5 adı olmadan hatırlanır.
-            let consoleName = xbox.map { $0.name.isEmpty ? "Xbox" : $0.name } ?? (isXbox ? nil : console.map { $0.name.isEmpty ? $0.host : $0.name })
-            gameChoice.start(console: consoleName) { [weak self] in
+            // Xbox çalışan oyunu bildirmez: Xbox için son seçilen oyun (Xbox penceresinden okurken de) kendiliğinden
+            // kullanılır, hiç seçim yoksa Oyun karosu vurgulanır (`GameChoice.xboxNeedsGame`).
+            let consoleName = isXbox ? nil : console.map { $0.name.isEmpty ? $0.host : $0.name }
+            gameChoice.start(console: consoleName, xbox: isXbox) { [weak self] in
                 guard let self else { return false }
                 return self.settings.askGame && self.settings.sharePool
             }

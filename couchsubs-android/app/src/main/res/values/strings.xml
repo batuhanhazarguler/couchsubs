@@ -299,6 +299,7 @@
     <string name="game_ask_dont_ask">Sorma</string>
     <string name="game_played">Oynanan oyun</string>
     <string name="game_unknown">Bilinmiyor</string>
+    <string name="game_xbox_unknown_note">Xbox oynanan oyunu bildirmiyor; oyunu seçerseniz oyuna özel çeviri ve GTA 6 telefonu açılır.</string>
     <string name="game_change">Değiştir</string>
     <string name="area_profile_title">Bu oyunun alanları</string>
     <string name="area_profile_saved">Bu alanlar %1$s için kayıtlı.</string>

@@ -292,6 +292,7 @@
     <string name="game_ask_dont_ask">Don\'t ask</string>
     <string name="game_played">Played game</string>
     <string name="game_unknown">Not known</string>
+    <string name="game_xbox_unknown_note">Xbox doesn\'t report the game being played; choose the game to turn on game-specific translation and the GTA 6 phone.</string>
     <string name="game_change">Change</string>
     <string name="area_profile_title">Areas for this game</string>
     <string name="area_profile_saved">These areas are saved for %1$s.</string>

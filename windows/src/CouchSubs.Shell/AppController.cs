@@ -2767,11 +2767,20 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// <summary>"Hangi oyunu oynuyorsunuz?" kartı açık.</summary>
     public bool AskingGame { get => askingGame; private set => Set(ref askingGame, value); }
 
-    /// <summary>Bu PS5'te son seçilen oyun.</summary>
+    /// <summary>
+    /// Xbox'ta çeviri sürüyor ve oyun bilinmiyor: Xbox oynanan oyunu bildirmez; ana ekranda Oyun karosu vurgulanır ve
+    /// "oyunu seçin" notu görünür (zorlayıcı kart açılmaz). Oyun seçilince kalkar (Mac/iPhone GameChoice.xboxNeedsGame,
+    /// Android LiveStatus.xboxNeedsGame ile aynı).
+    /// </summary>
+    public bool XboxNeedsGame { get => xboxNeedsGame; private set => Set(ref xboxNeedsGame, value); }
+    private bool xboxNeedsGame;
+
+    /// <summary>Bu PS5'te (Xbox'ta Xbox için) son seçilen oyun.</summary>
     public string? LastPlayedGame =>
         GameConsoleName is { } name && store.Load<Dictionary<string, string>>(StoreKeys.LastGames) is { } saved ? saved.GetValueOrDefault(name) : null;
 
-    private string? GameConsoleName => console is null ? null : string.IsNullOrEmpty(console.Name) ? console.Host : console.Name;
+    private string? GameConsoleName => IsXbox ? GameSense.XboxConsole
+        : console is null ? null : string.IsNullOrEmpty(console.Name) ? console.Host : console.Name;
 
     /// <summary>Kartın önerileri: son oynanan, kurulu paketlerin oyunları ve popüler oyunlar.</summary>
     public IReadOnlyList<string> GameSuggestions(string query) =>
@@ -2782,6 +2791,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         if (RunningGame.Named(name)?.Name is not { } clean) return;
         gameSense.Choose(clean);
+        if (IsXbox && session is not null && !demoMode) SubtitleLog.Write(GameSense.XboxChosenLog(clean));
         if (GameConsoleName is { } consoleName)
         {
             var saved = store.Load<Dictionary<string, string>>(StoreKeys.LastGames) ?? new Dictionary<string, string>();
@@ -2985,6 +2995,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         services.GamePacks?.LimitToGame(gameSense.PackLimit);
         var current = gameSense.Current;
         PlayedGame = current?.Name;
+        XboxNeedsGame = IsXbox && session is not null && !demoMode && current is null;
         FollowGameAreas();
         if (current == publishedGame) return;
         // Yeni oyunda aynı HUD satırının çevirisi ve paketi farklı olabilir.
@@ -2999,6 +3010,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private void StartGameSense()
     {
         gameSense.StartSession();
+        // Xbox çalışan oyunu bildirmez: Xbox için son seçilen oyun kendiliğinden kullanılır; yoksa günlükte tek satır.
+        if (IsXbox) SubtitleLog.Write(gameSense.StartXbox(LastPlayedGame));
         publishedGame = null;
         AskingGame = false;
         PublishGame();
@@ -3029,6 +3042,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         gameAsk?.Dispose();
         gameAsk = null;
         AskingGame = false;
+        XboxNeedsGame = false;
     }
 
     /// <summary>Paketler yalnız İngilizce→Türkçede ve ayar açıkken kullanılır.</summary>

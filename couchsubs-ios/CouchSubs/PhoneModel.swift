@@ -368,6 +368,8 @@ final class PhoneModel: ObservableObject {
             if game != nil { self?.onGameStarted() }
         }
         gameChoice.onPublish = { [weak self] game, source in self?.gameAreas.follow(game: game, source: source) }
+        // Xbox'ta oyunun tanınmadığı ya da elle seçildiği günlükte tek satır (Mac, Windows, Android ile aynı).
+        gameChoice.onLog = { SubtitleLog.write($0) }
         // Ayarlar'da oyun profili seçilince ya da yeni profil açılınca oynanan oyun o olur.
         gameAreas.onChoose = { [weak self] name in self?.gameChoice.choose(name) }
         gameChoice.packTitles = { [weak self] in GameCatalog.packGames(self?.installedPacks ?? []) }
@@ -729,7 +731,9 @@ final class PhoneModel: ObservableObject {
         // Deneme karelerinde oyun yoktur: oyun sorulmaz, oyuna göre alan uygulanmaz.
         if !demoMode {
             gameAreas.start()
-            gameChoice.start(console: consoleName) { [weak self] in
+            // Xbox çalışan oyunu bildirmez: Xbox için son seçilen oyun kendiliğinden kullanılır, hiç seçim yoksa Oyun
+            // satırı vurgulanır (`GameChoice.xboxNeedsGame`).
+            gameChoice.start(console: consoleName, xbox: xbox != nil) { [weak self] in
                 guard let self else { return false }
                 return self.settings.askGame && self.settings.sharePool
             }

@@ -62,6 +62,36 @@ final class GameSenseTests: XCTestCase {
         XCTAssertEqual(sense.packLimit, "GTA 5")
     }
 
+    /// Xbox çalışan oyunu bildirmez: Xbox için son seçilen oyun kendiliğinden kullanılır (hatırlanan; değiştirilebilir),
+    /// hiç seçim yoksa oyun bilinmez ve günlüğe tek satır yazılır (Windows GameSenseTests, Android GameSenseTest ile aynı).
+    func testXboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown() {
+        let fresh = GameSense()
+        fresh.startSession()
+        XCTAssertEqual(fresh.startXbox(lastChosen: nil), "Xbox: oyun tanınmadı, oyuna özel okumalar (telefon) kapalı")
+        XCTAssertNil(fresh.current)
+        fresh.choose("Grand Theft Auto VI")
+        XCTAssertEqual(GameName.key(fresh.current?.name ?? ""), "gta 6")
+        XCTAssertEqual(GameSense.xboxChosenLog("Grand Theft Auto VI"), "Xbox: oyun elle seçildi: Grand Theft Auto VI")
+
+        let returning = GameSense()
+        returning.startSession()
+        XCTAssertEqual(returning.startXbox(lastChosen: "Grand Theft Auto VI"), "Xbox: son seçilen oyun kullanılıyor: Grand Theft Auto VI")
+        XCTAssertEqual(returning.current?.name, "Grand Theft Auto VI")
+        XCTAssertEqual(returning.source, .remembered)
+        XCTAssertFalse(returning.shouldAsk(runningFor: 600, enabled: true))
+        // Kullanıcı değiştirebilir.
+        returning.choose("Red Dead Redemption 2")
+        XCTAssertEqual(returning.current?.name, "Red Dead Redemption 2")
+        XCTAssertEqual(returning.source, .user)
+
+        // Bu çalışmada zaten seçilmiş oyun kayıtlı olanın önüne geçer.
+        let running = GameSense()
+        running.choose("Elden Ring")
+        running.startSession()
+        running.startXbox(lastChosen: "Grand Theft Auto VI")
+        XCTAssertEqual(running.current?.name, "Elden Ring")
+    }
+
     /// #353: canlı listedeki RDR2 ve Spider-Man 2 asıl paketle "(ek satırlar)" paketi olarak iki kez görünüyordu; tek karo
     /// olur, satırlar toplanır, iki kimlik birlikte açılıp kapanır. Asıl paketi olmayan ek paket kendi karosunda kalır.
     func testPackShelfFoldsExtraLinesIntoMainPack() {

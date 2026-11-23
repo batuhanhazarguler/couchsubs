@@ -181,6 +181,25 @@ CAPABILITIES = {
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/TranslationService.kt", r"skipForMenu\(\)"),
         ("android", _DROID_TESTS + "QuietReadsTest.kt", r"class QuietReadsTest"),
     ],
+    # Xbox çalışan oyunu bildirmez: oyun seçilmezse GTA 6 telefonu hiç açılmıyordu (X'te iki kullanıcı). Xbox için son seçilen
+    # oyun kendiliğinden kullanılır, hiç seçim yoksa Oyun karosu vurgulanır ve not görünür; günlükte tek satır.
+    "Xbox'ta son seçilen oyun ve oyun bilinmiyorsa Oyun karosu notu (xboxNeedsGame)": [
+        ("mac", _CORE + "GameSense.swift", r"public func startXbox\(lastChosen:"),
+        ("mac", _CORE + "GameChoice.swift", r"sense\.startXbox\(lastChosen: lastPlayed\)"),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"gameChoice\.start\(console: consoleName, xbox: isXbox\)"),
+        ("mac", "mac/CouchSubs/UI/Yeni/HomeStatus.swift", r"choice\.xboxNeedsGame"),
+        ("mac", _CORE_TESTS + "GameSenseTests.swift", r"func testXboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown\("),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"gameChoice\.start\(console: consoleName, xbox: xbox != nil\)"),
+        ("ios", "couchsubs-ios/CouchSubs/UI/GameAsk.swift", r"choice\.xboxNeedsGame"),
+        ("windows", _WIN + "GameSense.cs", r"public string StartXbox\("),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"gameSense\.StartXbox\(LastPlayedGame\)"),
+        ("windows", "windows/src/CouchSubs.App/Views/MainView.xaml.cs", r"controller\.XboxNeedsGame"),
+        ("windows", _WIN_TESTS + "GameSenseTests.cs", r"void XboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown\("),
+        ("android", _DROID + "GameSense.kt", r"fun startXbox\(lastChosen:"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/PlayedGame.kt", r"sense\.startXbox\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/GameAskCard.kt", r"status\.xboxNeedsGame"),
+        ("android", _DROID_TESTS + "GameSenseTest.kt", r"fun xboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown\("),
+    ],
 }
 
 

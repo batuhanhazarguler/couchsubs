@@ -15838,6 +15838,7 @@
     "Not Connected": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not Connected"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bağlı Değil"}}}},
     "Waiting": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Waiting"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bekleniyor"}}}},
     "Unknown Game": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unknown Game"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bilinmeyen Oyun"}}}},
+    "Xbox doesn't report the game being played; choose the game to turn on game-specific translation and the GTA 6 phone.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Xbox doesn't report the game being played; choose the game to turn on game-specific translation and the GTA 6 phone."}}, "tr": {"stringUnit": {"state": "translated", "value": "Xbox oynanan oyunu bildirmiyor; oyunu seçerseniz oyuna özel çeviri ve GTA 6 telefonu açılır."}}}},
     "Not Recognized": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not Recognized"}}, "tr": {"stringUnit": {"state": "translated", "value": "Tanınmadı"}}}},
     "LIVE": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "LIVE"}}, "tr": {"stringUnit": {"state": "translated", "value": "CANLI"}}}},
     "STOPPED": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "STOPPED"}}, "tr": {"stringUnit": {"state": "translated", "value": "DURDU"}}}},

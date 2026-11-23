@@ -128,6 +128,31 @@ public final class GameSense: @unchecked Sendable {
         lock.withLock { asked = true }
     }
 
+    /// Xbox'ta son seçilen oyunun saklandığı ad (`lastGames` kaydında; Xbox'un adından bağımsız, Xbox'a özel).
+    public static let xboxConsole = "Xbox"
+
+    /// Xbox çevirisi başladı. Xbox çalışan oyunu bildirmez: oyun başka yoldan bilinmiyorsa kullanıcının Xbox için son
+    /// seçtiği oyun (`lastChosen`) kendiliğinden kullanılır (`remembered`; ana ekranda görünür, değiştirilebilir). Hiç
+    /// seçim yoksa oyuna özel okumalar (GTA 6 telefonu) kapalı kalır. Günlüğe yazılacak tek satırı döndürür (Windows,
+    /// Android ile aynı metin).
+    @discardableResult
+    public func startXbox(lastChosen: String?) -> String {
+        lock.withLock {
+            if console == nil, chosen == nil, pack == nil, let game = RunningGame(name: lastChosen) {
+                chosen = game
+                carried = true
+                chosenWhileRunning = true
+                asked = true
+            }
+            guard let name = (console ?? chosen ?? pack)?.name else { return Self.xboxUnknownLog }
+            return Self.xboxRecalledLog(name)
+        }
+    }
+
+    public static let xboxUnknownLog = "Xbox: oyun tanınmadı, oyuna özel okumalar (telefon) kapalı"
+    public static func xboxRecalledLog(_ name: String) -> String { "Xbox: son seçilen oyun kullanılıyor: \(name)" }
+    public static func xboxChosenLog(_ name: String) -> String { "Xbox: oyun elle seçildi: \(name)" }
+
     /// Kimliğiyle toplanmış otomatik paket ("pool-ppsa01234", "pool-cusa00419-00") oyunun kimliğini taşır.
     static func titleId(fromPack id: String) -> String? {
         guard id.hasPrefix("pool-") else { return nil }

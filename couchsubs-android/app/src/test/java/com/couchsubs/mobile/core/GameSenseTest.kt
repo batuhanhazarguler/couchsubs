@@ -9,6 +9,39 @@ import org.junit.Test
 
 /** Oynanan oyunun tanınması ve oyun adı anahtarı (sunucudaki server/pool/test/pool.test.js ile aynı örnekler). */
 class GameSenseTest {
+    /**
+     * Xbox çalışan oyunu bildirmez: Xbox için son seçilen oyun kendiliğinden kullanılır (hatırlanan; değiştirilebilir), hiç
+     * seçim yoksa oyun bilinmez ve günlüğe tek satır yazılır (Windows GameSenseTests, Mac/iPhone GameSenseTests ile aynı).
+     */
+    @Test
+    fun xboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown() {
+        val fresh = GameSense()
+        fresh.startSession()
+        assertEquals("Xbox: oyun tanınmadı, oyuna özel okumalar (telefon) kapalı", fresh.startXbox(null))
+        assertNull(fresh.current)
+        fresh.choose("Grand Theft Auto VI")
+        assertEquals("gta 6", GameName.key(fresh.current?.name ?: ""))
+        assertEquals("Xbox: oyun elle seçildi: Grand Theft Auto VI", GameSense.xboxChosenLog("Grand Theft Auto VI"))
+
+        val returning = GameSense()
+        returning.startSession()
+        assertEquals("Xbox: son seçilen oyun kullanılıyor: Grand Theft Auto VI", returning.startXbox("Grand Theft Auto VI"))
+        assertEquals("Grand Theft Auto VI", returning.current?.name)
+        assertEquals(GameSense.Source.REMEMBERED, returning.source)
+        assertFalse(returning.shouldAsk(600_000, true))
+        // Kullanıcı değiştirebilir.
+        returning.choose("Red Dead Redemption 2")
+        assertEquals("Red Dead Redemption 2", returning.current?.name)
+        assertEquals(GameSense.Source.USER, returning.source)
+
+        // Bu çalışmada zaten seçilmiş oyun kayıtlı olanın önüne geçer.
+        val running = GameSense()
+        running.choose("Elden Ring")
+        running.startSession()
+        running.startXbox("Grand Theft Auto VI")
+        assertEquals("Elden Ring", running.current?.name)
+    }
+
     @Test
     fun gameNameKeyMatchesServer() {
         for (name in listOf("Grand Theft Auto VI", "GTA 6", "gta vi", "GTA6", "Grand Theft Auto VI™")) assertEquals(name, "gta 6", GameName.key(name))
