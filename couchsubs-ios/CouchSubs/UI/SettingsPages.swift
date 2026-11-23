@@ -726,9 +726,9 @@ private struct OutputsPage: View {
     /// Marka adı çevrilmez (katalog anahtarı değil; Android'deki pairedTvDetail ile aynı).
     private func brandName(_ brand: TVBrand) -> String {
         switch brand {
-        case .lg: String(verbatim: "LG")
-        case .samsung: String(verbatim: "Samsung")
-        case .androidTV: String(verbatim: "Android TV")
+        case .lg: "LG"
+        case .samsung: "Samsung"
+        case .androidTV: "Android TV"
         }
     }
 
