@@ -6,14 +6,18 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
-- **Ekranı çevir:** Çeviri özgün yazının yerinde ve boyunda çiziliyor; tuş simgeleri ve fotoğraflar açıkta kalıyor. Daha önce görülen yazıların çevirisi beklemeden anında çıkıyor (TV uygulaması 0.9.85).
-- **TV'nin adresi değişince:** TV ağda yeni adres alırsa kendiliğinden yeniden bulunuyor. Ayarlar'dan TV'yi Değiştir ya da Eşleşmeyi Kaldır seçebilirsiniz.
-- **LG'de güncelleme:** Güncellemeden sonra TV'de eski sürüm çalışmayı sürdürmüyor (TV uygulaması 0.9.88).
-- **LG'de ilk oturumda kararma:** Çeviri ilk kez başladığında ekranın kararması giderildi (TV uygulaması 0.9.87).
-- **PS5'in Türkçe menü yazıları** altyazı sanılıp çevrilmiyor.
-- **Açık mavi kâğıttaki ilan** altyazı sanılmıyor.
-- **GTA 6 telefon paneli:** Yazı boyu ve yeri el titremesiyle değişmiyor.
-- **Dublajda ses cinsiyeti:** Adı tanınmayan erkek karakter kadın sesiyle okunmuyor; tanınmayan karakterin sesini Ayarlar'dan seçebilirsiniz.
+- **Altyazı "Üstünde":** Türkçe çeviri İngilizce satırın üstüne binmiyor; "Örtsün"de yazı boyu sabit, uzun satırda küçülmüyor (TV uygulaması 0.9.89).
+- **Ekranı çevir:** Ekrana bir kez yazılan çeviri oturum boyunca aynı boy, kalınlık ve renkte kalıyor. Özgün yazı kalkınca çevirisi de hemen kalkıyor, menü değişince eski çeviri ekranda kalmıyor.
+- **Windows yayın penceresi:** Ekran yazısı çevirisi oyundaki kendi yerinde çiziliyor, alt alta liste olmuyor.
+- **Oyun takılması:** CouchSubs açıkken oyun takılmıyor; kareler gerektiği sıklıkta okunuyor (Windows, Mac).
+- **Samsung'da silinen TV uygulaması:** TV'den silinen uygulama "kurulu" görünmüyor, yeniden kurulum öneriliyor. Kurulum bağlantısı reddedilince TV'de hangi ayarın yapılacağı tek satırda yazıyor.
+- **PS5'in adresi değişince:** PS5 ağda yeni IP alırsa yeni adreste bulunuyor, "bulunamadı, yeniden bağlanıyor" döngüsüne girmiyor. Ayarlar › Konsol'da "IP Adresi Gir" ile adresi elle de yazabilirsiniz.
+- **Sıkışık altyazı:** Konuşma altyazısı TV'de ve tüm ekranlarda yatayda sıkıştırılmıyor ve küçülmüyor; ekran yazısı çevirisi en çok biraz daraltılıyor (TV uygulaması 0.9.90).
+- **"Üstünde"/"Altında" boşluğu:** Çevirinin zemini İngilizce satıra değmiyor, araya yeniden boşluk kondu (TV uygulaması 0.9.91).
+- **Reklam şeridi:** Çeviri sürerken ana penceredeki alt reklam şeridi gizleniyor, çeviri durunca geri geliyor.
+- **Windows'ta PS5/Xbox akışı:** CouchSubs yeniden normal öncelikte çalışıyor; görüntü akışı yavaşlayıp kopmuyor.
+
+**beta.90'da gelenler:** ekran yazısı çevirisinin özgün yazının yerinde çizilmesi (TV uygulaması 0.9.85), TV'nin adresi değişince yeniden bulunması, LG'de güncellemeden sonra eski sürüm (TV uygulaması 0.9.88) ve ilk oturumda kararma (TV uygulaması 0.9.87), PS5 Türkçe menü yazıları, açık mavi kâğıttaki ilan, GTA 6 telefon paneli, dublajda ses cinsiyeti.
 
 **beta.89'da gelenler:** LG'de 2 sn aralıkla kararma (TV uygulaması 0.9.82), Android TV'de çökme ve "Uygulama içinde" modu, LG "TV bağlantıyı reddetti" uyarısı, Xbox'ta oyun seçimi, açık zeminde koyu yazı, eksik Türkçe metinler.
 
