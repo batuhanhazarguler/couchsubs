@@ -96,29 +96,9 @@ public static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     static int RunApp()
     {
-        LowerPriority();
         var app = new App();
         app.InitializeComponent();
         return app.Run();
-    }
-
-    /// <summary>
-    /// CouchSubs oyunla işlemciyi paylaşır (Remote Play ve Xbox uygulamasının görüntü çözücüsü aynı bilgisayarda): süreç
-    /// "normalin altı" öncelikte çalışır, işlemci dolunca önce oyun çalışır. X'te iki kullanıcı CouchSubs açıkken oyunun
-    /// takıldığını bildirdi. Sonradan açılan alt süreçler (Xbox oynatıcısının WebView2'si) önceliği devralır; seslendirme
-    /// sunucusu zaten bu öncelikte açılıyor (Mac'te okuma ve yakalama kuyrukları aynı amaçla düşük öncelikte).
-    /// </summary>
-    static void LowerPriority()
-    {
-        try
-        {
-            using var process = System.Diagnostics.Process.GetCurrentProcess();
-            process.PriorityClass = System.Diagnostics.ProcessPriorityClass.BelowNormal;
-        }
-        catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException)
-        {
-            // Öncelik değiştirilemedi (kısıtlı hesap): uygulama normal öncelikte sürer.
-        }
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
