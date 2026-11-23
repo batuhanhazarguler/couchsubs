@@ -1449,4 +1449,15 @@ public class AiTranslatorTests
         public Task<string> TranslateAsync(string text, CancellationToken cancellationToken = default) =>
             throw new TranslatorException(TranslatorStatus.EngineFailed);
     }
+
+    /// <summary>Ekran çevirisi isteğinde yazı başına karakter bütçesi; küfür yumuşatılmaz (Mac ve Android ile aynı).</summary>
+    [Fact]
+    public void ScreenRequestCarriesCharacterBudget()
+    {
+        Assert.Equal([4, 18, 29], AiRequest.ScreenLimits(["MAP", "SET DESTINATION", "Keep an eye on the party."]));
+        var message = AiRequest.UserMessage(["MAP", "SET DESTINATION"], [], limits: [4, 18]);
+        Assert.Contains(AiRequest.LimitsNote + "\n[4,18]", message);
+        Assert.Contains("never censor or soften profanity", AiRequest.LimitsNote);
+        Assert.DoesNotContain(AiRequest.LimitsNote, AiRequest.UserMessage(["MAP"], []));
+    }
 }

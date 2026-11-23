@@ -319,8 +319,18 @@ public enum AIRequest {
 
     /// Kullanıcı iletisi: önceki satırlar (yalnız bağlam) ve çevrilecek cümleler. `names`: konuşan etiketlerinden
     /// öğrenilip cümlelerde geçen adlar; model "Price"ı "Fiyat" diye çevirmesin diye adıyla söylenir (#287).
+    /// Ekran çevirisinde her yazının en çok karakter sayısı: özgün uzunluğun %15 fazlası (en az 4). Türkçe çoğu zaman
+    /// İngilizceden uzundur; çeviri özgün yazının yerine, aynı boyda sığsın diye kısa söyleyiş istenir (Windows ve Android
+    /// ile aynı).
+    public static func screenLimits(_ sentences: [String]) -> [Int] {
+        sentences.map { max(4, Int((Double($0.count) * 1.15).rounded(.up))) }
+    }
+
+    /// Karakter sınırlarının istemdeki açıklaması (küfür kuralı: sansür ve yumuşatma yok).
+    public static let limitsNote = "On-screen texts (menus, objectives, labels): each Turkish translation must fit in the place of the English text. Use at most the number of characters given for it in this JSON array, in the same order; choose shorter Turkish wording, but keep the meaning and never censor or soften profanity."
+
     public static func userMessage(sentences: [String], context: [AIContextLine], game: String? = nil,
-                                   names: [String] = []) -> String {
+                                   names: [String] = [], limits: [Int]? = nil) -> String {
         var parts: [String] = []
         if let game, !game.isEmpty { parts.append("Game: \(game)") }
         if !names.isEmpty {
@@ -333,6 +343,9 @@ public enum AIRequest {
                 if let translation = line.translation { lines.append("Turkish: \(translation)") }
             }
             parts.append(lines.joined(separator: "\n"))
+        }
+        if let limits, limits.count == sentences.count {
+            parts.append(limitsNote + "\n[" + limits.map(String.init).joined(separator: ",") + "]")
         }
         let list = (try? JSONSerialization.data(withJSONObject: sentences, options: [.withoutEscapingSlashes]))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
@@ -354,9 +367,9 @@ public enum AIRequest {
     public static func make(provider: AIProvider, key: String, model: AIModel, sentences: [String],
                             context: [AIContextLine], game: String? = nil, server: LocalAIServer? = nil,
                             maxOutputTokens: Int = AIRequest.maxOutputTokens, thinkingOff: Bool = true,
-                            names: [String] = [], instruction: String? = nil) -> URLRequest {
+                            names: [String] = [], instruction: String? = nil, limits: [Int]? = nil) -> URLRequest {
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = userMessage(sentences: sentences, context: context, game: game, names: names)
+        let user = userMessage(sentences: sentences, context: context, game: game, names: names, limits: limits)
         let system = systemPromptWith(instruction)
         var request: URLRequest
         var body: [String: Any]
@@ -856,7 +869,7 @@ public final class AITranslationCore: @unchecked Sendable {
                 let translated = try await perform(count: sentences.count, session: screenSession) { thinkingOff in
                     AIRequest.make(provider: provider, key: key, model: model, sentences: sentences, context: [], game: game,
                                    server: server, maxOutputTokens: AIRequest.screenOutputTokens, thinkingOff: thinkingOff,
-                                   instruction: instruction)
+                                   instruction: instruction, limits: AIRequest.screenLimits(sentences))
                 }
                 setFailure(nil)
                 for (index, translation) in zip(chunk, translated) {

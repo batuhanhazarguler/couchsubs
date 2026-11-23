@@ -79,8 +79,18 @@ public static class AiRequest
     /// Kullanıcı iletisi: önceki satırlar (yalnız bağlam) ve çevrilecek cümleler. <paramref name="names"/>: konuşan
     /// etiketlerinden öğrenilip cümlelerde geçen adlar; model "Price"ı "Fiyat" diye çevirmesin diye adıyla söylenir (#287).
     /// </summary>
+    /// <summary>
+    /// Ekran çevirisinde her yazının en çok karakter sayısı: özgün uzunluğun %15 fazlası (en az 4); çeviri özgün yazının
+    /// yerine, aynı boyda sığsın diye kısa söyleyiş istenir (Mac ve Android ile aynı).
+    /// </summary>
+    public static IReadOnlyList<int> ScreenLimits(IReadOnlyList<string> sentences) =>
+        [.. sentences.Select(s => Math.Max(4, (int)Math.Ceiling(s.Length * 1.15)))];
+
+    /// <summary>Karakter sınırlarının istemdeki açıklaması (küfür kuralı: sansür ve yumuşatma yok).</summary>
+    public const string LimitsNote = "On-screen texts (menus, objectives, labels): each Turkish translation must fit in the place of the English text. Use at most the number of characters given for it in this JSON array, in the same order; choose shorter Turkish wording, but keep the meaning and never censor or soften profanity.";
+
     public static string UserMessage(IReadOnlyList<string> sentences, IReadOnlyList<AiContextLine> context, string? game = null,
-                                     IReadOnlyList<string>? names = null)
+                                     IReadOnlyList<string>? names = null, IReadOnlyList<int>? limits = null)
     {
         var parts = new List<string>();
         if (!string.IsNullOrEmpty(game)) parts.Add($"Game: {game}");
@@ -96,6 +106,8 @@ public static class AiRequest
             }
             parts.Add(string.Join("\n", lines));
         }
+        if (limits is not null && limits.Count == sentences.Count)
+            parts.Add(LimitsNote + "\n[" + string.Join(",", limits) + "]");
         var list = new JsonArray([.. sentences.Select(s => (JsonNode?)JsonValue.Create(s))]).ToJsonString(Compact);
         parts.Add($"Translate each string in this JSON array into Turkish. Reply with only a JSON array of {sentences.Count} " +
                   $"Turkish strings in the same order.\n{list}");
@@ -119,10 +131,11 @@ public static class AiRequest
     public static HttpRequestMessage Build(AiProvider provider, string key, AiModel model, IReadOnlyList<string> sentences,
                                            IReadOnlyList<AiContextLine> context, string? game = null, LocalAiServer? server = null,
                                            int maxOutputTokens = MaxOutputTokens, bool thinkingOff = true,
-                                           IReadOnlyList<string>? names = null, string? instruction = null)
+                                           IReadOnlyList<string>? names = null, string? instruction = null,
+                                           IReadOnlyList<int>? limits = null)
     {
         key = key.Trim();
-        var user = UserMessage(sentences, context, game, names);
+        var user = UserMessage(sentences, context, game, names, limits);
         var system = SystemPromptWith(instruction);
         HttpRequestMessage request;
         JsonObject body;
@@ -746,7 +759,8 @@ public sealed class AiTranslator : ITextTranslator, IOnlineTranslator
             {
                 var sentences = chunk.Select(i => texts[i]).ToList();
                 var translated = await PerformAsync(thinkingOff => AiRequest.Build(Provider, _key, Model, sentences, [], game, Server,
-                    maxOutputTokens: AiRequest.ScreenOutputTokens, thinkingOff: thinkingOff, instruction: _instruction), _screenHttp, sentences.Count, cancellationToken).ConfigureAwait(false);
+                    maxOutputTokens: AiRequest.ScreenOutputTokens, thinkingOff: thinkingOff, instruction: _instruction,
+                    limits: AiRequest.ScreenLimits(sentences)), _screenHttp, sentences.Count, cancellationToken).ConfigureAwait(false);
                 Report(null);
                 for (var i = 0; i < chunk.Count; i++)
                 {
