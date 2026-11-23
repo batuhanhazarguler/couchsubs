@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.couchsubs.mobile.core
 
+import kotlin.math.max
+import kotlin.math.min
+
 /**
  * "Ekranı çevir": karenin tamamı bir kez okunur, yazılar yerlerine göre gruplara ayrılır (menü, görev paneli, bilgi
  * kutusu, altyazı...) ve hepsi tek istekte çevrilir. TV ve telefon her çeviriyi kendi İngilizce yazısının üstüne, o
@@ -19,6 +22,8 @@ object ScreenTranslation {
         val icons: List<List<IconSlot>>? = null,
         /** GTA 6 telefonunun ekranındaki grubun rolü ve düz ekrandaki yeri ([PhoneChat]); telefon dışındaysa null. */
         val phone: ScreenPhoneCard.Placement? = null,
+        /** Özgün yazının satır sayısı; çeviri de bu kadar satıra sığdırılır (TV satır aralığını buna göre seçer). */
+        val rows: Int = 1,
     )
 
     data class Item(
@@ -47,6 +52,10 @@ object ScreenTranslation {
          * eski TV kutuları yerinde çizer (Mac ile aynı).
          */
         val panel: ScreenPhoneCard.PanelPart? = null,
+        /** Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; [ScreenFit]); null ise bilinmiyor. */
+        val room: TextBox? = null,
+        /** Özgün yazının satır sayısı ([Group.rows]). */
+        val rows: Int = 1,
     ) {
         /** Birden çok parça var: satır satır, sola yaslı gösterilir. */
         val paragraphs: Boolean get() = translation.contains('\n')
@@ -72,7 +81,7 @@ object ScreenTranslation {
         val all = withImages(groups(reading, wholeScreen = true, handset = phone, frame = frame, color = color), frame)
         val chat = chatTitle(all)
         for (group in all) {
-            if (cancelled()) return present(items, phone, phoneCard, panelScale)
+            if (cancelled()) return ScreenFit.fitted(present(items, phone, phoneCard, panelScale), frame, color)
             // Simgeler çeviride uydurma adlarla korunur (IconText); sözlükteki kısa etiketler çevirmene gitmez, fiyatlar
             // adla korunur (PriceText).
             val prepared = group.paragraphs.map { IconText.protect(it) }
@@ -84,10 +93,10 @@ object ScreenTranslation {
             }
             val item = item(group, prepared, translated, keepUnchanged = phone != null) ?: continue
             items.add(styled(item, frame, color))
-            val shown = present(items, phone, phoneCard, panelScale)
+            val shown = ScreenFit.fitted(present(items, phone, phoneCard, panelScale), frame, color)
             if (shown.isNotEmpty()) progress(shown)
         }
-        return present(items, phone, phoneCard, panelScale)
+        return ScreenFit.fitted(present(items, phone, phoneCard, panelScale), frame, color)
     }
 
     /**
@@ -136,7 +145,7 @@ object ScreenTranslation {
             next += count
             item(group, prepared[index], translated, keepUnchanged = phone != null)?.let { items.add(styled(it, frame, color)) }
         }
-        val shown = present(items, phone, phoneCard, panelScale)
+        val shown = ScreenFit.fitted(present(items, phone, phoneCard, panelScale), frame, color)
         if (shown.isNotEmpty()) progress(shown)
         return shown
     }
@@ -352,7 +361,7 @@ object ScreenTranslation {
         if (!changed && !keepUnchanged) return null
         val rendered = IconText.render(texts.joinToString("\n"), slots)
         return Item(group.paragraphs.joinToString("\n") { IconText.plain(it) }, rendered.text, group.box, group.lineHeight,
-            rendered.icons.takeIf { it.isNotEmpty() }, unchanged = !changed, phone = group.phone)
+            rendered.icons.takeIf { it.isNotEmpty() }, unchanged = !changed, phone = group.phone, rows = group.rows)
     }
 
     /**
@@ -673,8 +682,20 @@ object ScreenTranslation {
             val heights = group.map { it.box!!.bottom - it.box!!.top }.sorted()
             val box = group.drop(1).fold(group[0].box!!) { total, line -> total.union(line.box!!) }
             val icons = ScreenText.paragraphIcons(group)
-            Group(ScreenText.paragraphs(group), box, heights[heights.size / 2], if (icons.any { it.isNotEmpty() }) icons else null)
+            Group(ScreenText.paragraphs(group), box, heights[heights.size / 2], if (icons.any { it.isNotEmpty() }) icons else null,
+                rows = rows(group))
         }
+    }
+
+    /** Satırların kaç ayrı satır olduğu: yazı tanıma aynı satırı iki parça okuyabilir (yan yana parçalar tek satırdır). */
+    internal fun rows(lines: List<TextLine>): Int {
+        val rows = mutableListOf<TextBox>()
+        for (box in lines.mapNotNull { it.box }) {
+            if (rows.none { other ->
+                    min(other.bottom, box.bottom) - max(other.top, box.top) >= 0.5 * min(other.bottom - other.top, box.bottom - box.top)
+                }) rows.add(box)
+        }
+        return max(1, rows.size)
     }
 
     /** Satırın ve sözcüklerinin fiyat düzeltmesi (uzunluk değişmez). */

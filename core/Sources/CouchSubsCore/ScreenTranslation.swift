@@ -19,6 +19,8 @@ public enum ScreenTranslation {
         public var icons: [[IconSlot]]? = nil
         /// GTA 6 telefonunun ekranındaki grubun rolü ve düz ekrandaki yeri (`PhoneChat`); telefon dışındaysa nil.
         var phone: ScreenPhoneCard.Placement? = nil
+        /// Özgün yazının satır sayısı; çeviri de bu kadar satıra sığdırılır (TV satır aralığını buna göre seçer).
+        public var rows = 1
     }
 
     public struct Item: Equatable, Sendable {
@@ -42,6 +44,10 @@ public enum ScreenTranslation {
         /// Telefonun yanındaki sohbet panelinin parçası (zemin, kişi adı, karşı tarafın ya da oyuncunun mesajı, not);
         /// yeni çiziciler paneli bunlarla akışta çizer (`ScreenPhoneCard.PanelPart`), eski TV kutuları yerinde çizer.
         public var panel: ScreenPhoneCard.PanelPart?
+        /// Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; `ScreenFit`); nil ise bilinmiyor.
+        public var room: TextBox?
+        /// Özgün yazının satır sayısı (`Group.rows`).
+        public var rows = 1
 
         public init(source: String, translation: String, box: TextBox, lineHeight: Double, icons: [IconPlacement]? = nil) {
             self.source = source
@@ -93,10 +99,10 @@ public enum ScreenTranslation {
             }
             guard let item = item(group, prepared, translated, keepUnchanged: phone != nil) else { continue }
             items.append(styled(item, frame: frame))
-            let shown = present(items, phone: phone, card: phoneCard, textScale: panelScale)
+            let shown = ScreenFit.fitted(present(items, phone: phone, card: phoneCard, textScale: panelScale), frame: frame)
             if !shown.isEmpty { progress(shown) }
         }
-        return present(items, phone: phone, card: phoneCard, textScale: panelScale)
+        return ScreenFit.fitted(present(items, phone: phone, card: phoneCard, textScale: panelScale), frame: frame)
     }
 
     /// Çevirmen parçaları tek istekte çevirebiliyorsa (yapay zekâ) ekranın bütün parçaları birlikte gider ve sonuç bir
@@ -138,7 +144,7 @@ public enum ScreenTranslation {
                 items.append(styled(item, frame: frame))
             }
         }
-        let shown = present(items, phone: phone, card: phoneCard, textScale: panelScale)
+        let shown = ScreenFit.fitted(present(items, phone: phone, card: phoneCard, textScale: panelScale), frame: frame)
         if !shown.isEmpty { progress(shown) }
         return shown
     }
@@ -353,6 +359,7 @@ public enum ScreenTranslation {
                         box: group.box, lineHeight: group.lineHeight, icons: rendered.icons.isEmpty ? nil : rendered.icons)
         item.unchanged = !changed
         item.phone = group.phone
+        item.rows = group.rows
         return item
     }
 
@@ -717,9 +724,20 @@ public enum ScreenTranslation {
             let heights = group.map { $0.box!.bottom - $0.box!.top }.sorted()
             let box = group.dropFirst().reduce(group[0].box!) { $0.union($1.box!) }
             let icons = paragraphIcons(group)
-            return Group(paragraphs: paragraphs(group), box: box, lineHeight: heights[heights.count / 2],
-                         icons: icons.contains(where: { !$0.isEmpty }) ? icons : nil)
+            var made = Group(paragraphs: paragraphs(group), box: box, lineHeight: heights[heights.count / 2],
+                             icons: icons.contains(where: { !$0.isEmpty }) ? icons : nil)
+            made.rows = rows(group)
+            return made
         }
+    }
+
+    /// Satırların kaç ayrı satır olduğu: yazı tanıma aynı satırı iki parça okuyabilir (yan yana duran parçalar tek satırdır).
+    static func rows(_ lines: [TextLine]) -> Int {
+        var tops: [TextBox] = []
+        for box in lines.compactMap(\.box) where !tops.contains(where: { other in
+            min(other.bottom, box.bottom) - max(other.top, box.top) >= 0.5 * min(other.bottom - other.top, box.bottom - box.top)
+        }) { tops.append(box) }
+        return max(1, tops.count)
     }
 
     /// Kalabalık ekranda en çok yazısı olan `maxGroups` grup, yukarıdan aşağı sırasıyla. Önceden en üstteki gruplar

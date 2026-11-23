@@ -138,6 +138,16 @@ CAPABILITIES = {
         ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func tvAppReported\("),
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvAppUpdate.kt", r"fun reported\("),
     ],
+    # "Ekranı çevir" özgün yazının birebir yerinde ve boyunda: kutunun genişleyebileceği alan simgelere kadar (room), kutu
+    # yalnız yazıyı kapsar, sütun/şerit hizası, eş öğeler aynı boyda. TV (tv-webos fitStyled) bu alanlarla çizer.
+    "Ekran yazısı yerleşimi (ScreenFit: room, rows, hiza, eş boy)": [
+        ("mac", _CORE + "ScreenFit.swift", r"static func fitted\("),
+        ("windows", _WIN + "ScreenFit.cs", r"public static IReadOnlyList<ScreenTranslation.Item> Fitted\("),
+        ("android", _DROID + "ScreenFit.kt", r"fun fitted\("),
+        ("mac", _CORE_TESTS + "ScreenFitTests.swift", r"screen-fit\.json"),
+        ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"screen-fit\.json"),
+        ("android", _DROID_TESTS + "ScreenFitTest.kt", r"screen-fit\.json"),
+    ],
     "Gerçek kare ekran yazısı ölçütü (menü, görev listesi)": [
         ("mac", "tools/frame-regression/Sources/frame-regression/ScreenCheck.swift", r"func checkScreen\("),
         ("android", _DROID_TESTS + "ScreenFramesTest.kt", r"ocr/screen/"),

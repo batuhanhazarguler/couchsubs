@@ -592,6 +592,9 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             ["text"] = item.Translation,
         };
         if (item.Paragraphs) json["paragraphs"] = true;
+        // Yerleşim (ScreenFit): kutunun genişleyebileceği alan ve özgün satır sayısı (eski TV yok sayar).
+        if (item.Room is { } room) json["room"] = BoxJson(room);
+        if (item.Rows > 1) json["rows"] = item.Rows;
         if (item.Icons is { Count: > 0 } icons) json["icons"] = IconsJson(icons);
         if ((phone || item.Look is not null) && item.Style is { } style && IsRgb(style.Background) && IsRgb(style.Foreground))
         {
