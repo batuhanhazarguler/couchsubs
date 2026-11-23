@@ -69,4 +69,32 @@ public class ScreenPresenceTests
         server.Observe(_ => text);
         Assert.Equal(["MAP", "BRIEF"], events[^1].Select(i => i.Source));
     }
+
+    /// <summary>
+    /// #1182: çeviri kaldırıldı, takip o sırada değişikliği hesaplamıştı. Kaldırılan çeviri takipten TV'ye yeniden
+    /// gönderilmez (Android ScreenPresenceTest ile aynı vaka).
+    /// </summary>
+    [Fact]
+    public void ClearedTranslationIsNotRedrawnByPresence()
+    {
+        using var server = new SubtitleServer(0);
+        var kinds = new List<SubtitleEventKind>();
+        server.EventSent += e => kinds.Add(e.Kind);
+        ScreenTranslation.Item[] items = [Item("MAP", true), Item("BRIEF", true, 0.4)];
+        server.SendScreen(items, 10_000);
+        var text = Enumerable.Range(0, ScreenPresence.Cols * ScreenPresence.Rows).Select(i => i % 5 == 0 ? 230 : 30).ToArray();
+        var flat = Enumerable.Repeat(30, text.Length).ToArray();
+        server.Observe(_ => text);
+        // Takip bu karede MAP'in kalktığını görürken çeviri kaldırılıyor.
+        server.Observe(box =>
+        {
+            if (box.Left >= 0.3) return text;
+            server.ClearScreen();
+            return flat;
+        });
+        Assert.Equal(SubtitleEventKind.ScreenClear, kinds[^1]);
+        server.Observe(_ => text);
+        server.Observe(_ => text);
+        Assert.Equal(SubtitleEventKind.ScreenClear, kinds[^1]);
+    }
 }

@@ -556,6 +556,11 @@ class SubtitleServer(
     /** Ekrandaki çeviriler ve özgün yazılarının takibi ([ScreenPresence]). */
     private val presence = ScreenPresence()
     private var screenShown: Pair<List<ScreenTranslation.Item>, Long>? = null
+    /**
+     * Her [sendScreen] ve [clearScreen] bir üst numara verir. [observe] değişikliği kilidin dışında gönderir; arada
+     * çeviri kaldırıldıysa eski öğeler yeniden gönderilmez (kaldırılan çeviri TV'de ve telefonda geri çiziliyordu, #1182).
+     */
+    private var screenEpoch = 0L
     private var screenVisible: List<Boolean> = emptyList()
     private data class RegionSent(
         val text: String, val box: TextBox?, val lineHeight: Double?, val icons: List<IconPlacement>?,
@@ -574,7 +579,9 @@ class SubtitleServer(
         var screenChange: List<ScreenTranslation.Item>? = null
         val regionChanges = mutableListOf<Triple<String, RegionSent, List<ScreenTranslation.Item>>>()
         var until = now
+        var epoch = 0L
         synchronized(screenStyle) {
+            epoch = screenEpoch
             screenShown?.let { if (it.second <= now) screenShown = null }
             val screen = screenShown?.first ?: emptyList()
             val regions = regionShown.entries.map { it.key to it.value }
@@ -598,7 +605,9 @@ class SubtitleServer(
             }
             until = screenShown?.second ?: now
         }
-        screenChange?.let { emitScreen(it, maxOf(1L, until - now).toInt()) }
+        screenChange?.let { items ->
+            if (synchronized(screenStyle) { screenEpoch == epoch }) emitScreen(items, maxOf(1L, until - now).toInt())
+        }
         for ((id, sent, kept) in regionChanges) {
             emitRegion(id, if (kept.isEmpty()) "" else sent.text, sent.box, sent.lineHeight, sent.icons, kept.ifEmpty { null })
         }
@@ -608,6 +617,7 @@ class SubtitleServer(
     fun sendScreen(items: List<ScreenTranslation.Item>, durationMs: Int) {
         val items = steadied(items.filter { area(it.box) <= MAX_BOX_AREA })
         val shown = synchronized(screenStyle) {
+            screenEpoch += 1
             screenShown = items to monotonicClock() + durationMs
             screenVisible = items.map { !presence.hidden(it) }
             items.filter { !presence.hidden(it) }
@@ -623,6 +633,7 @@ class SubtitleServer(
     /** TV'deki ve telefondaki "ekranı çevir" çevirilerini kaldırır (altyazıya dokunmaz). */
     fun clearScreen() {
         synchronized(screenStyle) {
+            screenEpoch += 1
             screenShown = null
             screenVisible = emptyList()
         }

@@ -62,4 +62,39 @@ class ScreenPresenceTest {
         server.observe { text }
         assertEquals(listOf("MAP", "BRIEF"), events.last().map { it.source })
     }
+
+    /**
+     * #1182: "Çevirileri kaldır"a basıldı, takip o sırada değişikliği hesaplamıştı. Kaldırılan çeviri takipten yeniden
+     * gönderilmez (TV'de ve telefonda geri çiziliyordu); telefon düğmesi de kaldırılmış hâlde kalır.
+     */
+    @Test
+    fun clearedTranslationIsNotRedrawnByPresence() {
+        val server = SubtitleServer(0)
+        val events = mutableListOf<SubtitleEvent>()
+        server.onEvent = { event -> events.add(event) }
+        val items = listOf(item("MAP", true), item("BRIEF", true, 0.4))
+        server.sendScreen(items, 10_000)
+        val text = (0 until ScreenPresence.COLS * ScreenPresence.ROWS).map { if (it % 5 == 0) 230 else 30 }
+        val flat = List(text.size) { 30 }
+        server.observe { text }
+        // Takip bu karede MAP'in kalktığını görürken kullanıcı çeviriyi kaldırıyor.
+        server.observe { box ->
+            if (box.left < 0.3) {
+                server.clearScreen()
+                flat
+            } else text
+        }
+        assertEquals(SubtitleEvent.ScreenCleared, events.last())
+        server.observe { text }
+        server.observe { text }
+        assertEquals(SubtitleEvent.ScreenCleared, events.last())
+
+        var status = com.couchsubs.mobile.service.LiveStatus(screenState = com.couchsubs.mobile.service.LiveStatus.ScreenState.IDLE)
+        status = status.phoneEvent(SubtitleEvent.Screen(items, 10_000))
+        assertEquals(com.couchsubs.mobile.service.LiveStatus.ScreenState.IDLE, status.screenState)
+        assertEquals(emptyList<ScreenTranslation.Item>(), status.screen)
+        status = status.copy(screenState = com.couchsubs.mobile.service.LiveStatus.ScreenState.WORKING)
+            .phoneEvent(SubtitleEvent.Screen(items, 10_000))
+        assertEquals(com.couchsubs.mobile.service.LiveStatus.ScreenState.SHOWN, status.screenState)
+    }
 }

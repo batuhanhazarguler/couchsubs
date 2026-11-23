@@ -587,6 +587,7 @@ public final class SubtitleServer: @unchecked Sendable {
     public func sendScreen(_ items: [ScreenTranslation.Item], durationMs: Int) {
         let items = steadied(items.filter { Self.area($0.box) <= Self.maxBoxArea })
         let shown: [ScreenTranslation.Item] = screenStyleGuard.withLock {
+            screenEpoch += 1
             screenShown = (items, Self.uptimeMs() + durationMs)
             screenVisible = items.map { !presence.hidden($0) }
             return items.filter { !presence.hidden($0) }
@@ -659,6 +660,9 @@ public final class SubtitleServer: @unchecked Sendable {
     /// Ekrandaki çeviriler ve özgün yazılarının takibi (`ScreenPresence`): yazı kalkınca çevirisi de aynı karede kalkar.
     private var presence = ScreenPresence()
     private var screenShown: (items: [ScreenTranslation.Item], until: Int)?
+    /// Her `sendScreen` ve `clearScreen` bir üst numara verir. `observe` değişikliği kilidin dışında gönderir; arada çeviri
+    /// kaldırıldıysa eski öğeler yeniden gönderilmez (kaldırılan çeviri TV'de geri çiziliyordu, #1182).
+    private var screenEpoch = 0
     private var screenVisible: [Bool] = []
     private var regionShown: [String: (text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                                        blocks: [ScreenTranslation.Item]?)] = [:]
@@ -676,6 +680,7 @@ public final class SubtitleServer: @unchecked Sendable {
     func observe(patch: (TextBox) -> [Int]?) {
         let now = Self.uptimeMs()
         screenStyleGuard.lock()
+        let epoch = screenEpoch
         if let shown = screenShown, shown.until <= now { screenShown = nil }
         let screen = screenShown?.items ?? []
         let regions = regionShown.sorted { $0.key < $1.key }
@@ -707,7 +712,9 @@ public final class SubtitleServer: @unchecked Sendable {
         regionVisible = flagsById
         let until = screenShown?.until ?? now
         screenStyleGuard.unlock()
-        if let screenChange { emitScreen(screenChange, durationMs: max(1, until - now)) }
+        if let screenChange, screenStyleGuard.withLock({ screenEpoch == epoch }) {
+            emitScreen(screenChange, durationMs: max(1, until - now))
+        }
         for change in regionChanges {
             emitRegion(id: change.0, text: change.1, box: change.2, lineHeight: change.3, icons: change.4,
                        blocks: change.5.isEmpty ? nil : change.5)
@@ -768,6 +775,7 @@ public final class SubtitleServer: @unchecked Sendable {
     /// TV'deki "ekranı çevir" çevirilerini kaldırır (altyazıya dokunmaz).
     public func clearScreen() {
         screenStyleGuard.withLock {
+            screenEpoch += 1
             screenShown = nil
             screenVisible = []
         }

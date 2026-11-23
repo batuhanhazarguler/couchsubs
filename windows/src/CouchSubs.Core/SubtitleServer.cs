@@ -489,6 +489,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         IReadOnlyList<ScreenTranslation.Item> shown;
         lock (screenStyle)
         {
+            screenEpoch++;
             screenShown = (items, Environment.TickCount64 + durationMs);
             screenVisible = [.. items.Select(item => !presence.Hidden(item))];
             shown = [.. items.Where(item => !presence.Hidden(item))];
@@ -583,6 +584,12 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// <summary>Ekrandaki çeviriler ve özgün yazılarının takibi (<see cref="ScreenPresence"/>).</summary>
     private readonly ScreenPresence presence = new();
     private (IReadOnlyList<ScreenTranslation.Item> Items, long Until)? screenShown;
+    /// <summary>
+    /// Her <see cref="SendScreen"/> ve <see cref="ClearScreen"/> bir üst numara verir. <c>Observe</c> değişikliği kilidin
+    /// dışında gönderir; arada çeviri kaldırıldıysa eski öğeler yeniden gönderilmez (kaldırılan çeviri TV'de geri
+    /// çiziliyordu, #1182).
+    /// </summary>
+    private long screenEpoch;
     private List<bool> screenVisible = [];
     private sealed record RegionSent(string Text, TextBox? Box, double? LineHeight, IReadOnlyList<IconPlacement>? Icons,
                                      IReadOnlyList<ScreenTranslation.Item> Blocks);
@@ -601,8 +608,10 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         List<ScreenTranslation.Item>? screenChange = null;
         var regionChanges = new List<(string Id, RegionSent Sent, List<ScreenTranslation.Item> Kept)>();
         long until;
+        long epoch;
         lock (screenStyle)
         {
+            epoch = screenEpoch;
             if (screenShown is { } expired && expired.Until <= now) screenShown = null;
             var screen = screenShown?.Items ?? [];
             var regions = regionShown.ToList();
@@ -626,7 +635,12 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             }
             until = screenShown?.Until ?? now;
         }
-        if (screenChange is not null) EmitScreen(screenChange, (int)Math.Max(1, until - now));
+        if (screenChange is not null)
+        {
+            bool current;
+            lock (screenStyle) current = screenEpoch == epoch;
+            if (current) EmitScreen(screenChange, (int)Math.Max(1, until - now));
+        }
         foreach (var (id, sent, kept) in regionChanges)
             EmitRegion(id, kept.Count == 0 ? "" : sent.Text, sent.Box, sent.LineHeight, sent.Icons, kept.Count == 0 ? null : kept);
     }
@@ -700,6 +714,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     {
         lock (screenStyle)
         {
+            screenEpoch++;
             screenShown = null;
             screenVisible = [];
         }

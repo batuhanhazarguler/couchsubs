@@ -189,8 +189,6 @@ final class PhoneModel: ObservableObject {
     @Published private(set) var screenState: ScreenState = .idle
 
     enum ScreenState: Equatable { case idle, working, shown }
-    /// Ekrandaki sonuçların okunduğu karenin yazı izi (`ScreenTranslation.fingerprint`).
-    private var screenFingerprint = ""
 
     struct PhoneRegion: Identifiable, Equatable {
         let id: String
@@ -1881,18 +1879,17 @@ final class PhoneModel: ObservableObject {
 
     /// "Ekranı çevir": PS5'in şu anki karesinin tamamı bir kez okunur, yazı grupları (menü, görev paneli, bilgi kutusu...)
     /// tek istekte çevrilir; sonuçlar telefonda ve TV'de yazının kendi yerinde, özgün stilinde görünür (GTA 6 telefonu
-    /// yanında mesaj kartında). Çeviri sürerken yeniden dokunmak onu durdurur; sonuçlar ekrandayken dokununca kare yine
-    /// okunur: ekran değiştiyse (telefonda başka sohbet) yenisi çevrilir, değişmediyse sonuçlar kalkar (Mac'in ekranı çevir kısayoluyla aynı).
+    /// yanında mesaj kartında). Çeviri sürerken ya da sonuçlar ekrandayken dokunmak ("Remove screen translations") çeviriyi
+    /// hemen kapatır: kare yeniden okunmaz, önbellekten yeniden çizilmez (Android ile aynı). Önceden sonuçlar ekrandayken
+    /// dokununca kare yine okunuyor, oyunda yazılar biraz değişince ekran baştan çevriliyordu (#1182).
     /// Karede GTA 6 telefonu varsa kart ekrandayken telefon izlenir (`followPhone`): sohbet değişince kart kendiliğinden
     /// yenilenir, telefon kapanınca kalkar. `refresh`: bu izlemenin yenilemesi (dokunulmadı).
     func translateScreen(refresh: Bool = false) {
         guard isRunning else { return }
-        if screenState == .working || (refresh && screenTask != nil) {
+        if (!refresh && screenState != .idle) || (refresh && screenTask != nil) {
             if !refresh { hideScreen() }
             return
         }
-        let wasShown = !refresh && screenState == .shown
-        let previous = screenFingerprint
         guard let frame = framePreview.image else {
             if !refresh { server.sendSubtitle(String(localized: "Couldn't capture the screen: no picture from the PS5 yet."), durationMs: 4000) }
             return
@@ -1904,7 +1901,7 @@ final class PhoneModel: ObservableObject {
             screenState = .working
         }
         server.sendStyle(settings.style)
-        if !wasShown && !refresh { server.sendSubtitle(String(localized: "Translating the screen…"), durationMs: 2500) }
+        if !refresh { server.sendSubtitle(String(localized: "Translating the screen…"), durationMs: 2500) }
         let reader = VisionReader(language: settings.sourceLanguage)
         let translator = makeTranslator()
         let memoryKey = "\(settings.sourceLanguage)|\(settings.targetLanguage)|\(onlineTranslationActive)|\(settings.onlineEngine)"
@@ -1924,17 +1921,6 @@ final class PhoneModel: ObservableObject {
                 // Altyazı zaten kendi yerinde çevriliyor: ekran çevirisinde ikinci kez çizilmez (bkz. SubtitleEcho).
                 let echo = SubtitleEcho.shared
                 let reading = echo.filter(read, geometry: echo.hasRecent)
-                let fingerprint = ScreenTranslation.fingerprint(reading)
-                if wasShown {
-                    guard !Task.isCancelled else { return }
-                    if ScreenTranslation.isSameScreen(fingerprint, previous) {
-                        self?.screenTask = nil
-                        self?.hideScreen()
-                        return
-                    }
-                    server.sendSubtitle(String(localized: "Translating the screen…"), durationMs: 2500)
-                }
-                self?.screenFingerprint = fingerprint
                 let items = try await ScreenTranslation.translate(reading, using: translator, frame: frame, memory: memory,
                                                                   phoneCard: phoneCard, panelScale: panelScale) { shown in
                     // İzlemenin yenilemesinde aynı çeviriler yeniden gönderilmez (TV'de kart yeniden çizilmesin).
@@ -1946,7 +1932,7 @@ final class PhoneModel: ObservableObject {
                 guard !Task.isCancelled else { return }
                 if !refresh { server.clear() }
                 if items.isEmpty {
-                    if wasShown || refresh { self?.hideScreen() }
+                    if refresh { self?.hideScreen() }
                     self?.screenState = .idle
                     if !refresh { server.sendSubtitle(String(localized: "No text found on the screen."), durationMs: 2500) }
                 } else {
@@ -2056,7 +2042,6 @@ final class PhoneModel: ObservableObject {
         screenShown = []
         screenShownUntil = .distantPast
         screenState = .idle
-        screenFingerprint = ""
         server.clearScreen()
         server.clear()
     }

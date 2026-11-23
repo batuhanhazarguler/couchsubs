@@ -1088,13 +1088,14 @@ class TranslationService : Service() {
     @Volatile private var screenReader: SubtitleReader? = null
 
     /**
-     * Çeviri sürerken basmak onu durdurur. Sonuçlar ekrandayken basınca kare yine okunur: ekran değiştiyse (telefonda
-     * başka sohbet) yenisi çevrilir, değişmediyse sonuçlar kalkar (Mac/iPhone ve Windows ile aynı).
+     * Çeviri sürerken ya da sonuçlar ekrandayken basmak ("Çevirileri kaldır") çeviriyi hemen kapatır: kare yeniden
+     * okunmaz, önbellekten yeniden çizilmez (iPhone ile aynı). Önceden sonuçlar ekrandayken basınca kare yine okunuyor,
+     * oyunda yazılar biraz değişince ekran baştan çevriliyordu: "kapat"a basınca kapanmıyor, yazılar üst üste
+     * biniyordu (#1182). Telefonda başka sohbete geçince kart kendiliğinden yenilenir ([followTick]).
      */
     private fun toggleScreen() {
         val server = server ?: return
-        val state = LiveState.status.value.screenState
-        if (state == LiveStatus.ScreenState.WORKING) {
+        if (LiveState.status.value.screenState != LiveStatus.ScreenState.IDLE) {
             hideScreen()
             return
         }
@@ -1102,23 +1103,17 @@ class TranslationService : Service() {
             server.sendSubtitle(getString(R.string.screen_no_picture), 4000)
             return
         }
-        val shown = state == LiveStatus.ScreenState.SHOWN
         // Düğmeye basıldı: süren telefon izlemesi bırakılır; yeni çeviri telefonu yeniden izlemeye başlar.
         screenFollow = null
         screenRefreshRequested.set(false)
-        screenRecheck = shown
         // Yeni kuşak: önceki sonuçların süresi dolup yeni okumayı kesmez.
         screenGeneration.incrementAndGet()
         LiveState.update { it.copy(screenState = LiveStatus.ScreenState.WORKING) }
         server.sendStyle(settings.style)
-        if (!shown) server.sendSubtitle(getString(R.string.screen_translating), 2500)
+        server.sendSubtitle(getString(R.string.screen_translating), 2500)
         screenRequested.set(true)
     }
 
-    /** Sonuçlar ekrandayken basıldı: okunan kare öncekiyle aynıysa sonuçlar kalkar. */
-    @Volatile private var screenRecheck = false
-    /** Ekrandaki sonuçların okunduğu karenin yazı izi ([ScreenTranslation.fingerprint]). */
-    @Volatile private var screenFingerprint = ""
     /** Ekrandaki son sonuçlar ve kalkacakları an (ms): telefon kartı izlenirken süre bunlarla uzatılır. */
     @Volatile private var screenShown: List<ScreenTranslation.Item> = emptyList()
     @Volatile private var screenShownUntil = 0L
@@ -1232,8 +1227,6 @@ class TranslationService : Service() {
         screenFollow = null
         screenShown = emptyList()
         screenShownUntil = 0L
-        screenRecheck = false
-        screenFingerprint = ""
         screenTask?.cancel(true)
         screenTask = null
         server?.clearScreen()
@@ -1272,18 +1265,6 @@ class TranslationService : Service() {
                 // Altyazı zaten kendi yerinde çevriliyor: ekran çevirisinde ikinci kez çizilmez (bkz. SubtitleEcho).
                 val echo = com.couchsubs.mobile.core.SubtitleEcho.shared
                 val reading = echo.filter(read, geometry = echo.hasRecent)
-                val fingerprint = ScreenTranslation.fingerprint(reading)
-                if (screenRecheck && !refresh) {
-                    if (screenGeneration.get() != generation) return@Runnable
-                    if (ScreenTranslation.isSameScreen(fingerprint, screenFingerprint)) {
-                        hideScreen()
-                        return@Runnable
-                    }
-                    server.sendSubtitle(getString(R.string.screen_translating), 2500)
-                }
-                val wasShown = screenRecheck && !refresh
-                if (!refresh) screenRecheck = false
-                screenFingerprint = fingerprint
                 // Yapay zekâda ekranın bütün yazıları tek istekte gider (bkz. AiTranslator.translateAll).
                 val translator = engineTranslator(free.separate())
                 // Yazıların içindeki kumanda simgeleri okunan kareden kesilir (ButtonIcons). Çeviriler özgün yazının
@@ -1304,7 +1285,7 @@ class TranslationService : Service() {
                 if (!refresh) server.clear()
                 if (items.isEmpty()) {
                     // Yeni karede yazı yok: önceki ekranın sonuçları da kalkar.
-                    if (wasShown || refresh) hideScreen()
+                    if (refresh) hideScreen()
                     LiveState.update { it.copy(screenState = LiveStatus.ScreenState.IDLE) }
                     if (!refresh) server.sendSubtitle(getString(R.string.screen_none), 2500)
                 } else {
