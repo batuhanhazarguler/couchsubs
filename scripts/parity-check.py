@@ -253,6 +253,15 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenStyleLockTests.cs", r"screen-style-lock\.json"),
         ("android", _DROID_TESTS + "ScreenStyleLockTest.kt", r"screen-style-lock\.json"),
     ],
+    # Bilgisayar/telefon ekranında özgün stilli ekran yazısı oyun karesindeki kendi yerinde (hizalı liste değil), ortak
+    # satır yerleşimiyle.
+    "Ekran yazısı masaüstünde/telefonda yerinde çizim": [
+        ("mac", "mac/CouchSubs/UI/StreamWindow.swift", r"struct ScreenTextBlocks"),
+        ("windows", "windows/src/CouchSubs.App/Views/ScreenTextCanvas.cs", r"ScreenFit\.Layout\("),
+        ("windows", "windows/src/CouchSubs.App/Views/StreamWindow.cs", r"screenTextLayer\.Show\("),
+        ("ios", "couchsubs-ios/CouchSubs/UI/Home.swift", r"ScreenFit\.lines\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/PhoneSubtitleActivity.kt", r"ScreenFit\.lines\("),
+    ],
     # Çizicilerin ortak satır yerleşimi: yazı boyu sabit, önce yatay sıkıştırma, sonra room içinde genişleme (TV fitStyled).
     "Ekran yazısı çizici yerleşimi (ScreenFit.lines)": [
         ("mac", _CORE + "ScreenFit.swift", r"public static func lines\("),
