@@ -80,10 +80,15 @@ sabit), yalnız kart açılıp kapanınca ya da kayınca kaybolur. Oradaki titre
 ## Bağlama (sonraki aşamalar)
 
 1. **Çekirdek** (bu aşama): `ScreenAnchor` (Swift/C#/Kotlin), ortak vakalar, eşitlik denetimi, ölçüm aracı.
-2. **Akış**: telefon okunduğunda (`PhoneRegionSession`, Windows/Android eşleri) çapa o karede kurulur; balonların kutuları
-   telefonun yerel koordinatına çevrilip ilk güvenilir ölçümde kilitlenir (aynı mesaj yeniden okununca yerel yer ve yazı
-   boyu değişmez). Her yakalanan karede izleyici çalışır; sunucu öğelerle birlikte `anchor` (başvuru dörtgeni) ve
-   kare başına küçük bir `anchor-move` olayı (8 sayı) gönderir. Çapa kaybolunca balon çevirileri hemen gizlenir.
+2. **Akış** (sunucuda, dört uygulama aynı): her uygulama her karede zaten `SubtitleServer.observe(frame)` çağırıyor
+   (ScreenPresence); izleyici orada çalışır (kare `Gray.fromRGBA` ile 960 ene). Telefon okuması (`PhoneRegionSession`,
+   Windows/Android eşleri) okuduğu karede sunucuya sorar: çapa yoksa o kare ve telefonun dörtgeniyle (`Pose.bounds`)
+   kurulur, birim dönüşüm döner; varsa o anki dönüşüm döner. Okuma balon kutularını bu dönüşümün tersiyle **başvuru
+   koordinatına** çevirip gönderir; böylece her okuma aynı koordinatta olur, aynı mesajın yeri ve yazı boyu başvuruda
+   kilitlenir (`PhoneSteady.steadyPositions` telefonun hareketinden arınmış kutularla çalışır, eşik çok küçülebilir).
+   `region` olayı `anchor` (kuşak numarası ve başvuru dörtgeni) taşır; sunucu her karede, ölü bölgeyi aşan değişimde
+   küçük bir `anchor` olayı (kuşak + 8 sayı, kareye oranla) yayınlar; çapa kaybolunca `anchor` `lost` ile gider ve
+   balon çevirileri hemen gizlenir, sonraki okuma çapayı yeniden kurar.
 3. **Çizim**: TV (`tv-webos/app.js`, Tizen ve Android TV aynı sayfa) balon katmanını tek kapta tutar, kabın
    `transform`'u `matrix3d` (perspektifsiz `matrix`); Mac/iPhone `CATransform3D`, Windows `MatrixTransform` (perspektif
    payı küçük, afin yaklaşık), Android `Matrix.setPolyToPoly`. Yazı boyu ve satır kırılımı başvuruda bir kez hesaplanır.
