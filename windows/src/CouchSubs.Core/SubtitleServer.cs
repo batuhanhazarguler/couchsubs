@@ -483,7 +483,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// </summary>
     public void SendScreen(IReadOnlyList<ScreenTranslation.Item> items, int durationMs)
     {
-        items = [.. items.Where(item => Area(item.Box) <= MaxBoxArea)];
+        items = Steadied([.. items.Where(item => Area(item.Box) <= MaxBoxArea)]);
         var list = items.Select(item => ItemJson(item, phone: false)).ToList();
         Broadcast(Frame("screen", new SortedDictionary<string, object> { ["duration"] = durationMs, ["items"] = list }), subtitle: true);
         // Altyazı yalnız bilgisayardaysa (TV yok) çeviriler başka hiçbir yere gitmiyordu: tuşa basınca yalnız
@@ -519,6 +519,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
                            IReadOnlyList<ScreenTranslation.Item>? blocks)
     {
         (text, blocks) = Guard(text, box, blocks);
+        if (id != "game-phone" && blocks is not null) blocks = Steadied(blocks);
         Broadcast(Frame("region", RegionData(id, text, box, lineHeight, icons, blocks)), subtitle: true);
         EventSent?.Invoke(new SubtitleEvent(SubtitleEventKind.Region, text, Id: id, Box: box,
                                             Blocks: blocks is { Count: > 0 } && text.Length > 0 ? blocks : null));
@@ -530,6 +531,23 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// (LG'de "siyah ekran, ses var").
     /// </summary>
     internal const double MaxBoxArea = 0.4;
+
+    /// <summary>
+    /// Ekran yazısı çevirilerinin görünüşü oturum boyunca kilitli (<see cref="ScreenStyleLock"/>); "Ekranı çevir" ve otomatik
+    /// ekran yazısı aynı kilidi paylaşır (Mac: SubtitleServer.steadied, Android: SubtitleServer.steadied).
+    /// </summary>
+    private readonly ScreenStyleLock screenStyle = new();
+
+    internal IReadOnlyList<ScreenTranslation.Item> Steadied(IReadOnlyList<ScreenTranslation.Item> items)
+    {
+        lock (screenStyle) return screenStyle.Steady(items, Environment.TickCount64);
+    }
+
+    /// <summary>Ekran yazısının görünüşü yeniden ölçülsün (oturum yeniden başladı).</summary>
+    public void ResetScreenStyle()
+    {
+        lock (screenStyle) screenStyle.Reset();
+    }
 
     internal static double Area(TextBox box) => Math.Max(0, box.Right - box.Left) * Math.Max(0, box.Bottom - box.Top);
 

@@ -579,7 +579,7 @@ public final class SubtitleServer: @unchecked Sendable {
     /// kumanda simgeleri varsa `icons` her simgenin düz metindeki yerini (`at`) ve PNG'sini (`src`) taşır; eski TV
     /// uygulamaları alanı yok sayıp düz metni gösterir (Windows ile aynı).
     public func sendScreen(_ items: [ScreenTranslation.Item], durationMs: Int) {
-        let items = items.filter { Self.area($0.box) <= Self.maxBoxArea }
+        let items = steadied(items.filter { Self.area($0.box) <= Self.maxBoxArea })
         broadcast(event: "screen", json: ["duration": durationMs, "items": items.map { Self.json($0) }])
         // Altyazı yalnız bilgisayardaysa (TV yok) çeviriler başka hiçbir yere gitmiyordu: tuşa basınca yalnız
         // "Ekran çevriliyor…" görünüyordu.
@@ -606,7 +606,8 @@ public final class SubtitleServer: @unchecked Sendable {
     /// uygulamaları birleşik `text`'i tek kutuda gösterir (Windows ile aynı).
     public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                            blocks: [ScreenTranslation.Item]?) {
-        let (text, blocks) = Self.guarded(text: text, box: box, blocks: blocks)
+        var (text, blocks) = Self.guarded(text: text, box: box, blocks: blocks)
+        if id != "game-phone", let shown = blocks { blocks = steadied(shown) }
         var json: [String: Any] = ["id": id, "text": text]
         if let icons, !icons.isEmpty { json["icons"] = Self.json(icons) }
         if let blocks, !blocks.isEmpty, !text.isEmpty { json["blocks"] = blocks.map { Self.json($0, phone: id == "game-phone") } }
@@ -617,6 +618,25 @@ public final class SubtitleServer: @unchecked Sendable {
         else if let blocks, !blocks.isEmpty, !text.isEmpty, blocks.contains(where: { $0.look != nil }) {
             onEvent?(.screenText(id: id, items: blocks))
         } else { onEvent?(.region(id: id, text: text, box: box)) }
+    }
+
+    /// Ekran yazısı çevirilerinin görünüşü oturum boyunca kilitli (`ScreenStyleLock`); "Ekranı çevir" ve otomatik ekran
+    /// yazısı aynı kilidi paylaşır (Windows: SubtitleServer.Steadied, Android: SubtitleServer.steadied).
+    private let screenStyleGuard = NSLock()
+    private var screenStyle = ScreenStyleLock()
+
+    func steadied(_ items: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
+        let now = Int(ProcessInfo.processInfo.systemUptime * 1000)
+        screenStyleGuard.lock()
+        defer { screenStyleGuard.unlock() }
+        return screenStyle.steady(items, now: now)
+    }
+
+    /// Ekranı çevir'in yerleşimi yeniden ölçülsün (oturum yeniden başladı).
+    public func resetScreenStyle() {
+        screenStyleGuard.lock()
+        screenStyle.reset()
+        screenStyleGuard.unlock()
     }
 
     /// Ekranın bu oranından büyük çeviri kutusu gönderilmez. TV ve OBS kutuyu opak zeminle çizer; yanlış bir algılamanın

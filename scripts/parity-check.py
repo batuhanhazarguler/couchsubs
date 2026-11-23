@@ -226,6 +226,19 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"screen-fit\.json"),
         ("android", _DROID_TESTS + "ScreenFitTest.kt", r"screen-fit\.json"),
     ],
+    # Ekran yazısının görünüşü oturum boyunca kilitli: öğe türü başına boy, kalınlık, renk ilk ölçümde; yalnız belirgin
+    # (%25+) ve kalıcı (1 sn+) değişimde yenilenir. "Ekranı çevir" ve otomatik ekran yazısı sunucuda aynı kilitten geçer.
+    "Ekran yazısı kararlı stil kilidi (ScreenStyleLock)": [
+        ("mac", _CORE + "ScreenStyleLock.swift", r"mutating func steady\("),
+        ("windows", _WIN + "ScreenStyleLock.cs", r"public IReadOnlyList<ScreenTranslation.Item> Steady\("),
+        ("android", _DROID + "ScreenStyleLock.kt", r"fun steady\("),
+        ("mac", _CORE + "SubtitleServer.swift", r"steadied\(items"),
+        ("windows", _WIN + "SubtitleServer.cs", r"Steadied\(\["),
+        ("android", _DROID + "SubtitleServer.kt", r"steadied\(items"),
+        ("mac", _CORE_TESTS + "ScreenStyleLockTests.swift", r"screen-style-lock\.json"),
+        ("windows", _WIN_TESTS + "ScreenStyleLockTests.cs", r"screen-style-lock\.json"),
+        ("android", _DROID_TESTS + "ScreenStyleLockTest.kt", r"screen-style-lock\.json"),
+    ],
     # Çizicilerin ortak satır yerleşimi: yazı boyu sabit, önce yatay sıkıştırma, sonra room içinde genişleme (TV fitStyled).
     "Ekran yazısı çizici yerleşimi (ScreenFit.lines)": [
         ("mac", _CORE + "ScreenFit.swift", r"public static func lines\("),

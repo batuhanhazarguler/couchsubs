@@ -487,6 +487,7 @@ class SubtitleServer(
         id: String, text: String, box: TextBox?, lineHeight: Double?, icons: List<IconPlacement>?,
         blocks: List<ScreenTranslation.Item>?,
     ) {
+        val blocks = if (id != GAME_PHONE_ID && blocks != null) steadied(blocks.filter { area(it.box) <= MAX_BOX_AREA }) else blocks
         broadcast(regionFrame(id, text, box, lineHeight, icons, blocks), subtitle = true)
         if (id == GAME_PHONE_ID) {
             // Telefon ekranında oyun telefonunun çevirisi ek alan kutusu gibi tek kutuda görünür (iPhone ile aynı); büyük
@@ -505,8 +506,21 @@ class SubtitleServer(
         onEvent?.invoke(SubtitleEvent.RegionsCleared)
     }
 
+    /**
+     * Ekran yazısı çevirilerinin görünüşü oturum boyunca kilitli ([ScreenStyleLock]); "Ekranı çevir" ve otomatik ekran yazısı
+     * aynı kilidi paylaşır (Mac: SubtitleServer.steadied, Windows: SubtitleServer.Steadied).
+     */
+    private val screenStyle = ScreenStyleLock()
+
+    internal fun steadied(items: List<ScreenTranslation.Item>): List<ScreenTranslation.Item> =
+        synchronized(screenStyle) { screenStyle.steady(items, monotonicClock()) }
+
+    /** Ekran yazısının görünüşü yeniden ölçülsün (oturum yeniden başladı). */
+    fun resetScreenStyle() = synchronized(screenStyle) { screenStyle.reset() }
+
     /** "Ekranı çevir" sonuçlarını TV'ye (ve telefon ekranına) gönderir. */
     fun sendScreen(items: List<ScreenTranslation.Item>, durationMs: Int) {
+        val items = steadied(items.filter { area(it.box) <= MAX_BOX_AREA })
         broadcast(screenFrame(items, durationMs), subtitle = true)
         onEvent?.invoke(SubtitleEvent.Screen(items, durationMs))
     }
