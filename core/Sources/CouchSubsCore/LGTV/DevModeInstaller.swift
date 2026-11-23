@@ -48,6 +48,9 @@ public enum DevModeError: Error, Equatable {
     /// bağlantısını reddediyor (Dev Mode Status açıldıktan sonra TV yeniden başlamamış ya da webOS Hub'lı TV'nin yazılımında
     /// bu kapı kapalı; #200, #1116). iPhone/Android'deki LGUnreachableReason.restartNeeded ile aynı durum ve metin.
     case devConnectionClosed
+    /// Kayıtlı adreste TV hiç yanıt vermiyor (kapılar zaman aşımında, adreste cihaz yok) ve TV ağda yeniden aranınca da
+    /// bulunamadı (`TVReach`). "Geliştirici modu kapalı" ya da "Key Server kapalı" denmez: TV'de ikisi açık olabilir.
+    case tvNotResponding
 }
 
 /// Kurulum hatası ve TV'nin verdiği sebep (luna yanıtındaki errorText/reason ya da komut çıktısı).
@@ -437,7 +440,7 @@ public struct DevModeInstaller: Sendable {
 }
 
 /// Bir sonucu yalnız bir kez bildirir.
-private final class Once: @unchecked Sendable {
+final class Once: @unchecked Sendable {
     private let lock = NSLock()
     private var action: ((Bool) -> Void)?
     init(_ action: @escaping (Bool) -> Void) { self.action = action }

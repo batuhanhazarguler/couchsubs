@@ -201,7 +201,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// ~/.local/share/CouchSubs). Dosya yazılamazsa kimlik bu çalışmalık kalır.</summary>
     private static string LoadInstallationId()
     {
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CouchSubs", "server-id");
+        var path = Path.Combine(AppDataPaths.Root, "server-id");
         try
         {
             if (File.Exists(path) && HelloId(File.ReadAllText(path)) is { Length: > 0 } saved) return saved;

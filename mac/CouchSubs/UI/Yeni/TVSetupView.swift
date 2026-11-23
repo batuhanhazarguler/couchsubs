@@ -592,6 +592,7 @@ enum TVErrorTitle {
         case .packageBlocked: "The TV Blocks CouchSubs"
         case .connectionLost: "The Connection Dropped"
         case .foreignApp: "Another App Is Installed"
+        case .tvNotResponding: "The TV Isn't Responding"
         }
     }
 }

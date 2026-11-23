@@ -27,7 +27,7 @@ CORE_SETTINGS = ROOT / "core" / "Sources" / "CouchSubsCore" / "Pipeline" / "AppS
 IOS_SCREENS = [ROOT / "couchsubs-ios" / "CouchSubs" / "UI" / name for name in ("Profile.swift", "SettingsPages.swift", "DubbingTile.swift", "LocalAISection.swift")] + [
     ROOT / "mac" / "CouchSubs" / "UI" / name for name in ("DubbingVoiceText.swift", "LocalAIText.swift", "Yeni/SubtitlePalette.swift")]
 ANDROID_SCREENS = [ROOT / "couchsubs-android" / "app" / "src" / "main" / "java" / "com" / "couchsubs" / "mobile" / "ui" / name
-                   for name in ("ProfileScreens.kt", "SettingsPages.kt", "DubbingTile.kt", "LocalAiSection.kt")]
+                   for name in ("ProfileScreens.kt", "SettingsPages.kt", "DubbingTile.kt", "LocalAiSection.kt", "PairedTvCard.kt")]
 CORE_STYLE = ROOT / "core" / "Sources" / "CouchSubsCore" / "SubtitleServer.swift"
 WIN_STYLE = ROOT / "windows" / "src" / "CouchSubs.Core" / "SubtitleServer.cs"
 ANDROID_STYLE = ROOT / "couchsubs-android" / "app" / "src" / "main" / "java" / "com" / "couchsubs" / "mobile" / "core" / "SubtitleServer.kt"
@@ -233,6 +233,40 @@ CAPABILITIES = {
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/PlayedGame.kt", r"sense\.startXbox\("),
         ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/GameAskCard.kt", r"status\.xboxNeedsGame"),
         ("android", _DROID_TESTS + "GameSenseTest.kt", r"fun xboxStartUsesTheLastChosenGameOrLogsThatTheGameIsUnknown\("),
+    ],
+    # beta.89: TV'nin adresi değişince kayıtlı adres sessiz kalıyor, kurulum "Key Server kapalı" diyordu; eşli TV kaldırılamıyordu.
+    "Kayıtlı TV adresi sessizse TV'yi ağda yeniden bulma (TVReach; reddedilen bağlantı yanıt sayılır)": [
+        ("mac", _CORE + "LGTV/TVReach.swift", r"public static func responds\(host: String, brand: TVBrand"),
+        ("mac", _CORE + "LGTV/TVReach.swift", r"public static func locate\("),
+        ("mac", _CORE_TESTS + "TVReachTests.swift", r"func testSilentAddressFindsSameTVAtNewAddress\("),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func locateTV\(force: Bool"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func relocateForInstall\("),
+        ("windows", _WIN + "LgTv/TvReach.cs", r"public static async Task<bool> RespondsAsync\("),
+        ("windows", _WIN + "LgTv/TvReach.cs", r"LocateAsync\("),
+        ("windows", _WIN_TESTS + "TvReachTests.cs", r"TvReach"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvReach.kt", r"fun responds\(host: String, brand: TvBrand"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvReach.kt", r"fun locate\("),
+        ("android", "couchsubs-android/app/src/test/java/com/couchsubs/mobile/tv/TvReachTest.kt", r"TvReach"),
+    ],
+    "Eşli TV kartı: kendiliğinden yeniden bulma, Yeniden Ara, IP Adresi Gir, Eşleşmeyi Kaldır": [
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func checkTVReachable\(\)"),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func searchTVAgain\(\)"),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func useTVAddress\("),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"func removeTVPairing\(\)"),
+        ("mac", "mac/CouchSubs/UI/Yeni/SettingsPage.swift", r"model\.removeTVPairing\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func checkTVReachable\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func searchTVAgain\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func useTVAddress\("),
+        ("ios", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"func removeTVPairing\(\)"),
+        ("ios", "couchsubs-ios/CouchSubs/UI/SettingsPages.swift", r"model\.removeTVPairing\(\)"),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"public async Task CheckTvReachableAsync\(\)"),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"public async Task<bool> SearchTvAgainAsync\(\)"),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"public async Task<bool> UseTvAddressAsync\("),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"public void RemoveTvPairing\(\)"),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun checkTvReachable\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun searchTvAgain\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun useTvAddress\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/tv/TvRelocation.kt", r"fun removeTvPairing\("),
     ],
 }
 

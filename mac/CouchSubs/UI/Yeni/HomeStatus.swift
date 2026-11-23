@@ -268,6 +268,14 @@ struct HomeNotices: View {
                     .disabled(model.tvAppUpdating && model.tvApp == .working)
                 if model.canChangeTV { Button("Change the TV") { model.step = .tv }.buttonStyle(.dsSecondary) }
             }
+            // TV uygulaması bağlı değilken adres yoklanır: TV'nin adresi değiştiyse kart "Yanıt vermiyor — yeniden
+            // aranıyor…" der, TV yeni adreste bulunursa kayıt kendiliğinden güncellenir.
+            .task(id: model.tv?.host) {
+                while !Task.isCancelled {
+                    await model.checkTVReachable()
+                    try? await Task.sleep(nanoseconds: 10_000_000_000)
+                }
+            }
         case .testNotConnected:
             NoticeCard(text: String(localized: "The test subtitle did not reach the TV because the TV app is not connected. Open CouchSubs on the TV. If the TV shows a 6-digit code, don't type it anywhere: approve it in the “Pair this TV?” window that opens on this computer, then test again.")) { EmptyView() }
         case .mainAccount:

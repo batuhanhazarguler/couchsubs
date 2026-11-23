@@ -39,6 +39,12 @@ public static class TvAppMessages
     public const string DevConnectionClosedMessage =
         "Developer mode looks on (the TV's Key Server answers), but the TV refuses the install connection. Unplug the TV for 30 seconds and plug it back in (or press RESTART in the Developer Mode app), then open the Developer Mode app, check that Dev Mode Status is on, turn on Key Server and try again. On some TVs that use webOS Hub this connection may be closed in the TV's software; the TV app then cannot be installed this way.";
 
+    /// <summary>Kayıtlı adreste TV hiç yanıt vermiyor ve ağda da bulunamadı (TvReach; Mac, iPhone ve Android ile aynı).</summary>
+    public const string TvNotRespondingMessage = "The TV isn't responding at this address (is it on and on the same network?)";
+
+    /// <summary>Eşli TV kartında "TV'yi Eşleştir" ya da "Deneme Altyazısı Gönder" TV'ye ulaşamayınca (adres yazılır).</summary>
+    public const string TvNotRespondingAtMessage = "The TV isn't responding at %@. Its address may have changed.";
+
     /// <summary>Hata iletisinin sonunda günlük dosyasını söyleyen satır.</summary>
     public const string SendLogLine = "If this keeps happening, send us this file: %@";
 
@@ -103,6 +109,7 @@ public static class TvAppMessages
         DevModeError.HostPcMismatch => HostPcMismatchMessage,
         DevModeError.Unreachable => "The TV did not respond. Make sure it is on and on the same network.",
         DevModeError.DevConnectionClosed => DevConnectionClosedMessage,
+        DevModeError.TvNotResponding => TvNotRespondingMessage,
         DevModeError.ToolMissing => "Windows' OpenSSH Client is missing. Add it in Settings › System › Optional features and try again.",
         DevModeError.TooOld => "This Samsung TV is too old for the CouchSubs TV app (2016 models and later are supported).",
         DevModeError.SignInFailed => "Samsung sign-in did not complete. Try again and finish signing in on the page that opens.",
