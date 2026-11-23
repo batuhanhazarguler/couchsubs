@@ -51,7 +51,8 @@ public static class TvReach
     public static async Task<bool> RespondsAsync(string host, TvBrand brand, TimeSpan? timeout = null)
     {
         if (string.IsNullOrEmpty(host)) return false;
-        var limit = timeout ?? TimeSpan.FromMilliseconds(1500);
+        // Windows reddedilen bağlantıyı (RST) ~2 sn yeniden dener; reddi "sessiz" saymamak için süre 3 sn.
+        var limit = timeout ?? TimeSpan.FromSeconds(3);
         var tasks = Ports(brand).Select(port => AnswersAsync(host, port, limit)).ToList();
         while (tasks.Count > 0)
         {

@@ -67,7 +67,8 @@ public class TvReachTests
     [Fact]
     public async Task LocalRefusalIsAnAnswer()
     {
-        Assert.True(await TvReach.AnswersAsync("127.0.0.1", 9, TimeSpan.FromSeconds(2)));
+        // Windows reddi SYN'i yeniden deneyerek ~2 sn'de bildirir; süre buna göre geniş.
+        Assert.True(await TvReach.AnswersAsync("127.0.0.1", 9, TimeSpan.FromSeconds(6)));
     }
 
     [Fact]
