@@ -11,6 +11,8 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 - **Menü sanılınca kaybolan altyazı:** Ekran yanlışlıkla menü sanıldığında konuşma satırı artık atılmıyor; ipucu ve görev yazısı menü sayılmıyor, GTA 6'da altyazı atlanmıyor (Windows, Mac, iPhone, Android).
 - **GTA 6 Mesajlar listesi:** Elde sallanan telefonda TV'deki mesaj listesi iki düzen arasında gidip gelmiyor, sabit kalıyor; kişi adı kalın, önizleme altında, kesik önizlemeden yarım sözcük uydurulmuyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.101).
 - **Samsung TV açma denemeleri:** TV uygulaması bağlı değilken açma denemeleri artık 30 sn'de bir sınırsız sürmüyor; aralar uzuyor (30 sn, 1, 2, 5 dk) ve çeviri başına en çok 6 deneme yapılıyor. "Otomatik açılamadı" uyarısı ve TV'yi fişten çekme gereği ortadan kalkıyor (Windows, Mac, iPhone, Android).
+- **Xbox yeniden bağlanma döngüsü:** Kısa kopmalarda sessiz yeniden bağlanma artık sınırlı; "Yeniden bağlanılıyor" bildirimi döngüye girmiyor, deneme hakkı dolunca "Xbox bağlantısı koptu" gösteriliyor (Windows, Mac, iPhone, Android).
+- **"Yazı okuma yanıt vermiyor" takılması:** Hiç dönmeyen yazı okuması bırakılıp okuyucu yeniden kuruluyor; yeni okuyucu çalışınca yedek yoldan çıkılıyor ve uyarı kalkıyor (Mac, iPhone).
 - **Çökme:** Deneysel yerinde çizimde geçersiz bir ölçü değeri uygulamayı çökertmiyor (Windows, Mac, iPhone, Android).
 
 **beta.95'te gelenler:** GTA 6 telefon mesajlarının her seferinde çevrilmesi, sabit yazının çeviri kutusunun yanıp sönmemesi, reklam şeridinin boşluk bırakmaması, TV kartı metinlerinin her platformda aynı olması.
