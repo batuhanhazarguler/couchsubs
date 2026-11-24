@@ -10,6 +10,7 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 - **Mac'te "yazı okuma yanıt vermiyor" uyarısı:** Arka planda süren telefon ya da ekran yazısı okuması altyazıyı bekletince bu uyarı artık yanlışlıkla çıkmıyor; çeviriler bozulmuyor, düzelmesi için uygulamayı yeniden başlatmak gerekmiyor (Mac, iPhone).
 - **Konuşan adı ve renkleri:** Oyunun cümleden ayrı satırda okunan konuşan adı ("Lucia:" gibi) artık her replikte cümlenin başında gösteriliyor. Ad renkleri koyu zeminde okunaklı on ayrı tona yayıldı; karakterler birbirinden kolayca ayrılıyor (Windows, Mac, iPhone, Android).
 - **TV'de ses yok:** TV uygulaması açıkken oyunun sesi gelmeyen TV'ler için bilgi panelinde ses durumu gösteriliyor; kurulum rehberine "Altyazı var ama oyunun sesi yok" bölümü eklendi (LG, Android TV; TV uygulaması 0.9.98).
+- **Xbox yayını kopması:** Xbox yayını kısa kopmalarda kendiliğinden, sessizce yeniden bağlanıyor (5, 15 ve 30 sn arayla üç deneme); PS5'te kopma nedeni günlüğe yazılıyor (Windows, Mac, iPhone, Android).
 - **Küfür:** Çevirilerde küfürler artık yumuşatılmıyor, İngilizcedeki sertliğiyle Türkçeye aktarılıyor.
 - **Çevrimdışı kuyruk:** Sunucuya ulaşılamazken biriken altyazı satırları kaydedilemezse kayıt yeniden deneniyor; uygulama kapanınca satırlar kaybolmuyor (Windows, Mac).
 - **Deneysel: Ekranı Yerinde Türkçe Çiz (Mac):** GTA 6 telefonundaki yazıyı yerinde Türkçe çizer. Varsayılan kapalı; Ayarlar › Alanlar'dan açılır.
