@@ -6,16 +6,12 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
-- **Altyazı "Üstünde":** Türkçe çeviri İngilizce satırın üstüne binmiyor; "Örtsün"de yazı boyu sabit, uzun satırda küçülmüyor (TV uygulaması 0.9.89).
-- **Ekranı çevir:** Ekrana bir kez yazılan çeviri oturum boyunca aynı boy, kalınlık ve renkte kalıyor. Özgün yazı kalkınca çevirisi de hemen kalkıyor, menü değişince eski çeviri ekranda kalmıyor.
-- **Windows yayın penceresi:** Ekran yazısı çevirisi oyundaki kendi yerinde çiziliyor, alt alta liste olmuyor.
-- **Oyun takılması:** CouchSubs açıkken oyun takılmıyor; kareler gerektiği sıklıkta okunuyor (Windows, Mac).
-- **Samsung'da silinen TV uygulaması:** TV'den silinen uygulama "kurulu" görünmüyor, yeniden kurulum öneriliyor. Kurulum bağlantısı reddedilince TV'de hangi ayarın yapılacağı tek satırda yazıyor.
-- **PS5'in adresi değişince:** PS5 ağda yeni IP alırsa yeni adreste bulunuyor, "bulunamadı, yeniden bağlanıyor" döngüsüne girmiyor. Ayarlar › Konsol'da "IP Adresi Gir" ile adresi elle de yazabilirsiniz.
-- **Sıkışık altyazı:** Konuşma altyazısı TV'de ve tüm ekranlarda yatayda sıkıştırılmıyor ve küçülmüyor; ekran yazısı çevirisi en çok biraz daraltılıyor (TV uygulaması 0.9.90).
-- **"Üstünde"/"Altında" boşluğu:** Çevirinin zemini İngilizce satıra değmiyor, araya yeniden boşluk kondu (TV uygulaması 0.9.91).
-- **Reklam şeridi:** Çeviri sürerken ana penceredeki alt reklam şeridi gizleniyor, çeviri durunca geri geliyor.
-- **Windows'ta PS5/Xbox akışı:** CouchSubs yeniden normal öncelikte çalışıyor; görüntü akışı yavaşlayıp kopmuyor.
+- **Karakter Adı "Tüm Satır":** Yeni seçenekle konuşanın adı ve cümlesi o karakterin renginde yazılıyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.93).
+- **LG'de kararma:** Kare sayacı olmayan LG modellerinde (65UR serisi vb.) PS tuşuna basınca, çeviri başlarken ve belli aralıklarla ekran kararmıyor; görüntü yeniden kurulmuyor (TV uygulaması 0.9.94).
+- **"Çevirileri kaldır":** Telefonda bu düğme çeviriyi hemen kapatıyor; ekran yeniden çevrilmiyor, kaldırılan çeviri geri gelmiyor (Android, iPhone).
+- **Windows hata pencereleri:** PS5/TV arama adımından arama sürerken çıkınca ve test adımından çıkınca uygulama hatası vermiyor.
+
+**beta.91'de gelenler:** "Üstünde"de çevirinin İngilizce satıra binmemesi (TV uygulaması 0.9.89–0.9.91), ekran yazısı çevirisinin oturum boyunca aynı boy ve renkte kalması, Windows yayın penceresinde yerinde çizim, oyun takılması, Samsung'da silinen TV uygulaması, PS5'in IP'si değişince bulunması, sıkışık altyazı, reklam şeridi, Windows'ta PS5/Xbox akışı.
 
 **beta.90'da gelenler:** ekran yazısı çevirisinin özgün yazının yerinde çizilmesi (TV uygulaması 0.9.85), TV'nin adresi değişince yeniden bulunması, LG'de güncellemeden sonra eski sürüm (TV uygulaması 0.9.88) ve ilk oturumda kararma (TV uygulaması 0.9.87), PS5 Türkçe menü yazıları, açık mavi kâğıttaki ilan, GTA 6 telefon paneli, dublajda ses cinsiyeti.
 
