@@ -63,6 +63,10 @@ enum class XboxEndCause(val text: String) {
          */
         fun retryLine(attempt: Int, max: Int, delayMs: Long): String =
             "sessiz yeniden bağlanma ${if (attempt <= max) "$attempt/$max" else "ek deneme"}: ${delayMs / 1000} sn sonra"
+
+        /** Sessiz yeniden bağlanma sınırı doldu (iPhone/Mac ve Windows'ta aynı biçim). */
+        val LIMIT_LINE = "sessiz yeniden bağlanma sınırı doldu (${XboxSessionMachine.DROP_RETRY_WINDOW_MS / 60_000} dk içinde en çok " +
+            "${XboxSessionMachine.MAX_DROP_RETRIES}): yeniden denenmiyor, yayın durdu"
     }
 }
 

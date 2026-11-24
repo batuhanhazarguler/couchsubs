@@ -117,9 +117,9 @@ class XboxPictureWatchTest {
      * Sahte Xbox oturumu (bekçiler XboxStreamSession'daki gibi saniyede bir; canlı tutma 30 sn'de bir). Play'deki
      * bildirim (Android beta.85): "uzaktan yürütme başlatıldı, hemen ardından durdu, tekrar başladı/durdu". Yayın
      * başında görüntü birkaç saniye bekliyor, canlı tutma 404 dönüyor: ilk 30 sn'de (ve görüntü akarken sonrasında da)
-     * oturum kapatılmıyor, yeniden açılmıyor. Sonra gerçek kopma: en çok bir kez, 5 sn sonra yeniden bağlanılıyor.
+     * oturum kapatılmıyor, yeniden açılmıyor. Sonra gerçek kopma: sessizce en çok iki kez (5, 15 sn) yeniden bağlanılıyor.
      */
-    @Test fun fakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes() {
+    @Test fun fakeXboxSessionDoesNotLoopAndReconnectsAtMostTwoTimes() {
         val session = FakeXboxSession()
         session.connect()
         session.frames(1000L..3000L)
@@ -136,19 +136,58 @@ class XboxPictureWatchTest {
         assertEquals(1, session.ends.size)
         assertEquals(listOf(5000L), session.retries)
         assertEquals(2, session.plays)
-        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 ve 30 sn sonra yine denenir, sonra yayın
-        // durur ("Yeniden bağlan" düğmesi). Döngü sınırlı: dört kopmada üç yeniden bağlanma. (Bu kısımda canlı tutma yanıt
-        // veriyor; görüntü bekçisi, yayın başındaki 30 sn'lik tanıma süresinden sonra kapatır.)
+        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 sn sonra yine denenir, sonra yayın durur
+        // ("Xbox bağlantısı koptu", "Yeniden bağlan" düğmesi). Döngü sınırlı: üç kopmada iki yeniden bağlanma. (Bu kısımda
+        // canlı tutma yanıt veriyor; görüntü bekçisi, yayın başındaki 30 sn'lik tanıma süresinden sonra kapatır.)
         session.keepaliveFails = null
         var start = 96_000L
-        repeat(3) {
+        repeat(2) {
             session.frames(start..(start + 4000))
             session.iceLost(start + 4500)
             for (at in start..(start + 35_000) step 1000) session.tick(at)
             start = session.clock + 1000
         }
-        assertEquals(listOf(5000L, 15_000L, 30_000L, null), session.retries)
-        assertEquals(4, session.plays)
+        assertEquals(listOf(5000L, 15_000L, null), session.retries)
+        assertEquals(3, session.plays)
+        assertTrue(session.limitReached)
+    }
+
+    /**
+     * #1252: sahte oturumda yayın birkaç dakikada bir kopuyor (her seferinde 3 dk oynanıyor, sonra Wi-Fi gidiyor). Eskiden
+     * sayaç 60 sn'de sıfırlandığı için her kopmada yeniden bağlanılıyor, Xbox'ta bildirim döngüsü bitmiyordu. Artık en çok
+     * iki sessiz yeniden bağlanma yapılıp durulur. iPhone/Mac ve Windows'taki aynı adlı testle aynı senaryo.
+     */
+    @Test fun fakeXboxSessionDroppingEveryFewMinutesStopsAfterTwoReconnects() {
+        val session = FakeXboxSession()
+        session.connect()
+        var start = 0L
+        repeat(8) {
+            if (session.stoppedForGood) return@repeat
+            session.frames(start..(start + 180_000))
+            session.iceLost(start + 180_000)
+            for (at in start..(start + 200_000) step 1000) session.tick(at)
+            start = session.clock + 1000
+        }
+        assertEquals(listOf(5000L, 15_000L, null), session.retries)
+        assertEquals(3, session.plays)
+        assertTrue(session.limitReached)
+    }
+
+    /** Tek kopma (kısa Wi-Fi takılması) sessizce kapanır: bir yeniden bağlanma, yayın sürer, kullanıcıya bir şey sorulmaz. */
+    @Test fun fakeXboxSessionSingleDropReconnectsSilently() {
+        val session = FakeXboxSession()
+        session.connect()
+        session.frames(0L..180_000L)
+        session.iceLost(180_000)
+        for (at in 0L..200_000L step 1000) session.tick(at)
+        assertEquals(listOf(5000L), session.retries)
+        // Yeniden bağlanan yayın yarım saat sorunsuz sürüyor.
+        val start = session.clock + 1000
+        session.frames(start..(start + 1_800_000))
+        for (at in start..(start + 1_800_000) step 1000) session.tick(at)
+        assertEquals(listOf(5000L), session.retries)
+        assertEquals(2, session.plays)
+        assertFalse(session.limitReached)
     }
 
     /** XboxStreamSession'ın bekçi döngüsünün ağsız kopyası (oturum makinesi, görüntü bekçisi, canlı tutma). */
@@ -163,6 +202,8 @@ class XboxPictureWatchTest {
         private var stopped = false
         var keepaliveFails: String? = null
         var plays = 0
+        val stoppedForGood: Boolean get() = stopped
+        val limitReached: Boolean get() = machine.dropLimitReached
         val ends = ArrayList<String>()
         val retries = ArrayList<Long?>()
 
@@ -185,7 +226,7 @@ class XboxPictureWatchTest {
         fun tick(at: Long) {
             if (stopped) return
             now = at
-            frameTimes.filter { it in (at - 1000) until at + 1 }.forEach {
+            frameTimes.subSet(at - 1000, at + 1).toList().forEach {
                 if (machine.phase == XboxSessionMachine.Phase.Negotiating) machine.streaming()
                 watch.frameArrived(it)
             }

@@ -589,7 +589,7 @@ class XboxSessionMachineTest {
         val m = XboxSessionMachine(clock = { now })
         assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NO_FIRST_FRAME, "görüntü yok"))
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
-        now += 60_000
+        now += XboxSessionMachine.HEALTHY_STREAM_MS
         // Görüntü geldi: görüntüsüz bağlantı dizisi baştan sayılır, bu görüntüsüz bağlantı durdurmaz.
         assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NO_FIRST_FRAME, "görüntü yok"))
         assertEquals(30_000L, XboxFirstFrameWatch.FIRST_FRAME_LIMIT_MS)
@@ -612,30 +612,29 @@ class XboxSessionMachineTest {
     }
 
     /**
-     * Oynanan (görüntü gelmiş) yayın koparsa kullanıcıya sormadan en çok üç kez, geri çekilerek (5, 15, 30 sn) yeniden
-     * bağlanılır; üçü de kısa sürede koparsa durulur. Eskiden tek deneme vardı: ilk deneme tutmayınca kullanıcı birkaç
-     * dakikada bir "Yeniden bağlan"a basmak zorunda kalıyordu (#1185, #1190). Görüntü hiç gelmediyse yine tek deneme.
-     * iPhone/Mac ve Windows'taki aynı adlı testle aynı.
+     * Oynanan (görüntü gelmiş) yayın koparsa kullanıcıya sormadan en çok iki kez, geri çekilerek (5, 15 sn) yeniden
+     * bağlanılır; ikisi de kısa sürede koparsa durulur ve sınırın dolduğu bildirilir ("Xbox bağlantısı koptu"). Görüntü hiç
+     * gelmediyse yine tek deneme. iPhone/Mac ve Windows'taki aynı adlı testle aynı.
      */
-    @Test fun realDropReconnectsSilentlyUpToThreeTimes() {
+    @Test fun realDropReconnectsSilentlyUpToTwoTimes() {
         var now = 1_000L
         val m = XboxSessionMachine(clock = { now })
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
         now += 120_000
-        assertEquals(3, m.maxRetries)
+        assertEquals(2, m.maxRetries)
         assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NETWORK, "kopma"))
         assertEquals(1, (m.phase as XboxSessionMachine.Phase.Failed).attempt)
-        // Yeniden bağlanmalar da kısa sürede koptu: 15 ve 30 sn sonra yine denenir, dördüncü kopmada durulur.
-        for ((attempt, delay) in listOf(2 to 15_000L, 3 to 30_000L)) {
-            m.start(); m.played(); m.status("Provisioned", null); m.streaming()
-            now += 10_000
-            assertEquals(XboxSessionMachine.Action.Retry(delay), m.fail(XboxError.SERVER_CLOSED, "Xbox görüntü kanalını kapattı"))
-            assertEquals(attempt, (m.phase as XboxSessionMachine.Phase.Failed).attempt)
-        }
+        assertFalse(m.dropLimitReached)
+        // Yeniden bağlanma da kısa sürede koptu: 15 sn sonra yine denenir, üçüncü kopmada durulur.
+        m.start(); m.played(); m.status("Provisioned", null); m.streaming()
+        now += 10_000
+        assertEquals(XboxSessionMachine.Action.Retry(15_000L), m.fail(XboxError.SERVER_CLOSED, "Xbox görüntü kanalını kapattı"))
+        assertEquals(2, (m.phase as XboxSessionMachine.Phase.Failed).attempt)
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
         now += 10_000
         assertEquals(XboxSessionMachine.Action.Retry(null), m.fail(XboxError.SERVER_CLOSED, "Xbox görüntü kanalını kapattı"))
         assertFalse((m.phase as XboxSessionMachine.Phase.Failed).willRetry)
+        assertTrue(m.dropLimitReached)
         // Bağlanırken hata (görüntü hiç gelmedi): eskisi gibi en çok bir deneme.
         val fresh = XboxSessionMachine()
         assertEquals(1, fresh.maxRetries)
@@ -653,12 +652,65 @@ class XboxSessionMachineTest {
         val m = XboxSessionMachine(clock = { now })
         m.fail(XboxError.NETWORK, "kopma")
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
-        now += 60_000
+        now += XboxSessionMachine.HEALTHY_STREAM_MS
         assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NETWORK, "kopma"))
         // Kısa süren yayın sayacı sıfırlamaz: ikinci deneme daha uzun bekler.
         m.start(); m.played(); m.status("Provisioned", null); m.streaming()
         now += 1_000
         assertEquals(XboxSessionMachine.Action.Retry(15_000), m.fail(XboxError.NETWORK, "kopma"))
+    }
+
+    /**
+     * #1252: birkaç dakikada bir kopan yayın. Eskiden sayaç 60 sn'lik yayından sonra sıfırlanıyordu: her kopmada yeniden
+     * bağlanılıyor, Xbox'ta "uzaktan yürütme durdu / başladı" bildirimi sonsuza dek tekrarlanıyordu. Artık sayaç ancak 10 dk
+     * sağlıklı yayından sonra sıfırlanır ve 10 dk içinde en çok iki sessiz yeniden bağlanma yapılır; sonra durulur.
+     */
+    @Test fun streamDroppingEveryFewMinutesStopsAfterTwoReconnects() {
+        var now = 1_000L
+        val m = XboxSessionMachine(clock = { now })
+        val retries = ArrayList<Long?>()
+        repeat(10) {
+            if (m.dropLimitReached) return@repeat
+            m.start(); m.played(); m.status("Provisioned", null); m.streaming()
+            now += 3 * 60_000L
+            retries += (m.fail(XboxError.NETWORK, "Xbox ICE bağlantısı koptu (failed)") as XboxSessionMachine.Action.Retry).delayMs
+            now += retries.last() ?: 0
+        }
+        assertEquals(listOf(5000L, 15_000L, null), retries)
+        assertTrue(m.dropLimitReached)
+    }
+
+    /** Kopmadan sonraki ret için tanınan deneme de oturum sınırına sayılır: döngüye ek bildirim katmaz. */
+    @Test fun graceRetryCountsTowardsTheSessionLimit() {
+        var now = 1_000L
+        val m = XboxSessionMachine(clock = { now })
+        m.start(); m.played(); m.status("Provisioned", null); m.streaming()
+        now += 3 * 60_000L
+        assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NETWORK, "kopma"))
+        // Xbox eski oturumu bırakmadan yenisini reddetti: bir kez, 15 sn sonra denenir (ikinci deneme).
+        m.start(); m.played()
+        assertEquals(XboxSessionMachine.Action.Retry(15_000), m.status("Failed", null))
+        m.start(); m.played(); m.status("Provisioned", null); m.streaming()
+        now += 3 * 60_000L
+        assertEquals(XboxSessionMachine.Action.Retry(null), m.fail(XboxError.NETWORK, "kopma"))
+        assertTrue(m.dropLimitReached)
+    }
+
+    /** #1216'nın amacı: tek, kısa bir Wi-Fi takılması kullanıcı fark etmeden kapanır; seyrek kopmalar da hep sessiz. */
+    @Test fun singleDropIsSilentAndRareDropsStaySilent() {
+        var now = 1_000L
+        val m = XboxSessionMachine(clock = { now })
+        repeat(5) {
+            m.start(); m.played(); m.status("Provisioned", null); m.streaming()
+            now += 25 * 60_000L
+            assertEquals(XboxSessionMachine.Action.Retry(5000), m.fail(XboxError.NETWORK, "kopma"))
+            assertFalse(m.dropLimitReached)
+            now += 5000
+        }
+        // Takılmada ilk deneme Xbox eski oturumu bırakmadan düştü: ikinci deneme yine sessiz.
+        m.start(); m.played(); m.status("Provisioned", null)
+        assertEquals(XboxSessionMachine.Action.Retry(15_000), m.fail(XboxError.NETWORK, "kopma"))
+        assertFalse(m.dropLimitReached)
     }
 
     /** Görüntü akarken başarısız canlı tutma (404 dahil) yayını kapatmaz; görüntü durmuşsa eskisi gibi kapatır. */

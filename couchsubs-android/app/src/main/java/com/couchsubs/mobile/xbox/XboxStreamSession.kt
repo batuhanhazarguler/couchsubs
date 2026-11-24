@@ -279,14 +279,17 @@ class XboxStreamSession(
             kind in XboxSessionMachine.FATAL -> onState(SessionState.Disconnected(DisconnectKind.OTHER, describe(kind)))
             else -> {
                 // Denemeler bitti ya da konsol yayını reddetti: yayın durur, yeniden denenmez.
-                log("yeniden denenmiyor, yayın durdu")
+                val limited = machine.dropLimitReached
+                log(if (limited) XboxEndCause.LIMIT_LINE else "yeniden denenmiyor, yayın durdu")
                 // Ham neden (Xbox'ın JSON hata nesnesi) yukarıda günlüğe yazıldı; ekranda yalnız anlaşılır metin ve kod (#871).
-                val stop = XboxSessionMachine.stopKind(kind, detail)
+                // Sessiz yeniden bağlanma sınırı dolduysa: "Xbox bağlantısı koptu, Yeniden bağlan" (#1252).
+                val stop = if (limited) XboxSessionMachine.StopKind.DROPPED else XboxSessionMachine.stopKind(kind, detail)
                 val text = when (stop) {
                     XboxSessionMachine.StopKind.BUSY -> appContext.getString(R.string.xbox_stopped_busy)
                     XboxSessionMachine.StopKind.CONSOLE_UNAVAILABLE -> appContext.getString(R.string.xbox_stopped_console)
                     XboxSessionMachine.StopKind.NO_PICTURE -> appContext.getString(R.string.xbox_stopped_no_picture)
                     XboxSessionMachine.StopKind.SERVICE_NOT_READY -> appContext.getString(R.string.xbox_stopped_service)
+                    XboxSessionMachine.StopKind.DROPPED -> appContext.getString(R.string.xbox_stopped_dropped)
                     XboxSessionMachine.StopKind.START_FAILED ->
                         appContext.getString(R.string.xbox_stopped_code, XboxSessionMachine.displayReason(detail, stop, kind.name))
                     XboxSessionMachine.StopKind.OTHER ->

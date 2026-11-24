@@ -31,6 +31,8 @@ enum XboxText {
         case .startFailed:
             // `reason`: yalnız hata kodu (XboxStop.displayReason); Xbox'ın JSON hata nesnesi ekranda gösterilmez (#871).
             return String(format: String(localized: "Your Xbox couldn't start the stream (code %@). Turn the Xbox fully off by holding the power button for 10 seconds, turn it back on, check that Remote features are on, then try again."), reason)
+        case .dropped:
+            return String(localized: "The Xbox connection dropped. Press Reconnect; if it keeps dropping, connect the Xbox with a network cable or restart it.")
         case .other:
             return String(format: String(localized: "The Xbox stream stopped (%@). Start translation again; if it keeps stopping, restart the Xbox."), reason)
         }

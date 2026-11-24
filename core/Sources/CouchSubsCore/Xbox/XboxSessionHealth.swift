@@ -68,6 +68,10 @@ public enum XboxEndCause: String, Sendable {
         let count = attempt <= max ? "\(attempt)/\(max)" : "ek deneme"
         return "sessiz yeniden bağlanma \(count): \(delayMs / 1000) sn sonra"
     }
+
+    /// Sessiz yeniden bağlanma sınırı doldu (Windows ve Android'de aynı biçim).
+    public static let limitLine = "sessiz yeniden bağlanma sınırı doldu (\(XboxSessionMachine.dropRetryWindowMs / 60_000) dk içinde en çok "
+        + "\(XboxSessionMachine.maxDropRetries)): yeniden denenmiyor, yayın durdu"
 }
 
 /// Oturum kapatma (DELETE) denemeleri. Kopma anında ağ da takılıyor olabilir; tek başarısız istek eski oturumu Xbox'ta
@@ -89,8 +93,9 @@ public enum XboxConnectWatch {
 public enum XboxStopKind: Equatable, Sendable {
     /// `noPicture`: son bağlantılarda Xbox tek kare göndermedi (Windows XboxStopKind.NoPicture, Android NO_PICTURE).
     /// `serviceNotReady`: Xbox uzaktan oynatma hizmetini başlatamadı ("Timed out waiting for Cloud Streaming Service to be
-    /// ready", 0x8007139F); `startFailed`: Xbox bilinmeyen bir hata koduyla yayını reddetti (#871).
-    case busy, consoleUnavailable, noPicture, serviceNotReady, startFailed, other
+    /// ready", 0x8007139F); `startFailed`: Xbox bilinmeyen bir hata koduyla yayını reddetti (#871); `dropped`: oynanan yayın
+    /// koptu ve sessiz yeniden bağlanma sınırı doldu (`XboxSessionMachine.dropLimitReached`, #1252).
+    case busy, consoleUnavailable, noPicture, serviceNotReady, startFailed, dropped, other
 }
 
 /// Xbox yayını durunca günlük satırı ve kullanıcıya gösterilen metnin türü.
@@ -253,7 +258,7 @@ public enum XboxPictureVerdict: Equatable, Sendable {
 /// kalınca bitiyordu: ICE `disconnected`da takılı kalan ya da kare göndermeyi bırakan yayında ana ekran "bağlı"
 /// diyor, altyazı donuyor ve bir daha gelmiyordu (X'te kullanıcı bildirimi, iPhone + Xbox Series S). Kare
 /// `warnAfterMs` gelmezse (ICE `disconnected` iken 1 sn) uyarı gösterilir; `stallAfterMs` gelmezse ya da ICE
-/// `failed` olursa oturum kapatılıp `XboxSessionMachine`le (sessizce en çok üç kez: 5, 15, 30 sn sonra) yeniden kurulur. İlk kareden sonraki
+/// `failed` olursa oturum kapatılıp `XboxSessionMachine`le (sessizce en çok iki kez: 5, 15 sn sonra) yeniden kurulur. İlk kareden sonraki
 /// `startupGraceMs` içinde yalnız ICE `failed` oturumu kapatır: yayının başında Xbox görüntüyü birkaç saniye
 /// bekletebiliyor (yükleme, "uzaktan yürütme başlatıldı" bildirimi); eskiden bu boşlukta oturum kapatılıp yeniden
 /// açılıyor, Xbox'ta başladı/durdu döngüsü oluyordu (Play, Android beta.85). Windows'taki

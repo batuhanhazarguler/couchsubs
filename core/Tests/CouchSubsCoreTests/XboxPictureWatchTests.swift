@@ -110,9 +110,9 @@ final class XboxPictureWatchTests: XCTestCase {
     /// Sahte Xbox oturumu (bekçiler XboxStreamSession'daki gibi saniyede bir; canlı tutma 30 sn'de bir). Play'deki bildirim
     /// (Android beta.85): "uzaktan yürütme başlatıldı, hemen ardından durdu, tekrar başladı/durdu". Yayın başında görüntü
     /// birkaç saniye bekliyor, canlı tutma 404 dönüyor: ilk 30 sn'de (ve görüntü akarken sonrasında da) oturum kapatılmıyor,
-    /// yeniden açılmıyor. Sonra gerçek kopma: sessizce en çok üç kez (5, 15, 30 sn) yeniden bağlanılıyor. Android'deki
-    /// fakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes ve Windows'taki aynı adlı testle aynı senaryo.
-    func testFakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes() {
+    /// yeniden açılmıyor. Sonra gerçek kopma: sessizce en çok iki kez (5, 15 sn) yeniden bağlanılıyor. Android'deki
+    /// fakeXboxSessionDoesNotLoopAndReconnectsAtMostTwoTimes ve Windows'taki aynı adlı testle aynı senaryo.
+    func testFakeXboxSessionDoesNotLoopAndReconnectsAtMostTwoTimes() {
         let session = FakeXboxSession()
         session.connect()
         session.frames(1000...3000)
@@ -129,19 +129,55 @@ final class XboxPictureWatchTests: XCTestCase {
         XCTAssertEqual(session.ends.count, 1)
         XCTAssertEqual(session.retries, [5000])
         XCTAssertEqual(session.plays, 2)
-        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 ve 30 sn sonra yine denenir, sonra yayın
-        // durur ("Yeniden bağlan" düğmesi). Döngü sınırlı: dört kopmada üç yeniden bağlanma.
+        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 sn sonra yine denenir, sonra yayın durur
+        // ("Xbox bağlantısı koptu", "Yeniden bağlan" düğmesi). Döngü sınırlı: üç kopmada iki yeniden bağlanma.
         // (Bu kısımda canlı tutma yanıt veriyor; görüntü bekçisi, yayın başındaki 30 sn'lik tanıma süresinden sonra kapatır.)
         session.keepaliveFails = nil
         var start = 96_000
-        for _ in 0..<3 {
+        for _ in 0..<2 {
             session.frames(start...(start + 4000))
             session.iceLost(start + 4500)
             for at in stride(from: start, through: start + 35_000, by: 1000) { session.tick(at) }
             start = session.clock + 1000
         }
-        XCTAssertEqual(session.retries, [5000, 15_000, 30_000, nil])
-        XCTAssertEqual(session.plays, 4)
+        XCTAssertEqual(session.retries, [5000, 15_000, nil])
+        XCTAssertEqual(session.plays, 3)
+        XCTAssertTrue(session.limitReached)
+    }
+
+    /// #1252: sahte oturumda yayın birkaç dakikada bir kopuyor (her seferinde 3 dk oynanıyor, sonra Wi-Fi gidiyor). Eskiden
+    /// sayaç 60 sn'de sıfırlandığı için her kopmada yeniden bağlanılıyor, Xbox'ta bildirim döngüsü bitmiyordu. Artık en çok
+    /// iki sessiz yeniden bağlanma yapılıp durulur. Android ve Windows'taki aynı adlı testle aynı senaryo.
+    func testFakeXboxSessionDroppingEveryFewMinutesStopsAfterTwoReconnects() {
+        let session = FakeXboxSession()
+        session.connect()
+        var start = 0
+        for _ in 0..<8 where !session.stoppedForGood {
+            session.frames(start...(start + 180_000))
+            session.iceLost(start + 180_000)
+            for at in stride(from: start, through: start + 200_000, by: 1000) { session.tick(at) }
+            start = session.clock + 1000
+        }
+        XCTAssertEqual(session.retries, [5000, 15_000, nil])
+        XCTAssertEqual(session.plays, 3)
+        XCTAssertTrue(session.limitReached)
+    }
+
+    /// Tek kopma (kısa Wi-Fi takılması) sessizce kapanır: bir yeniden bağlanma, yayın sürer, kullanıcıya bir şey sorulmaz.
+    func testFakeXboxSessionSingleDropReconnectsSilently() {
+        let session = FakeXboxSession()
+        session.connect()
+        session.frames(0...180_000)
+        session.iceLost(180_000)
+        for at in stride(from: 0, through: 200_000, by: 1000) { session.tick(at) }
+        XCTAssertEqual(session.retries, [5000])
+        // Yeniden bağlanan yayın yarım saat sorunsuz sürüyor.
+        let start = session.clock + 1000
+        session.frames(start...(start + 1_800_000))
+        for at in stride(from: start, through: start + 1_800_000, by: 1000) { session.tick(at) }
+        XCTAssertEqual(session.retries, [5000])
+        XCTAssertEqual(session.plays, 2)
+        XCTAssertFalse(session.limitReached)
     }
 }
 
@@ -152,11 +188,14 @@ private final class FakeXboxSession {
     private lazy var machine = XboxSessionMachine(clock: { [unowned self] in Double(self.now) })
     private var watch = XboxPictureWatch()
     private var keepalive = XboxKeepalive()
-    private var frameTimes = Set<Int>()
+    /// Kare aralıkları (her biri ~60 kare/sn); uzun yayınlarda her saat adımı tüm kareleri taramasın diye küme değil.
+    private var frameRanges: [ClosedRange<Int>] = []
     private var connectedAt = 0
     private var stopped = false
     var keepaliveFails: String?
     var plays = 0
+    var stoppedForGood: Bool { stopped }
+    var limitReached: Bool { machine.dropLimitReached }
     var ends: [String] = []
     var retries: [Int?] = []
 
@@ -169,17 +208,27 @@ private final class FakeXboxSession {
     }
 
     /// Xbox bu aralıkta ~60 kare/sn gönderir.
-    func frames(_ range: ClosedRange<Int>) { for at in stride(from: range.lowerBound, through: range.upperBound, by: 16) { frameTimes.insert(at) } }
+    func frames(_ range: ClosedRange<Int>) { frameRanges.append(range) }
 
     func iceLost(_ at: Int) {
-        frameTimes = frameTimes.filter { $0 < at }
+        frameRanges = frameRanges.compactMap { $0.lowerBound >= at ? nil : $0.lowerBound...min($0.upperBound, at - 1) }
         watch.iceChanged(.disconnected, atMs: at)
+    }
+
+    /// (at - 1000, at] aralığına düşen kareler, sıralı.
+    private func framesUntil(_ at: Int) -> [Int] {
+        frameRanges.flatMap { range -> [Int] in
+            let from = at - 999
+            let first = from <= range.lowerBound ? range.lowerBound : range.lowerBound + (from - range.lowerBound + 15) / 16 * 16
+            let last = min(range.upperBound, at)
+            return first <= last ? Array(stride(from: first, through: last, by: 16)) : []
+        }.sorted()
     }
 
     func tick(_ at: Int) {
         guard !stopped else { return }
         now = at
-        for frame in frameTimes.filter({ $0 > at - 1000 && $0 <= at }).sorted() {
+        for frame in framesUntil(at) {
             if machine.phase == .negotiating { _ = machine.streaming() }
             watch.frameArrived(atMs: frame)
         }

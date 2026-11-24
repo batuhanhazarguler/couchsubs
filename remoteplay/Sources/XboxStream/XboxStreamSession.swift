@@ -273,14 +273,15 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
             log("Xbox görüntü göndermedi: bağlantı kuruldu ama tek kare gelmedi. Xbox'ta Ayarlar › Cihazlar ve bağlantılar › "
                 + "Uzak özellikler açık mı, Xbox kablolu mu? Tanı satırlarında video bayt 0 ise Xbox hiç görüntü kodlamıyor")
         }
-        let (phase, maxRetries) = locked { (machine.phase, machine.maxRetries) }
+        let (phase, maxRetries, limited) = locked { (machine.phase, machine.maxRetries, machine.dropLimitReached) }
         if case let .failed(_, _, true, attempt) = phase, attempt > 0 {
             log(XboxEndCause.retryLine(attempt: attempt, of: maxRetries, delayMs: retryDelayMs ?? 0))
         } else if case .failed = phase, !XboxSessionMachine.fatal.contains(kind) {
             // Denemeler bitti ya da konsol yayını reddetti: yayın durur, yeniden denenmez.
-            log("yeniden denenmiyor, yayın durdu")
+            log(limited ? XboxEndCause.limitLine : "yeniden denenmiyor, yayın durdu")
             // Ham neden (Xbox'ın JSON hata nesnesi) yukarıda günlüğe yazıldı; ekranda yalnız anlaşılır metin ve kod (#871).
-            let stop = XboxStop.classify(detail, kind: kind)
+            // Sessiz yeniden bağlanma sınırı dolduysa: "Xbox bağlantısı koptu, Yeniden bağlan" (#1252).
+            let stop = limited ? .dropped : XboxStop.classify(detail, kind: kind)
             onState?(.disconnected(.other(stopText(stop, XboxStop.displayReason(detail, stop, fallback: kind.rawValue)))))
             return
         }

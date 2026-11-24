@@ -5,11 +5,15 @@
 // 5, 15, 45 sn aralarla üç deneme vardı; her biri Xbox'ta "uzaktan yürütme başlatıldı / durduruldu" bildirimi çıkarıyor,
 // kullanıcı bunu bitmeyen bir döngü olarak görüyordu (Play, Android beta.85). Konsol `Failed` ya da `errorDetails` dönerse
 // hiç denenmez; yalnız görüntü gelmiş bir yayın koptuktan sonraki ilk ret bir kez, `reconnectGraceMs` sonra denenir.
-// Yayın `healthyStreamMs` ayakta kaldıysa deneme sayısı sıfırlanır.
-// Görüntü gelmiş (oynanan) bir yayın beklenmedik koparsa sessiz yeniden bağlanma `dropRetryDelaysMs` kadar (5, 15, 30 sn;
-// en çok üç) denenir. Tek deneme yetmiyordu: kısa bir Wi-Fi takılmasında ilk deneme Xbox eski oturumu bırakmadan
+// Yayın `healthyStreamMs` (10 dk) ayakta kaldıysa deneme sayısı sıfırlanır.
+// Görüntü gelmiş (oynanan) bir yayın beklenmedik koparsa sessiz yeniden bağlanma `dropRetryDelaysMs` kadar (5, 15 sn;
+// en çok iki) denenir. Tek deneme yetmiyordu: kısa bir Wi-Fi takılmasında ilk deneme Xbox eski oturumu bırakmadan
 // düşünce yayın duruyor, kullanıcı birkaç dakikada bir "Yeniden bağlan"a basmak zorunda kalıyordu (App Store, Play,
-// X; GitHub #1185, #1190). Görüntü hiç gelmemiş bağlantılarda kural eskisi gibi (bir deneme).
+// X; GitHub #1185, #1190). Görüntü hiç gelmemiş bağlantılarda kural eskisi gibi (bir deneme). Sessiz yeniden bağlanma
+// oturum boyunca `dropRetryWindowMs` (10 dk) içinde en çok `maxDropRetries` (iki) kez yapılır; sınır dolunca durulur
+// (`dropLimitReached`, ekranda "Xbox bağlantısı koptu" ve "Yeniden bağlan"). beta.94'te (#1216) üç deneme ve 60 sn'de
+// sıfırlanan sayaç birlikte, birkaç dakikada bir kopan yayında Xbox'ta bitmeyen "uzaktan yürütme durdu / başladı"
+// bildirimi döngüsü yaratıyordu (#1252).
 
 import Foundation
 
@@ -41,7 +45,13 @@ public struct XboxSessionMachine {
     /// Görüntü gelmiş yayın koptuktan sonraki sessiz yeniden bağlanma aralıkları (Windows `XboxRetryPlan.DropDelaysMs`,
     /// Android `dropRetryDelaysMs` ile aynı).
     public let dropRetryDelaysMs: [Int]
-    public static let defaultDropRetryDelaysMs = [5000, 15_000, 30_000]
+    public static let defaultDropRetryDelaysMs = [5000, 15_000]
+    /// Yayın bu kadar sağlıklı sürdüyse kopma yeni bir dizinin ilkidir (eskiden 60 sn: birkaç dakikada bir kopan yayın
+    /// döngüye giriyordu, #1252).
+    public static let defaultHealthyStreamMs = 600_000
+    /// Sessiz yeniden bağlanma oturum sınırı: `dropRetryWindowMs` içinde en çok `maxDropRetries` deneme.
+    public static let dropRetryWindowMs = 600_000
+    public static let maxDropRetries = 2
     public let healthyStreamMs: Int
     private let clock: () -> Double
     public private(set) var phase: Phase = .idle
@@ -57,9 +67,16 @@ public struct XboxSessionMachine {
     private var graceUsed = false
     /// Kopmadan sonra Xbox yeni oturumu reddederse (eski oturum Xbox'ta henüz kapanmadı) beklenen süre.
     public static let reconnectGraceMs = 15_000
+    /// Görüntü gelmiş yayından sonraki sessiz yeniden bağlanmaların anları (son `dropRetryWindowMs` içindekiler).
+    private var dropRetries: [Double] = []
+    /// Son kopmada sessiz yeniden bağlanma sınırı doldu (görüntü gelmiş yayın `dropRetryDelaysMs` kadar ya da
+    /// `dropRetryWindowMs` içinde `maxDropRetries` kez yeniden bağlandı ve yine koptu): yeniden denenmez, kullanıcıya
+    /// "Xbox bağlantısı koptu" gösterilir.
+    public private(set) var dropLimitReached = false
 
     public init(maxPolls: Int = 90, pollIntervalMs: Int = 1000, retryDelaysMs: [Int] = [5000],
-         dropRetryDelaysMs: [Int] = XboxSessionMachine.defaultDropRetryDelaysMs, healthyStreamMs: Int = 60_000,
+         dropRetryDelaysMs: [Int] = XboxSessionMachine.defaultDropRetryDelaysMs,
+         healthyStreamMs: Int = XboxSessionMachine.defaultHealthyStreamMs,
          clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime * 1000 }) {
         self.maxPolls = maxPolls
         self.pollIntervalMs = pollIntervalMs
@@ -127,8 +144,9 @@ public struct XboxSessionMachine {
     /// açılıp kapanıyordu (Windows'taki XboxRetryPlan ile aynı).
     public mutating func fail(_ kind: XboxErrorKind, _ message: String, permanent: Bool = false) -> Action {
         guard phase != .stopped else { return .nothing }
+        let now = clock()
         // Yayın en az `healthyStreamMs` sürdüyse bu kopma yeni bir dizinin ilkidir.
-        if streamingSince > 0 && clock() - streamingSince >= Double(healthyStreamMs) { failures = 0 }
+        if streamingSince > 0 && now - streamingSince >= Double(healthyStreamMs) { failures = 0 }
         streamingSince = 0
         failures += 1
         if kind == .noFirstFrame { noPictureConnections += 1 }
@@ -141,8 +159,16 @@ public struct XboxSessionMachine {
         // `retryDelaysMs` kadar (bir) yeniden bağlanma; kopmadan sonraki ret için tanınan tek deneme bu sınırın dışındadır
         // (reddedilen oturumda Xbox yayın açmaz).
         let delays = retryLimit
-        let retry = ((!refused && failures <= delays.count) || grace) && !Self.fatal.contains(kind)
+        var retry = ((!refused && failures <= delays.count) || grace) && !Self.fatal.contains(kind)
             && noPictureConnections < Self.maxNoPictureAttempts
+        // Oturum sınırı: görüntü gelmiş yayından sonra `dropRetryWindowMs` içinde en çok `maxDropRetries` sessiz yeniden
+        // bağlanma (kopmadan sonraki ret için tanınan deneme de sayılır; her biri Xbox'ta bildirim çıkarır).
+        dropRetries.removeAll { now - $0 >= Double(Self.dropRetryWindowMs) }
+        let limited = hadPicture && !Self.fatal.contains(kind) && noPictureConnections < Self.maxNoPictureAttempts
+            && (!refused || grace) && (!retry || dropRetries.count >= Self.maxDropRetries)
+        if limited { retry = false }
+        dropLimitReached = limited
+        if retry && hadPicture { dropRetries.append(now) }
         if retry && grace { graceUsed = true }
         phase = .failed(kind, message: message, willRetry: retry, attempt: retry ? failures : 0)
         guard retry else { return .retry(delayMs: nil) }
