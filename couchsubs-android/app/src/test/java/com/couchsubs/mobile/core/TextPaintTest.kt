@@ -71,7 +71,7 @@ class TextPaintTest {
                 val t = raw.getJSONObject(k)
                 val b = doubles(t.getJSONArray("box"))
                 TextPainter.Target(TextBox(b[0] / w, b[1] / h, b[2] / w, b[3] / h), t.getDouble("line") / h, t.getInt("rows"),
-                    t.getString("bg"), t.getString("fg"), t.getBoolean("upper"), t.getString("align"))
+                    t.getString("bg"), t.getString("fg"), t.getBoolean("upper"), t.getString("align"), t.optInt("words", 0))
             }
             val paints = TextPainter.paints(targets, width, height) { x, y -> pixel(frame, x, y) }
             val expects = frame.getJSONArray("expect")
@@ -104,6 +104,10 @@ class TextPaintTest {
                 }
                 if (expect.has("group")) assertEquals(name, if (expect.isNull("group")) null else expect.getInt("group"), paint.group)
                 if (expect.has("pitch")) near(paint.pitch * h, expect.getDouble("pitch"), 0.5, "$name satır aralığı")
+                if (expect.has("side")) {
+                    val want = if (expect.isNull("side")) null else expect.getString("side")
+                    assertEquals("$name simge yanı", want, paint.iconSide)
+                }
             }
         }
     }
@@ -268,5 +272,32 @@ class TextPaintTest {
                 assertTrue("$box: $b", b.left <= b.right && b.top <= b.bottom)
             }
         }
+    }
+
+    /** #1264: komşusu olmayan, ekranın ortasındaki tek satır (görev yazısı) ortalı; kenardaki tek satır hizasını korur. */
+    @Test
+    fun loneCenteredLineIsCentered() {
+        assertEquals("center", ScreenFit.loneAlign(TextBox(0.385, 0.94, 0.614, 0.97), 1))
+        assertNull(ScreenFit.loneAlign(TextBox(0.385, 0.94, 0.614, 0.97), 2))
+        assertNull(ScreenFit.loneAlign(TextBox(0.05, 0.1, 0.3, 0.13), 1))
+    }
+
+    /** #1267: gösterilen satırın zemini açıktan koyuya dönünce (seçim kaydı) eski kutular hemen kalkar. */
+    @Test
+    fun selectionMoveIsSeenFromTheFlippedBackground() {
+        val box = TextBox(0.02, 0.2, 0.27, 0.25)
+        val shown = listOf(box to "#E8E8F0")
+        assertTrue(RegionWatcher.selectionMoved(shown, listOf(box to "#202030")))
+        assertTrue(!RegionWatcher.selectionMoved(shown, listOf(box to "#E0E0E8")))
+        assertTrue(!RegionWatcher.selectionMoved(shown, listOf(TextBox(0.02, 0.3, 0.27, 0.35) to "#202030")))
+    }
+
+    /** #1266, #1267: okunan yazının sözcük sayısında simge sanılan karakterler sayılmaz. */
+    @Test
+    fun iconGlyphsAreNotWords() {
+        assertEquals(1, TextPainter.words("I Map"))
+        assertEquals(2, TextPainter.words("II Photo Studio"))
+        assertEquals(1, TextPainter.words("SELECT ⊗"))
+        assertEquals(2, TextPainter.words("Retry Checkpoint"))
     }
 }

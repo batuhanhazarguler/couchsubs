@@ -200,4 +200,75 @@ final class ScreenMenuTests: XCTestCase {
         XCTAssertNil(UiCommands.translateLabel("CURRENT OUTFIT"))
         XCTAssertNil(UiCommands.translateLabel("40"))
     }
+
+    /// Seçili menü satırı (#1267): açık şeritte koyu yazı. Karo baştan sona açık, yazı koyu çizgiler.
+    private static func selected(_ canvas: inout Canvas, _ column: Int, _ row: Int) {
+        for y in (row * 20)..<(row * 20 + 20) {
+            for x in (column * 20)..<(column * 20 + 20) {
+                canvas.set(x, y, [2, 3].contains((y - row * 20) % 6) && y - row * 20 >= 3 && y - row * 20 < 17 && x % 5 < 2 ? 30 : 230)
+            }
+        }
+    }
+
+    func testSelectedRowWithDarkTextOnALightBarIsFoundInAMenu() {
+        let detector = ScreenTextDetector()
+        run(detector, 0, 600) { _ in
+            var canvas = Self.wheel()
+            Self.selected(&canvas, 28, 16)
+            return canvas.image
+        }
+        XCTAssertTrue(detector.inMenu)
+        XCTAssertEqual(detector.areas.count, 11, "seçili satır da alan")
+        // Menü dışında açık zemindeki koyu leke (gökyüzü, kar) yazı sayılmaz.
+        let outside = ScreenTextDetector()
+        run(outside, 0, 1500) { _ in
+            var canvas = Canvas(fill: 70)
+            Self.selected(&canvas, 20, 10)
+            Self.selected(&canvas, 21, 10)
+            return canvas.image
+        }
+        XCTAssertTrue(outside.areas.isEmpty)
+    }
+
+    /// #1264: komşusu olmayan, ekranın ortasındaki tek satır (görev yazısı) ortalı; kenardaki tek satır hizasını korur.
+    @MainActor
+    func testLoneCenteredLineIsCentered() {
+        let look = TextLook(bold: false, condensed: false, align: .left, upper: false, flat: true)
+        let mission = RegionWatcher.Block(start: 0, count: 1, box: TextBox(left: 0.385, top: 0.94, right: 0.614, bottom: 0.97),
+                                          lineHeight: 0.03, look: look)
+        let corner = RegionWatcher.Block(start: 1, count: 1, box: TextBox(left: 0.05, top: 0.1, right: 0.3, bottom: 0.13),
+                                         lineHeight: 0.03, look: look)
+        let aligned = RegionWatcher.alignByNeighbours([mission, corner])
+        XCTAssertEqual(aligned[0].look?.align, .center)
+        XCTAssertEqual(aligned[1].look?.align, .left)
+        XCTAssertEqual(ScreenFit.loneAlign(mission.box, rows: 1), .center)
+        XCTAssertNil(ScreenFit.loneAlign(mission.box, rows: 2), "çok satırlı yazının hizası satırlarından çıkar")
+        XCTAssertNil(ScreenFit.loneAlign(corner.box, rows: 1))
+    }
+
+    /// #1267: gösterilen satırın zemini açıktan koyuya dönünce (seçim kaydı) eski kutular hemen kalkar.
+    @MainActor
+    func testSelectionMoveIsSeenFromTheFlippedBackground() {
+        let box = TextBox(left: 0.02, top: 0.2, right: 0.27, bottom: 0.25)
+        var shown = ScreenTranslation.Item(source: "Map", translation: "Harita", box: box, lineHeight: 0.04)
+        shown.style = PhoneTextStyle(background: "#E8E8F0", foreground: "#202020")
+        let look = TextLook(bold: false, condensed: false, align: .left, upper: false, flat: true)
+        let dark = RegionWatcher.Block(start: 0, count: 1, box: box, lineHeight: 0.04,
+                                       style: PhoneTextStyle(background: "#202030", foreground: "#F0F0F0"), look: look)
+        let light = RegionWatcher.Block(start: 0, count: 1, box: box, lineHeight: 0.04,
+                                        style: PhoneTextStyle(background: "#E0E0E8", foreground: "#202020"), look: look)
+        var below = dark
+        below.box = TextBox(left: 0.02, top: 0.3, right: 0.27, bottom: 0.35)
+        XCTAssertTrue(RegionWatcher.selectionMoved(rendered: [shown], current: [dark]))
+        XCTAssertFalse(RegionWatcher.selectionMoved(rendered: [shown], current: [light]), "renk aynı tonda")
+        XCTAssertFalse(RegionWatcher.selectionMoved(rendered: [shown], current: [below]), "başka satır")
+    }
+
+    /// #1266, #1267: okunan yazının sözcük sayısında simge sanılan karakterler sayılmaz.
+    func testIconGlyphsAreNotWords() {
+        XCTAssertEqual(TextPainter.words("I Map"), 1)
+        XCTAssertEqual(TextPainter.words("II Photo Studio"), 2)
+        XCTAssertEqual(TextPainter.words("SELECT ⊗"), 1)
+        XCTAssertEqual(TextPainter.words("Retry Checkpoint"), 2)
+    }
 }

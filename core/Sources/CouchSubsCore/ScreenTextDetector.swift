@@ -148,7 +148,11 @@ public final class ScreenTextDetector: @unchecked Sendable {
                     if tile.isRejected && tile.rejected.distance(mask) > Self.maskChange { tile.isRejected = false }
                     tiles[index] = tile
                     // Koyu/yarı saydam zeminde açık yazı (576 noktada: 24..288 parlak, en az 144 koyu).
-                    let textLike = (24...288).contains(bright) && dark >= 144
+                    // Menüde açık zeminde koyu yazı da (seçili menü satırı: açık degrade şerit, koyu "Map"; #1267). Seçili
+                    // satır aday olmuyor, alan onu dışarıda bırakıyordu: "Map" seçim kayana dek çevrilmiyordu. Menü dışında
+                    // açık sahne (gökyüzü, kar) yazı sanılmasın diye yalnız menüde.
+                    let textLike = ((24...288).contains(bright) && dark >= 144)
+                        || (menu && (24...288).contains(dark) && bright >= 144)
                     candidate[index] = textLike && now - tile.stableSince >= Self.stableMs && !tile.isRejected
                         // Menü durumunda altyazı alanı dışlanmaz (menü satırları orada da olabilir).
                         && (menu || !Self.excluded(column, row, excluded))

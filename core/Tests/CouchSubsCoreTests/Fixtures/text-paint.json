@@ -1,5 +1,5 @@
 {
-  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05).",
+  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz; side: kutunun ucundaki simgenin yanı, TextPaint.iconSide; hedefte words: sözcük sayısı). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05).",
   "paint": [
     {
       "id": "duz-zemin-tasan-harf",
@@ -570,6 +570,234 @@
           "grow": null
         }
       ]
+    },
+    {
+      "id": "tus-simgesi-kutunun-icinde",
+      "width": 400,
+      "height": 120,
+      "background": {
+        "kind": "solid",
+        "from": "#303040"
+      },
+      "rects": [
+        {
+          "box": [
+            40,
+            50,
+            80,
+            66
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            86,
+            50,
+            120,
+            66
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            128,
+            47,
+            146,
+            69
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            150,
+            50,
+            210,
+            66
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            218,
+            47,
+            236,
+            69
+          ],
+          "color": "#F0F0F0"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            40,
+            47,
+            146,
+            69
+          ],
+          "line": 16,
+          "rows": 1,
+          "bg": "#303040",
+          "fg": "#F0F0F0",
+          "upper": true,
+          "align": "left",
+          "words": 2
+        },
+        {
+          "box": [
+            150,
+            47,
+            236,
+            69
+          ],
+          "line": 16,
+          "rows": 1,
+          "bg": "#303040",
+          "fg": "#F0F0F0",
+          "upper": true,
+          "align": "left",
+          "words": 1
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            39,
+            46,
+            121,
+            70
+          ],
+          "grow": [
+            1,
+            121
+          ],
+          "side": "right",
+          "group": 0
+        },
+        {
+          "cover": [
+            149,
+            46,
+            211,
+            70
+          ],
+          "grow": null,
+          "side": "right",
+          "group": 0
+        }
+      ]
+    },
+    {
+      "id": "menu-simgesi-solda",
+      "width": 300,
+      "height": 100,
+      "background": {
+        "kind": "solid",
+        "from": "#20202A"
+      },
+      "rects": [
+        {
+          "box": [
+            40,
+            40,
+            58,
+            58
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            66,
+            42,
+            100,
+            58
+          ],
+          "color": "#F0F0F0"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            40,
+            40,
+            100,
+            58
+          ],
+          "line": 18,
+          "rows": 1,
+          "bg": "#20202A",
+          "fg": "#F0F0F0",
+          "upper": false,
+          "align": "left",
+          "words": 1
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            65,
+            39,
+            101,
+            59
+          ],
+          "grow": [
+            65,
+            300
+          ],
+          "side": "left",
+          "group": null
+        }
+      ]
+    },
+    {
+      "id": "acik-zeminde-koyu-yazi",
+      "width": 300,
+      "height": 100,
+      "background": {
+        "kind": "solid",
+        "from": "#E8E8F0"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            50,
+            160,
+            66
+          ],
+          "color": "#202020"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            100,
+            50,
+            160,
+            66
+          ],
+          "line": 16,
+          "rows": 1,
+          "bg": "#E8E8F0",
+          "fg": "#202020",
+          "upper": false,
+          "align": "left",
+          "words": 1
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            99,
+            49,
+            161,
+            67
+          ],
+          "bg": "#E8E8F0",
+          "bg2": null,
+          "patterned": false,
+          "side": null
+        }
+      ]
     }
   ],
   "exact": [
@@ -903,6 +1131,140 @@
           "rowHeight": 20,
           "top": 10,
           "width": 50
+        }
+      ]
+    },
+    {
+      "id": "ortali-kisa-ceviri-ortu-genisliginde",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "Lucia'yla git",
+          "box": [
+            300,
+            500,
+            500,
+            530
+          ],
+          "grow": [
+            300,
+            500
+          ],
+          "line": 30,
+          "align": "center"
+        }
+      ],
+      "expect": [
+        {
+          "left": 300,
+          "top": 500,
+          "width": 200,
+          "height": 30,
+          "fontSize": 28.5,
+          "lines": [
+            "Lucia'yla git"
+          ],
+          "lineHeight": 30,
+          "rowHeight": 30
+        }
+      ]
+    },
+    {
+      "id": "ortali-uzun-ceviri-iki-yana-uzar",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "Lucia'yla motelin mutfağına git",
+          "box": [
+            300,
+            500,
+            500,
+            530
+          ],
+          "grow": [
+            100,
+            700
+          ],
+          "line": 30,
+          "align": "center"
+        }
+      ],
+      "expect": [
+        {
+          "left": 179.13,
+          "top": 500,
+          "width": 441.75,
+          "height": 30,
+          "fontSize": 28.5,
+          "lines": [
+            "Lucia'yla motelin mutfağına git"
+          ],
+          "lineHeight": 30,
+          "rowHeight": 30
+        }
+      ]
+    },
+    {
+      "id": "tus-simgesi-sola-uzar",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "FOTOĞRAF STÜDYOSU",
+          "box": [
+            200,
+            40,
+            280,
+            60
+          ],
+          "grow": [
+            50,
+            280
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "SEÇ",
+          "box": [
+            300,
+            40,
+            340,
+            60
+          ],
+          "grow": [
+            292,
+            340
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        }
+      ],
+      "expect": [
+        {
+          "left": 118.5,
+          "top": 40,
+          "width": 161.5,
+          "height": 20,
+          "fontSize": 19,
+          "lines": [
+            "FOTOĞRAF STÜDYOSU"
+          ],
+          "lineHeight": 20,
+          "rowHeight": 20
+        },
+        {
+          "left": 300,
+          "top": 40,
+          "width": 40,
+          "height": 20,
+          "fontSize": 19,
+          "lines": [
+            "SEÇ"
+          ],
+          "lineHeight": 20,
+          "rowHeight": 20
         }
       ]
     }

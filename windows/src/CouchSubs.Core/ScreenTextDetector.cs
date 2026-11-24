@@ -175,7 +175,11 @@ public sealed class ScreenTextDetector
                     sampleMask.CopyTo(previous);
                     tile.HasLast = true;
                     if (tile.IsRejected && Distance(rejectedMasks.AsSpan(index * Words, Words), sampleMask) > MaskChange) tile.IsRejected = false;
-                    var textLike = bright is >= BrightMin and <= BrightMax && dark >= DarkMin;
+                    // Menüde açık zeminde koyu yazı da (seçili menü satırı: açık degrade şerit, koyu "Map"; #1267). Seçili satır
+                    // aday olmuyor, alan onu dışarıda bırakıyordu: "Map" seçim kayana dek çevrilmiyordu. Menü dışında açık sahne
+                    // (gökyüzü, kar) yazı sanılmasın diye yalnız menüde (Mac ile aynı).
+                    var textLike = (bright is >= BrightMin and <= BrightMax && dark >= DarkMin)
+                        || (menu && dark is >= BrightMin and <= BrightMax && bright >= DarkMin);
                     anywhere[index] = textLike && now - tile.StableSince >= StableMs && !tile.IsRejected && !Excluded(column, row, excluded);
                     candidate[index] = anywhere[index] && (subtitle is not { } area || !Excluded(column, row, [area]));
                 }

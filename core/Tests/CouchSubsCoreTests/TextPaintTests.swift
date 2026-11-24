@@ -15,12 +15,13 @@ final class TextPaintTests: XCTestCase {
         struct Rect: Decodable { let box: [Int]; let color: String }
         struct Target: Decodable {
             let box: [Double]; let line: Double; let rows: Int; let bg: String; let fg: String; let upper: Bool; let align: String
+            let words: Int?
         }
         struct Expect: Decodable {
             let cover: [Double]?; let bg: String?; let bg2: String??; let bgDir: String?; let patterned: Bool?
-            let grow: [Double]??; let group: Int??; let pitch: Double?
+            let grow: [Double]??; let group: Int??; let pitch: Double?; let side: String??
 
-            enum CodingKeys: String, CodingKey { case cover, bg, bg2, bgDir, patterned, grow, group, pitch }
+            enum CodingKeys: String, CodingKey { case cover, bg, bg2, bgDir, patterned, grow, group, pitch, side }
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 cover = try c.decodeIfPresent([Double].self, forKey: .cover)
@@ -31,6 +32,7 @@ final class TextPaintTests: XCTestCase {
                 grow = c.contains(.grow) ? .some(try c.decodeIfPresent([Double].self, forKey: .grow)) : nil
                 group = c.contains(.group) ? .some(try c.decodeIfPresent(Int.self, forKey: .group)) : nil
                 pitch = try c.decodeIfPresent(Double.self, forKey: .pitch)
+                side = c.contains(.side) ? .some(try c.decodeIfPresent(String.self, forKey: .side)) : nil
             }
         }
         struct Paint: Decodable {
@@ -86,7 +88,7 @@ final class TextPaintTests: XCTestCase {
             let targets = frame.targets.map { t in
                 TextPainter.Target(box: TextBox(left: t.box[0] / w, top: t.box[1] / h, right: t.box[2] / w, bottom: t.box[3] / h),
                                    lineHeight: t.line / h, rows: t.rows, background: t.bg, foreground: t.fg, upper: t.upper,
-                                   align: Self.align(t.align))
+                                   align: Self.align(t.align), words: t.words ?? 0)
             }
             let paints = TextPainter.paints(targets, width: frame.width, height: frame.height) { Self.pixel(frame, $0, $1) }
             XCTAssertEqual(paints.count, frame.expect.count, frame.id)
@@ -112,6 +114,7 @@ final class TextPaintTests: XCTestCase {
                 }
                 if let group = expect.group { XCTAssertEqual(paint.group, group, name) }
                 if let pitch = expect.pitch { XCTAssertEqual(paint.pitch * h, pitch, accuracy: 0.5, name) }
+                if let side = expect.side { XCTAssertEqual(paint.iconSide?.rawValue, side, "\(name) simge yanı") }
             }
         }
     }

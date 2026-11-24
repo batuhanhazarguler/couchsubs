@@ -58,13 +58,19 @@ object ScreenFit {
         if (indices.isEmpty()) return items
         val paints = TextPainter.paints(indices.map { target(items[it]) }, width, height, color)
         val result = items.toMutableList()
-        for ((k, i) in indices.withIndex()) if (k < paints.size) result[i] = result[i].copy(paint = paints[k])
+        for ((k, i) in indices.withIndex()) {
+            if (k >= paints.size) continue
+            // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266, #1267).
+            val side = paints[k].iconSide
+            val look = result[i].look
+            result[i] = result[i].copy(paint = paints[k], look = if (side != null && look != null) look.copy(align = side) else look)
+        }
         return result
     }
 
     internal fun target(item: ScreenTranslation.Item): TextPainter.Target =
         TextPainter.Target(item.box, item.lineHeight, if (item.paragraphs) max(2, item.rows) else item.rows,
-            item.surface!!.background, item.surface.foreground, item.look!!.upper, item.look.align)
+            item.surface!!.background, item.surface.foreground, item.look!!.upper, item.look.align, TextPainter.words(item.source))
 
     /**
      * Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
@@ -220,12 +226,24 @@ object ScreenFit {
                 rights >= 2 && rights > lefts -> "right"
                 lefts >= 2 -> "left"
                 row >= 2 -> "center"
+                column.isEmpty() && row == 0 -> loneAlign(box, items[i].rows)
                 else -> null
             }
             if (align != null) result[i] = result[i].copy(look = result[i].look!!.copy(align = align))
         }
         return result
     }
+
+    /** Ekranın yatay ortasından en çok bu kadar (kareye oranla) uzaktaki yalnız satır ortalıdır. */
+    const val CENTER_TOLERANCE = 0.02
+
+    /**
+     * Komşusu olmayan tek satırın hizası (#1264): ortası ekranın ortasındaysa (görev yazısı "Go to the motel kitchen with
+     * Lucia", altyazı gibi ortalı) "center". Tek satırın kendi kutusundan hiza çıkmıyor, sola yaslı sayılıyordu; Türkçesi
+     * kısa olunca yazı kutunun soluna kayıyor, sağında boş zemin kalıyordu. Değilse null (hiza değişmez).
+     */
+    fun loneAlign(box: TextBox, rows: Int): String? =
+        if (rows <= 1 && abs((box.left + box.right) / 2 - 0.5) <= CENTER_TOLERANCE) "center" else null
 
     internal fun uniform(items: List<ScreenTranslation.Item>, aspect: Double): List<ScreenTranslation.Item> {
         val labels = items.indices.filter { takesPart(items[it]) && items[it].rows <= 1 }

@@ -72,14 +72,18 @@ public enum ScreenFit {
         let targets = indices.map { i in target(items[i]) }
         let paints = TextPainter.paints(targets, width: width, height: height, color: color)
         var result = items
-        for (k, i) in indices.enumerated() where k < paints.count { result[i].paint = paints[k] }
+        for (k, i) in indices.enumerated() where k < paints.count {
+            result[i].paint = paints[k]
+            // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266, #1267).
+            if let side = paints[k].iconSide { result[i].look?.align = side }
+        }
         return result
     }
 
     static func target(_ item: ScreenTranslation.Item) -> TextPainter.Target {
         TextPainter.Target(box: item.box, lineHeight: item.lineHeight, rows: item.paragraphs ? max(2, item.rows) : item.rows,
                            background: item.style!.background, foreground: item.style!.foreground,
-                           upper: item.look!.upper, align: item.look!.align)
+                           upper: item.look!.upper, align: item.look!.align, words: TextPainter.words(item.source))
     }
 
     /// Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
@@ -239,8 +243,20 @@ public enum ScreenFit {
             if rights.count >= 2, rights.count > lefts.count { result[i].look?.align = .right }
             else if lefts.count >= 2 { result[i].look?.align = .left }
             else if row.count >= 2 { result[i].look?.align = .center }
+            else if column.isEmpty, row.isEmpty, let lone = loneAlign(box, rows: items[i].rows) { result[i].look?.align = lone }
         }
         return result
+    }
+
+    /// Ekranın yatay ortasından en çok bu kadar (kareye oranla) uzaktaki yalnız satır ortalıdır.
+    public static let centerTolerance = 0.02
+
+    /// Komşusu olmayan tek satırın hizası (#1264): ortası ekranın ortasındaysa (görev yazısı "Go to the motel kitchen with
+    /// Lucia", altyazı gibi ortalı) ortalı. Tek satırın kendi kutusundan hiza çıkmıyor, sola yaslı sayılıyordu; Türkçesi
+    /// kısa olunca yazı kutunun soluna kayıyor, sağında boş zemin kalıyordu. Değilse nil (hiza değişmez).
+    public static func loneAlign(_ box: TextBox, rows: Int) -> TextLook.Align? {
+        guard rows <= 1, abs((box.left + box.right) / 2 - 0.5) <= centerTolerance else { return nil }
+        return .center
     }
 
     /// Eş öğeler (aynı satırda ya da aynı sütunda, BÜYÜK HARF/kalınlık aynı, satır yüksekliği yakın) aynı boyda.

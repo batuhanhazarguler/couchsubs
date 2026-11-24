@@ -495,9 +495,53 @@ public sealed partial class RegionWatcher
         }
         else
         {
+            // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o satırın
+            // eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen kalkar; yeni okuma
+            // her zamanki gibi çizilir (Mac ve Android ile aynı).
+            if (!string.IsNullOrEmpty(state.RenderedText)
+                && SelectionMoved([.. (state.RenderedBlocks ?? []).Select(block => block.Item)], candidate.Blocks ?? []))
+            {
+                server.SendRegion(area.Id, "", null);
+                state.Shown = state.ShownText = "";
+                state.ShownIcons = 0;
+                state.RenderedKey = state.RenderedText = null;
+                state.RenderedIcons = null;
+                state.RenderedBox = null;
+                state.RenderedLineHeight = null;
+                state.RenderedLayout = null;
+                state.RenderedBlocks = null;
+                Log?.Invoke($"ek alan {area.Name}: seçim kaydı, eski kutular kaldırıldı");
+            }
             Stage(candidate, state);
             if (!string.IsNullOrEmpty(state.RenderedText)) ClearIfUnsteady(candidate, area, state, passSignature, signature);
         }
+    }
+
+    /// <summary>
+    /// Seçim kaydı (#1267): gösterilen bir kutunun yerindeki (satırının en az yarısı örtüşen) yeni bloğun zemini öbür tonda
+    /// (biri açık, öbürü koyu: seçili menü satırının ters rengi). Mac ve Android aynı kuralı uygular.
+    /// </summary>
+    internal static bool SelectionMoved(IReadOnlyList<ScreenTranslation.Item> rendered, IReadOnlyList<Block> current)
+    {
+        static bool Light(string hex)
+        {
+            var c = TextPainter.Rgb(hex);
+            return (0.299 * c.R) + (0.587 * c.G) + (0.114 * c.B) > 127.5;
+        }
+        foreach (var item in rendered)
+        {
+            if (item.Style is not { } style) continue;
+            var before = Light(style.Background);
+            foreach (var block in current)
+            {
+                if (block.Style is not { } now || Light(now.Background) == before) continue;
+                var (a, b) = (item.Box, block.Box);
+                var rows = Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top))
+                    / Math.Max(1e-9, Math.Min(a.Bottom - a.Top, b.Bottom - b.Top));
+                if (rows >= 0.5 && Math.Min(a.Right, b.Right) > Math.Max(a.Left, b.Left)) return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -827,11 +871,17 @@ public sealed partial class RegionWatcher
                     var block = list[i];
                     var rows = group.Paragraphs.Count > 1 ? Math.Max(2, group.Rows) : group.Rows;
                     return new TextPainter.Target(group.Box, group.LineHeight, rows, block.Style!.Background, block.Style.Foreground,
-                                                  block.Look!.Upper, block.Look.Align);
+                                                  block.Look!.Upper, block.Look.Align,
+                                                  TextPainter.WordCount(string.Join(' ', group.Paragraphs)));
                 }).ToList();
                 var paints = TextPainter.Paints(targets, frame);
                 for (var k = 0; k < painted.Count && k < paints.Count; k++)
-                    list[painted[k]] = list[painted[k]] with { Paint = paints[k].PlacedIn(place) };
+                {
+                    var block = list[painted[k]] with { Paint = paints[k].PlacedIn(place) };
+                    // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266: "SEÇ" tuş simgesinin yanında).
+                    if (paints[k].IconSide is { } side && block.Look is { } look) block = block with { Look = look with { Align = side } };
+                    list[painted[k]] = block;
+                }
             }
             blocks = list;
             key = TextKey(paragraphs) + "|" + string.Join(',', list.Select(block => block.Count));
@@ -911,7 +961,7 @@ public sealed partial class RegionWatcher
     /// Tek satırlık etiketin hizası komşularından: sağ kenarı başka etiketlerle hizalıysa (kol resminin solundaki tuş
     /// etiketleri) sağa, sol kenarı hizalıysa sola, ortası hizalıysa ortaya yaslıdır.
     /// </summary>
-    private static List<Block> AlignByNeighbours(List<Block> blocks)
+    internal static List<Block> AlignByNeighbours(List<Block> blocks)
     {
         const double tolerance = 0.012;
         var result = new List<Block>(blocks.Count);
@@ -922,7 +972,7 @@ public sealed partial class RegionWatcher
             var left = others.Count(other => Math.Abs(other.Box.Left - block.Box.Left) < tolerance);
             var right = others.Count(other => Math.Abs(other.Box.Right - block.Box.Right) < tolerance);
             var center = others.Count(other => Math.Abs((other.Box.Left + other.Box.Right) / 2 - (block.Box.Left + block.Box.Right) / 2) < tolerance);
-            var align = right > left && right >= center ? "right" : center > left && center > right ? "center" : left > 0 ? "left" : look.Align;
+            var align = right > left && right >= center ? "right" : center > left && center > right ? "center" : left > 0 ? "left" : ScreenFit.LoneAlign(block.Box, block.Rows) ?? look.Align;
             result.Add(block with { Look = look with { Align = align } });
         }
         return result;

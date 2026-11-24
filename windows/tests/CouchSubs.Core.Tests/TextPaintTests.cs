@@ -65,7 +65,8 @@ public class TextPaintTests
                 var box = Numbers(t.GetProperty("box"));
                 return new TextPainter.Target(new TextBox(box[0] / w, box[1] / h, box[2] / w, box[3] / h),
                     t.GetProperty("line").GetDouble() / h, t.GetProperty("rows").GetInt32(), t.GetProperty("bg").GetString()!,
-                    t.GetProperty("fg").GetString()!, t.GetProperty("upper").GetBoolean(), t.GetProperty("align").GetString()!);
+                    t.GetProperty("fg").GetString()!, t.GetProperty("upper").GetBoolean(), t.GetProperty("align").GetString()!,
+                    t.TryGetProperty("words", out var words) ? words.GetInt32() : 0);
             }).ToList();
             var paints = TextPainter.Paints(targets, width, height, (x, y) => Pixel(frame, x, y));
             var expects = frame.GetProperty("expect").EnumerateArray().ToList();
@@ -110,6 +111,11 @@ public class TextPaintTests
                 }
                 if (expect.TryGetProperty("pitch", out var pitch) && pitch.ValueKind == JsonValueKind.Number)
                     Close(pitch.GetDouble(), paint.Pitch * h, 0.5, $"{name} satır aralığı");
+                if (expect.TryGetProperty("side", out var side))
+                {
+                    var want = side.ValueKind == JsonValueKind.Null ? null : side.GetString();
+                    Assert.True(paint.IconSide == want, $"{name} simge yanı {paint.IconSide} ≠ {want}");
+                }
             }
         }
     }

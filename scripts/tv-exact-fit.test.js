@@ -87,6 +87,16 @@ const items = [
   // Eski bilgisayar: yeni alanlar yok, eski çizim (köşeli değil, fitStyled).
   { text: 'ESKİ', box: px(100, 700, 160, 730), line: 30 / H,
     surface: { background: '#202020', foreground: '#FFFFFF', flat: true }, style: { align: 'left', bold: true, condensed: false, upper: true } },
+  // #1264: ekranın ortasındaki görev yazısı ortalı; Türkçesi kısa: kutu örtü kadar (uzamaz), yazı ortada (sola kaymaz).
+  { text: 'Mutfağa git', box: px(740, 1000, 1180, 1032), line: 32 / H, cover: px(738, 998, 1182, 1034),
+    grow: px(600, 998, 1320, 1034), bg: '#202020', bg2: '#242424', bgDir: 'h', fg: '#FFFFFF', weight: 700, upper: false,
+    align: 'center', lineH: 32 / H, surface: { background: '#202020', foreground: '#FFFFFF', flat: true },
+    style: { align: 'center', bold: true, condensed: false, upper: false } },
+  // #1266: tuş simgesi sağda (gönderici simgeyi örtüden çıkardı, hizayı sağa çevirdi): kısa çeviri simgeye yaslı, kutu
+  // simgeye (örtünün sağına) hiç girmez.
+  { text: 'SEÇ', box: px(1500, 700, 1600, 730), line: 30 / H, cover: px(1498, 698, 1602, 732), grow: px(1400, 698, 1602, 732),
+    bg: '#303040', bg2: '#343444', bgDir: 'h', fg: '#FFFFFF', weight: 700, upper: true, align: 'right', lineH: 30 / H,
+    surface: { background: '#303040', foreground: '#FFFFFF', flat: true }, style: { align: 'right', bold: true, condensed: false, upper: true } },
 ];
 
 function render() {
@@ -138,7 +148,7 @@ function render() {
 test('gerçek çizim: opak köşesiz kutu, degrade, tek boy grup, boş alana uzama, kesilmeyen yazı', { skip: !browser && 'tarayıcı yok' }, () => {
   const drawn = render();
   const exact = drawn.filter(el => el.cls.indexOf('exact') >= 0);
-  assert.equal(exact.length, 6, 'yeni alanlı altı öğe birebir çizilir');
+  assert.equal(exact.length, 8, 'yeni alanlı sekiz öğe birebir çizilir');
   const old = drawn.find(el => el.text === 'ESKİ');
   assert.ok(old && old.cls.indexOf('exact') < 0, 'yeni alansız öğe eski yolda');
   for (const el of exact) {
@@ -174,4 +184,13 @@ test('gerçek çizim: opak köşesiz kutu, degrade, tek boy grup, boş alana uza
   assert.ok(Math.abs(gap / card.font - 54 / (0.95 * 38)) <= 0.03, 'aralık/yazı boyu özgün oranda: ' + gap / card.font);
   assert.ok(card.bottom - card.top <= 96 + 1, 'kart kutusu aşağı uzamaz (sığdı)');
   assert.ok(Math.abs(card.top - 290) <= 1 && Math.abs(card.left - 280) <= 1, 'görev kartı örtünün yerinde');
+  // #1264: ortalı görev yazısı: kutu örtüden uzun değil, yazının ortası örtünün ortasında.
+  const mission = exact[6];
+  assert.ok(Math.abs(mission.left - 738) <= 1 && Math.abs(mission.right - 1182) <= 1, 'kutu örtü kadar: ' + mission.left + '-' + mission.right);
+  const middle = (mission.lines[0].left + mission.lines[0].right) / 2;
+  assert.ok(Math.abs(middle - 960) <= 2, 'yazı ortada (sola kaymaz): ' + middle);
+  // #1266: kısa çeviri sağdaki simgeye yaslı; kutu örtünün sağını (simge tarafı) aşmaz.
+  const select = exact[7];
+  assert.ok(select.right <= 1602 + 1 && Math.abs(select.right - 1602) <= 1, 'kutu simgeye girmez: ' + select.right);
+  assert.ok(select.lines[0].right >= 1602 - 4, 'yazı simgeye yaslı: ' + select.lines[0].right);
 });

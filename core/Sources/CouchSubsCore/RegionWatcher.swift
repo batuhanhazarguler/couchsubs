@@ -397,6 +397,24 @@ public final class RegionWatcher {
             states[area.id] = state
             await commit(candidate, area: area)
         } else {
+            // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o
+            // satırın eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen
+            // kalkar; yeni okuma her zamanki gibi çizilir.
+            if !(state.renderedText ?? "").isEmpty,
+               Self.selectionMoved(rendered: state.renderedBlocks?.map(\.item) ?? [], current: candidate.blocks ?? []) {
+                server.sendRegion(id: area.id, text: "", box: nil, lineHeight: nil)
+                state.shown = ""
+                state.shownText = ""
+                state.shownIcons = 0
+                state.renderedKey = nil
+                state.renderedText = nil
+                state.renderedIcons = nil
+                state.renderedBox = nil
+                state.renderedLineHeight = nil
+                state.renderedLayout = nil
+                state.renderedBlocks = nil
+                onLog?("ek alan \(area.name): seçim kaydı, eski kutular kaldırıldı")
+            }
             state.lastRead = candidate.key
             state.held = nil
             state.holds = 0
@@ -635,10 +653,15 @@ public final class RegionWatcher {
                     let rows = group.paragraphs.count > 1 ? max(2, group.rows) : group.rows
                     return TextPainter.Target(box: group.box, lineHeight: group.lineHeight, rows: rows,
                                               background: block.style!.background, foreground: block.style!.foreground,
-                                              upper: block.look!.upper, align: block.look!.align)
+                                              upper: block.look!.upper, align: block.look!.align,
+                                              words: TextPainter.words(group.paragraphs.joined(separator: " ")))
                 }
                 let paints = TextPainter.paints(targets, frame: frame)
-                for (k, i) in painted.enumerated() where k < paints.count { list[i].paint = paints[k].placed(in: place) }
+                for (k, i) in painted.enumerated() where k < paints.count {
+                    list[i].paint = paints[k].placed(in: place)
+                    // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266: "SEÇ" tuş simgesinin yanında).
+                    if let side = paints[k].iconSide { list[i].look?.align = side }
+                }
             }
             blocks = list
             key = textKey(paragraphs) + "|" + list.map { String($0.count) }.joined(separator: ",")
@@ -653,6 +676,24 @@ public final class RegionWatcher {
         }
         return Candidate(paragraphs: paragraphs, box: box, lineHeight: lineHeight, key: key, icons: cut, blocks: blocks,
                          text: textKey(paragraphs), missionCard: missionCard)
+    }
+
+    /// Seçim kaydı (#1267): gösterilen bir kutunun yerindeki (satırının en az yarısı örtüşen) yeni bloğun zemini öbür
+    /// tonda (biri açık, öbürü koyu: seçili menü satırının ters rengi). Windows ve Android aynı kuralı uygular.
+    static func selectionMoved(rendered: [ScreenTranslation.Item], current: [Block]) -> Bool {
+        func light(_ hex: String) -> Bool? {
+            guard let (r, g, b) = SpeakerColors.rgb(hex) else { return nil }
+            return 0.299 * r + 0.587 * g + 0.114 * b > 0.5
+        }
+        return rendered.contains { item in
+            guard let before = item.style.flatMap({ light($0.background) }) else { return false }
+            return current.contains { block in
+                guard let now = block.style.flatMap({ light($0.background) }), now != before else { return false }
+                let a = item.box, b = block.box
+                let rows = max(0, min(a.bottom, b.bottom) - max(a.top, b.top)) / max(1e-9, min(a.bottom - a.top, b.bottom - b.top))
+                return rows >= 0.5 && min(a.right, b.right) > max(a.left, b.left)
+            }
+        }
     }
 
     /// Kısa etiket satırı (menü satırı, tuş etiketi): en çok bu kadar sözcük (Windows: ScreenTranslation.MenuLabelWords).
@@ -712,6 +753,7 @@ public final class RegionWatcher {
             if right > left && right >= center { look.align = .right }
             else if center > left && center > right { look.align = .center }
             else if left > 0 { look.align = .left }
+            else if let lone = ScreenFit.loneAlign(block.box, rows: block.rows) { look.align = lone }
             var aligned = block
             aligned.look = look
             return aligned

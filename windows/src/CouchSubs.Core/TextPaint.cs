@@ -39,6 +39,11 @@ public sealed record TextPaint(string Background, double Pitch, TextBox Cover)
     /// aynı yazı boyunda çizilir. null: tek başına.
     /// </summary>
     public int? Group { get; init; }
+    /// <summary>
+    /// Yazı tanıma kutusunun ucundaki simge (menü simgesi, tuş simgesi) yazının hangi yanında ("left", "right"): örtü ve uzama
+    /// o simgeye girmez, yazı o yana yaslanır (TV'ye <c>align</c> olarak gider). null: simge yok.
+    /// </summary>
+    public string? IconSide { get; init; }
 
     /// <summary>Bu ölçüler <paramref name="area"/> içindeki oranlarsa, aynı yerin <paramref name="area"/>'yı içeren çerçevedeki oranları.</summary>
     public TextPaint PlacedIn(TextBox area) => this with
@@ -59,8 +64,83 @@ public static class TextPainter
     /// Ölçülecek yazı: kareye oranla kutusu ve satır yüksekliği, özgün satır sayısı, sampler'ın bulduğu zemin/yazı rengi ve
     /// hizası ("left", "right", "center").
     /// </summary>
+    /// <remarks>
+    /// <c>Words</c>: okunan yazının sözcük sayısı (simge sanılan karakterler sayılmaz, <see cref="WordCount"/>); 0:
+    /// bilinmiyor, kutunun ucundaki simge aranmaz.
+    /// </remarks>
     public sealed record Target(TextBox Box, double LineHeight, int Rows, string Background, string Foreground, bool Upper,
-                                string Align);
+                                string Align, int Words = 0);
+
+    /// <summary>
+    /// Kutunun ucundaki simgeyi yazıdan ayıran en dar boşluk, satır yüksekliğinin katı (harf arası bundan dardır; GTA 6
+    /// menüsünde simgeyle yazı arası ~0,4 satır).
+    /// </summary>
+    public const double IconGapLines = 0.3;
+    /// <summary>Simge parçasının genişliği satır yüksekliğinin bu katları arasında ("I" harfi gibi ince parça simge sayılmaz).</summary>
+    public const double IconMinWide = 0.45;
+    public const double IconMaxWide = 1.6;
+    /// <summary>Simge sanılıp yazı olarak okunan karakterler (GTA 6 menü simgesi "I", "II"; tuş simgeleri).</summary>
+    private const string IconGlyphs = "I|l![]()©®@○◯●□■△▲✕✖×◎⊗⊙";
+
+    /// <summary>Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1).</summary>
+    public static int WordCount(string text) =>
+        IconText.Plain(text).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+            .Count(token => !(token.Length <= 2 && token.All(c => IconGlyphs.Contains(c))));
+
+    /// <summary>
+    /// Kutunun ([l, r), piksel) ucundaki simge: harf sütunları (<paramref name="ink"/>) <see cref="IconGapLines"/> satırdan
+    /// geniş boşluklarla parçalara bölünür; parça sayısı sözcük sayısından çoksa uçtaki simge genişliğindeki
+    /// (<see cref="IconMinWide"/>-<see cref="IconMaxWide"/> satır) parça simgedir. İki uç da uyarsa hizanın yanı (sola yaslıda
+    /// sol, öbürlerinde sağ) önce; ikincisi ancak iki fazla parça varsa. Simgeler çıkınca kalan parça sözcüklerden çoksa simge
+    /// yoktur. Dönen: simgeler ve onlar çıkınca yazının sol/sağ kenarı.
+    /// </summary>
+    internal static ((int L, int R)? Left, (int L, int R)? Right, int TextLeft, int TextRight) IconSpans(
+        int l, int r, double line, int words, string align, Func<int, bool> ink)
+    {
+        if (words <= 0 || r - l < 2) return (null, null, l, r);
+        var gap = Math.Max(2, RoundHalfUp(IconGapLines * line));
+        var spans = new List<(int L, int R)>();
+        int? start = null;
+        int last = l, blank = 0;
+        for (var x = l; x < r; x++)
+        {
+            if (ink(x))
+            {
+                start ??= x;
+                last = x;
+                blank = 0;
+            }
+            else if (start is { } s)
+            {
+                blank++;
+                if (blank >= gap) { spans.Add((s, last + 1)); start = null; blank = 0; }
+            }
+        }
+        if (start is { } open) spans.Add((open, last + 1));
+        if (spans.Count < 2 || spans.Count <= words) return (null, null, l, r);
+        bool IsIcon((int L, int R) span)
+        {
+            double wide = span.R - span.L;
+            return wide >= IconMinWide * line && wide <= IconMaxWide * line;
+        }
+        var extra = spans.Count - words;
+        var first = spans[0];
+        var final = spans[^1];
+        (int L, int R)? left = null, right = null;
+        if (align == "left")
+        {
+            if (IsIcon(first)) left = first;
+            if (IsIcon(final) && (left == null || extra >= 2)) right = final;
+        }
+        else
+        {
+            if (IsIcon(final)) right = final;
+            if (IsIcon(first) && (right == null || extra >= 2)) left = first;
+        }
+        // Simgeler çıkınca kalan parçalar sözcüklerden çok olamaz: harfleri aralıklı tek sözcük simge sanılmaz.
+        if (spans.Count - (left == null ? 0 : 1) - (right == null ? 0 : 1) > words) return (null, null, l, r);
+        return (left, right, left != null ? spans[1].L : l, right != null ? spans[^2].R : r);
+    }
 
     /// <summary>Nokta zeminden bu kadar (en büyük renk bileşeni farkı) uzak ve yazı rengine zeminden yakınsa harf noktasıdır.</summary>
     public const int InkDistance = 40;
@@ -111,8 +191,11 @@ public static class TextPainter
                 var toBg = Distance(c, bg);
                 return toBg > InkDistance && Distance(c, fg) < toBg;
             }
+            // Kutunun ucundaki kendi simgesi (0. adım): öbür hedefler gibi engeldir; araya ScreenFit.GapLines boşluk kalır.
+            var zones = new List<(int L, int R)>();
             bool Others(int x, int y)
             {
+                foreach (var zone in zones) if (x >= zone.L && x < zone.R) return true;
                 for (var j = 0; j < rects.Length; j++)
                     if (j != index && x >= rects[j].L && x < rects[j].R && y >= rects[j].T && y < rects[j].B) return true;
                 return false;
@@ -142,8 +225,22 @@ public static class TextPainter
                 }
                 return n > 0 && ink >= Math.Max(1, (int)Math.Ceiling(InkShare * n));
             }
-            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             var (l, t, r, b) = rects[index];
+            // 0) Kutunun ucundaki simge (#1266, #1267): yazı tanıma kutusu menü/tuş simgesini de alıyordu; kutu simgenin
+            // üstüne çiziliyor, simge kayboluyordu. Simge kutudan çıkar ve engel olur: örtü, kenar payı ve uzama ona girmez.
+            bool iconLeft = false, iconRight = false;
+            if (target.Rows <= 1)
+            {
+                int t0 = t, b0 = b;
+                var found = IconSpans(l, r, line, target.Words, target.Align, x => InkColumn(x, t0, b0));
+                var keep = (int)Math.Ceiling(ScreenFit.GapLines * line);
+                if (found.Left is { } li) { zones.Add((li.L - keep, li.R + keep)); iconLeft = true; }
+                if (found.Right is { } ri) { zones.Add((ri.L - keep, ri.R + keep)); iconRight = true; }
+                l = found.TextLeft;
+                r = found.TextRight;
+            }
+            int textLeft = l, textRight = r;
+            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             var reach = Math.Max(1, RoundHalfUp(ReachLines * line));
             var yy0 = b;
             while (yy0 < Math.Min(height, rects[index].B + reach) && InkRow(yy0, l, r)) yy0++;
@@ -152,10 +249,10 @@ public static class TextPainter
             while (yy0 >= Math.Max(0, rects[index].T - reach) && InkRow(yy0, l, r)) yy0--;
             t = yy0 + 1;
             var xx0 = r;
-            while (xx0 < Math.Min(width, rects[index].R + reach) && InkColumn(xx0, t, b)) xx0++;
+            while (xx0 < Math.Min(width, textRight + reach) && InkColumn(xx0, t, b)) xx0++;
             r = xx0;
             xx0 = l - 1;
-            while (xx0 >= Math.Max(0, rects[index].L - reach) && InkColumn(xx0, t, b)) xx0--;
+            while (xx0 >= Math.Max(0, textLeft - reach) && InkColumn(xx0, t, b)) xx0--;
             l = xx0 + 1;
             // Kenar payı: yazının yanındaki boş noktalar; ötesinde başka yazı/simge varsa pay ona değmez.
             var margin = Math.Max(1, Math.Min(MarginMax, RoundHalfUp(MarginLines * line)));
@@ -201,7 +298,10 @@ public static class TextPainter
             }
             Collect(ct - strip, ct, top: true);
             Collect(cb, cb + strip, top: false);
-            var paint = new TextPaint(target.Background, Pitch(target), cover);
+            var paint = new TextPaint(target.Background, Pitch(target), cover)
+            {
+                IconSide = iconLeft == iconRight ? null : iconLeft ? "left" : "right",
+            };
             if (samples.Count >= 16)
             {
                 var all = samples.Select(s => s.C).ToList();
@@ -247,7 +347,8 @@ public static class TextPainter
             }
 
             // 3) Boş alan: tek satırlık etiket hizasının açık tarafına (sağa yaslıda sola, sola yaslıda sağa, ortalıda iki
-            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına GapLines kala durur.
+            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına GapLines kala durur. Kutunun ucunda
+            // simge varsa yalnız simgenin öbür yanına uzar (sağdaki tuş simgesinde sola, soldaki menü simgesinde sağa).
             if (target.Rows <= 1)
             {
                 var sixth = Math.Max(1, (cb - ct) / 6);
@@ -286,8 +387,10 @@ public static class TextPainter
                 var startColor = Rgb(paint.Background);
                 var endColor = Rgb(paint.Background2 ?? paint.Background);
                 int gl = cl, gr = cr;
-                if (band.Count > 0 && target.Align != "left") gl = Math.Min(cl, Math.Max(0, Scan(cl - 1, -1, startColor) + 1));
-                if (band.Count > 0 && target.Align != "right") gr = Math.Max(cr, Math.Min(width, Scan(cr, 1, endColor)));
+                var toLeft = !iconLeft && (target.Align != "left" || iconRight);
+                var toRight = !iconRight && (target.Align != "right" || iconLeft);
+                if (band.Count > 0 && toLeft) gl = Math.Min(cl, Math.Max(0, Scan(cl - 1, -1, startColor) + 1));
+                if (band.Count > 0 && toRight) gr = Math.Max(cr, Math.Min(width, Scan(cr, 1, endColor)));
                 if (gl < cl || gr > cr) paint = paint with { Grow = new TextBox(gl / fw, cover.Top, gr / fw, cover.Bottom) };
             }
             result.Add(paint);

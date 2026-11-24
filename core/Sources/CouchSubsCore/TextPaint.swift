@@ -28,6 +28,9 @@ public struct TextPaint: Equatable, Sendable {
     /// Aynı listede alt alta (ya da aynı satırda) duran, özgün hâlinde aynı boydaki etiketlerin ortak numarası; grubun
     /// hepsi aynı yazı boyunda çizilir. nil: tek başına.
     public var group: Int? = nil
+    /// Yazı tanıma kutusunun ucundaki simge (menü simgesi, tuş simgesi) yazının hangi yanında: örtü ve uzama o simgeye
+    /// girmez, yazı o yana yaslanır (sol simgede sola, sağ simgede sağa; TV'ye `align` olarak gider). nil: simge yok.
+    public var iconSide: TextLook.Align? = nil
 
     public init(background: String, pitch: Double, cover: TextBox) {
         self.background = background
@@ -60,9 +63,12 @@ public enum TextPainter {
         public var foreground: String
         public var upper: Bool
         public var align: TextLook.Align
+        /// Okunan yazının sözcük sayısı (simge sanılan karakterler sayılmaz, `words(_:)`); 0: bilinmiyor, kutunun ucundaki
+        /// simge aranmaz.
+        public var words: Int
 
         public init(box: TextBox, lineHeight: Double, rows: Int, background: String, foreground: String, upper: Bool,
-                    align: TextLook.Align) {
+                    align: TextLook.Align, words: Int = 0) {
             self.box = box
             self.lineHeight = lineHeight
             self.rows = rows
@@ -70,7 +76,68 @@ public enum TextPainter {
             self.foreground = foreground
             self.upper = upper
             self.align = align
+            self.words = words
         }
+    }
+
+    /// Kutunun ucundaki simgeyi yazıdan ayıran en dar boşluk, satır yüksekliğinin katı (harf arası bundan dardır; GTA 6
+    /// menüsünde simgeyle yazı arası ~0,4 satır).
+    public static let iconGapLines = 0.3
+    /// Simge parçasının genişliği satır yüksekliğinin bu katları arasında ("I" harfi gibi ince parça simge sayılmaz).
+    public static let iconMinWide = 0.45
+    public static let iconMaxWide = 1.6
+    /// Simge sanılıp yazı olarak okunan karakterler (GTA 6 menü simgesi "I", "II"; tuş simgeleri).
+    static let iconGlyphs: Set<Character> = ["I", "|", "l", "!", "[", "]", "(", ")", "©", "®", "@", "○", "◯", "●", "□",
+                                             "■", "△", "▲", "✕", "✖", "×", "◎", "⊗", "⊙"]
+
+    /// Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1).
+    public static func words(_ text: String) -> Int {
+        IconText.plain(text).split(whereSeparator: \.isWhitespace).filter { token in
+            !(token.count <= 2 && token.allSatisfy { iconGlyphs.contains($0) })
+        }.count
+    }
+
+    /// Kutunun ([l, r), piksel) ucundaki simge: harf sütunları (`ink(x)`) `iconGapLines` satırdan geniş boşluklarla
+    /// parçalara bölünür; parça sayısı sözcük sayısından çoksa uçtaki simge genişliğindeki (`iconMinWide`-`iconMaxWide`
+    /// satır) parça simgedir. İki uç da uyarsa hizanın yanı (sola yaslıda sol, öbürlerinde sağ) önce; ikincisi ancak iki
+    /// fazla parça varsa. Simgeler çıkınca kalan parça sözcüklerden çoksa simge yoktur. Dönen: simgeler ve onlar çıkınca
+    /// yazının sol/sağ kenarı.
+    static func iconSpans(l: Int, r: Int, line: Double, words: Int, align: TextLook.Align, ink: (Int) -> Bool)
+        -> (left: (l: Int, r: Int)?, right: (l: Int, r: Int)?, textLeft: Int, textRight: Int) {
+        guard words > 0, r - l >= 2 else { return (nil, nil, l, r) }
+        let gap = max(2, Int((iconGapLines * line).rounded()))
+        var spans: [(l: Int, r: Int)] = []
+        var start: Int? = nil, last = l, blank = 0
+        for x in l..<r {
+            if ink(x) {
+                if start == nil { start = x }
+                last = x
+                blank = 0
+            } else if let s = start {
+                blank += 1
+                if blank >= gap { spans.append((s, last + 1)); start = nil; blank = 0 }
+            }
+        }
+        if let s = start { spans.append((s, last + 1)) }
+        guard spans.count >= 2, spans.count > words else { return (nil, nil, l, r) }
+        func isIcon(_ span: (l: Int, r: Int)) -> Bool {
+            let wide = Double(span.r - span.l)
+            return wide >= iconMinWide * line && wide <= iconMaxWide * line
+        }
+        let extra = spans.count - words
+        let first = spans[0], final = spans[spans.count - 1]
+        var left: (l: Int, r: Int)? = nil, right: (l: Int, r: Int)? = nil
+        if align == .left {
+            if isIcon(first) { left = first }
+            if isIcon(final), left == nil || extra >= 2 { right = final }
+        } else {
+            if isIcon(final) { right = final }
+            if isIcon(first), right == nil || extra >= 2 { left = first }
+        }
+        // Simgeler çıkınca kalan parçalar sözcüklerden çok olamaz: harfleri aralıklı tek sözcük ("P R O G R E S S")
+        // simge sanılmaz.
+        if spans.count - (left == nil ? 0 : 1) - (right == nil ? 0 : 1) > words { return (nil, nil, l, r) }
+        return (left, right, left != nil ? spans[1].l : l, right != nil ? spans[spans.count - 2].r : r)
     }
 
     /// Nokta zeminden bu kadar (en büyük renk bileşeni farkı) uzak ve yazı rengine zeminden yakınsa harf noktasıdır.
@@ -115,8 +182,11 @@ public enum TextPainter {
                 let toBg = distance(c, bg)
                 return toBg > inkDistance && distance(c, fg) < toBg
             }
+            // Kutunun ucundaki kendi simgesi (0. adım): öbür hedefler gibi engeldir; araya `ScreenFit.gapLines` boşluk kalır.
+            var zones: [(l: Int, r: Int)] = []
             func others(_ x: Int, _ y: Int) -> Bool {
-                rects.indices.contains { j in j != index && x >= rects[j].l && x < rects[j].r && y >= rects[j].t && y < rects[j].b }
+                zones.contains { x >= $0.l && x < $0.r }
+                    || rects.indices.contains { j in j != index && x >= rects[j].l && x < rects[j].r && y >= rects[j].t && y < rects[j].b }
             }
             func inkRow(_ y: Int, _ x0: Int, _ x1: Int) -> Bool {
                 guard y >= 0, y < height, x1 > x0 else { return false }
@@ -139,8 +209,22 @@ public enum TextPainter {
                 }
                 return n > 0 && ink >= max(1, Int((inkShare * Double(n)).rounded(.up)))
             }
-            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             var (l, t, r, b) = rects[index]
+            // 0) Kutunun ucundaki simge (#1266, #1267): yazı tanıma kutusu menü/tuş simgesini de alıyordu; kutu simgenin
+            // üstüne çiziliyor, simge kayboluyordu. Simge kutudan çıkar ve engel olur: örtü, kenar payı ve uzama ona girmez.
+            var iconLeft = false, iconRight = false
+            if target.rows <= 1 {
+                let found = iconSpans(l: l, r: r, line: line, words: target.words, align: target.align) { x in
+                    inkColumn(x, t, b)
+                }
+                let keep = Int((ScreenFit.gapLines * line).rounded(.up))
+                if let icon = found.left { zones.append((icon.l - keep, icon.r + keep)); iconLeft = true }
+                if let icon = found.right { zones.append((icon.l - keep, icon.r + keep)); iconRight = true }
+                l = found.textLeft
+                r = found.textRight
+            }
+            let textLeft = l, textRight = r
+            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             let reach = max(1, Int((reachLines * line).rounded()))
             var y = b
             while y < min(height, rects[index].b + reach), inkRow(y, l, r) { y += 1 }
@@ -149,10 +233,10 @@ public enum TextPainter {
             while y >= max(0, rects[index].t - reach), inkRow(y, l, r) { y -= 1 }
             t = y + 1
             var x = r
-            while x < min(width, rects[index].r + reach), inkColumn(x, t, b) { x += 1 }
+            while x < min(width, textRight + reach), inkColumn(x, t, b) { x += 1 }
             r = x
             x = l - 1
-            while x >= max(0, rects[index].l - reach), inkColumn(x, t, b) { x -= 1 }
+            while x >= max(0, textLeft - reach), inkColumn(x, t, b) { x -= 1 }
             l = x + 1
             // Kenar payı: yazının yanındaki boş noktalar; ötesinde başka yazı/simge varsa pay ona değmez.
             let margin = max(1, min(marginMax, Int((marginLines * line).rounded())))
@@ -189,6 +273,7 @@ public enum TextPainter {
             collect(ct - strip, ct, top: true)
             collect(cb, cb + strip, top: false)
             var paint = TextPaint(background: target.background, pitch: pitch(target), cover: cover)
+            paint.iconSide = iconLeft == iconRight ? nil : iconLeft ? .left : .right
             if samples.count >= 16 {
                 let all = samples.map(\.c)
                 let average = mean(all)
@@ -230,7 +315,8 @@ public enum TextPainter {
             }
 
             // 3) Boş alan: tek satırlık etiket hizasının açık tarafına (sağa yaslıda sola, sola yaslıda sağa, ortalıda iki
-            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına `gapLines` kala durur.
+            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına `gapLines` kala durur. Kutunun
+            // ucunda simge varsa yalnız simgenin öbür yanına uzar (sağdaki tuş simgesinde sola, soldaki menü simgesinde sağa).
             if target.rows <= 1 {
                 let band = stride(from: ct + max(1, (cb - ct) / 6), to: max(ct + 1, cb - max(1, (cb - ct) / 6)),
                                   by: max(1, (cb - ct) / 6)).map { min(height - 1, max(0, $0)) }
@@ -262,8 +348,10 @@ public enum TextPainter {
                 }
                 let startColor = rgb(paint.background), endColor = rgb(paint.background2 ?? paint.background)
                 var gl = cl, gr = cr
-                if !band.isEmpty, target.align != .left { gl = min(cl, max(0, scan(from: cl - 1, step: -1, ground: startColor) + 1)) }
-                if !band.isEmpty, target.align != .right { gr = max(cr, min(width, scan(from: cr, step: 1, ground: endColor))) }
+                let toLeft = !iconLeft && (target.align != .left || iconRight)
+                let toRight = !iconRight && (target.align != .right || iconLeft)
+                if !band.isEmpty, toLeft { gl = min(cl, max(0, scan(from: cl - 1, step: -1, ground: startColor) + 1)) }
+                if !band.isEmpty, toRight { gr = max(cr, min(width, scan(from: cr, step: 1, ground: endColor))) }
                 if gl < cl || gr > cr {
                     paint.grow = TextBox(left: Double(gl) / fw, top: cover.top, right: Double(gr) / fw, bottom: cover.bottom)
                 }

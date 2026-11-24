@@ -65,13 +65,19 @@ public static class ScreenFit
         var result = items.ToList();
         if (indices.Count == 0) return result;
         var paints = TextPainter.Paints([.. indices.Select(i => Target(items[i]))], width, height, color);
-        for (var k = 0; k < indices.Count && k < paints.Count; k++) result[indices[k]] = result[indices[k]] with { Paint = paints[k] };
+        for (var k = 0; k < indices.Count && k < paints.Count; k++)
+        {
+            var item = result[indices[k]] with { Paint = paints[k] };
+            // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266, #1267).
+            if (paints[k].IconSide is { } side && item.Look is { } look) item = item with { Look = look with { Align = side } };
+            result[indices[k]] = item;
+        }
         return result;
     }
 
     internal static TextPainter.Target Target(ScreenTranslation.Item item) =>
         new(item.Box, item.LineHeight, item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, item.Style!.Background,
-            item.Style.Foreground, item.Look!.Upper, item.Look.Align);
+            item.Style.Foreground, item.Look!.Upper, item.Look.Align, TextPainter.WordCount(item.Source));
 
     /// <summary>
     /// Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
@@ -229,11 +235,23 @@ public static class ScreenFit
             var rights = column.Count(j => Math.Abs(items[j].Box.Right - box.Right) <= tolerance && Math.Abs(items[j].Box.Left - box.Left) > tolerance);
             var lefts = column.Count(j => Math.Abs(items[j].Box.Left - box.Left) <= tolerance && Math.Abs(items[j].Box.Right - box.Right) > tolerance);
             var row = labels.Count(j => j != i && RowOverlap(box, items[j].Box) >= 0.5);
-            var align = rights >= 2 && rights > lefts ? "right" : lefts >= 2 ? "left" : row >= 2 ? "center" : null;
+            var align = rights >= 2 && rights > lefts ? "right" : lefts >= 2 ? "left" : row >= 2 ? "center"
+                : column.Count == 0 && row == 0 ? LoneAlign(box, items[i].Rows) : null;
             if (align is not null) result[i] = result[i] with { Look = result[i].Look! with { Align = align } };
         }
         return result;
     }
+
+    /// <summary>Ekranın yatay ortasından en çok bu kadar (kareye oranla) uzaktaki yalnız satır ortalıdır.</summary>
+    public const double CenterTolerance = 0.02;
+
+    /// <summary>
+    /// Komşusu olmayan tek satırın hizası (#1264): ortası ekranın ortasındaysa (görev yazısı "Go to the motel kitchen with
+    /// Lucia", altyazı gibi ortalı) "center". Tek satırın kendi kutusundan hiza çıkmıyor, sola yaslı sayılıyordu; Türkçesi kısa
+    /// olunca yazı kutunun soluna kayıyor, sağında boş zemin kalıyordu. Değilse null (hiza değişmez).
+    /// </summary>
+    public static string? LoneAlign(TextBox box, int rows) =>
+        rows <= 1 && Math.Abs((box.Left + box.Right) / 2 - 0.5) <= CenterTolerance ? "center" : null;
 
     internal static List<ScreenTranslation.Item> Uniform(IReadOnlyList<ScreenTranslation.Item> items, double aspect)
     {

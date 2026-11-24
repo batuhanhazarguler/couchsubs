@@ -248,4 +248,79 @@ public class ScreenMenuTests
         Assert.Null(UiCommands.TranslateLabel("CURRENT OUTFIT"));
         Assert.Null(UiCommands.TranslateLabel("40"));
     }
+
+    /// <summary>Seçili menü satırı (#1267): açık şeritte koyu yazı. Karo baştan sona açık, yazı koyu çizgiler.</summary>
+    private static void Selected(Frame frame, int column, int row)
+    {
+        for (var y = row * 20; y < row * 20 + 20; y++)
+            for (var x = column * 20; x < column * 20 + 20; x++)
+            {
+                var inner = y - row * 20;
+                var value = (byte)(inner % 6 is 2 or 3 && inner >= 3 && inner < 17 && x % 5 < 2 ? 30 : 230);
+                var p = y * frame.Stride + x * 4;
+                frame.Pixels[p] = frame.Pixels[p + 1] = frame.Pixels[p + 2] = value;
+            }
+    }
+
+    [Fact]
+    public void SelectedRowWithDarkTextOnALightBarIsFoundInAMenu()
+    {
+        var detector = new ScreenTextDetector();
+        Run(detector, 0, 600, _ =>
+        {
+            var frame = Wheel();
+            Selected(frame, 28, 16);
+            return frame;
+        });
+        Assert.True(detector.InMenu);
+        Assert.Equal(11, detector.Areas.Count);
+        // Menü dışında açık zemindeki koyu leke (gökyüzü, kar) yazı sayılmaz.
+        var outside = new ScreenTextDetector();
+        Run(outside, 0, 1500, _ =>
+        {
+            var frame = Blurred();
+            Selected(frame, 20, 10);
+            Selected(frame, 21, 10);
+            return frame;
+        });
+        Assert.Empty(outside.Areas);
+    }
+
+    /// <summary>#1264: komşusu olmayan, ekranın ortasındaki tek satır (görev yazısı) ortalı; kenardaki tek satır hizasını korur.</summary>
+    [Fact]
+    public void LoneCenteredLineIsCentered()
+    {
+        var look = new TextLook(false, false, "left", false, true);
+        var mission = new RegionWatcher.Block(0, 1, new TextBox(0.385, 0.94, 0.614, 0.97), 0.03, Look: look);
+        var corner = new RegionWatcher.Block(1, 1, new TextBox(0.05, 0.1, 0.3, 0.13), 0.03, Look: look);
+        var aligned = RegionWatcher.AlignByNeighbours([mission, corner]);
+        Assert.Equal("center", aligned[0].Look!.Align);
+        Assert.Equal("left", aligned[1].Look!.Align);
+        Assert.Equal("center", ScreenFit.LoneAlign(mission.Box, 1));
+        Assert.Null(ScreenFit.LoneAlign(mission.Box, 2));
+        Assert.Null(ScreenFit.LoneAlign(corner.Box, 1));
+    }
+
+    /// <summary>#1267: gösterilen satırın zemini açıktan koyuya dönünce (seçim kaydı) eski kutular hemen kalkar.</summary>
+    [Fact]
+    public void SelectionMoveIsSeenFromTheFlippedBackground()
+    {
+        var box = new TextBox(0.02, 0.2, 0.27, 0.25);
+        var shown = new ScreenTranslation.Item("Map", "Harita", box, 0.04) { Style = new PhoneTextStyle("#E8E8F0", "#202020") };
+        var look = new TextLook(false, false, "left", false, true);
+        var dark = new RegionWatcher.Block(0, 1, box, 0.04, new PhoneTextStyle("#202030", "#F0F0F0"), look);
+        var light = new RegionWatcher.Block(0, 1, box, 0.04, new PhoneTextStyle("#E0E0E8", "#202020"), look);
+        var below = dark with { Box = new TextBox(0.02, 0.3, 0.27, 0.35) };
+        Assert.True(RegionWatcher.SelectionMoved([shown], [dark]));
+        Assert.False(RegionWatcher.SelectionMoved([shown], [light]));
+        Assert.False(RegionWatcher.SelectionMoved([shown], [below]));
+    }
+
+    /// <summary>#1266, #1267: okunan yazının sözcük sayısında simge sanılan karakterler sayılmaz.</summary>
+    [Theory]
+    [InlineData("I Map", 1)]
+    [InlineData("II Photo Studio", 2)]
+    [InlineData("SELECT ⊗", 1)]
+    [InlineData("Retry Checkpoint", 2)]
+    public void IconGlyphsAreNotWords(string text, int words) => Assert.Equal(words, TextPainter.WordCount(text));
 }

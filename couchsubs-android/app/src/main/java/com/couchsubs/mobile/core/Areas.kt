@@ -607,7 +607,7 @@ class RegionWatcher(
                 val own = lines.filter { inside(it, group.box) }
                 // Hizalama grubun satırlarından (sağa yaslı kontrol etiketleri, ortalı başlık).
                 val align = if (own.size >= 2) TextStyleSampler.align(own.map { it.left to it.right })
-                    else own.singleOrNull()?.let { columnAlign(it, lines) }
+                    else own.singleOrNull()?.let { columnAlign(it, lines) ?: ScreenFit.loneAlign(it, 1) }
                 val parts = if (group.count > 1) paragraphLines(candidate.paragraphs.subList(group.start, group.start + group.count),
                     lines.filter { inside(it, group.box) }.let { boxes -> reading.lines.filter { it.box != null }
                         .map { it.text to it.box!!.placedIn(region.box) }.filter { (_, box) -> box in boxes }.sortedBy { it.second.top } }) else null
@@ -649,13 +649,20 @@ class RegionWatcher(
                     TextBox((box.left - region.left) / width, (box.top - region.top) / height,
                         (box.right - region.left) / width, (box.bottom - region.top) / height),
                     block.lineHeight / height, if (block.count > 1) maxOf(2, block.rows) else block.rows,
-                    style.surface.background, style.surface.foreground, style.look.upper, style.look.align)
+                    style.surface.background, style.surface.foreground, style.look.upper, style.look.align,
+                    TextPainter.words((block.start until block.start + block.count).joinToString(" ") { candidate.paragraphs[it] }))
             }
             val paints = if (targets.isEmpty()) emptyList() else TextPainter.paints(targets, frame, color)
+            val aligned = styles.toMutableList()
             for ((k, i) in painted.withIndex()) {
-                if (k < paints.size) blocks[i] = blocks[i].copy(paint = paints[k].placedIn(region.box))
+                if (k >= paints.size) continue
+                blocks[i] = blocks[i].copy(paint = paints[k].placedIn(region.box))
+                // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266: "SEÇ" tuş simgesinin yanında).
+                val side = paints[k].iconSide
+                val style = aligned[i]
+                if (side != null && style != null) aligned[i] = style.copy(look = style.look.copy(align = side))
             }
-            return candidate.copy(blocks = blocks, styles = styles)
+            return candidate.copy(blocks = blocks, styles = aligned)
         }
 
         /**
@@ -699,6 +706,29 @@ class RegionWatcher(
                 else -> "left"
             }
         }
+
+        /**
+         * Seçim kaydı (#1267): gösterilen bir kutunun (yeri, zemini) yerindeki (satırının en az yarısı örtüşen) yeni bloğun
+         * zemini öbür tonda (biri açık, öbürü koyu: seçili menü satırının ters rengi). Mac ve Windows aynı kuralı uygular.
+         */
+        internal fun selectionMoved(rendered: List<Pair<TextBox, String>>, current: List<Pair<TextBox, String>>): Boolean {
+            fun light(hex: String): Boolean {
+                val c = TextPainter.rgb(hex)
+                return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b > 127.5
+            }
+            return rendered.any { (a, before) ->
+                current.any { (b, now) ->
+                    if (light(now) == light(before)) return@any false
+                    val rows = maxOf(0.0, minOf(a.bottom, b.bottom) - maxOf(a.top, b.top)) /
+                        maxOf(1e-9, minOf(a.bottom - a.top, b.bottom - b.top))
+                    rows >= 0.5 && minOf(a.right, b.right) > maxOf(a.left, b.left)
+                }
+            }
+        }
+
+        /** Gösterilen ya da okunan blokların yeri ve zemini ([selectionMoved] için). */
+        private fun grounds(blocks: List<Block>?, styles: List<TextStyleSampler.Style?>?): List<Pair<TextBox, String>> =
+            blocks.orEmpty().mapIndexedNotNull { i, block -> styles?.getOrNull(i)?.let { block.box to it.surface.background } }
 
         internal fun renderBlocks(
             candidate: Candidate, layout: List<Block>, text: List<String>, similar: List<Boolean>, slots: List<IconSlot>,
@@ -1090,6 +1120,26 @@ class RegionWatcher(
             state.candidate = null
             commit(candidate, area, state, started)
         } else {
+            // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o
+            // satırın eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen kalkar;
+            // yeni okuma her zamanki gibi çizilir (Mac ve Windows ile aynı).
+            if (!state.renderedText.isNullOrEmpty() &&
+                selectionMoved(grounds(state.renderedLayout, state.renderedStyles), grounds(candidate.blocks, candidate.styles))
+            ) {
+                state.shown = ""
+                state.shownText = ""
+                state.shownIcons = 0
+                state.renderedKey = null
+                state.renderedText = null
+                state.renderedIcons = null
+                state.renderedBox = null
+                state.renderedLineHeight = null
+                state.renderedLayout = null
+                state.renderedBlocks = null
+                state.renderedStyles = null
+                synchronized(lock) { if (started == session) sender.sendRegion(area.id, "", null, null) }
+                onLog?.invoke("ek alan ${area.name}: seçim kaydı, eski kutular kaldırıldı")
+            }
             state.lastRead = candidate.key
             state.held = null
             state.holds = 0

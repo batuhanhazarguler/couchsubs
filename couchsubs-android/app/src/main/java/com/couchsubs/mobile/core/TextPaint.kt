@@ -41,6 +41,11 @@ data class TextPaint(
      * hepsi aynı yazı boyunda çizilir. null: tek başına.
      */
     val group: Int? = null,
+    /**
+     * Yazı tanıma kutusunun ucundaki simge (menü simgesi, tuş simgesi) yazının hangi yanında ("left", "right"): örtü ve uzama
+     * o simgeye girmez, yazı o yana yaslanır (TV'ye `align` olarak gider). null: simge yok.
+     */
+    val iconSide: String? = null,
 ) {
     /** Bu ölçüler [area] içindeki oranlarsa, aynı yerin [area]'yı içeren çerçevedeki oranları. */
     fun placedIn(area: TextBox): TextPaint =
@@ -62,6 +67,8 @@ object TextPainter {
     data class Target(
         val box: TextBox, val lineHeight: Double, val rows: Int, val background: String, val foreground: String,
         val upper: Boolean, val align: String,
+        /** Okunan yazının sözcük sayısı (simge sanılan karakterler sayılmaz, [words]); 0: bilinmiyor, kutunun ucundaki simge aranmaz. */
+        val words: Int = 0,
     )
 
     /** Nokta zeminden bu kadar (en büyük renk bileşeni farkı) uzak ve yazı rengine zeminden yakınsa harf noktasıdır. */
@@ -83,6 +90,79 @@ object TextPainter {
     const val GROW_LINES = 12.0
     /** Aynı grup: satır yükseklikleri en çok bu oranda farklı ([ScreenFit.SAME_LINE]). */
     const val SAME_LINE = ScreenFit.SAME_LINE
+
+    /**
+     * Kutunun ucundaki simgeyi yazıdan ayıran en dar boşluk, satır yüksekliğinin katı (harf arası bundan dardır; GTA 6
+     * menüsünde simgeyle yazı arası ~0,4 satır).
+     */
+    const val ICON_GAP_LINES = 0.3
+    /** Simge parçasının genişliği satır yüksekliğinin bu katları arasında ("I" harfi gibi ince parça simge sayılmaz). */
+    const val ICON_MIN_WIDE = 0.45
+    const val ICON_MAX_WIDE = 1.6
+    /** Simge sanılıp yazı olarak okunan karakterler (GTA 6 menü simgesi "I", "II"; tuş simgeleri). */
+    private const val ICON_GLYPHS = "I|l![]()©®@○◯●□■△▲✕✖×◎⊗⊙"
+
+    /** Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1). */
+    fun words(text: String): Int =
+        IconText.plain(text).split(Regex("\\s+")).filter { it.isNotEmpty() }
+            .count { token -> !(token.length <= 2 && token.all { it in ICON_GLYPHS }) }
+
+    /** Simge parçası: [l, r) piksel sütunları. */
+    data class Span(val l: Int, val r: Int)
+
+    /** [iconSpans] sonucu: simgeler ve onlar çıkınca yazının sol/sağ kenarı. */
+    data class Icons(val left: Span?, val right: Span?, val textLeft: Int, val textRight: Int)
+
+    /**
+     * Kutunun ([l, r), piksel) ucundaki simge: harf sütunları ([ink]) [ICON_GAP_LINES] satırdan geniş boşluklarla parçalara
+     * bölünür; parça sayısı sözcük sayısından çoksa uçtaki simge genişliğindeki ([ICON_MIN_WIDE]-[ICON_MAX_WIDE] satır)
+     * parça simgedir. İki uç da uyarsa hizanın yanı (sola yaslıda sol, öbürlerinde sağ) önce; ikincisi ancak iki fazla parça
+     * varsa. Simgeler çıkınca kalan parça sözcüklerden çoksa simge yoktur.
+     */
+    fun iconSpans(l: Int, r: Int, line: Double, words: Int, align: String, ink: (Int) -> Boolean): Icons {
+        val none = Icons(null, null, l, r)
+        if (words <= 0 || r - l < 2) return none
+        val gap = max(2, round(ICON_GAP_LINES * line))
+        val spans = mutableListOf<Span>()
+        var start: Int? = null
+        var last = l
+        var blank = 0
+        for (x in l until r) {
+            if (ink(x)) {
+                if (start == null) start = x
+                last = x
+                blank = 0
+            } else if (start != null) {
+                blank++
+                if (blank >= gap) {
+                    spans.add(Span(start, last + 1))
+                    start = null
+                    blank = 0
+                }
+            }
+        }
+        start?.let { spans.add(Span(it, last + 1)) }
+        if (spans.size < 2 || spans.size <= words) return none
+        fun isIcon(span: Span): Boolean {
+            val wide = (span.r - span.l).toDouble()
+            return wide >= ICON_MIN_WIDE * line && wide <= ICON_MAX_WIDE * line
+        }
+        val extra = spans.size - words
+        val first = spans.first()
+        val end = spans.last()
+        var left: Span? = null
+        var right: Span? = null
+        if (align == "left") {
+            if (isIcon(first)) left = first
+            if (isIcon(end) && (left == null || extra >= 2)) right = end
+        } else {
+            if (isIcon(end)) right = end
+            if (isIcon(first) && (right == null || extra >= 2)) left = first
+        }
+        // Simgeler çıkınca kalan parçalar sözcüklerden çok olamaz: harfleri aralıklı tek sözcük simge sanılmaz.
+        if (spans.size - (if (left == null) 0 else 1) - (if (right == null) 0 else 1) > words) return none
+        return Icons(left, right, if (left != null) spans[1].l else l, if (right != null) spans[spans.size - 2].r else r)
+    }
 
     private class Rect(val l: Int, val t: Int, val r: Int, val b: Int)
     private class Sample(val c: Rgb, val fx: Double, val top: Boolean)
@@ -116,7 +196,9 @@ object TextPainter {
                 val toBg = distance(c, bg)
                 return toBg > INK_DISTANCE && distance(c, fg) < toBg
             }
-            fun others(x: Int, y: Int): Boolean = rects.indices.any { j ->
+            // Kutunun ucundaki kendi simgesi (0. adım): öbür hedefler gibi engeldir; araya `GAP_LINES` boşluk kalır.
+            val zones = mutableListOf<Span>()
+            fun others(x: Int, y: Int): Boolean = zones.any { x >= it.l && x < it.r } || rects.indices.any { j ->
                 j != index && x >= rects[j].l && x < rects[j].r && y >= rects[j].t && y < rects[j].b
             }
             fun inkRow(y: Int, x0: Int, x1: Int): Boolean {
@@ -145,12 +227,26 @@ object TextPainter {
                 }
                 return n > 0 && ink >= max(1, ceil(INK_SHARE * n).toInt())
             }
-            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             val own = rects[index]
             var l = own.l
             var t = own.t
             var r = own.r
             var b: Int
+            // 0) Kutunun ucundaki simge (#1266, #1267): yazı tanıma kutusu menü/tuş simgesini de alıyordu; kutu simgenin
+            // üstüne çiziliyor, simge kayboluyordu. Simge kutudan çıkar ve engel olur: örtü, kenar payı ve uzama ona girmez.
+            var iconLeft = false
+            var iconRight = false
+            if (target.rows <= 1) {
+                val found = iconSpans(l, r, line, target.words, target.align) { at -> inkColumn(at, own.t, own.b) }
+                val keep = ceil(ScreenFit.GAP_LINES * line).toInt()
+                found.left?.let { zones.add(Span(it.l - keep, it.r + keep)); iconLeft = true }
+                found.right?.let { zones.add(Span(it.l - keep, it.r + keep)); iconRight = true }
+                l = found.textLeft
+                r = found.textRight
+            }
+            val textLeft = l
+            val textRight = r
+            // 1) Örtü: yazı tanıma kutusunun dışına taşan harf noktaları (bitişik satır/sütunlar) kutuya katılır.
             val reach = max(1, round(REACH_LINES * line))
             var y = own.b
             while (y < min(height, own.b + reach) && inkRow(y, l, r)) y++
@@ -159,10 +255,10 @@ object TextPainter {
             while (y >= max(0, own.t - reach) && inkRow(y, l, r)) y--
             t = y + 1
             var x = r
-            while (x < min(width, own.r + reach) && inkColumn(x, t, b)) x++
+            while (x < min(width, textRight + reach) && inkColumn(x, t, b)) x++
             r = x
             x = l - 1
-            while (x >= max(0, own.l - reach) && inkColumn(x, t, b)) x--
+            while (x >= max(0, textLeft - reach) && inkColumn(x, t, b)) x--
             l = x + 1
             // Kenar payı: yazının yanındaki boş noktalar; ötesinde başka yazı/simge varsa pay ona değmez.
             val margin = max(1, min(MARGIN_MAX, round(MARGIN_LINES * line)))
@@ -205,7 +301,8 @@ object TextPainter {
             }
             collect(ct - strip, ct, top = true)
             collect(cb, cb + strip, top = false)
-            var paint = TextPaint(target.background, pitch(target), cover)
+            var paint = TextPaint(target.background, pitch(target), cover,
+                iconSide = if (iconLeft == iconRight) null else if (iconLeft) "left" else "right")
             if (samples.size >= 16) {
                 val all = samples.map { it.c }
                 val average = mean(all)
@@ -243,7 +340,8 @@ object TextPainter {
             }
 
             // 3) Boş alan: tek satırlık etiket hizasının açık tarafına (sağa yaslıda sola, sola yaslıda sağa, ortalıda iki
-            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına `GAP_LINES` kala durur.
+            // yana) uzayabilir; başka yazıya, simgeye, kutu kenarına ya da karenin kenarına `GAP_LINES` kala durur. Kutunun
+            // ucunda simge varsa yalnız simgenin öbür yanına uzar (sağdaki tuş simgesinde sola, soldaki menü simgesinde sağa).
             if (target.rows <= 1) {
                 val sixth = max(1, (cb - ct) / 6)
                 val band = mutableListOf<Int>()
@@ -289,8 +387,10 @@ object TextPainter {
                 val endColor = rgb(paint.background2 ?: paint.background)
                 var gl = cl
                 var gr = cr
-                if (band.isNotEmpty() && target.align != "left") gl = min(cl, max(0, scan(cl - 1, -1, startColor) + 1))
-                if (band.isNotEmpty() && target.align != "right") gr = max(cr, min(width, scan(cr, 1, endColor)))
+                val toLeft = !iconLeft && (target.align != "left" || iconRight)
+                val toRight = !iconRight && (target.align != "right" || iconLeft)
+                if (band.isNotEmpty() && toLeft) gl = min(cl, max(0, scan(cl - 1, -1, startColor) + 1))
+                if (band.isNotEmpty() && toRight) gr = max(cr, min(width, scan(cr, 1, endColor)))
                 if (gl < cl || gr > cr) paint = paint.copy(grow = TextBox(gl / fw, cover.top, gr / fw, cover.bottom))
             }
             result.add(paint)
