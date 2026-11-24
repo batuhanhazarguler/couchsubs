@@ -426,6 +426,16 @@ struct RunningScreen: View {
                         .font(Mobile.TypeScale.title).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // TV uygulaması sürümünü çeviri başında, altyazı akışına bağlanınca bildirir: eskiyse güncelleme önerisi çeviri
+            // ekranında da görünür. Önceden yalnız ana ekrandaydı, çeviri sürerken hiç görülmüyordu; TV'de 0.9.71 kalmıştı
+            // (GitHub #1199). Mac, Windows ve Android ile aynı.
+            if model.settings.output.showsOnTV, !model.demoMode {
+                if let running = model.tvAppStaleRunning {
+                    MobileNote(text: String(format: String(localized: "CouchSubs on the TV is still running an old version (%@). On the TV, close CouchSubs and open it again."), running))
+                } else if let update = model.tvAppUpdate {
+                    TVAppUpdateTile(update: update) { path.append(.tvUpdate) }
+                }
+            }
             // TV uygulaması bağlı değil: CouchSubs TV'de nerede bulunur (markaya göre), otomatik açma neden olmadı ve
             // "Otomatik açmayı dene" (Windows, Mac ve Android ile aynı).
             if model.settings.output.showsOnTV, !model.demoMode, model.tvClients == 0, let tv = model.tv {
@@ -661,7 +671,7 @@ struct SubtitleScreen: View {
             .allowsHitTesting(false)
             VStack(spacing: Mobile.Space.micro) {
                 Text("Drag the subtitle up or down; pinch to change the text size.")
-                Text("The screen stays on · brightness is lowered automatically")
+                Text("Keep the phone screen on while you play; translation stops when the screen turns off. Keep it plugged in.")
             }
             .font(Mobile.TypeScale.caption)
             .foregroundStyle(Mobile.Palette.tertiary)

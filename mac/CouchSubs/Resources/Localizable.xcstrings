@@ -10000,18 +10000,18 @@
         }
       }
     },
-    "The screen stays on · brightness is lowered automatically": {
+    "Keep the phone screen on while you play; translation stops when the screen turns off. Keep it plugged in.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The screen stays on · brightness is lowered automatically"
+            "value": "Keep the phone screen on while you play; translation stops when the screen turns off. Keep it plugged in."
           }
         },
         "tr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ekran açık kalır · parlaklık otomatik kısılır"
+            "value": "Oynarken telefonun ekranını açık tutun; ekran kapanınca çeviri durur. Şarja takılı olsun."
           }
         }
       }

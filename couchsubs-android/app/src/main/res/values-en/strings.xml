@@ -355,7 +355,7 @@
     <string name="running_from_pack">From ready translation</string>
     <string name="subtitle_connected">PS5 connected</string>
     <string name="subtitle_waiting">Connecting</string>
-    <string name="subtitle_screen_note">Screen stays on · brightness dims automatically</string>
+    <string name="subtitle_screen_note">Keep the phone screen on while you play; translation stops when the screen turns off. Keep it plugged in.</string>
     <string name="subtitle_screen_gesture_hint">Drag the subtitle up or down; pinch to change the text size.</string>
     <string name="packs_auto">The pack is chosen automatically when the game opens. Lines not in the pack are translated with your chosen engine. Packs are free; new ones and fixes download automatically.</string>
     <string name="packs_now">now</string>

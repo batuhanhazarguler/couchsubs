@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.94';
+  var APP_VERSION = '0.9.95';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -73,10 +73,38 @@
 
   function $(id) { return document.getElementById(id); }
 
+  // Bağlı bilgisayar/telefon `link` olayında kendi paketindeki TV uygulamasının sürümünü (`latest`) bildirir. Bu
+  // sürümden eskiyse panel "TV uygulaması eski" der: kullanıcı TV'deki eski uygulamayı panelin fotoğrafından da görür
+  // (GitHub #1199: LG'de 0.9.71 kalmıştı, düzeltme 0.9.94'teydi). Eski bilgisayar/telefon `latest` göndermez.
+  var senderLatest = '';
+
+  // Sürüm karşılaştırması (0.9.100 > 0.9.99); yalnız rakam ve nokta.
+  function versionNewer(a, b) {
+    var x = String(a).split('.'), y = String(b).split('.');
+    for (var i = 0; i < Math.max(x.length, y.length); i++) {
+      var p = parseInt(x[i] || '0', 10) || 0, q = parseInt(y[i] || '0', 10) || 0;
+      if (p !== q) return p > q;
+    }
+    return false;
+  }
+
+  function outdatedText() {
+    return senderLatest && versionNewer(senderLatest, APP_VERSION) ? t('appOutdated').replace('%1', senderLatest) : '';
+  }
+
+  function renderVersion() {
+    var el = $('app-version');
+    if (!el) return;
+    var outdated = outdatedText();
+    el.textContent = APP_VERSION + (outdated ? ' · ' + outdated : '');
+    el.className = outdated ? 'bad' : 'muted';
+  }
+
   function renderDiag() {
     var el = $('st-diag');
     if (!el) return;
-    el.textContent = 'sub ' + diag.subtitles + ' · clear ' + diag.clears + ' · drop ' + diag.drops +
+    var outdated = outdatedText();
+    el.textContent = (outdated ? outdated + ' · ' : '') + 'sub ' + diag.subtitles + ' · clear ' + diag.clears + ' · drop ' + diag.drops +
       ' · bg ' + diag.backgrounded + (diag.revived ? ' · revived ' + diag.revived : '') + ' · hide ' + diag.lastHide + ' · ' + diag.place +
       (window.__screenSaverStatus ? ' · saver ' + window.__screenSaverStatus : '') +
       (diag.error ? ' · err ' + diag.error : '');
@@ -2315,6 +2343,9 @@
     // Yeni bilgisayar/telefon akışın kimliğini bildirir; TV her ping'de alındı gönderir (bkz. sendAck).
     onEvent('link', function (data) {
       linkId = /^[A-Za-z0-9]{1,64}$/.test(data.id || '') ? data.id : null;
+      senderLatest = /^[0-9.]{1,20}$/.test(data.latest || '') ? data.latest : '';
+      renderVersion();
+      renderDiag();
       sendAck();
     });
     onEvent('subtitle', function (data) {
@@ -3215,7 +3246,7 @@
   if (savedBottom) setBottom(Number(savedBottom));
   startHdmi();
 
-  $('app-version').textContent = APP_VERSION;
+  renderVersion();
   watchPictureWindow();
   renderDiag();
   renderWaitingStatus();

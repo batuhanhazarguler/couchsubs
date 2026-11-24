@@ -254,6 +254,15 @@ public final class SubtitleServer: @unchecked Sendable {
     }
     private var apart = true
 
+    /// Bu cihazın paketindeki TV uygulamasının sürümü: `link` olayının `latest` alanıyla TV'ye bildirilir. TV'deki
+    /// uygulama bundan eskiyse TV'nin paneli "TV uygulaması eski" der (GitHub #1199: LG'de 0.9.71 kalmıştı, düzeltme
+    /// 0.9.94'teydi). nil ya da boş: alan gönderilmez. Windows ve Android ile aynı.
+    public var latestTVAppVersion: String? {
+        get { queue.sync { latestVersion } }
+        set { queue.sync { latestVersion = newValue } }
+    }
+    private var latestVersion: String?
+
     /// Bağlantı canlı tutma çerçevesi: yorum satırını EventSource görmez; adlı "ping" olayını TV görür ve
     /// bir süre gelmezse yarı açık kalmış bağlantıyı kapatıp yeniden bağlanır (Windows ile aynı).
     static let pingFrame = ": ping\n\nevent: ping\ndata: {}\n\n"
@@ -972,7 +981,9 @@ public final class SubtitleServer: @unchecked Sendable {
         if !viewer {
             let link = Self.makeLinkId()
             linkIds[link] = id
-            head += Self.frame(event: "link", json: ["id": link])
+            var json: [String: Any] = ["id": link]
+            if let latest = latestVersion, !Self.tvAppVersion(latest).isEmpty { json["latest"] = latest }
+            head += Self.frame(event: "link", json: json)
         }
         connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
 

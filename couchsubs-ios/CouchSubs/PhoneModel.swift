@@ -557,6 +557,7 @@ final class PhoneModel: ObservableObject {
         server.onTVAppVersion = { [weak self] version in
             Task { @MainActor [weak self] in self?.tvAppReported(version) }
         }
+        shareLatestTVAppVersion()
 
         server.onClientsChanged = { [weak self] count in
             DispatchQueue.main.async {
@@ -2222,6 +2223,7 @@ final class PhoneModel: ObservableObject {
     /// eski kalıyor ve hiç öneri çıkmıyordu (GitHub #884, #891). Eskiyse ana ekran "TV uygulamasını güncelle" önerir.
     func tvAppReported(_ version: String) {
         runningTVAppVersion = version
+        shareLatestTVAppVersion()
         if lgRunningReported(version) { return }
         let target: (TVBrand, String, UInt16?)
         if let installed = installedTVApp {
@@ -2438,7 +2440,16 @@ final class PhoneModel: ObservableObject {
             + "eski TV uygulaması=\(flag(server.hasLegacyClient)) çıkış=\(settings.output.rawValue)"
     }
 
+    /// Bu telefondaki TV paketinin sürümü altyazı akışının `link` olayıyla TV'ye gider; TV'deki uygulama daha eskiyse TV'nin
+    /// paneli "TV uygulaması eski" der (GitHub #1199). TV seçilmemişse LG paketi (sürümler aynı). Mac, Windows ve Android
+    /// ile aynı.
+    private func shareLatestTVAppVersion() {
+        let brand = installedTVApp?.brand ?? tv?.brand ?? .lg
+        server.latestTVAppVersion = TVPackages.version(for: brand) ?? TVPackages.lgVersion
+    }
+
     private func startServer() async throws {
+        shareLatestTVAppVersion()
         guard !serverStarted else { return }
         do {
             serverPort = try await server.start()

@@ -325,6 +325,13 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         get { lock (gate) return tvAppVersion; }
     }
 
+    /// <summary>
+    /// Bu bilgisayarın paketindeki TV uygulamasının sürümü: <c>link</c> olayının <c>latest</c> alanıyla TV'ye bildirilir.
+    /// TV'deki uygulama bundan eskiyse TV'nin paneli "TV uygulaması eski" der (GitHub #1199: LG'de 0.9.71 kalmıştı,
+    /// düzeltme 0.9.94'teydi). Null ya da boş: alan gönderilmez. Mac ve Android ile aynı.
+    /// </summary>
+    public string? LatestTvAppVersion { get; set; }
+
     /// <summary>TV uygulaması altyazı akışına her bağlandığında bildirdiği sürümle (boş: eski TV uygulaması) çağrılır
     /// (iş parçacığı havuzunda).</summary>
     public event Action<string>? TvAppVersionReported;
@@ -986,7 +993,12 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             if (accessKey != checkedKey) { tcp.Dispose(); return; }
             if (lastStyle is { } style) head.Append(StyleFrame(style, SetApart));
             // Kimlik stilden sonra: TV'ye ilk giden veri eskisi gibi stil olsun (olay sırası protokolü etkilemez).
-            if (client.LinkId is { } link) head.Append(Frame("link", new SortedDictionary<string, object> { ["id"] = link }));
+            if (client.LinkId is { } link)
+            {
+                var json = new SortedDictionary<string, object> { ["id"] = link };
+                if (ParseTvAppVersion(LatestTvAppVersion) is { Length: > 0 } latest) json["latest"] = latest;
+                head.Append(Frame("link", json));
+            }
             clients.Add(client);
             if (hdmi is not null) consolePort = hdmi;
             count = TvCount();

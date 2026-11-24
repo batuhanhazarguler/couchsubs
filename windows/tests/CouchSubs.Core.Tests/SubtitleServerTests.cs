@@ -551,6 +551,20 @@ public class SubtitleServerTests
         Assert.DoesNotContain("event: link", obsLines);
     }
 
+    /// <summary><c>link</c> olayı bu bilgisayardaki TV paketinin sürümünü (<c>latest</c>) taşır; TV daha eskiyse paneli
+    /// "TV uygulaması eski" der (GitHub #1199).</summary>
+    [Fact]
+    public async Task LinkCarriesBundledTvAppVersion()
+    {
+        using var server = new SubtitleServer(0) { LatestTvAppVersion = "0.9.95" };
+        var port = await server.StartAsync();
+        using var response = await Http.GetAsync($"http://127.0.0.1:{port}/events?v=0.9.71", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        await ReadLines(reader, "event: link");
+        var data = await reader.ReadLineAsync();
+        Assert.Equal("0.9.95", JsonDocument.Parse(data!["data: ".Length..]).RootElement.GetProperty("latest").GetString());
+    }
+
     /// <summary>Alındı gönderip susan TV (LG'de uygulama arka planda askıya alındı) kopmuş sayılır ve kapatılır; hiç alındı
     /// göndermeyen eski TV uygulamasına dokunulmaz.</summary>
     [Fact]

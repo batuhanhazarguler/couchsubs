@@ -224,6 +224,26 @@ final class SubtitleServerTests: XCTestCase {
         XCTAssertEqual((unknown as? HTTPURLResponse)?.statusCode, 404)
     }
 
+    /// `link` olayı bu cihazdaki TV paketinin sürümünü (`latest`) taşır; TV daha eskiyse paneli "TV uygulaması eski" der.
+    func testLinkCarriesBundledTVAppVersion() async throws {
+        let server = SubtitleServer(port: 0)
+        server.latestTVAppVersion = "0.9.95"
+        let port = try await server.start()
+        defer { server.stop() }
+        let (bytes, _) = try await URLSession.shared.bytes(from: URL(string: "http://127.0.0.1:\(port)/events?v=0.9.71")!)
+        var latest: String?
+        var previous = ""
+        for try await line in bytes.lines {
+            if previous == "event: link", line.hasPrefix("data:") {
+                let json = try JSONSerialization.jsonObject(with: Data(line.dropFirst(5).utf8)) as? [String: Any]
+                latest = json?["latest"] as? String
+                break
+            }
+            previous = line
+        }
+        XCTAssertEqual(latest, "0.9.95")
+    }
+
     /// OBS gibi izleyiciler alındı göndermez; onlara `link` gitmez.
     func testViewersGetNoLink() async throws {
         let server = SubtitleServer(port: 0, pingInterval: 0.05)

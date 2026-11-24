@@ -362,7 +362,7 @@
     <string name="running_from_pack">Hazır çeviriden</string>
     <string name="subtitle_connected">PS5 bağlı</string>
     <string name="subtitle_waiting">Bağlanıyor</string>
-    <string name="subtitle_screen_note">Ekran açık kalır · parlaklık otomatik kısılır</string>
+    <string name="subtitle_screen_note">Oynarken telefonun ekranını açık tutun; ekran kapanınca çeviri durur. Şarja takılı olsun.</string>
     <string name="subtitle_screen_gesture_hint">Altyazıyı parmağınızla yukarı ya da aşağı taşıyın; yazı boyunu iki parmakla değiştirin.</string>
     <string name="packs_auto">Oyun açılınca paket kendiliğinden seçilir. Pakette olmayan satır seçtiğin motorla çevrilir. Paketler ücretsiz; yenileri ve düzeltmeler kendiliğinden iner.</string>
     <string name="packs_now">şimdi</string>

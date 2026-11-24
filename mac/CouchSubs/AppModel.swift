@@ -1285,6 +1285,7 @@ final class AppModel: ObservableObject {
         server.onTVAppVersion = { [weak self] version in
             Task { @MainActor [weak self] in self?.tvAppReported(version) }
         }
+        shareLatestTVAppVersion()
 
         server.onClientsChanged = { [weak self] count in
             if let self, self.tvClients == 0, count > 0, self.isRunning {
@@ -1667,6 +1668,7 @@ final class AppModel: ObservableObject {
     /// ulaşılıyorsa (Samsung, Android TV) güncelleme hemen, sorulmadan kurulur (önceki sürüm denetimiyle aynı yol).
     func tvAppReported(_ version: String) {
         runningTVAppVersion = version
+        shareLatestTVAppVersion()
         if tv?.brand == .lg, lgRunningReported(version) { return }
         guard let bundled = bundledVersionForTV, SubtitleServer.isTVAppOutdated(reported: version, bundled: bundled) else {
             tvAppOutdated = nil
@@ -3772,7 +3774,15 @@ final class AppModel: ObservableObject {
         sessionStartedAt.map { history.entries(since: $0) } ?? history.entries
     }
 
+    /// Bu Mac'teki TV paketinin sürümü altyazı akışının `link` olayıyla TV'ye gider; TV'deki uygulama daha eskiyse TV'nin
+    /// paneli "TV uygulaması eski" der (GitHub #1199). TV seçilmemişse LG paketi (sürümler aynı). Windows, iPhone ve
+    /// Android ile aynı.
+    private func shareLatestTVAppVersion() {
+        server.latestTVAppVersion = bundledVersionForTV ?? services.bundledTVAppVersion
+    }
+
     private func startServer() async throws {
+        shareLatestTVAppVersion()
         guard !serverStarted else { return }
         do {
             serverPort = try await server.start()

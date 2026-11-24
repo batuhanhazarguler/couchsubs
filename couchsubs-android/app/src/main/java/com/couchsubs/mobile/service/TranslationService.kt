@@ -684,6 +684,13 @@ class TranslationService : Service() {
             runCatching { com.couchsubs.mobile.tv.TvAppUpdate.reported(applicationContext, version) }
                 .onFailure { Log.w(TAG, "TV uygulaması sürümü işlenemedi: ${it.message}") }
         }
+        // Telefondaki TV paketinin sürümü `link` olayıyla TV'ye gider; TV daha eskiyse paneli "TV uygulaması eski" der
+        // (GitHub #1199). TV seçilmemişse LG paketi (sürümler aynı). Windows, Mac ve iPhone ile aynı.
+        subtitleServer.latestTvAppVersion = runCatching {
+            val tvApps = com.couchsubs.mobile.tv.TvAppUpdate
+            tvApps.bundledVersion(applicationContext, settings.installedTv?.brand ?: com.couchsubs.mobile.tv.TvBrand.LG)
+                ?: tvApps.bundledVersion(applicationContext, com.couchsubs.mobile.tv.TvBrand.LG)
+        }.getOrNull()
         subtitleServer.sendsToTv = settings.target.showsOnTv
         subtitleServer.speakerColors = settings.speakerColors
         subtitleServer.setApart = settings.setTextApart

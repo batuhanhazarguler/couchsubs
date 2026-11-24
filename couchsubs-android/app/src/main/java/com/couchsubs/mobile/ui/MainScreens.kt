@@ -389,6 +389,10 @@ private fun RunningScreen(status: LiveStatus, topBar: @Composable () -> Unit, on
         AnimatedNote(status.error)
         // TV'ye çevirirken telefon kilitlenebilir: pil kısıtlaması açıksa çeviri ekran kapanınca durabilir.
         if (!status.demo && Services.settings.target.showsOnTv) BackgroundLimitNote()
+        // TV uygulaması sürümünü çeviri başında, altyazı akışına bağlanınca bildirir: eskiyse güncelleme önerisi çeviri
+        // ekranında da görünür. Önceden yalnız ana ekrandaydı, çeviri sürerken hiç görülmüyordu; TV'de 0.9.71 kalmıştı
+        // (GitHub #1199). Windows, Mac ve iPhone ile aynı.
+        if (!status.demo && Services.settings.target.showsOnTv) TvAppUpdateCard(onTvInstall)
         // TV uygulaması bağlı değil: CouchSubs TV'de nerede bulunur (markaya göre), otomatik açma neden olmadı ve
         // "Otomatik açmayı dene" (Windows, Mac ve iPhone ile aynı).
         if (!status.demo && Services.settings.target.showsOnTv && status.connectedTvs == 0)

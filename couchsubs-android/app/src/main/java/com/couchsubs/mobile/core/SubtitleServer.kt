@@ -413,6 +413,13 @@ class SubtitleServer(
     /** TV uygulaması altyazı akışına her bağlandığında bildirdiği sürümle (boş: eski TV uygulaması) çağrılır (sunucunun iş parçacığında). */
     @Volatile var onTvAppVersion: ((String) -> Unit)? = null
 
+    /**
+     * Bu telefonun paketindeki TV uygulamasının sürümü: `link` olayının `latest` alanıyla TV'ye bildirilir. TV'deki
+     * uygulama bundan eskiyse TV'nin paneli "TV uygulaması eski" der (GitHub #1199: LG'de 0.9.71 kalmıştı, düzeltme
+     * 0.9.94'teydi). null ya da boş: alan gönderilmez. Windows ve Mac/iPhone ile aynı.
+     */
+    @Volatile var latestTvAppVersion: String? = null
+
     /** Sunucuyu başlatır ve dinlenen portu döner (port 0 ise rastgele seçilen). */
     fun start(): Int {
         val socket = ServerSocket()
@@ -815,7 +822,11 @@ class SubtitleServer(
                 if (accessKey != checkedKey) { closeQuietly(socket); return }
                 lastStyle?.let { head.append(styleFrame(it, setApart)) }
                 // Bağlantı kimliği stilden sonra (Mac/iPhone ve Windows ile aynı sıra; bkz. onTvStale).
-                if (!viewer) head.append("event: link\ndata: ").append(Json.write(mapOf("id" to link))).append("\n\n")
+                if (!viewer) {
+                    val latest = tvAppVersion(latestTvAppVersion)
+                    val json = if (latest.isEmpty()) mapOf("id" to link) else mapOf("id" to link, "latest" to latest)
+                    head.append("event: link\ndata: ").append(Json.write(json)).append("\n\n")
+                }
                 clients.add(client)
                 clients.count { !it.viewer }
             }

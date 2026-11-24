@@ -217,6 +217,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         server.SendsToTv = settings.Output.ShowsOnTv();
         server.SpeakerColors = settings.SpeakerColors;
         server.SetApart = settings.SetTextApart;
+        ShareLatestTvAppVersion();
     }
 
     private void DetachServer()
@@ -345,6 +346,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public void TvAppReported(string version)
     {
         runningTvAppVersion = version;
+        ShareLatestTvAppVersion();
         if (tv?.Brand == TvBrand.Lg && LgRunningReported(version)) return;
         if (BundledVersionForTv is not { } bundled || !SubtitleServer.IsTvAppOutdated(version, bundled))
         {
@@ -4348,8 +4350,15 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
 
     private bool preferredPortApplied;
 
+    /// <summary>
+    /// Bu bilgisayardaki TV paketinin sürümü altyazı akışının <c>link</c> olayıyla TV'ye gider; TV'deki uygulama daha
+    /// eskiyse TV'nin paneli "TV uygulaması eski" der (GitHub #1199). TV seçilmemişse LG paketi (sürümler aynı).
+    /// </summary>
+    private void ShareLatestTvAppVersion() => server.LatestTvAppVersion = BundledVersionForTv ?? services.BundledTvAppVersion;
+
     private async Task StartServerAsync()
     {
+        ShareLatestTvAppVersion();
         if (serverStarted) return;
         // Linux sunucusunda port elle seçilebilir (COUCHSUBS_SERVER_PORT, #617); doluysa aşağıdaki gibi boş bir porta geçilir.
         if (!preferredPortApplied && services.PreferredServerPort is { } preferred && preferred != DefaultServerPort)
