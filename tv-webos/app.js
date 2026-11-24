@@ -1479,6 +1479,12 @@
     var padX = pad * width, padY = pad * height;
     var pl = room ? Math.min(padX, Math.max(0, x0 - room.left * width)) : 0;
     var pr = room ? Math.min(padX, Math.max(0, room.right * width - x1)) : 0;
+    // Alan gelmediyse kutunun kenarı tam piksele dışa yuvarlanır: özgün yazının kenarındaki kesirli piksel sütunu
+    // görünmesin (alan gelince kenar payı onu zaten örter, simgeye bir piksel bile yaklaşılmaz).
+    if (!room) {
+      pl = x0 - Math.floor(x0);
+      pr = Math.ceil(x1) - x1;
+    }
     var rows = label ? 1 : (item.rows > 1 ? item.rows : Math.max(1, Math.round((y1 - y0) / Math.max(1, line))));
     var size = Math.max(10, Math.min(96 * height / 1080, Math.round(line * 0.95)));
     var subtitle = typeof fontBase === 'number' && fontBase > 0 ? fontBase : 46;
