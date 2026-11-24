@@ -191,9 +191,13 @@ public enum TextPainter {
                     let left = samples.filter { $0.fx < 1.0 / 3 }.map(\.c), right = samples.filter { $0.fx > 2.0 / 3 }.map(\.c)
                     let above = samples.filter(\.top).map(\.c), below = samples.filter { !$0.top }.map(\.c)
                     // Desen: her parçanın kendi içindeki sapması (degrade kendi başına desen sayılmaz).
-                    let parts = [true, false].flatMap { side in (0..<3).map { third in
-                        samples.filter { $0.top == side && min(2, Int($0.fx * 3)) == third }.map(\.c)
-                    } }.filter { $0.count >= 4 }
+                    var parts: [[RGB]] = []
+                    for side in [true, false] {
+                        for third in 0..<3 {
+                            let part: [RGB] = samples.filter { $0.top == side && min(2, Int($0.fx * 3)) == third }.map(\.c)
+                            if part.count >= 4 { parts.append(part) }
+                        }
+                    }
                     let spread = parts.isEmpty ? deviation(all) : parts.map(deviation).reduce(0, +) / Double(parts.count)
                     let dh = left.count >= 4 && right.count >= 4 ? distance(mean(left), mean(right)) : 0
                     let dv = above.count >= 4 && below.count >= 4 ? distance(mean(above), mean(below)) : 0
