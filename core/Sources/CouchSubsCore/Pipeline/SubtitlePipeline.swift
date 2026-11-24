@@ -213,6 +213,9 @@ public final class SubtitlePipeline {
     /// Altyazı alanında konuşan adıyla başlayan bir satır okundu (her okumada). Uygulama ekran yazısı dedektörüne bildirir
     /// (`ScreenTextDetector.noteDialogue`): konuşma sürerken menü sayılmaz (#1240). Windows ve Android aynı.
     public var onDialogue: (() -> Void)?
+    /// Doğruysa bu karede okunan blok `echo`'ya kaydedilmez: ekranda menü var, altyazı bekletiliyor; okunan menü satırları
+    /// altyazı sayılmaz (yoksa menünün kendi çevirisi metin eşleşmesiyle atılırdı). Windows: EchoPaused.
+    public var echoPaused: (() -> Bool)?
     /// Paket isabetinde satırın geldiği paket (günlük için; bilinmiyorsa nil).
     public var packName: (() -> String?)?
     /// Oturumun (hat kurulunca ya da sıfırlanınca) başladığı an; ilk karenin ne kadar sonra geldiği günlüğe yazılır.
@@ -385,7 +388,7 @@ public final class SubtitlePipeline {
         subtitleBand.record(reading, in: place)
         if let onDialogue, reading.lines.contains(where: { SpeakerPrefix.split($0.text) != nil }) { onDialogue() }
         // Ekran yazısı okuyucuları altyazıyı ikinci kez çizmesin (bkz. `SubtitleEcho`).
-        echo?.record(reading, region: region)
+        if echoPaused?() != true { echo?.record(reading, region: region) }
         currentRead = ReadInfo(capturedAt: captured, ocrMs: lastReadMs, confidence: reading.confidence)
         let box = reading.box?.placed(in: place).centeredOnScreen()
         if !sawText, !reading.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

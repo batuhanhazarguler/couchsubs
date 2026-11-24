@@ -1366,6 +1366,7 @@ final class PhoneModel: ObservableObject {
                                         server: sender, scheduler: scheduler)
         // Altyazı alanında konuşan adıyla satır okundu: ekranda menü yok (#1240).
         pipeline.onDialogue = { [weak self] in self?.screenTextDetector?.noteDialogue(now: SubtitleStabilizer.uptimeMs()) }
+        pipeline.echoPaused = { [weak self] in self?.screenTextDetector?.inMenu == true }
         pipeline.showSpeakerNames = settings.showSpeakerNames
         pipeline.applyWaits(from: settings)
         pipeline.echo = .shared
