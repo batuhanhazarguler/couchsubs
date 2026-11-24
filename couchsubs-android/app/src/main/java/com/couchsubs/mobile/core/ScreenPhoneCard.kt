@@ -73,6 +73,8 @@ object ScreenPhoneCard {
     const val BUBBLE_SPACING = 0.6
     const val BUBBLE_PADDING = 0.6
     const val LINE_SPACING = 1.2
+    /** Sohbet listesinde kişi adıyla altındaki önizleme arasındaki boşluk (satır yüksekliğine oranla). Mac ile aynı. */
+    const val LIST_GAP = 0.1
     /** Balonun kart genişliğine oranı (en çok) ve en az. */
     const val BUBBLE_SHARE = 0.8
     const val BUBBLE_MIN = 0.3
@@ -283,7 +285,8 @@ object ScreenPhoneCard {
             val surface = when (role) {
                 Role.OUTGOING -> OUTGOING
                 Role.INCOMING -> INCOMING
-                Role.NOTE -> NOTE
+                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı (iPhone ile aynı).
+                Role.NOTE, Role.HEADING -> NOTE
                 else -> CARD
             }
             val part = when (role) {
@@ -297,8 +300,12 @@ object ScreenPhoneCard {
             val inside = line * (if (bubble) BUBBLE_PADDING else 0.3)
             Row(placed, width, lines.size * line * LINE_SPACING + inside, side)
         }.toMutableList()
+        // Sohbet listesinde önizleme kişi adının hemen altındadır ([LIST_GAP]); öbür satırlar arasında spacing kalır.
+        fun rowGap(index: Int): Double =
+            if (index > 0 && rows[index].item.phone?.role == Role.PREVIEW && rows[index - 1].item.phone?.role == Role.CONTACT)
+                line * LIST_GAP else spacing
         // Mesajlar telefon boyuna sığmazsa kart önce aşağı, sonra yukarı uzar (ekranın kenar payına kadar).
-        fun needed(): Double = 2 * padY + headerHeight + rows.sumOf { it.height } + spacing * maxOf(0, rows.size - 1)
+        fun needed(): Double = 2 * padY + headerHeight + rows.sumOf { it.height } + (1 until rows.size).sumOf { rowGap(it) }
         var extra = needed() - (cardBottom - cardTop)
         if (extra > 0) {
             val down = minOf(extra, maxOf(0.0, 1 - SCREEN_MARGIN - cardBottom))
@@ -334,13 +341,13 @@ object ScreenPhoneCard {
         var cursor = bodyTop
         rows.forEachIndexed { index, row ->
             val wanted = phone.top + row.item.phone!!.spot.top * (phone.bottom - phone.top)
-            tops[index] = maxOf(wanted, cursor)
-            cursor = tops[index] + row.height + spacing
+            tops[index] = if (index > 0 && rowGap(index) < spacing) cursor else maxOf(wanted, cursor)
+            cursor = tops[index] + row.height + (if (index + 1 < rows.size) rowGap(index + 1) else spacing)
         }
         var floor = limit
         for (index in rows.indices.reversed()) {
             tops[index] = maxOf(bodyTop, minOf(tops[index], floor - rows[index].height))
-            floor = tops[index] - spacing
+            floor = tops[index] - rowGap(index)
         }
         rows.forEachIndexed { index, row ->
             val left = when (row.side) {

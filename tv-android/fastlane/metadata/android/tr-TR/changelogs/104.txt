@@ -1,0 +1,1 @@
+0.9.101: GTA 6 telefonunun Mesajlar ekranı TV'de liste olarak çiziliyor: kişi adı kalın, altında son mesajın çevirisi, "Önerilen" ve "Mesajlar" bölüm başlığı. Telefon elde sallanırken liste ile sohbet balonları arasında gidip gelmiyor.

@@ -42,6 +42,11 @@ data class TextLine(
     val confidence: Float? = null,
     /** Oyun telefonunda satırın düzleştirilmiş ekrandaki yeri ([GamePhoneReader]); [box] karedeki gerçek yeridir. */
     val phoneBox: TextBox? = null,
+    /**
+     * Telefonun sohbet listesinde ([GamePhoneText.forTranslation]) satırın rolü: kişi adı, önizleme ya da bölüm başlığı.
+     * Liste değilse null. iPhone ile aynı.
+     */
+    internal val listRole: ScreenPhoneCard.Role? = null,
 )
 
 /** Yazı tanımanın bulduğu bir sözcük ve yeri (okunan alanın kenarlarına oranla). */

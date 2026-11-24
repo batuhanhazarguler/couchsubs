@@ -49,8 +49,12 @@ class GamePhoneSteadyTest {
                 line("May", 0.21), line("Don't leave yet.", 0.25), line("Messages", 0.34),
                 line("Rose", 0.42), line("Meet me here.", 0.46), line("Jason", 0.56), line(message, 0.60),
                 line("Martin", 0.73), line("Lucia", 0.85)))
-            assertEquals(listOf("Suggestions", "call me soon", "Don't leave yet.", "Messages", "Meet me here.", message),
-                GamePhoneText.forTranslation(rows).lines.map { it.text })
+            val kept = GamePhoneText.forTranslation(rows).lines
+            assertEquals(listOf("Suggestions", "Chase", "call me soon", "May", "Don't leave yet.", "Messages", "Rose", "Meet me here.",
+                "Jason", message, "Martin", "Lucia"), kept.map { it.text })
+            assertEquals(ScreenPhoneCard.Role.PREVIEW, kept.first { it.text == message }.listRole)
+            assertEquals(listOf("Chase", "May", "Rose", "Jason", "Martin", "Lucia"),
+                kept.filter { it.listRole == ScreenPhoneCard.Role.CONTACT }.map { it.text })
         }
     }
 

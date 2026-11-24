@@ -76,7 +76,7 @@ fun PhonePanelView(panel: ScreenPhoneCard.Panel, fontSize: Float, radius: Dp, mo
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().clipToBounds(), contentAlignment = Alignment.BottomStart) {
                 val bubbleMax = maxWidth * 0.84f
                 Column(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Bottom, unbounded = true)) {
-                    panel.messages.forEach { Message(it, font, bubbleMax) }
+                    panel.messages.forEachIndexed { index, item -> Message(item, font, bubbleMax, gap(panel.messages, index)) }
                 }
             }
         }
@@ -91,17 +91,37 @@ fun PhonePanelView(panel: ScreenPhoneCard.Panel, fontSize: Float, radius: Dp, mo
     }
 }
 
+/** Sohbet listesinin satırı (kişi adı, önizleme, bölüm başlığı): sola yaslı not; ad ve başlık kalın. iPhone ile aynı. */
+internal fun isListRow(item: ScreenTranslation.Item): Boolean =
+    item.panel == ScreenPhoneCard.PanelPart.NOTE && item.look?.align == "left"
+
+/** Satırın üstündeki boşluk (yazı boyuna oranla): önizleme, üstündeki kişi adının hemen altındadır. iPhone ile aynı. */
+internal fun gap(messages: List<ScreenTranslation.Item>, index: Int): Float {
+    if (index <= 0) return 0.45f
+    val item = messages[index]
+    val previous = messages[index - 1]
+    if (isListRow(item) && isListRow(previous) && item.look?.bold != true && previous.look?.bold == true &&
+        previous.surface?.foreground != ScreenPhoneCard.NOTE.foreground) return 0.08f
+    return 0.45f
+}
+
 @Composable
-private fun Message(item: ScreenTranslation.Item, font: Float, bubbleMax: Dp) {
+private fun Message(item: ScreenTranslation.Item, font: Float, bubbleMax: Dp, gap: Float) {
     val note = item.panel == ScreenPhoneCard.PanelPart.NOTE
     val mine = item.panel == ScreenPhoneCard.PanelPart.MINE
     val text = color(item.surface?.foreground, Color.White)
-    if (note) {
-        Text(item.translation, style = TextStyle(fontSize = (font * 0.8f).sp, fontWeight = FontWeight.Medium), color = text,
-            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = (font * 0.45f).dp))
+    if (isListRow(item)) {
+        Text(item.translation, style = TextStyle(fontSize = (font * 0.92f).sp,
+            fontWeight = if (item.look?.bold == true) FontWeight.Bold else FontWeight.Normal), color = text,
+            textAlign = TextAlign.Start, modifier = Modifier.fillMaxWidth().padding(top = (font * gap).dp))
         return
     }
-    Row(Modifier.fillMaxWidth().padding(top = (font * 0.45f).dp),
+    if (note) {
+        Text(item.translation, style = TextStyle(fontSize = (font * 0.8f).sp, fontWeight = FontWeight.Medium), color = text,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = (font * gap).dp))
+        return
+    }
+    Row(Modifier.fillMaxWidth().padding(top = (font * gap).dp),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Text(item.translation, style = TextStyle(fontSize = font.sp, lineHeight = (font * 1.2f).sp, fontWeight = FontWeight.SemiBold),
             color = text,

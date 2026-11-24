@@ -66,9 +66,22 @@ object GamePhoneText {
     private fun isTag(token: String): Boolean =
         (token.startsWith('@') || token.startsWith('#')) && identifier.matchEntire(token) != null
 
-    private fun section(text: String): String? {
-        val value = text.dropWhile { !it.isLetter() }.trim()
-        return value.takeIf { it in sections }
+    /**
+     * Sohbet listesinin bölüm başlığı ("Suggested", "Messages"); değilse null. Başlığın yanındaki simge yazı tanımada tek
+     * harf ya da işaret olarak okunur ("g Suggested", "✱ Suggested", "Messages ☆"): o artık atılır. Önceden "g Suggested"
+     * başlık sayılmıyor, sallanan telefonda liste her okumada bir liste bir sohbet çiziliyor, TV'de "g Önerilen" yazıyordu.
+     * Simge artığı [ButtonIcons.isIconToken] ile aynı tanımdadır (tek harf ya da işaret). iPhone ile aynı.
+     */
+    internal fun section(text: String): String? {
+        val value = text.dropWhile { !it.isLetter() }.dropLastWhile { !it.isLetter() }
+        if (value in sections) return value
+        val words = value.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.size !in 2..3) return null
+        val heading = words.firstOrNull { it in sections } ?: return null
+        val rest = words.filter { it != heading }
+        if (rest.size != words.size - 1 ||
+            !rest.all { it.length == 1 || ButtonIcons.isIconToken(it) || it.none { c -> c.isLetter() } }) return null
+        return heading
     }
 
     private fun looksLikeName(text: String): Boolean {
@@ -114,16 +127,21 @@ object GamePhoneText {
         return line.copy(text = text.substring(0, wordEnd) + "...")
     }
 
-    /** Çevrilecek satırlar: yalnız etiketten oluşan satırlar ve tanınan mesaj listesindeki kişi adları çıkarılır. */
+    /**
+     * Çeviriye gidecek satırlar (yalnız etiketten oluşan satırlar çıkarılır). Sohbet listesi (Mesajlar ekranı: "Suggested",
+     * "Messages", kişi adı ve altında son mesajın önizlemesi) tanınırsa her satır rolüyle işaretlenir ([TextLine.listRole]):
+     * kişi adı (çevrilmez, kalın), önizleme (altında, çevrilir), bölüm başlığı. Liste için kişi adı sütununda en az üç
+     * "ad + önizleme" çifti ve bir bölüm başlığı (ya da başlık okunamadıysa "…" ile kesilmiş en az iki önizleme) gerekir.
+     * Önceden iki başlığın ikisi de okunmalıydı: sallanan telefonda biri her okumada kaçıyor, liste bir sohbet balonları bir
+     * düz satırlar olarak gidip geliyordu (LG, beta.93). Kişi adları da atılıyordu; şimdi listede adıyla görünür. iPhone ile aynı.
+     */
     fun forTranslation(reading: Reading): Reading {
         val lines = reading.lines.filter { line ->
             val words = line.text.split(Regex("\\s+")).filter { it.isNotEmpty() }
             !(words.any(::isTag) && words.all { word -> isTag(word) || word.none { it.isLetterOrDigit() } })
         }.toMutableList()
-        val headings = lines.mapNotNull { section(it.text) }.toSet()
-        if (headings.none { it in setOf("Suggested", "Suggestions", "Öneriler") } ||
-            headings.none { it in setOf("Messages", "Mesajlar") }) return Reading(lines)
         for (i in lines.indices) section(lines[i].text)?.let { lines[i] = lines[i].copy(text = it) }
+        val headed = lines.any { section(it.text) != null }
         val order = lines.indices.filter { layout(lines[it]) != null }.sortedBy { layout(lines[it])!!.top }
         val names = mutableListOf<Int>()
         val previews = mutableSetOf<Int>()
@@ -143,6 +161,7 @@ object GamePhoneText {
         val first = layout(lines[names.first()]) ?: return Reading(lines)
         val last = layout(lines[names.last()]) ?: return Reading(lines)
         if (last.top <= first.top) return Reading(lines)
+        if (!headed && previews.count { isCut(lines[it].text) } < 2) return Reading(lines)
         val slope = (last.left - first.left) / (last.top - first.top)
         fun inColumn(line: TextLine): Boolean {
             val box = layout(line) ?: return false
@@ -150,7 +169,7 @@ object GamePhoneText {
         }
         if (!names.all { inColumn(lines[it]) }) return Reading(lines)
         // Listeyi uzun önizlemeler doğruladı: aynı satır düzenindeki "Okay" gibi tek sözcüklük yanıt da önizlemedir, ad
-        // gibi göründüğü için atılmaz. Önizlemesi olmayan ad yine atılır.
+        // gibi göründüğü için ad sayılmaz (iPhone ile aynı).
         i = 0
         while (i + 1 < order.size) {
             val name = order[i]
@@ -164,15 +183,57 @@ object GamePhoneText {
                 i += 1
             }
         }
-        return Reading(lines.indices.mapNotNull { index ->
+        return Reading(lines.indices.map { index ->
             val line = lines[index]
             when {
-                index in previews -> previewPunctuation(line)
-                inColumn(line) && (index in names || looksLikeName(line.text)) -> null
-                else -> line
+                index in previews -> previewPunctuation(line).copy(listRole = ScreenPhoneCard.Role.PREVIEW)
+                section(line.text) != null -> line.copy(listRole = ScreenPhoneCard.Role.HEADING)
+                inColumn(line) && (index in names || looksLikeName(line.text)) -> line.copy(listRole = ScreenPhoneCard.Role.CONTACT)
+                else -> line.copy(listRole = ScreenPhoneCard.Role.PREVIEW)
             }
         })
     }
+
+    /** Telefonun "…" ile kestiği önizleme ("Hey this is Joey from Coa..."). */
+    fun isCut(text: String): Boolean {
+        val value = text.trim()
+        return value.endsWith("...") || value.endsWith("…")
+    }
+
+    private val danglingWords = setOf(
+        "a", "an", "the", "of", "to", "in", "on", "at", "for", "from", "with", "by", "about", "and", "but", "or", "so",
+        "than", "my", "your", "his", "her", "its", "our", "their", "this", "that", "is", "are", "was", "were", "be", "i",
+        "you", "we", "they", "it", "if", "as",
+    )
+
+    private fun isPunctuation(c: Char): Boolean = when (Character.getType(c).toByte()) {
+        Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION, Character.START_PUNCTUATION,
+        Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
+        Character.OTHER_PUNCTUATION -> true
+        else -> false
+    }
+
+    /**
+     * Kesik önizlemenin çevrilecek kısmı: telefon son sözcüğü yarıda keser ("Coa...", "in t..."), yazı tanıma da üç
+     * noktanın önündeki boşluğu güvenilir okumaz; son sözcük her zaman atılır, ardından kalan bağlaç/edat ("from", "in",
+     * "than") da. Çeviri "..." ile biter ([cutTranslation]): önceden "Hey this is Joey from Coa..." "Selam, ben
+     * Coa'dan Joey..." çevriliyor, yarım sözcük uyduruluyordu. Kesik değilse ya da geriye bir sözcük bile kalmazsa null.
+     * iPhone ile aynı.
+     */
+    fun cutInput(text: String): String? {
+        if (!isCut(text)) return null
+        val value = text.trim().trimEnd('.', '…')
+        val words = value.split(Regex("\\s+")).filter { it.isNotEmpty() }.toMutableList()
+        if (words.size < 2) return null
+        words.removeAt(words.size - 1)
+        while (words.size > 1 && words.last().lowercase().trim(::isPunctuation) in danglingWords) words.removeAt(words.size - 1)
+        val core = words.joinToString(" ").trimEnd(',', ';', ':', '-', '–', '—').trim()
+        return if (core.any { it.isLetter() }) core else null
+    }
+
+    /** Kesik önizlemenin çevirisi: sondaki noktalama atılıp "..." eklenir (telefondaki gibi kesik görünür). */
+    fun cutTranslation(translation: String): String =
+        translation.trim().trimEnd('.', ',', ';', ':', '…', '–', '—', '-').trim() + "..."
 
     /** Balonlar: düzleştirilmiş ekranda ([TextLine.phoneBox]) alt alta ve hizalı satırlar tek balondur. */
     /**
@@ -183,6 +244,8 @@ object GamePhoneText {
         val home = PhoneChat.isHomeScreen(source.lines)
         val reading = Reading(PhoneChat.withoutAppNames(source.lines))
         val flat = reading.lines.all { it.phoneBox != null }
+        // Sohbet listesi ([forTranslation]): her satır kendi satırıdır (ad ve altındaki önizleme ayrı), rolü okumadan gelir.
+        val listed = reading.lines.any { it.listRole != null }
         fun box(line: TextLine): TextBox = (if (flat) line.phoneBox else line.box)!!
         val groups = mutableListOf<ScreenTranslation.Group>()
         val run = mutableListOf<TextLine>()
@@ -202,17 +265,20 @@ object GamePhoneText {
                 // Düz ekrandaki yeri: sohbet panelinde tarafı (sol/sağ) ve sırası bundan çıkar ([roles]).
                 val spot = run.drop(1).fold(box(run[0])) { total, line -> total.union(box(line)) }
                 groups += ScreenTranslation.Group(listOf(clean.joinToString(" ") { it.text }), place, heights[heights.size / 2],
-                    if (icons.isEmpty()) null else listOf(icons), ScreenPhoneCard.Placement(ScreenPhoneCard.Role.MESSAGE, spot))
+                    if (icons.isEmpty()) null else listOf(icons),
+                    ScreenPhoneCard.Placement(if (listed) run[0].listRole ?: ScreenPhoneCard.Role.PREVIEW else ScreenPhoneCard.Role.MESSAGE, spot))
             } finally {
                 run.clear()
             }
         }
         for (line in reading.lines.filter { it.box != null }.sortedBy { box(it).top }) {
-            run.lastOrNull()?.let { if (breaksBlock(box(it), box(line), flat && endsSentence(it.text))) finish() }
+            run.lastOrNull()?.let { if (listed || breaksBlock(box(it), box(line), flat && endsSentence(it.text))) finish() }
             run.add(line)
         }
         finish()
-        return roles(groups.take(ScreenTranslation.MAX_GROUPS), home)
+        val kept = groups.take(ScreenTranslation.MAX_GROUPS)
+        if (listed && flat && kept.isNotEmpty()) return kept
+        return roles(kept, home)
     }
 
     /**

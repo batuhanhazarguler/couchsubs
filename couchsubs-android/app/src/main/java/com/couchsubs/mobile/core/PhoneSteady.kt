@@ -14,6 +14,16 @@ object PhoneSteady {
     const val MISS_TURNS = 3
     /** Tek turluk OCR sapması (düşen balon, yan yana bozuk harfler) en çok bu kadar tur bekletilir. */
     const val HOLD_TURNS = 2
+    /**
+     * Sayfanın türü (sohbet listesi ya da sohbet) ancak bu kadar ardışık okuma aynı yeni türü verirse değişir: sallanan
+     * telefonda tek okumada bölüm başlığı kaçınca TV'deki panel liste ile balonlar arasında her saniye gidip geliyordu
+     * (LG, beta.93). iPhone ile aynı.
+     */
+    const val KIND_TURNS = 2
+
+    /** Okumanın grupları sohbet listesi mi (kişi adı, önizleme, bölüm başlığı). */
+    fun isList(roles: List<ScreenPhoneCard.Role?>): Boolean =
+        roles.any { it == ScreenPhoneCard.Role.CONTACT || it == ScreenPhoneCard.Role.PREVIEW || it == ScreenPhoneCard.Role.HEADING }
     /** Aynı mesaj sayılmak için sadeleştirilmiş iki okumanın benzerliği (Levenshtein oranı) en az bu. */
     const val SAME_MESSAGE = 0.9
     /** Kısa satırda bir harf anlamı değiştirir ("Ok" / "On"): benzer okuma yalnız bu kadar harften uzun mesajda kullanılır. */

@@ -283,13 +283,95 @@ class GamePhoneTextTest {
     }
 
     @Test
-    fun contactsOnlyRemovedInRecognizableMessageListAndCutWordsAreNeverCompleted() {
+    fun contactsAreMarkedOnlyInRecognizableMessageListAndCutWordsAreNeverCompleted() {
         val rows = listOf(line("Suggestions", 0.04), line("Chase", 0.12), line("call me after ...", 0.16),
             line("May", 0.25), line("Don't leave yet.", 0.29), line("Messages", 0.42),
             line("Rose", 0.54), line("Meet me at 06:40.", 0.58))
         val kept = GamePhoneText.forTranslation(Reading(rows))
-        assertEquals(listOf("Suggestions", "call me after...", "Don't leave yet.", "Messages", "Meet me at 06:40."), kept.lines.map { it.text })
-        assertTrue(GamePhoneText.forTranslation(Reading(rows.drop(1))).lines.map { it.text }.contains("May"))
+        assertEquals(listOf("Suggestions", "Chase", "call me after...", "May", "Don't leave yet.", "Messages", "Rose",
+            "Meet me at 06:40."), kept.lines.map { it.text })
+        assertEquals(listOf(HEADING, CONTACT, PREVIEW, CONTACT, PREVIEW, HEADING, CONTACT, PREVIEW), kept.lines.map { it.listRole })
+        // Tek başlık da yeter: sallanan telefonda biri bir okumada kaçabilir.
+        assertEquals(listOf(CONTACT, PREVIEW, CONTACT, PREVIEW, HEADING, CONTACT, PREVIEW),
+            GamePhoneText.forTranslation(Reading(rows.drop(1))).lines.map { it.listRole })
+        // Başlıksız ve kesik önizlemesiz üç ad-yanıt çifti liste sayılmaz.
+        val plain = rows.filter { GamePhoneText.section(it.text) == null && !it.text.endsWith("...") }
+        assertTrue(GamePhoneText.forTranslation(Reading(plain)).lines.all { it.listRole == null })
+    }
+
+    /**
+     * Başlığın simgesi yazı tanımada tek harf ya da işaret olarak okunur ("g Suggested"): artık atılır, satır yine
+     * başlıktır. Başlık içeren gerçek cümle başlık değildir.
+     */
+    @Test
+    fun headingIconResidueIsDropped() {
+        for (text in listOf("g Suggested", "✱ Suggested", "Suggested", "Messages ☆", "• Messages", "O Messages")) {
+            assertNotNull(text, GamePhoneText.section(text))
+        }
+        for (text in listOf("Suggested items", "My Messages", "Messages from Joey", "Send Messages now")) {
+            assertNull(text, GamePhoneText.section(text))
+        }
+    }
+
+    /**
+     * LG, beta.93: GTA 6 Mesajlar ekranı (fotoğraftaki sıra). Telefon sallanırken her okuma başka: başlığın simgesi bir
+     * "g" okunur, bir okunmaz; "Messages" bir okumada kaçar; kutular birkaç piksel oynar. Liste her okumada liste, satırlar
+     * aynı sırada ve aynı rolde kalır; kişi adları ayrı satırdır.
+     */
+    @Test
+    fun swayingMessageListKeepsItsRolesInEveryRead() {
+        fun rows(dy: Double, suggested: String?, messages: Boolean): Reading {
+            fun flat(text: String, y: Double, left: Double, right: Double = 0.95): TextLine {
+                val box = TextBox(left + dy / 2, y + dy, right + dy / 2, y + dy + 0.031)
+                return TextLine(text, box, phoneBox = box)
+            }
+            val lines = mutableListOf<TextLine>()
+            if (suggested != null) lines += flat(suggested, 0.04, 0.05, 0.40)
+            lines += listOf(flat("Cal", 0.10, 0.30, 0.38), flat("$ in your mailbox. You bailed", 0.14, 0.30),
+                flat("Brian", 0.22, 0.30, 0.42), flat("Ok. There's some cash in t...", 0.26, 0.30))
+            if (messages) lines += flat("Messages", 0.33, 0.03, 0.30)
+            lines += listOf(flat("Donnie", 0.40, 0.30, 0.45),
+                flat("Joey", 0.50, 0.30, 0.40), flat("Hey this is Joey from Coa...", 0.54, 0.30),
+                flat("Lucia (Yolanda phone)", 0.62, 0.30, 0.70), flat("Outside living better than ...", 0.66, 0.30),
+                flat("Shirley", 0.74, 0.30, 0.45), flat("Oh that's nice hon. aren't ...", 0.78, 0.30),
+                flat("Rusty Anchor", 0.88, 0.30, 0.62))
+            return Reading(lines)
+        }
+        val expected = listOf(
+            "Suggested" to HEADING, "Cal" to CONTACT, "in your mailbox. You bailed" to PREVIEW, "Brian" to CONTACT,
+            "Ok. There's some cash in t..." to PREVIEW, "Messages" to HEADING, "Donnie" to CONTACT, "Joey" to CONTACT,
+            "Hey this is Joey from Coa..." to PREVIEW, "Lucia (Yolanda phone)" to CONTACT,
+            "Outside living better than..." to PREVIEW, "Shirley" to CONTACT, "Oh that's nice hon. aren't..." to PREVIEW,
+            "Rusty Anchor" to CONTACT)
+        val reads = listOf<Pair<String?, Boolean>>("Suggested" to true, "g Suggested" to true, "✱ Suggested" to false,
+            null to true, null to false)
+        for ((index, read) in reads.withIndex()) {
+            val (suggested, messages) = read
+            val groups = GamePhoneText.groups(GamePhoneText.forTranslation(rows(0.002 * index, suggested, messages)))
+            val wanted = expected.filter { (suggested != null || it.first != "Suggested") && (messages || it.first != "Messages") }
+            assertEquals("$index", wanted.map { it.first }, groups.map { it.paragraphs.joinToString("") })
+            assertEquals("$index", wanted.map { it.second }, groups.map { it.phone?.role })
+        }
+    }
+
+    /** Kesik önizleme kesik çevrilir: yarım son sözcük ve sarkan edat çeviriye gitmez, çeviri "..." ile biter. */
+    @Test
+    fun cutPreviewIsTranslatedWithoutTheBrokenWord() {
+        assertEquals("Hey this is Joey", GamePhoneText.cutInput("Hey this is Joey from Coa..."))
+        assertEquals("Ok. There's some cash", GamePhoneText.cutInput("Ok. There's some cash in t..."))
+        assertEquals("Outside living better", GamePhoneText.cutInput("Outside living better than..."))
+        assertEquals("Oh that's nice hon.", GamePhoneText.cutInput("Oh that's nice hon. aren't..."))
+        assertEquals("Call me", GamePhoneText.cutInput("Call me, then…"))
+        assertNull(GamePhoneText.cutInput("Meet me at 6."))
+        assertNull(GamePhoneText.cutInput("Coa..."))
+        assertEquals("Selam, ben Joey...", GamePhoneText.cutTranslation("Selam, ben Joey."))
+        assertEquals("Dışarıda yaşamak daha iyi...", GamePhoneText.cutTranslation("Dışarıda yaşamak daha iyi"))
+    }
+
+    private companion object {
+        val HEADING = ScreenPhoneCard.Role.HEADING
+        val CONTACT = ScreenPhoneCard.Role.CONTACT
+        val PREVIEW = ScreenPhoneCard.Role.PREVIEW
     }
 
     @Test
@@ -490,6 +572,75 @@ class PhoneRegionSessionTest {
         watcher.offer()
         wait { !watcher.isBusy }
         assertEquals(listOf("Bugün yanıtla.", "Yarın buluşalım."), server.sent.lastOrNull()?.items?.map { it.translation })
+    }
+
+    /**
+     * LG, beta.93: GTA 6 Mesajlar ekranı elde sallanırken TV'deki panel her saniye liste ile sohbet balonları arasında
+     * gidip geliyordu. Pikselleri biraz farklı, başlığı bir "g" ile bir simgesiz okunan art arda okumalarda sayfa liste
+     * kalır, aynı görüntü yeniden gönderilmez; tek bir sohbet gibi okunan kare türü değiştirmez, art arda iki okuma
+     * değiştirir (iPhone ile aynı).
+     */
+    @Test
+    fun swayingMessageListKeepsTheListLayout() {
+        val reader = Reader()
+        val translator = Translator()
+        val server = Server()
+        // Yanda Panel açık: liste satırları panelde sola yaslı dizilir.
+        val watcher = RegionWatcher({ reader.read() }, translator, server, clock = { clock }, readPhone = { reader.read() })
+        val pose = GamePhoneGeometry.locate(TestPhoneImage.phone())!!
+        fun row(text: String, y: Double, left: Double, right: Double, dy: Double) =
+            TextLine(text, TextBox(left, y + dy, right, y + dy + 0.031))
+        fun list(heading: String, dy: Double) = listOf(
+            row(heading, 0.04, 0.05, 0.40, dy), row("Cal", 0.10, 0.30, 0.38, dy), row("$ in your mailbox. You bailed", 0.14, 0.30, 0.95, dy),
+            row("Brian", 0.22, 0.30, 0.42, dy), row("Ok. There's some cash in t...", 0.26, 0.30, 0.95, dy),
+            row("Messages", 0.33, 0.03, 0.30, dy), row("Donnie", 0.40, 0.30, 0.45, dy),
+            row("Joey", 0.50, 0.30, 0.40, dy), row("Hey this is Joey from Coa...", 0.54, 0.30, 0.95, dy),
+            row("Shirley", 0.74, 0.30, 0.45, dy), row("Oh that's nice hon. aren't ...", 0.78, 0.30, 0.95, dy),
+            row("Rusty Anchor", 0.88, 0.30, 0.62, dy))
+        // Liste gibi okunamayan kare: yalnız iki ad-önizleme çifti, başlık ve kesik önizleme yok.
+        val chat = listOf(row("Joey", 0.50, 0.30, 0.40, 0.0), row("Hey this is Joey from home.", 0.54, 0.30, 0.95, 0.0),
+            row("Shirley", 0.74, 0.30, 0.45, 0.0), row("Oh that's nice hon.", 0.78, 0.30, 0.95, 0.0))
+        var step = 0
+        fun read(lines: List<TextLine>) {
+            reader.lines = lines
+            clock = 450L * step
+            val frame = TestPhoneImage.phone(patch = intArrayOf(170 + 6 * (step % 10), 60 + 4 * step, 10, 12))
+            watcher.observePhone(PhoneCapture(frame, pose))
+            watcher.offer()
+            step++
+            wait { !watcher.isBusy }
+        }
+        read(list("Suggested", 0.0))
+        val rows = server.sent.last().items.filter { it.panel == ScreenPhoneCard.PanelPart.NOTE }
+        assertEquals(listOf("Çevrildi: Suggested", "Cal", "Çevrildi: in your mailbox. You bailed", "Brian",
+            "Çevrildi: Ok. There's some cash...", "Çevrildi: Messages", "Donnie", "Joey", "Çevrildi: Hey this is Joey...",
+            "Shirley", "Çevrildi: Oh that's nice hon...", "Rusty Anchor"), rows.map { it.translation })
+        assertTrue("liste sola yaslı, ortalı not değil", rows.all { it.look?.align == "left" })
+        assertEquals(listOf("Çevrildi: Suggested", "Cal", "Brian", "Çevrildi: Messages", "Donnie", "Joey", "Shirley", "Rusty Anchor"),
+            rows.filter { it.look?.bold == true }.map { it.translation })
+        assertEquals("telefondaki sıra", 0, rows.zipWithNext().count { (a, b) -> a.box.top >= b.box.top })
+        val names = setOf("Cal", "Brian", "Joey", "Donnie", "Shirley", "Rusty Anchor")
+        assertFalse("adlar çevrilmez", translator.calls.any { it in names })
+        assertFalse("yarım sözcük çeviriye gitmez", translator.calls.any { it.contains("Coa") })
+        val sent = server.sent.size
+
+        // Sallanan telefon: kutular birkaç piksel oynar, başlığın simgesi bir "g" okunur; görüntü aynı, yeniden gönderilmez.
+        read(list("g Suggested", 0.003))
+        read(list("✱ Suggested", -0.002))
+        assertEquals(sent, server.sent.size)
+        assertFalse(translator.calls.any { it.contains("g Suggested") })
+
+        // Tek bir okuma sohbet gibi geldi: liste kalır.
+        read(chat)
+        read(list("Suggested", 0.002))
+        assertEquals(sent, server.sent.size)
+
+        // Sayfa gerçekten değişti (art arda iki okuma): yeni tür çizilir.
+        read(chat)
+        assertEquals(sent, server.sent.size)
+        read(chat)
+        assertTrue(server.sent.size > sent)
+        assertFalse(server.sent.last().items.any { it.panel == ScreenPhoneCard.PanelPart.NOTE && it.look?.align == "left" })
     }
 
     @Test

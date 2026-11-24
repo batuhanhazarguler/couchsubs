@@ -1,0 +1,1 @@
+0.9.101: The GTA 6 phone's Messages screen is drawn as a list on the TV: the contact name in bold with the translated last message below it, "Suggested" and "Messages" as section headings. It no longer flips between the list and chat bubbles while the phone sways in hand.

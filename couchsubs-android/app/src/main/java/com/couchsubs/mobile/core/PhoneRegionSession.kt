@@ -129,6 +129,9 @@ internal class PhoneRegionSession(
     private var shownPage: Page? = null
     /** Son okuma kaç turdur bekletiliyor (en çok [PhoneSteady.HOLD_TURNS]); sonra okuma her durumda ilerler. */
     private var holds = 0
+    /** Ekrandaki sayfanın türü (sohbet listesi mi) ve öbür türü veren ardışık okuma sayısı ([PhoneSteady.KIND_TURNS]). */
+    private var shownList: Boolean? = null
+    private var kindVotes = 0
     /** Bir önceki taze okuma (bekletilse de): kaydırmayı ([PhoneSteady.scrolled]) ölçmek için. */
     private var lastRead: Page? = null
     /** Son taze okuma bir öncekine göre kaydırma: bekletme, konum sabitleme ve turda tek balon çevirisi atlanır. */
@@ -170,6 +173,8 @@ internal class PhoneRegionSession(
     fun close(): Unit = synchronized(this) {
         closed = true
         latest = null
+        shownList = null
+        kindVotes = 0
         publish(emptyList())
     }
 
@@ -200,9 +205,11 @@ internal class PhoneRegionSession(
             !it.region.isClose(start.region, 0.01) || RegionSignature.changed(it.signature, signature) ||
                 it.pixels.changed(start.image, start.region)
         } ?: true
+        var fresh = false
         if (changed || emptyOnce || recheck) {
             recheck = false
-            val fresh = try {
+            fresh = true
+            val next = try {
                 read(start, signature)
             } catch (error: Exception) {
                 page = null
@@ -211,25 +218,25 @@ internal class PhoneRegionSession(
             }
             // Sohbet kaydırıldıysa (eşleşen balonların hepsi aynı yöne kaydı) bekletilmez, yeni balonlar hemen çevrilir.
             val before = lastRead
-            lastRead = fresh
-            scrolling = before != null && scrolled(before, fresh)
-            if (scrolling) note("PhoneSteady", "kaydırma algılandı, bekletme ve konum sabitleme atlandı", text(fresh))
+            lastRead = next
+            scrolling = before != null && scrolled(before, next)
+            if (scrolling) note("PhoneSteady", "kaydırma algılandı, bekletme ve konum sabitleme atlandı", text(next))
             // Yerinde duran iki komşu arasından düşen balon ya da uzun mesajdaki birkaç bozuk harf tek okumada ekrandan
             // silinmez, çeviri yenilenmez: sonraki tur mutlaka yeniden okur; aynı görünen gerçek değişiklik o turda ilerler.
             val previous = shownPage
-            if (!scrolling && holds < PhoneSteady.HOLD_TURNS && previous != null && previous.region.isClose(fresh.region, 0.01) &&
-                (missingInteriorBubble(previous, fresh) ||
-                    (sameLayout(previous, fresh, start.image) && GamePhoneText.hasAdjacentOcrEdits(text(previous), text(fresh))))) {
+            if (!scrolling && holds < PhoneSteady.HOLD_TURNS && previous != null && previous.region.isClose(next.region, 0.01) &&
+                (missingInteriorBubble(previous, next) ||
+                    (sameLayout(previous, next, start.image) && GamePhoneText.hasAdjacentOcrEdits(text(previous), text(next))))) {
                 if (holds == 0) {
-                    val why = if (missingInteriorBubble(previous, fresh)) "balon düştü" else "harf oynaması"
-                    note("PhoneSteady", "okuma ${PhoneSteady.HOLD_TURNS} tura dek bekletildi ($why)", text(fresh))
+                    val why = if (missingInteriorBubble(previous, next)) "balon düştü" else "harf oynaması"
+                    note("PhoneSteady", "okuma ${PhoneSteady.HOLD_TURNS} tura dek bekletildi ($why)", text(next))
                 }
                 holds++
                 recheck = true
                 return
             }
             holds = 0
-            page = fresh
+            page = next
         } else if (!needsWork) {
             // "GTA 6 Telefon Mesajları" ayarı değişti: aynı sayfa yeni düzende hemen gösterilir.
             val shown = page
@@ -246,6 +253,20 @@ internal class PhoneRegionSession(
         }
         absences = 0
         if (closed) return
+        // Sayfanın türü (liste/sohbet) tek okumayla değişmez: telefon sallanırken bölüm başlığı bir okumada kaçınca panel
+        // liste ile sohbet balonları arasında gidip geliyordu (LG, beta.93). Öbür tür art arda [PhoneSteady.KIND_TURNS]
+        // okumada gelirse geçilir; arada aynı tür gelirse sayaç sıfırlanır. iPhone ile aynı.
+        val list = isList(current)
+        val shownKind = shownList
+        if (fresh && current.bubbles.isNotEmpty() && shownKind != null && shownKind != list && rendered.isNotEmpty()) {
+            kindVotes++
+            if (kindVotes < PhoneSteady.KIND_TURNS) {
+                note("PhoneSteady", "sayfa türü değişti (${if (list) "liste" else "sohbet"}), bir okuma daha bekleniyor", text(current))
+                page = null
+                return
+            }
+        }
+        if (current.bubbles.isNotEmpty()) kindVotes = 0
         if (current.bubbles.isEmpty()) {
             // Ekranda çeviri varsa [PhoneSteady.MISS_TURNS] tur boş kalmadan silinmez: telefonun ekranı kısa süre
             // okunamayınca panel kaybolup geri geliyordu (X, 22 Kas; Mac ile aynı).
@@ -255,6 +276,7 @@ internal class PhoneRegionSession(
                     note("PhoneSteady", "${PhoneSteady.MISS_TURNS} tur boş okundu, çeviri silindi", rendered.joinToString(" ") { it.source })
                 }
                 publish(emptyList())
+                shownList = null
                 emptyOnce = false
                 empties = 0
             } else {
@@ -265,6 +287,7 @@ internal class PhoneRegionSession(
         }
         emptyOnce = false
         empties = 0
+        shownList = list
         val groups = current.bubbles.map { it.group }
         val paragraphs = groups.flatMap { it.paragraphs }
         var available = availableTranslations(groups, packLookup, skipsTurkish)
@@ -294,8 +317,11 @@ internal class PhoneRegionSession(
             }
         }
         missing = missing.distinct()
-        val inputs = missing.map {
-            val text = IconText.protect(it).text
+        // Listede "…" ile kesilmiş önizleme kesik çevrilir, yarım sözcük uydurulmaz ([GamePhoneText.cutInput]).
+        val previews = groups.filter { it.phone?.role == ScreenPhoneCard.Role.PREVIEW }.flatMap { it.paragraphs }.toSet()
+        val cuts = missing.map { if (it in previews) GamePhoneText.cutInput(it) else null }
+        val inputs = missing.zip(cuts).map { (source, cut) ->
+            val text = IconText.protect(cut ?: source).text
             if (english) GamePhoneText.englishModelInput(text) else text
         }
         try {
@@ -307,13 +333,15 @@ internal class PhoneRegionSession(
                 note("PhoneSession", "çevrilemedi (motor ${result.size}/${inputs.size} yanıt)", missing.joinToString(" "))
                 return
             }
-            for ((source, translated) in missing.zip(result)) {
+            for ((index, pair) in missing.zip(result).withIndex()) {
+                val (source, translated) = pair
                 if (translated.isBlank()) {
                     note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
                     continue
                 }
-                remember(source, translated)
-                available[source] = translated
+                val shown = if (cuts[index] == null) translated else GamePhoneText.cutTranslation(translated)
+                remember(source, shown)
+                available[source] = shown
             }
         } catch (error: Exception) {
             needsWork = true
@@ -344,6 +372,8 @@ internal class PhoneRegionSession(
         if (height <= 0 || lines.isEmpty()) return false
         return PhoneSteady.scrolled(placed(before), placed(after), lines[lines.size / 2] / height)
     }
+
+    private fun isList(page: Page): Boolean = PhoneSteady.isList(page.bubbles.map { it.group.phone?.role })
 
     private fun text(page: Page): String = page.bubbles.flatMap { it.group.paragraphs }.joinToString(" ")
 
@@ -425,6 +455,8 @@ internal class PhoneRegionSession(
         absences = 0
         page = null
         shownPage = null
+        shownList = null
+        kindVotes = 0
         lastRead = null
         scrolling = false
         holds = 0
