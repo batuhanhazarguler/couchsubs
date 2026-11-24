@@ -66,9 +66,21 @@ enum GamePhoneText {
         return identifier.firstMatch(in: value, range: range)?.range == range
     }
 
-    private static func section(_ text: String) -> String? {
-        let value = String(text.drop(while: { !$0.isLetter })).trimmingCharacters(in: .whitespacesAndNewlines)
-        return ["Messages", "Suggested", "Suggestions", "Öneriler", "Mesajlar"].contains(value) ? value : nil
+    private static let headings = ["Messages", "Suggested", "Suggestions", "Öneriler", "Mesajlar"]
+
+    /// Sohbet listesinin bölüm başlığı ("Suggested", "Messages"); değilse nil. Başlığın yanındaki simge yazı tanımada tek
+    /// harf ya da işaret olarak okunur ("g Suggested", "✱ Suggested", "Messages ☆"): o artık atılır. Önceden "g Suggested"
+    /// başlık sayılmıyor, sallanan telefonda liste her okumada bir liste bir sohbet çiziliyor, TV'de "g Önerilen" yazıyordu.
+    /// Simge artığı `ButtonIcons.isIconToken` ile aynı tanımdadır (tek harf ya da işaret; ekran yazısı #1228 ile aynı).
+    static func section(_ text: String) -> String? {
+        let value = String(text.drop(while: { !$0.isLetter }).reversed().drop(while: { !$0.isLetter }).reversed())
+        if headings.contains(value) { return value }
+        let words = value.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard (2...3).contains(words.count), let heading = words.first(where: headings.contains) else { return nil }
+        let rest = words.filter { $0 != heading }
+        guard rest.count == words.count - 1,
+              rest.allSatisfy({ $0.count == 1 || ButtonIcons.isIconToken($0) || !$0.contains(where: \.isLetter) }) else { return nil }
+        return heading
     }
 
     private static func looksLikeName(_ text: String) -> Bool {
@@ -110,15 +122,19 @@ enum GamePhoneText {
         return copy
     }
 
+    /// Çeviriye gidecek satırlar. Sohbet listesi (Mesajlar ekranı: "Suggested", "Messages", kişi adı ve altında son mesajın
+    /// önizlemesi) tanınırsa her satır rolüyle işaretlenir (`TextLine.listRole`): kişi adı (çevrilmez, kalın), önizleme
+    /// (altında, çevrilir), bölüm başlığı. Liste için kişi adı sütununda en az üç "ad + önizleme" çifti ve bir bölüm başlığı
+    /// (ya da başlık okunamadıysa "…" ile kesilmiş en az iki önizleme) gerekir. Önceden iki başlığın ikisi de okunmalıydı:
+    /// sallanan telefonda biri her okumada kaçıyor, liste bir sohbet balonları bir düz satırlar olarak gidip geliyordu
+    /// (LG, beta.93). Kişi adları da atılıyordu; şimdi listede adıyla görünür (Windows ve Android ile aynı).
     static func forTranslation(_ reading: Reading) -> Reading {
         var lines = reading.lines.filter { line in
             let words = line.text.split(whereSeparator: \.isWhitespace)
             return !(words.contains(where: isTag) && words.allSatisfy { isTag($0) || !$0.contains(where: { $0.isLetter || $0.isNumber }) })
         }
-        let headings = Set(lines.compactMap { section($0.text) })
-        guard !headings.isDisjoint(with: ["Suggested","Suggestions","Öneriler"]),
-              !headings.isDisjoint(with: ["Messages","Mesajlar"]) else { return Reading(lines: lines) }
         for i in lines.indices { if let heading = section(lines[i].text) { lines[i].text = heading } }
+        let headed = lines.contains { section($0.text) != nil }
         let order = lines.indices.filter { layout(lines[$0]) != nil }.sorted { layout(lines[$0])!.top < layout(lines[$1])!.top }
         var names: [Int] = [], previews: Set<Int> = []
         var i = 0
@@ -133,6 +149,7 @@ enum GamePhoneText {
         }
         guard names.count >= 3, let first = layout(lines[names[0]]), let last = layout(lines[names[names.count - 1]]),
               last.top > first.top else { return Reading(lines: lines) }
+        guard headed || previews.filter({ isCut(lines[$0].text) }).count >= 2 else { return Reading(lines: lines) }
         let slope = (last.left - first.left) / (last.top - first.top)
         func inColumn(_ line: TextLine) -> Bool {
             guard let box = layout(line) else { return false }
@@ -140,7 +157,7 @@ enum GamePhoneText {
         }
         guard names.allSatisfy({ inColumn(lines[$0]) }) else { return Reading(lines: lines) }
         // Listeyi uzun önizlemeler doğruladı: aynı satır düzenindeki "Okay" gibi tek sözcüklük yanıt, kişi adına benziyor
-        // diye atılmaz; önizlemesi olarak kalır (Windows ile aynı).
+        // diye ad sayılmaz; önizlemesi olarak kalır (Windows ile aynı).
         var k = 0
         while k + 1 < order.count {
             let name = order[k], preview = order[k + 1]
@@ -152,11 +169,58 @@ enum GamePhoneText {
                 k += 2
             } else { k += 1 }
         }
-        return Reading(lines: lines.indices.compactMap { index in
-            let line = lines[index]
-            if previews.contains(index) { return previewPunctuation(line) }
-            return inColumn(line) && (names.contains(index) || looksLikeName(line.text)) ? nil : line
+        return Reading(lines: lines.indices.map { index in
+            var line = lines[index]
+            if previews.contains(index) {
+                line = previewPunctuation(line)
+                line.listRole = .preview
+            } else if section(line.text) != nil {
+                line.listRole = .heading
+            } else if inColumn(line) && (names.contains(index) || looksLikeName(line.text)) {
+                line.listRole = .contact
+            } else {
+                line.listRole = .preview
+            }
+            return line
         })
+    }
+
+    /// Telefonun "…" ile kestiği önizleme ("Hey this is Joey from Coa...").
+    static func isCut(_ text: String) -> Bool {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.hasSuffix("...") || value.hasSuffix("…")
+    }
+
+    private static let danglingWords: Set<String> = [
+        "a", "an", "the", "of", "to", "in", "on", "at", "for", "from", "with", "by", "about", "and", "but", "or", "so",
+        "than", "my", "your", "his", "her", "its", "our", "their", "this", "that", "is", "are", "was", "were", "be", "i",
+        "you", "we", "they", "it", "if", "as",
+    ]
+
+    /// Kesik önizlemenin çevrilecek kısmı: telefon son sözcüğü yarıda keser ("Coa...", "in t..."), yazı tanıma da üç
+    /// noktanın önündeki boşluğu güvenilir okumaz; son sözcük her zaman atılır, ardından kalan bağlaç/edat ("from", "in",
+    /// "than") da. Çeviri "..." ile biter (`cutTranslation`): önceden "Hey this is Joey from Coa..." "Selam, ben
+    /// Coa'dan Joey..." çevriliyor, yarım sözcük uyduruluyordu. Kesik değilse ya da geriye bir sözcük bile kalmazsa nil.
+    static func cutInput(_ text: String) -> String? {
+        guard isCut(text) else { return nil }
+        var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = value.last, last == "." || last == "…" { value.removeLast() }
+        var words = value.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard words.count >= 2 else { return nil }
+        words.removeLast()
+        while words.count > 1, let last = words.last,
+              danglingWords.contains(last.lowercased().trimmingCharacters(in: .punctuationCharacters)) { words.removeLast() }
+        var core = words.joined(separator: " ")
+        while let last = core.last, ",;:-–—".contains(last) { core.removeLast() }
+        core = core.trimmingCharacters(in: .whitespaces)
+        return core.contains(where: \.isLetter) ? core : nil
+    }
+
+    /// Kesik önizlemenin çevirisi: sondaki noktalama atılıp "..." eklenir (telefondaki gibi kesik görünür).
+    static func cutTranslation(_ translation: String) -> String {
+        var value = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = value.last, ".,;:…–—-".contains(last) { value.removeLast() }
+        return value.trimmingCharacters(in: .whitespaces) + "..."
     }
 
     /// Telefon ekranının blokları, kendi yerlerinde. Ana ekranda uygulama adları (WhatUp, simge etiketleri) çevrilmez
@@ -165,6 +229,8 @@ enum GamePhoneText {
         let home = PhoneChat.isHomeScreen(reading.lines)
         let reading = Reading(lines: PhoneChat.withoutAppNames(reading.lines))
         let flat = reading.lines.allSatisfy { $0.phoneBox != nil }
+        // Sohbet listesi (`forTranslation`): her satır kendi satırıdır (ad ve altındaki önizleme ayrı), rolü okumadan gelir.
+        let listed = reading.lines.contains { $0.listRole != nil }
         func box(_ line: TextLine) -> TextBox { (flat ? line.phoneBox : line.box)! }
         var groups: [ScreenTranslation.Group] = [], run: [TextLine] = []
         func finish() {
@@ -184,16 +250,19 @@ enum GamePhoneText {
                                                 lineHeight: heights[heights.count / 2], icons: icons.isEmpty ? nil : [icons])
             // Düz ekrandaki yeri: sohbet panelinde tarafı (sol/sağ) ve sırası bundan çıkar (`roles`).
             let spots = run.map(box)
-            group.phone = ScreenPhoneCard.Placement(role: .message, spot: spots.dropFirst().reduce(spots[0]) { $0.union($1) })
+            group.phone = ScreenPhoneCard.Placement(role: listed ? run[0].listRole ?? .preview : .message,
+                                                    spot: spots.dropFirst().reduce(spots[0]) { $0.union($1) })
             groups.append(group)
         }
         for line in reading.lines.filter({ $0.box != nil }).sorted(by: { box($0).top < box($1).top }) {
             if let previous = run.last,
-               breaksBlock(box(previous), box(line), afterFlatSentence: flat && endsSentence(previous.text)) { finish() }
+               listed || breaksBlock(box(previous), box(line), afterFlatSentence: flat && endsSentence(previous.text)) { finish() }
             run.append(line)
         }
         finish()
-        return roles(Array(groups.prefix(ScreenTranslation.maxGroups)), home: home)
+        let kept = Array(groups.prefix(ScreenTranslation.maxGroups))
+        if listed, flat, !kept.isEmpty { return kept }
+        return roles(kept, home: home)
     }
 
     /// Sohbet panelinde her grubun rolü ("Ekranı çevir"in `PhoneChat` kuralları, düz ekrandaki yerinden): en üstteki

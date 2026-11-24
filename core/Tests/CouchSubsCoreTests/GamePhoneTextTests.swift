@@ -30,13 +30,83 @@ final class GamePhoneTextTests: XCTestCase {
         XCTAssertEqual(GamePhoneText.englishModelInput("IO port. I owe him."), "IO port. I owe him.")
     }
 
-    func testContactsOnlyRemovedInRecognizableMessageListAndCutWordsAreNeverCompleted() {
+    func testContactsAreMarkedOnlyInRecognizableMessageListAndCutWordsAreNeverCompleted() {
         let rows = [line("Suggestions", 0.04), line("Chase", 0.12), line("call me after ...", 0.16),
                     line("May", 0.25), line("Don't leave yet.", 0.29), line("Messages", 0.42),
                     line("Rose", 0.54), line("Meet me at 06:40.", 0.58)]
         let kept = GamePhoneText.forTranslation(Reading(lines: rows))
-        XCTAssertEqual(kept.lines.map(\.text), ["Suggestions", "call me after...", "Don't leave yet.", "Messages", "Meet me at 06:40."])
-        XCTAssertTrue(GamePhoneText.forTranslation(Reading(lines: Array(rows.dropFirst()))).lines.map(\.text).contains("May"))
+        XCTAssertEqual(kept.lines.map(\.text), ["Suggestions", "Chase", "call me after...", "May", "Don't leave yet.", "Messages",
+                                                "Rose", "Meet me at 06:40."])
+        XCTAssertEqual(kept.lines.map(\.listRole), [.heading, .contact, .preview, .contact, .preview, .heading, .contact, .preview])
+        // Tek başlık da yeter: sallanan telefonda biri bir okumada kaçabilir.
+        XCTAssertEqual(GamePhoneText.forTranslation(Reading(lines: Array(rows.dropFirst()))).lines.map(\.listRole),
+                       [.contact, .preview, .contact, .preview, .heading, .contact, .preview])
+        // Başlıksız ve kesik önizlemesiz üç ad-yanıt çifti liste sayılmaz.
+        let plain = rows.filter { GamePhoneText.section($0.text) == nil && !$0.text.hasSuffix("...") }
+        XCTAssertTrue(GamePhoneText.forTranslation(Reading(lines: plain)).lines.allSatisfy { $0.listRole == nil })
+    }
+
+    /// Başlığın simgesi yazı tanımada tek harf ya da işaret olarak okunur ("g Suggested"): artık atılır, satır yine
+    /// başlıktır. Başlık içeren gerçek cümle başlık değildir.
+    func testHeadingIconResidueIsDropped() {
+        for text in ["g Suggested", "✱ Suggested", "Suggested", "Messages ☆", "• Messages", "O Messages"] {
+            XCTAssertNotNil(GamePhoneText.section(text), text)
+        }
+        for text in ["Suggested items", "My Messages", "Messages from Joey", "Send Messages now"] {
+            XCTAssertNil(GamePhoneText.section(text), text)
+        }
+    }
+
+    /// LG, beta.93: GTA 6 Mesajlar ekranı (fotoğraftaki sıra). Telefon sallanırken her okuma başka: başlığın simgesi bir
+    /// "g" okunur, bir okunmaz; "Messages" bir okumada kaçar; kutular birkaç piksel oynar. Liste her okumada liste, satırlar
+    /// aynı sırada ve aynı rolde kalır; kişi adları ayrı satırdır.
+    func testSwayingMessageListKeepsItsRolesInEveryRead() {
+        func rows(_ dy: Double, suggested: String?, messages: Bool) -> Reading {
+            func flat(_ text: String, _ y: Double, _ left: Double, _ right: Double = 0.95) -> TextLine {
+                let box = TextBox(left: left + dy / 2, top: y + dy, right: right + dy / 2, bottom: y + dy + 0.031)
+                var row = TextLine(text, box: box)
+                row.phoneBox = box
+                return row
+            }
+            var lines: [TextLine] = []
+            if let suggested { lines.append(flat(suggested, 0.04, 0.05, 0.40)) }
+            lines += [flat("Cal", 0.10, 0.30, 0.38), flat("$ in your mailbox. You bailed", 0.14, 0.30),
+                      flat("Brian", 0.22, 0.30, 0.42), flat("Ok. There's some cash in t...", 0.26, 0.30)]
+            if messages { lines.append(flat("Messages", 0.33, 0.03, 0.30)) }
+            lines += [flat("Donnie", 0.40, 0.30, 0.45),
+                      flat("Joey", 0.50, 0.30, 0.40), flat("Hey this is Joey from Coa...", 0.54, 0.30),
+                      flat("Lucia (Yolanda phone)", 0.62, 0.30, 0.70), flat("Outside living better than ...", 0.66, 0.30),
+                      flat("Shirley", 0.74, 0.30, 0.45), flat("Oh that's nice hon. aren't ...", 0.78, 0.30),
+                      flat("Rusty Anchor", 0.88, 0.30, 0.62)]
+            return Reading(lines: lines)
+        }
+        let expected: [(String, ScreenPhoneCard.Role)] = [
+            ("Suggested", .heading), ("Cal", .contact), ("in your mailbox. You bailed", .preview), ("Brian", .contact),
+            ("Ok. There's some cash in t...", .preview), ("Messages", .heading), ("Donnie", .contact), ("Joey", .contact),
+            ("Hey this is Joey from Coa...", .preview), ("Lucia (Yolanda phone)", .contact),
+            ("Outside living better than...", .preview), ("Shirley", .contact), ("Oh that's nice hon. aren't...", .preview),
+            ("Rusty Anchor", .contact)]
+        for (index, (suggested, messages)) in [("Suggested", true), ("g Suggested", true), ("✱ Suggested", false),
+                                                (nil, true), (nil, false)].enumerated() {
+            let groups = GamePhoneText.groups(GamePhoneText.forTranslation(rows(0.002 * Double(index), suggested: suggested,
+                                                                                    messages: messages)))
+            let wanted = expected.filter { (suggested != nil || $0.0 != "Suggested") && (messages || $0.0 != "Messages") }
+            XCTAssertEqual(groups.map { $0.paragraphs.joined() }, wanted.map(\.0), "\(index)")
+            XCTAssertEqual(groups.map { $0.phone?.role }, wanted.map(\.1), "\(index)")
+        }
+    }
+
+    /// Kesik önizleme kesik çevrilir: yarım son sözcük ve sarkan edat çeviriye gitmez, çeviri "..." ile biter.
+    func testCutPreviewIsTranslatedWithoutTheBrokenWord() {
+        XCTAssertEqual(GamePhoneText.cutInput("Hey this is Joey from Coa..."), "Hey this is Joey")
+        XCTAssertEqual(GamePhoneText.cutInput("Ok. There's some cash in t..."), "Ok. There's some cash")
+        XCTAssertEqual(GamePhoneText.cutInput("Outside living better than..."), "Outside living better")
+        XCTAssertEqual(GamePhoneText.cutInput("Oh that's nice hon. aren't..."), "Oh that's nice hon.")
+        XCTAssertEqual(GamePhoneText.cutInput("Call me, then…"), "Call me")
+        XCTAssertNil(GamePhoneText.cutInput("Meet me at 6."))
+        XCTAssertNil(GamePhoneText.cutInput("Coa..."))
+        XCTAssertEqual(GamePhoneText.cutTranslation("Selam, ben Joey."), "Selam, ben Joey...")
+        XCTAssertEqual(GamePhoneText.cutTranslation("Dışarıda yaşamak daha iyi"), "Dışarıda yaşamak daha iyi...")
     }
 
     func testOpposingRepliesAndWrappedMessagesUseFlatDisplayCoordinates() {
@@ -87,8 +157,11 @@ final class GamePhoneTextTests: XCTestCase {
                                        line("May", 0.21), line("Don't leave yet.", 0.25), line("Messages", 0.34),
                                        line("Rose", 0.42), line("Meet me here.", 0.46), line("Jason", 0.56), line(message, 0.60),
                                        line("Martin", 0.73), line("Lucia", 0.85)])
-            XCTAssertEqual(GamePhoneText.forTranslation(rows).lines.map(\.text),
-                           ["Suggestions", "call me soon", "Don't leave yet.", "Messages", "Meet me here.", message])
+            let kept = GamePhoneText.forTranslation(rows).lines
+            XCTAssertEqual(kept.map(\.text), ["Suggestions", "Chase", "call me soon", "May", "Don't leave yet.", "Messages",
+                                              "Rose", "Meet me here.", "Jason", message, "Martin", "Lucia"])
+            XCTAssertEqual(kept.first { $0.text == message }?.listRole, .preview)
+            XCTAssertEqual(kept.filter { $0.listRole == .contact }.map(\.text), ["Chase", "May", "Rose", "Jason", "Martin", "Lucia"])
         }
     }
 

@@ -52,6 +52,9 @@ public struct TextLine: Equatable, Sendable {
     public var icons: [IconSlot]?
     /// Telefon balonlarının eğimi düzeltilmiş ekrandaki yeri. TV için box kullanılır.
     var phoneBox: TextBox?
+    /// Telefonun sohbet listesinde (`GamePhoneText.forTranslation`) satırın rolü: kişi adı, önizleme ya da bölüm başlığı.
+    /// Liste değilse nil.
+    var listRole: ScreenPhoneCard.Role?
 
     public init(_ text: String, box: TextBox? = nil, confidence: Double? = nil, words: [TextWord]? = nil, icons: [IconSlot]? = nil) {
         self.text = text

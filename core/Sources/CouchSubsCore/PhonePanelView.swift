@@ -30,10 +30,11 @@ public struct PhonePanelView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity)
                 }
-                VStack(spacing: fontSize * 0.45) {
+                VStack(spacing: 0) {
                     // Anahtarlı liste: en eski mesaj düşünce ya da yenisi eklenince kalan balonlar yeniden yaratılmaz.
                     ForEach(Self.keys(panel.messages), id: \.self) { key in
                         message(panel.messages[key.index], side: side)
+                            .padding(.top, fontSize * Self.gap(panel.messages, key.index))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -77,14 +78,31 @@ public struct PhonePanelView: View {
         }
     }
 
+    /// Sohbet listesinin satırı (kişi adı, önizleme, bölüm başlığı): sola yaslı not; ad ve başlık kalın.
+    static func isListRow(_ item: ScreenTranslation.Item) -> Bool {
+        item.panel == .note && item.look?.align == .left
+    }
+
+    /// Satırın üstündeki boşluk (yazı boyuna oranla): önizleme, üstündeki kişi adının hemen altındadır.
+    static func gap(_ messages: [ScreenTranslation.Item], _ index: Int) -> CGFloat {
+        guard index > 0 else { return 0 }
+        let item = messages[index], previous = messages[index - 1]
+        if isListRow(item), isListRow(previous), item.look?.bold != true, previous.look?.bold == true,
+           previous.style?.foreground != ScreenPhoneCard.noteColor.foreground { return 0.08 }
+        return 0.45
+    }
+
     @ViewBuilder private func message(_ item: ScreenTranslation.Item, side: CGFloat) -> some View {
-        let mine = item.panel == .mine, note = item.panel == .note
+        let mine = item.panel == .mine, note = item.panel == .note, listed = Self.isListRow(item)
         let text = Text(verbatim: item.translation)
-            .font(.system(size: note ? fontSize * 0.8 : fontSize, weight: note ? .medium : .semibold))
+            .font(.system(size: listed ? fontSize * 0.92 : note ? fontSize * 0.8 : fontSize,
+                          weight: listed ? (item.look?.bold == true ? .bold : .regular) : note ? .medium : .semibold))
             .foregroundStyle(Self.color(item.style?.foreground, fallback: .white))
-            .multilineTextAlignment(note ? .center : .leading)
+            .multilineTextAlignment(note && !listed ? .center : .leading)
             .fixedSize(horizontal: false, vertical: true)
-        if note {
+        if listed {
+            text.frame(maxWidth: .infinity, alignment: .leading)
+        } else if note {
             text.frame(maxWidth: .infinity)
         } else {
             HStack(spacing: 0) {

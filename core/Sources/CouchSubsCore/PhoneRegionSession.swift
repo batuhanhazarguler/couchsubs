@@ -63,6 +63,9 @@ final class PhoneRegionSession {
     private var scrolling = false
     /// Bu okuma kaç turdur bekletiliyor (en çok `PhoneSteady.holdTurns`); sonra okuma her durumda ilerler.
     private var holds = 0
+    /// Ekrandaki sayfanın türü (sohbet listesi mi) ve öbür türü veren ardışık okuma sayısı (`PhoneSteady.kindTurns`).
+    private var shownList: Bool?
+    private var kindVotes = 0
     /// Telefonun art arda bulunamadığı tur sayısı (`missed`).
     private var absences = 0
     /// Telefonun boyu (bölgenin yüksekliği): gerçek yakınlaşmada balonların görünüşü hemen yenilenir.
@@ -136,6 +139,8 @@ final class PhoneRegionSession {
     func close() {
         latest = nil
         shownPage = nil
+        shownList = nil
+        kindVotes = 0
         lastRead = nil
         scrolling = false
         absences = 0
@@ -257,6 +262,19 @@ final class PhoneRegionSession {
             return
         }
         holds = 0
+        // Sayfanın türü (liste/sohbet) tek okumayla değişmez: telefon sallanırken bölüm başlığı bir okumada kaçınca panel
+        // liste ile sohbet balonları arasında gidip geliyordu (LG, beta.93). Öbür tür art arda `PhoneSteady.kindTurns`
+        // okumada gelirse geçilir; arada aynı tür gelirse sayaç sıfırlanır.
+        let list = Self.isList(current)
+        if fresh, !current.bubbles.isEmpty, let shownList, shownList != list, !rendered.isEmpty {
+            kindVotes += 1
+            if kindVotes < PhoneSteady.kindTurns {
+                note("PhoneSteady", "sayfa türü değişti (\(list ? "liste" : "sohbet")), bir okuma daha bekleniyor", Self.text(current))
+                page = nil
+                return
+            }
+        }
+        if !current.bubbles.isEmpty { kindVotes = 0 }
         if current.bubbles.isEmpty {
             // Boş okuma aynı karede bir kez daha okunur: ilk okumada kaçan mesaj gizlenmesin. Ekranda çeviri varsa
             // `PhoneSteady.missTurns` tur boş kalmadan silinmez: telefonun ekranı kısa süre okunamayınca (kare geçişi,
@@ -269,6 +287,7 @@ final class PhoneRegionSession {
                 }
                 publish([])
                 shownPage = nil
+                shownList = nil
                 emptyOnce = false
                 empties = 0
             } else { emptyOnce = true }
@@ -277,6 +296,7 @@ final class PhoneRegionSession {
         }
         emptyOnce = false
         empties = 0
+        shownList = list
         let groups = current.bubbles.map(\.group)
         let paragraphs = groups.flatMap(\.paragraphs)
         var available = availableTranslations(groups, packLookup: packLookup, skipsTurkish: skipsTurkish)
@@ -308,8 +328,11 @@ final class PhoneRegionSession {
         }
         var unique: Set<String> = []
         missing = missing.filter { unique.insert($0).inserted }
-        let inputs = missing.map {
-            let text = IconText.protect($0).text
+        // Listede "…" ile kesilmiş önizleme kesik çevrilir, yarım sözcük uydurulmaz (`GamePhoneText.cutInput`).
+        let previews = Set(groups.filter { $0.phone?.role == .preview }.flatMap(\.paragraphs))
+        let cuts = missing.map { previews.contains($0) ? GamePhoneText.cutInput($0) : nil }
+        let inputs = zip(missing, cuts).map { source, cut in
+            let text = IconText.protect(cut ?? source).text
             return english ? GamePhoneText.englishModelInput(text) : text
         }
         do {
@@ -320,13 +343,14 @@ final class PhoneRegionSession {
                 note("PhoneSession", "çevrilemedi (motor \(result.count)/\(inputs.count) yanıt)", missing.joined(separator: " "))
                 return
             }
-            for (source, translated) in zip(missing, result) {
+            for (index, (source, translated)) in zip(missing, result).enumerated() {
                 guard !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
                     continue
                 }
-                remember(source, translated)
-                available[source] = translated
+                let shown = cuts[index] == nil ? translated : GamePhoneText.cutTranslation(translated)
+                remember(source, shown)
+                available[source] = shown
             }
         } catch {
             needsWork = true
@@ -362,6 +386,10 @@ final class PhoneRegionSession {
         guard !heights.isEmpty else { return false }
         let line = heights[heights.count / 2] / max(1e-6, current.region.bottom - current.region.top)
         return PhoneSteady.scrolled(previous: tops(previous), current: tops(current), lineHeight: line)
+    }
+
+    private static func isList(_ page: Page) -> Bool {
+        PhoneSteady.isList(page.bubbles.map(\.group.phone?.role))
     }
 
     private static func text(_ page: Page) -> String {
@@ -494,6 +522,8 @@ final class PhoneRegionSession {
         absences = 0
         page = nil
         shownPage = nil
+        shownList = nil
+        kindVotes = 0
         emptyOnce = false
         empties = 0
         needsWork = false

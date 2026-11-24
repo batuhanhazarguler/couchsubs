@@ -380,6 +380,76 @@ final class PhoneRegionSessionTests: XCTestCase {
         XCTAssertTrue(bubbles.allSatisfy { $0.panel == nil && $0.box.left >= phone.left && $0.box.right <= phone.right })
     }
 
+    /// LG, beta.93: GTA 6 Mesajlar ekranı elde sallanırken TV'deki panel her saniye liste ile sohbet balonları arasında
+    /// gidip geliyordu. Pikselleri biraz farklı, başlığı bir "g" ile bir simgesiz okunan art arda okumalarda sayfa liste
+    /// kalır, aynı görüntü yeniden gönderilmez; tek bir sohbet gibi okunan kare türü değiştirmez, art arda iki okuma değiştirir.
+    func testSwayingMessageListKeepsTheListLayout() async throws {
+        let reader = Reader(), translator = Translator(), server = Server()
+        var clock = 0
+        let watcher = RegionWatcher(reader: reader, translator: translator, server: server, clock: { clock })
+        let still = GamePhoneTestFrame.phone()
+        let pose = try XCTUnwrap(GamePhoneGeometry.locate(still))
+        func row(_ text: String, _ y: Double, _ left: Double, _ right: Double, _ dy: Double) -> TextLine {
+            TextLine(text, box: TextBox(left: left, top: y + dy, right: right, bottom: y + dy + 0.031))
+        }
+        func list(_ heading: String, _ dy: Double) -> [TextLine] {
+            [row(heading, 0.04, 0.05, 0.40, dy), row("Cal", 0.10, 0.30, 0.38, dy), row("$ in your mailbox. You bailed", 0.14, 0.30, 0.95, dy),
+             row("Brian", 0.22, 0.30, 0.42, dy), row("Ok. There's some cash in t...", 0.26, 0.30, 0.95, dy),
+             row("Messages", 0.33, 0.03, 0.30, dy), row("Donnie", 0.40, 0.30, 0.45, dy),
+             row("Joey", 0.50, 0.30, 0.40, dy), row("Hey this is Joey from Coa...", 0.54, 0.30, 0.95, dy),
+             row("Shirley", 0.74, 0.30, 0.45, dy), row("Oh that's nice hon. aren't ...", 0.78, 0.30, 0.95, dy),
+             row("Rusty Anchor", 0.88, 0.30, 0.62, dy)]
+        }
+        // Liste gibi okunamayan kare: yalnız iki ad-önizleme çifti, başlık ve kesik önizleme yok.
+        let chat = [row("Joey", 0.50, 0.30, 0.40, 0), row("Hey this is Joey from home.", 0.54, 0.30, 0.95, 0),
+                    row("Shirley", 0.74, 0.30, 0.45, 0), row("Oh that's nice hon.", 0.78, 0.30, 0.95, 0)]
+        var step = 0
+        func read(_ lines: [TextLine]) async throws {
+            reader.set(lines)
+            clock = 450 * step
+            let patch = CGRect(x: 170 + 6 * (step % 10), y: 60 + 4 * step, width: 10, height: 12)
+            watcher.offer(GamePhoneTestFrame.phone(patch: patch), areas: [], phone: pose)
+            step += 1
+            try await wait { !watcher.isBusy }
+        }
+        try await read(list("Suggested", 0))
+        let shown = try XCTUnwrap(server.sent.last?.items)
+        let rows = shown.filter { $0.panel == .note }
+        XCTAssertEqual(rows.map(\.translation), ["Çevrildi: Suggested", "Cal", "Çevrildi: in your mailbox. You bailed", "Brian",
+                                                 "Çevrildi: Ok. There's some cash...", "Çevrildi: Messages", "Donnie", "Joey",
+                                                 "Çevrildi: Hey this is Joey...", "Shirley", "Çevrildi: Oh that's nice hon...",
+                                                 "Rusty Anchor"])
+        XCTAssertTrue(rows.allSatisfy { $0.look?.align == .left }, "liste sola yaslı, ortalı not değil")
+        XCTAssertEqual(rows.filter { $0.look?.bold == true }.map(\.translation),
+                       ["Çevrildi: Suggested", "Cal", "Brian", "Çevrildi: Messages", "Donnie", "Joey", "Shirley", "Rusty Anchor"])
+        XCTAssertEqual(zip(rows, rows.dropFirst()).filter { $0.box.top >= $1.box.top }.count, 0, "telefondaki sıra")
+        let calls = await translator.calls
+        let names: Set<String> = ["Cal", "Brian", "Joey", "Donnie", "Shirley", "Rusty Anchor"]
+        XCTAssertFalse(calls.contains { names.contains($0) }, "adlar çevrilmez")
+        XCTAssertFalse(calls.contains { $0.contains("Coa") }, "yarım sözcük çeviriye gitmez")
+        let sent = server.sent.count
+
+        // Sallanan telefon: kutular birkaç piksel oynar, başlığın simgesi bir "g" okunur; görüntü aynı, yeniden gönderilmez.
+        try await read(list("g Suggested", 0.003))
+        try await read(list("✱ Suggested", -0.002))
+        XCTAssertEqual(server.sent.count, sent)
+        let later = await translator.calls
+        XCTAssertFalse(later.contains { $0.contains("g Suggested") })
+
+        // Tek bir okuma sohbet gibi geldi: liste kalır.
+        try await read(chat)
+        try await read(list("Suggested", 0.002))
+        XCTAssertEqual(server.sent.count, sent)
+
+        // Sayfa gerçekten değişti (art arda iki okuma): yeni tür çizilir.
+        try await read(chat)
+        XCTAssertEqual(server.sent.count, sent)
+        try await read(chat)
+        XCTAssertGreaterThan(server.sent.count, sent)
+        let after = try XCTUnwrap(server.sent.last?.items)
+        XCTAssertFalse(after.contains { $0.panel == .note && $0.look?.align == .left })
+    }
+
     /// Panelin yazısı altyazı boyutu ayarıyla büyür.
     func testSidePanelTextFollowsSubtitleSize() {
         XCTAssertEqual(ScreenPhoneCard.textScale(fontSize: 46), 1, accuracy: 1e-9)

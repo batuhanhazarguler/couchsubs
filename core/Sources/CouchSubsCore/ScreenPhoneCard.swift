@@ -61,6 +61,8 @@ public enum ScreenPhoneCard {
     /// yazıyı kutunun üstüne yaslar: dolgu, son satırın altında da boşluk bırakır. Önceden balonlar arası 0,35 satırdı,
     /// mesajlar birbirine yapışık görünüyordu.
     static let bubbleSpacing = 0.6, bubblePadding = 0.6, lineSpacing = 1.2
+    /// Sohbet listesinde kişi adıyla altındaki önizleme arasındaki boşluk (satır yüksekliğine oranla).
+    static let listGap = 0.1
     /// Balonun kart genişliğine oranı (en çok) ve en az.
     static let bubbleShare = 0.8, bubbleMin = 0.3
     /// Kartta yazı boyu (kare yüksekliğine oranla) en az bu: telefonun küçük yazısı TV'de okunsun (1080p'de ~24 nokta).
@@ -267,7 +269,8 @@ public enum ScreenPhoneCard {
             case .incoming:
                 placed.style = incomingColor
                 placed.panel = .theirs
-            case .note:
+            case .note, .heading:
+                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı.
                 placed.style = noteColor
                 placed.panel = .note
             default:
@@ -279,9 +282,14 @@ public enum ScreenPhoneCard {
             let inside = line * (bubble ? bubblePadding : 0.3)
             return Row(item: placed, width: width, height: Double(lines.count) * line * lineSpacing + inside, side: side)
         }
+        // Sohbet listesinde önizleme kişi adının hemen altındadır (`listGap`); öbür satırlar arasında `spacing` kalır.
+        func rowGap(_ index: Int) -> Double {
+            index > 0 && rows[index].item.phone?.role == .preview && rows[index - 1].item.phone?.role == .contact
+                ? line * listGap : spacing
+        }
         // Mesajlar telefon boyuna sığmazsa kart önce aşağı, sonra yukarı uzar (ekranın kenar payına kadar).
         func needed() -> Double {
-            2 * padY + headerHeight + rows.reduce(0) { $0 + $1.height } + spacing * Double(max(0, rows.count - 1))
+            2 * padY + headerHeight + rows.reduce(0) { $0 + $1.height } + rows.indices.dropFirst().reduce(0) { $0 + rowGap($1) }
         }
         var extra = needed() - (card.bottom - card.top)
         if extra > 0 {
@@ -323,16 +331,16 @@ public enum ScreenPhoneCard {
         let phone = handset.bounds
         var tops: [Double] = []
         var cursor = bodyTop
-        for row in rows {
+        for (index, row) in rows.enumerated() {
             let wanted = phone.top + row.item.phone!.spot.top * (phone.bottom - phone.top)
-            let top = max(wanted, cursor)
+            let top = index > 0 && rowGap(index) < spacing ? cursor : max(wanted, cursor)
             tops.append(top)
-            cursor = top + row.height + spacing
+            cursor = top + row.height + (index + 1 < rows.count ? rowGap(index + 1) : spacing)
         }
         var floor = limit
         for index in rows.indices.reversed() {
             tops[index] = max(bodyTop, min(tops[index], floor - rows[index].height))
-            floor = tops[index] - spacing
+            floor = tops[index] - rowGap(index)
         }
         for (index, row) in rows.enumerated() {
             var placed = row.item
