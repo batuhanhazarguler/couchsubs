@@ -446,6 +446,16 @@ class RegionWatcher(
          * Otomatik alandaki yazının türü: haritanın görev kartı (menüde de) görevdir; yoksa alanın yerinden (hazır alan,
          * görev satırı, menü) ya da okunan yazıdan çıkar. Kullanıcının kendi alanı null (her zaman çevrilir).
          */
+        /**
+         * Okunan yazı arayüz etiketi mi: bütün parçaları arayüz sözlüğünde ([UiCommands]) ya da parçalarından birinde
+         * kareden kesilmiş tuş simgesi var (ipucu: "EXIT ○"). Mac RegionWatcher.isUiLabel ile aynı.
+         */
+        internal fun isUiLabel(candidate: Candidate): Boolean {
+            if (candidate.icons?.any { it.isNotEmpty() } == true) return true
+            if (candidate.paragraphs.isEmpty()) return false
+            return candidate.paragraphs.all { UiCommands.translateLabelLoosely(IconText.plain(it)) != null }
+        }
+
         fun kind(area: ExtraArea, candidate: Candidate): ScreenTextKind? {
             if (area.auto && candidate.missionCard) return ScreenTextKind.MISSION
             ScreenTextKind.of(area)?.let { return it }
@@ -513,7 +523,7 @@ class RegionWatcher(
                 icons = groups.flatMap { group -> group.icons ?: group.paragraphs.map { emptyList<IconSlot>() } }
                 var start = 0
                 val list = groups.map { group ->
-                    Block(start, group.paragraphs.size, group.box.placedIn(region.box), group.lineHeight * height)
+                    Block(start, group.paragraphs.size, group.box.placedIn(region.box), group.lineHeight * height, group.rows)
                         .also { start += group.paragraphs.size }
                 }
                 blocks = list
@@ -607,7 +617,7 @@ class RegionWatcher(
                     parts.forEachIndexed { i, boxes ->
                         val box = boxes.reduce { a, b -> a.union(b) }
                         val heights = boxes.map { it.bottom - it.top }.sorted()
-                        blocks.add(Block(group.start + i, 1, box, heights[heights.size / 2]))
+                        blocks.add(Block(group.start + i, 1, box, heights[heights.size / 2], boxes.size))
                         aligns.add(align)
                     }
                 } else {
@@ -626,6 +636,24 @@ class RegionWatcher(
                     kotlin.math.ceil((box.bottom - region.top) / height * frame.height).toInt(),
                     block.lineHeight / height * frame.height, source, edges, color,
                 )?.let { style -> aligns[index]?.let { style.copy(look = style.look.copy(align = it)) } ?: style }
+            }
+            // Yerinde birebir çizim: örtü kutusu, zemin/degrade, satır aralığı, boş alan ve grup okunan alanın karesinden
+            // (alan koordinatında) ölçülür, sonra karedeki yere taşınır. Okuma turunda bir kez (her karede değil; Mac
+            // RegionWatcher ve Windows ile aynı).
+            val painted = blocks.indices.filter { styles[it] != null }
+            val targets = painted.map { i ->
+                val block = blocks[i]
+                val style = styles[i]!!
+                val box = block.box
+                TextPainter.Target(
+                    TextBox((box.left - region.left) / width, (box.top - region.top) / height,
+                        (box.right - region.left) / width, (box.bottom - region.top) / height),
+                    block.lineHeight / height, if (block.count > 1) maxOf(2, block.rows) else block.rows,
+                    style.surface.background, style.surface.foreground, style.look.upper, style.look.align)
+            }
+            val paints = if (targets.isEmpty()) emptyList() else TextPainter.paints(targets, frame, color)
+            for ((k, i) in painted.withIndex()) {
+                if (k < paints.size) blocks[i] = blocks[i].copy(paint = paints[k].placedIn(region.box))
             }
             return candidate.copy(blocks = blocks, styles = styles)
         }
@@ -683,7 +711,7 @@ class RegionWatcher(
             // Özgün yazı BÜYÜK HARFse çeviri de (Türkçe kurallarıyla); simge yerleri değişmez.
             val translation = if (style?.look?.upper == true) TextStyleSampler.upper(rendered.text) else rendered.text
             index to ScreenTranslation.Item(source, translation, block.box, block.lineHeight, rendered.icons.takeIf { it.isNotEmpty() },
-                style?.surface, style?.look)
+                style?.surface, style?.look, rows = maxOf(1, block.rows), paint = block.paint)
         }
     }
 
@@ -698,7 +726,13 @@ class RegionWatcher(
      * Alanda ayrı duran bir yazı grubu: [Candidate.paragraphs] içinde [start]'tan başlayan [count] parça, karedeki yeri ve
      * satır yüksekliği (kareye oranla).
      */
-    data class Block(val start: Int, val count: Int, val box: TextBox, val lineHeight: Double)
+    data class Block(
+        val start: Int, val count: Int, val box: TextBox, val lineHeight: Double,
+        /** Özgün yazının satır sayısı ([ScreenTranslation.Group.rows]); TV çeviriyi bu satır aralığıyla dizer. */
+        val rows: Int = 1,
+        /** Yerinde birebir çizim ölçüleri ([TextPainter]), karedeki yeriyle; otomatik ekran yazısında. */
+        val paint: TextPaint? = null,
+    )
 
     /**
      * [icons]: her parçadaki kumanda simgeleri (kareden kesilmiş), parçadaki sırasıyla. [blocks]: alanda birden çok ayrı
@@ -1013,7 +1047,11 @@ class RegionWatcher(
             // Menü dışındaki otomatik alanın türü okunan yazıdan çıkar (yardım/eylem ya da diğer); kapalı tür gürültü gibi
             // çizilmez, bulucuya bildirilir.
             val unwanted = kind(area, candidate)?.let { !allows(it) } ?: false
-            if (candidate.key.isEmpty() || ScreenTextNoise.isNoise(candidate.paragraphs.joinToString(" ") { IconText.plain(it) }, area.menu) ||
+            // Arayüz sözlüğündeki tek sözcüklük menü/ipucu etiketi ("Map", "Settings", "EXIT") ve tuş simgeli ipucu kısa
+            // olsa da menü etiketi gibi çevrilir: kısa metin filtresi (en az 8 harf, iki sözcük) menü durumu kısa süre
+            // kaçınca onları atıyordu (Sinan Bey, beta.93: "Map", "Settings", "EXIT" İngilizce kaldı; Mac ve Windows aynı).
+            val labelLike = area.menu || isUiLabel(candidate)
+            if (candidate.key.isEmpty() || ScreenTextNoise.isNoise(candidate.paragraphs.joinToString(" ") { IconText.plain(it) }, labelLike) ||
                 (!area.menu && isWorldText(candidate)) || unwanted) {
                 val repeated = candidate.key.isNotEmpty() && state.lastRead == candidate.key
                 if (!state.renderedText.isNullOrEmpty() && !repeated) {
@@ -1180,7 +1218,8 @@ class RegionWatcher(
             val moved = if (current == null) null else state.renderedBlocks?.map { (group, item) ->
                 val style = candidate.styles?.getOrNull(group)
                 group to item.copy(box = current[group].box, lineHeight = current[group].lineHeight,
-                    surface = style?.surface ?: item.surface, look = style?.look ?: item.look)
+                    surface = style?.surface ?: item.surface, look = style?.look ?: item.look,
+                    paint = current[group].paint ?: item.paint)
             }
             send { sender.sendRegion(area.id, text, candidate.box, candidate.lineHeight, state.renderedIcons, moved?.map { it.second }) }
             state.renderedBox = candidate.box

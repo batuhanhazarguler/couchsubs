@@ -35,4 +35,21 @@ public class UiCommandsTests
             }
         }
     }
+
+    /// <summary>
+    /// Yazı tanımanın tek harfini yanlış okuduğu uzun etiket ("SET DESTINATI0N") sözlükte bulunur; kısa anahtarda (yedi
+    /// harften az) ya da birden çok anahtara yakın okumada tahmin yapılmaz. Baş harfleri büyük etiketin Türkçesi de öyle.
+    /// </summary>
+    [Fact]
+    public void TekHarfHatasiVeBasHarfBuyukEtiket()
+    {
+        Assert.Equal("HEDEF BELİRLE", UiCommands.TranslateLabel("SET DESTINATI0N"));
+        Assert.Equal("AYARLAR", UiCommands.TranslateLabel("SETTINQS"));
+        Assert.Null(UiCommands.TranslateLabel("EXIF"));
+        Assert.Equal("SET DESTINATION", UiCommands.NearKey("SET DESTINATON"));
+        Assert.True(UiCommands.OneEdit("RECENTER", "RECENTRE") == false);
+        Assert.Equal("İşaret Ekle", UiCommands.TranslateLabel("Add Waypoint"));
+        Assert.Equal("Görevden Çık", UiCommands.TranslateLabel("Quit Mission"));
+        Assert.Equal("Çık", UiCommands.Translate("EXIT"));
+    }
 }

@@ -45,12 +45,33 @@ public static class ScreenFit
         }
         var tight = Tightened(items, frame, aspect, (box, lineX, words) => IconEdges(box, lineX, words, frame.Width, frame.Height, Luma));
         var laid = Uniform(Aligned(tight, aspect), aspect);
-        return WithRoom(laid, aspect, (x, y) =>
+        (int R, int G, int B) Color(int x, int y)
         {
             var p = (y * frame.Stride) + (x * 4);
             return (frame.Pixels[p + 2], frame.Pixels[p + 1], frame.Pixels[p]);
-        }, frame.Width, frame.Height);
+        }
+        var roomy = WithRoom(laid, aspect, Color, frame.Width, frame.Height);
+        return Painted(roomy, frame.Width, frame.Height, Color);
     }
+
+    /// <summary>
+    /// Yerinde birebir çizim ölçüleri (<see cref="TextPainter"/>): özgün stilli her öğeye <see cref="ScreenTranslation.Item.Paint"/>
+    /// (yalnız yazı değişince; çağıran okuma turudur, her kare değil).
+    /// </summary>
+    internal static List<ScreenTranslation.Item> Painted(IReadOnlyList<ScreenTranslation.Item> items, int width, int height,
+        Func<int, int, (int R, int G, int B)> color)
+    {
+        var indices = Enumerable.Range(0, items.Count).Where(i => TakesPart(items[i]) && items[i].Style is not null && items[i].Look is not null).ToList();
+        var result = items.ToList();
+        if (indices.Count == 0) return result;
+        var paints = TextPainter.Paints([.. indices.Select(i => Target(items[i]))], width, height, color);
+        for (var k = 0; k < indices.Count && k < paints.Count; k++) result[indices[k]] = result[indices[k]] with { Paint = paints[k] };
+        return result;
+    }
+
+    internal static TextPainter.Target Target(ScreenTranslation.Item item) =>
+        new(item.Box, item.LineHeight, item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, item.Style!.Background,
+            item.Style.Foreground, item.Look!.Upper, item.Look.Align);
 
     internal static bool TakesPart(ScreenTranslation.Item item) =>
         item.Look is not null && !ScreenTranslation.IsCardPart(item) && !item.Bubble;
@@ -283,6 +304,214 @@ public static class ScreenFit
             result[i] = item with { Room = new TextBox(Math.Min(box.Left, left), box.Top, Math.Max(box.Right, right), box.Bottom) };
         }
         return result;
+    }
+
+    // --- Yerinde birebir çizim (TV fitExact ile aynı sıra; TextPaint gelen öğeler; Mac/iPhone ve Android ile aynı) ---
+
+    /// <summary>
+    /// Birebir çizilecek bir öğe (piksel, çizilen ekranda). <c>Left/Top/Right/Bottom</c>: örtü kutusu; <c>GrowLeft</c>/
+    /// <c>GrowRight</c>: kutunun yana uzayabileceği sınırlar (uzayamıyorsa örtünün kenarı); <c>Line</c>: özgün satır
+    /// yüksekliği; <c>Pitch</c>: özgün satır aralığı; <c>Align</c>: "left", "right", "center".
+    /// </summary>
+    public sealed record ExactInput
+    {
+        public string Text { get; init; }
+        public double Left { get; init; }
+        public double Top { get; init; }
+        public double Right { get; init; }
+        public double Bottom { get; init; }
+        public double GrowLeft { get; init; }
+        public double GrowRight { get; init; }
+        public double Line { get; init; }
+        public double Pitch { get; init; }
+        public int Rows { get; init; }
+        public string Align { get; init; }
+        public int? Group { get; init; }
+
+        public ExactInput(string text, double left, double top, double right, double bottom, double? growLeft = null,
+                          double? growRight = null, double line = 0, double? pitch = null, int rows = 1, string align = "left",
+                          int? group = null)
+        {
+            Text = text;
+            Left = left;
+            Top = top;
+            Right = right;
+            Bottom = bottom;
+            GrowLeft = Math.Min(left, growLeft ?? left);
+            GrowRight = Math.Max(right, growRight ?? right);
+            Line = line;
+            Pitch = pitch ?? line;
+            Rows = rows;
+            Align = align;
+            Group = group;
+        }
+
+        /// <summary>
+        /// Ekrana oranlı öğeden (<see cref="ScreenTranslation.Item.Paint"/> olmalı) <paramref name="width"/> x
+        /// <paramref name="height"/> piksellik çizim alanına; Paint yoksa null.
+        /// </summary>
+        public static ExactInput? From(ScreenTranslation.Item item, double width, double height)
+        {
+            if (item.Paint is not { } paint) return null;
+            return new ExactInput(item.Translation, paint.Cover.Left * width, paint.Cover.Top * height, paint.Cover.Right * width,
+                paint.Cover.Bottom * height, paint.Grow is { } g ? g.Left * width : null, paint.Grow is { } h ? h.Right * width : null,
+                Math.Max(1, item.LineHeight * height), Math.Max(1, paint.Pitch * height),
+                item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, item.Look?.Align ?? "left", paint.Group);
+        }
+    }
+
+    /// <summary>
+    /// Bir öğenin çizimi: kutu (piksel), yazı boyu, satırlar ve satır aralığı. Kutu opak, köşesiz, gölgesiz çizilir; satırlar
+    /// <c>LineHeight</c> aralıkla (k. satır <c>Top + k * LineHeight</c>'tan başlar), hizaya göre; her satır <c>RowHeight</c>
+    /// yüksekliğin dikey ortasında (özgün satırın yerinde).
+    /// </summary>
+    public sealed record ExactPlacement(double Left, double Top, double Width, double Height, double FontSize,
+                                        IReadOnlyList<string> Lines, double LineHeight, double RowHeight);
+
+    /// <summary>Yazı boyu özgün satır yüksekliğinin bu katı (TV, Mac, Windows, iPhone, Android aynı).</summary>
+    public const double ExactFont = 0.95;
+    /// <summary>Sığmayan etiket (ve grubu) yazı boyunda en çok bu orana kadar küçülür; sonra satır kırılır.</summary>
+    public const double ExactGroupMin = 0.7;
+    /// <summary>Çok satırlı yazı en çok bu orana kadar küçülür; sonra kutu aşağı uzar.</summary>
+    public const double ExactParagraphMin = 0.8;
+    /// <summary>Satır kırılan etiketin satır aralığı, yazı boyunun katı.</summary>
+    public const double ExactWrapGap = 1.2;
+
+    private static string[] SplitWords(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// Birebir yerleşim (Mac: ScreenFit.exact, aynı sıra). Sırasıyla: (1) grubun (aynı listedeki etiketler) yazı boyu
+    /// üyelerinin özgün boyunun ortancası; (2) sığmayan etiket hizasının açık tarafındaki boş alana uzar, yazı boyu sabit;
+    /// (3) boş alan da yetmezse grubun tamamı birlikte küçülür (en çok <see cref="ExactGroupMin"/>); (4) yine sığmayan
+    /// etiketin satırı kırılır, kutu aşağı uzar; tek sözcük yine sığmıyorsa yalnız o küçülür. Çok satırlı yazı özgün genişlik
+    /// ve satır aralığında kalır; sığmazsa <see cref="ExactParagraphMin"/>'e kadar küçülür, sonra aşağı uzar. Yazı hiçbir
+    /// zaman "…" ile kesilmez. <paramref name="measure"/>(yazı, boy): yazının çizicinin kendi yazı tipiyle genişliği.
+    /// </summary>
+    public static IReadOnlyList<ExactPlacement> Exact(IReadOnlyList<ExactInput> items, Func<string, double, double> measure)
+    {
+        var count = items.Count;
+        var baseSize = items.Select(item => ExactFont * item.Line).ToArray();
+        var members = new Dictionary<int, List<int>>();
+        for (var i = 0; i < count; i++)
+        {
+            if (items[i].Group is not { } g) continue;
+            if (!members.TryGetValue(g, out var list)) members[g] = list = [];
+            list.Add(i);
+        }
+        foreach (var list in members.Values.Where(list => list.Count >= 2))
+        {
+            var sizes = list.Select(i => baseSize[i]).Order().ToList();
+            var median = sizes[sizes.Count / 2];
+            foreach (var i in list) baseSize[i] = median;
+        }
+        static bool IsLabel(ExactInput item) => item.Rows <= 1 && !item.Text.Contains('\n');
+        var natural = Enumerable.Range(0, count).Select(i => IsLabel(items[i]) ? measure(items[i].Text, baseSize[i]) : 0).ToArray();
+        var scale = Enumerable.Range(0, count).Select(i => !IsLabel(items[i]) || natural[i] <= 0 ? 1
+            : Math.Max(ExactGroupMin, Math.Min(1, (items[i].GrowRight - items[i].GrowLeft) / natural[i]))).ToArray();
+        foreach (var list in members.Values.Where(list => list.Count >= 2))
+        {
+            var least = list.Min(i => scale[i]);
+            foreach (var i in list) scale[i] = least;
+        }
+        var result = new List<ExactPlacement>(count);
+        for (var i = 0; i < count; i++)
+        {
+            var item = items[i];
+            double coverWidth = item.Right - item.Left, coverHeight = item.Bottom - item.Top;
+            if (!IsLabel(item)) { result.Add(ExactParagraph(item, baseSize[i], measure)); continue; }
+            var font = baseSize[i] * scale[i];
+            var avail = item.GrowRight - item.GrowLeft;
+            var width = natural[i] * scale[i];
+            IReadOnlyList<string> lines = [item.Text];
+            var gap = coverHeight;
+            if (width > avail + 0.5)
+            {
+                var words = SplitWords(item.Text);
+                var widestWord = words.Length == 0 ? width : words.Max(word => measure(word, font));
+                if (words.Length >= 2)
+                {
+                    // Satır kırılır; satıra sığmayan sözcük varsa yazı yalnız bu öğede küçülür (yana taşmaz).
+                    if (widestWord > avail + 0.5) font *= avail / widestWord;
+                    var wrapFont = font;
+                    lines = ExactWrap(words, avail, text => measure(text, wrapFont));
+                }
+                else
+                {
+                    font *= avail / Math.Max(1e-9, width);
+                }
+                var lineFont = font;
+                width = lines.Count == 0 ? avail : lines.Max(line => measure(line, lineFont));
+                if (lines.Count > 1) gap = Math.Max(coverHeight / lines.Count, font * ExactWrapGap);
+            }
+            var boxWidth = Math.Max(coverWidth, Math.Min(avail, width));
+            var left = item.Align switch
+            {
+                "right" => item.Right - boxWidth,
+                "center" => item.Left - ((boxWidth - coverWidth) / 2),
+                _ => item.Left,
+            };
+            left = Math.Min(Math.Max(left, item.GrowLeft), item.GrowRight - boxWidth);
+            result.Add(new ExactPlacement(left, item.Top, boxWidth, Math.Max(coverHeight, lines.Count * gap), font, lines, gap, gap));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Çok satırlı yazı: özgün genişlik ve satır aralığı; sığmazsa <see cref="ExactParagraphMin"/>'e kadar küçülür, sonra
+    /// aşağı uzar.
+    /// </summary>
+    private static ExactPlacement ExactParagraph(ExactInput item, double baseSize, Func<string, double, double> measure)
+    {
+        double coverWidth = item.Right - item.Left, coverHeight = item.Bottom - item.Top;
+        var factor = 1.0;
+        // Özgün bir satırın yüksekliği (kenar payıyla): son satır tam aralık değil, bu kadar yer kaplar.
+        var row = Math.Max(baseSize * 1.05, coverHeight - ((Math.Max(1, item.Rows) - 1) * item.Pitch));
+        (double Font, List<string> Lines, double Gap) Layout()
+        {
+            var font = baseSize * factor;
+            var gap = Math.Max(item.Pitch, baseSize * 1.05) * factor;
+            var lines = item.Text.Split('\n').SelectMany(paragraph =>
+            {
+                var words = SplitWords(paragraph);
+                return words.Length == 0 ? [""] : ExactWrap(words, coverWidth, text => measure(text, font));
+            }).ToList();
+            return (font, lines, gap);
+        }
+        double Tall((double Font, List<string> Lines, double Gap) laid) => ((laid.Lines.Count - 1) * laid.Gap) + (row * factor);
+        var laid = Layout();
+        while (Tall(laid) > coverHeight + 1 && factor > ExactParagraphMin + 1e-6)
+        {
+            factor = Math.Max(ExactParagraphMin, Math.Round((factor - 0.05) * 100, MidpointRounding.AwayFromZero) / 100);
+            laid = Layout();
+        }
+        // Satıra sığmayan tek sözcük: yazı küçülür (yana taşmaz).
+        var widest = laid.Lines.Count == 0 ? 0 : laid.Lines.Max(line => measure(line, laid.Font));
+        if (widest > coverWidth + 0.5)
+        {
+            factor *= coverWidth / widest;
+            laid = Layout();
+        }
+        return new ExactPlacement(item.Left, item.Top, coverWidth, Math.Max(coverHeight, Tall(laid)), laid.Font, laid.Lines,
+                                  laid.Gap, row * factor);
+    }
+
+    /// <summary>Sözcükler satırlara: her satır <paramref name="limit"/>'e kadar dolar.</summary>
+    internal static List<string> ExactWrap(IReadOnlyList<string> words, double limit, Func<string, double> measure)
+    {
+        var lines = new List<string>();
+        var current = "";
+        foreach (var word in words)
+        {
+            var next = current.Length == 0 ? word : current + " " + word;
+            if (current.Length > 0 && measure(next) > limit + 0.5)
+            {
+                lines.Add(current);
+                current = word;
+            }
+            else current = next;
+        }
+        if (current.Length > 0 || lines.Count == 0) lines.Add(current);
+        return lines;
     }
 
     // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Android ile aynı) ---

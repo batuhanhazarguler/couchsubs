@@ -48,6 +48,9 @@ public enum ScreenTranslation {
         public var room: TextBox?
         /// Özgün yazının satır sayısı (`Group.rows`).
         public var rows = 1
+        /// Yerinde birebir çizim için kareden ölçülenler (örtü kutusu, zemin/degrade, satır aralığı, boş alan, grup;
+        /// `TextPainter`); nil ise eski çizim.
+        public var paint: TextPaint?
 
         public init(source: String, translation: String, box: TextBox, lineHeight: Double, icons: [IconPlacement]? = nil) {
             self.source = source
@@ -607,10 +610,28 @@ public enum ScreenTranslation {
         }
     }
 
+    /// Oyunun logosu ve stilize başlığı çevrilmez: yalnız Roma rakamı ("VI"), oyun adı ("Grand Theft Auto", "GTA VI",
+    /// "Rockstar Games"). Önceden PS5 ana ekranındaki "Grand Theft Auto VI" "araba hırsızlığı." oluyordu (Sinan Bey, beta.93).
+    static func isTitleMark(_ text: String) -> Bool {
+        let words = text.uppercased(with: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: { $0.isWhitespace || $0 == ":" || $0 == "-" }).map(String.init)
+        guard !words.isEmpty else { return false }
+        let roman = try! NSRegularExpression(pattern: "^(?=[IVX]+$)X{0,3}(IX|IV|V?I{0,3})$")
+        func isRoman(_ word: String) -> Bool {
+            roman.firstMatch(in: word, range: NSRange(word.startIndex..., in: word)) != nil
+        }
+        if words.allSatisfy(isRoman) { return true }
+        let joined = words.filter { !isRoman($0) }.joined(separator: " ")
+        return titleMarks.contains(joined)
+    }
+
+    private static let titleMarks: Set<String> = ["GRAND THEFT AUTO", "GTA", "ROCKSTAR GAMES", "ROCKSTAR"]
+
     /// Yalnız özel adlardan oluşan yazı ("JASON & LUCIA", "Bonnie & Clyde"): "&" ile bağlı, her biri bir iki sözcüklük
     /// (BÜYÜK HARFLİ yazıda tek sözcüklük), büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
     public static func keepsNames(_ text: String) -> Bool {
         let plain = IconText.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        if isTitleMark(plain) { return true }
         let parts = plain.components(separatedBy: " & ")
         guard parts.count >= 2 else { return false }
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.

@@ -152,7 +152,7 @@ public class FreeButtonIconsTests
     [Fact]
     public void ButtonBarCommandsComeFromTheGlossary()
     {
-        Assert.Equal($"Hedef belirle {M} Çıkış {M}", UiCommands.Translate($"SET DESTINATION {M} EXIT {M}"));
+        Assert.Equal($"Hedef belirle {M} Çık {M}", UiCommands.Translate($"SET DESTINATION {M} EXIT {M}"));
         Assert.Equal($"Aç {M}", UiCommands.Translate($"OPEN {M}"));
         Assert.Equal("Yakıt al", UiCommands.Translate("REFUEL"));
         Assert.Null(UiCommands.Translate("Open the door"));

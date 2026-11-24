@@ -16,7 +16,7 @@ object UiCommands {
     private val commands: Map<String, String> = mapOf(
         "ADD MARKER" to "İşaret ekle", "SET DESTINATION" to "Hedef belirle", "REMOVE DESTINATION" to "Hedefi kaldır",
         "RECENTER" to "Ortala", "2D VIEW" to "2B görünüm", "3D VIEW" to "3B görünüm", "ZOOM" to "Yakınlaştır",
-        "EXIT" to "Çıkış", "BACK" to "Geri", "SELECT" to "Seç", "CLOSE" to "Kapat", "CLOSE MENU" to "Menüyü kapat",
+        "EXIT" to "Çık", "BACK" to "Geri", "SELECT" to "Seç", "CLOSE" to "Kapat", "CLOSE MENU" to "Menüyü kapat",
         "MENU" to "Menü", "OPEN" to "Aç", "NEXT PAGE" to "Sonraki sayfa", "PREVIOUS PAGE" to "Önceki sayfa",
         "SHOW TEXT" to "Metni göster", "SHOW" to "Göster", "FLIP" to "Çevir", "PUT DOWN" to "Bırak", "PICK UP" to "Al",
         "DRINK" to "İç", "EAT" to "Ye", "WEAR" to "Giy", "TAKE OFF" to "Çıkar", "BUY" to "Satın al", "SELL" to "Sat",
@@ -28,7 +28,11 @@ object UiCommands {
         "RESTORE ALL" to "Hepsini geri yükle", "RESTORE DEFAULT" to "Varsayılana döndür", "PREVIEW" to "Önizle",
         "PAUSE PREVIEW" to "Önizlemeyi durdur", "ADJUST" to "Ayarla", "SCROLL" to "Kaydır", "REFUEL" to "Yakıt al",
         "LIFT" to "Kaldır", "ORDER" to "Sipariş ver", "MAYBE LATER" to "Belki sonra", "PHOTO STUDIO" to "Fotoğraf stüdyosu",
-        "REMINDERS" to "Hatırlatıcılar", "ROTATE" to "Döndür", "INTERACT" to "Etkileşim", "USE" to "Kullan",
+        "REMINDERS" to "Hatırlatıcılar",
+        // GTA 6 duraklatma menüsü ve harita ipuçları (Sinan Bey, 24 Kas: sabit karşılıklar, çeviri motorundan önce).
+        "ADD WAYPOINT" to "İşaret ekle", "RETRY CHECKPOINT" to "Kontrol noktasını yeniden dene",
+        "RESTART MISSION" to "Görevi yeniden başlat", "QUIT MISSION" to "Görevden çık",
+        "ROTATE" to "Döndür", "INTERACT" to "Etkileşim", "USE" to "Kullan",
         "KNOCK" to "Kapıyı çal", "CALL" to "Ara", "HANG UP" to "Telefonu kapat", "ANSWER" to "Cevapla",
         "IGNORE" to "Yoksay", "REPLY" to "Yanıtla", "DELETE" to "Sil", "SAVE" to "Kaydet", "VIEW" to "Görüntüle",
         "INSPECT" to "İncele", "SEARCH" to "Ara", "HIDE" to "Saklan", "JOIN" to "Katıl", "TERMS" to "Koşullar",
@@ -97,13 +101,48 @@ object UiCommands {
         val words = trimmed(label)
         if (words.none { it.isLetter() }) return null
         val key = latin(words).uppercase(Locale.ROOT)
-        val turkishText = commands[key] ?: labels[key] ?: return null
+        val near = nearKey(key) ?: ""
+        val turkishText = commands[key] ?: labels[key] ?: commands[near] ?: labels[near] ?: return null
         val letters = words.filter { it.isLetter() }
-        return when {
-            letters.all { it.isUpperCase() } -> turkishText.uppercase(turkish)
-            letters.all { it.isLowerCase() } -> turkishText.lowercase(turkish)
-            else -> turkishText
+        if (letters.all { it.isUpperCase() }) return turkishText.uppercase(turkish)
+        if (letters.all { it.isLowerCase() }) return turkishText.lowercase(turkish)
+        // Her sözcüğü büyük harfle başlayan etiket ("Set Destination", "Photo Studio"): Türkçesi de öyle ("Hedef Belirle").
+        val titled = words.split(' ').filter { it.isNotEmpty() }.all { word ->
+            word.first().isUpperCase() || word.none { it.isLetter() }
         }
+        if (titled && words.contains(' ')) {
+            return turkishText.split(' ').filter { it.isNotEmpty() }.joinToString(" ") { word ->
+                word.take(1).uppercase(turkish) + word.drop(1)
+            }
+        }
+        return turkishText
+    }
+
+    /**
+     * Yazı tanımanın tek harfini yanlış okuduğu etiket ("SET DESTINATlON", "SETTINQS"): en az yedi harflik anahtarlardan
+     * tek harf farkla (değişen, eksik ya da fazla) eşleşen tek anahtar; birden çoğu eşleşirse null (Mac ve Windows aynı).
+     */
+    internal fun nearKey(key: String): String? {
+        if (key.length < 7) return null
+        val found = (commands.keys + labels.keys).filter { it.length >= 7 && kotlin.math.abs(it.length - key.length) <= 1 && oneEdit(it, key) }
+        return found.singleOrNull()
+    }
+
+    /** İki yazı en çok bir düzenlemeyle (bir harf değişmesi, eklenmesi ya da silinmesi) aynı mı. */
+    internal fun oneEdit(a: String, b: String): Boolean {
+        if (a == b) return true
+        if (a.length == b.length) return a.indices.count { a[it] != b[it] } == 1
+        val (long, short) = if (a.length > b.length) a to b else b to a
+        if (long.length != short.length + 1) return false
+        var i = 0
+        var j = 0
+        var skipped = false
+        while (i < long.length && j < short.length) {
+            if (long[i] == short[j]) { i++; j++ }
+            else if (skipped) return false
+            else { skipped = true; i++ }
+        }
+        return true
     }
 
     /**

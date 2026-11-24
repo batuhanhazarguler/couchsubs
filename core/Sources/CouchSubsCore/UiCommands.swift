@@ -7,7 +7,7 @@ enum UiCommands {
     private static let commands: [String: String] = [
         "ADD MARKER": "İşaret ekle", "SET DESTINATION": "Hedef belirle", "REMOVE DESTINATION": "Hedefi kaldır",
         "RECENTER": "Ortala", "2D VIEW": "2B görünüm", "3D VIEW": "3B görünüm",
-        "ZOOM": "Yakınlaştır", "EXIT": "Çıkış", "BACK": "Geri",
+        "ZOOM": "Yakınlaştır", "EXIT": "Çık", "BACK": "Geri",
         "SELECT": "Seç", "CLOSE": "Kapat", "CLOSE MENU": "Menüyü kapat",
         "MENU": "Menü", "OPEN": "Aç", "NEXT PAGE": "Sonraki sayfa",
         "PREVIOUS PAGE": "Önceki sayfa", "SHOW TEXT": "Metni göster", "SHOW": "Göster",
@@ -25,6 +25,9 @@ enum UiCommands {
         "PAUSE PREVIEW": "Önizlemeyi durdur", "ADJUST": "Ayarla", "SCROLL": "Kaydır",
         "REFUEL": "Yakıt al", "LIFT": "Kaldır", "ORDER": "Sipariş ver",
         "MAYBE LATER": "Belki sonra", "PHOTO STUDIO": "Fotoğraf stüdyosu", "REMINDERS": "Hatırlatıcılar",
+        // GTA 6 duraklatma menüsü ve harita ipuçları (Sinan Bey, 24 Kas: sabit karşılıklar, çeviri motorundan önce).
+        "ADD WAYPOINT": "İşaret ekle", "RETRY CHECKPOINT": "Kontrol noktasını yeniden dene",
+        "RESTART MISSION": "Görevi yeniden başlat", "QUIT MISSION": "Görevden çık",
         "ROTATE": "Döndür", "INTERACT": "Etkileşim", "USE": "Kullan",
         "KNOCK": "Kapıyı çal", "CALL": "Ara", "HANG UP": "Telefonu kapat",
         "ANSWER": "Cevapla", "IGNORE": "Yoksay", "REPLY": "Yanıtla",
@@ -121,11 +124,42 @@ enum UiCommands {
             .trimmingCharacters(in: .whitespaces)
         guard words.contains(where: \.isLetter) else { return nil }
         let key = latin(words).uppercased(with: Locale(identifier: "en_US_POSIX"))
-        guard let turkish = commands[key] ?? labels[key] else { return nil }
+        guard let turkish = commands[key] ?? labels[key] ?? commands[nearKey(key) ?? ""] ?? labels[nearKey(key) ?? ""] else { return nil }
         let letters = words.filter(\.isLetter)
         let turkishLocale = Locale(identifier: "tr_TR")
         if letters.allSatisfy(\.isUppercase) { return turkish.uppercased(with: turkishLocale) }
         if letters.allSatisfy(\.isLowercase) { return turkish.lowercased(with: turkishLocale) }
+        // Her sözcüğü büyük harfle başlayan etiket ("Set Destination", "Photo Studio"): Türkçesi de öyle ("Hedef Belirle").
+        let titled = words.split(separator: " ").allSatisfy { $0.first?.isUppercase == true || !$0.contains(where: \.isLetter) }
+        if titled, words.contains(" ") {
+            return turkish.split(separator: " ").map { word in
+                String(word.prefix(1)).uppercased(with: turkishLocale) + word.dropFirst()
+            }.joined(separator: " ")
+        }
         return turkish
+    }
+
+    /// Yazı tanımanın tek harfini yanlış okuduğu etiket ("SET DESTINATlON", "SETTINQS"): en az yedi harflik anahtarlardan
+    /// tek harf farkla (değişen, eksik ya da fazla) eşleşen tek anahtar; birden çoğu eşleşirse nil (Windows/Android aynı).
+    static func nearKey(_ key: String) -> String? {
+        guard key.count >= 7 else { return nil }
+        let found = Set(commands.keys).union(labels.keys).filter { $0.count >= 7 && abs($0.count - key.count) <= 1 && oneEdit($0, key) }
+        return found.count == 1 ? found.first : nil
+    }
+
+    /// İki yazı en çok bir düzenlemeyle (bir harf değişmesi, eklenmesi ya da silinmesi) aynı mı.
+    static func oneEdit(_ a: String, _ b: String) -> Bool {
+        let x = Array(a), y = Array(b)
+        if x == y { return true }
+        if x.count == y.count { return zip(x, y).filter { $0 != $1 }.count == 1 }
+        let (long, short) = x.count > y.count ? (x, y) : (y, x)
+        guard long.count == short.count + 1 else { return false }
+        var i = 0, j = 0, skipped = false
+        while i < long.count, j < short.count {
+            if long[i] == short[j] { i += 1; j += 1 }
+            else if skipped { return false }
+            else { skipped = true; i += 1 }
+        }
+        return true
     }
 }

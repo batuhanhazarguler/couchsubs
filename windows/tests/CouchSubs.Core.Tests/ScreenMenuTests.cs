@@ -238,7 +238,7 @@ public class ScreenMenuTests
     [InlineData("SETTINGS", "AYARLAR")]
     [InlineData("Inventory", "Envanter")]
     [InlineData("STATS", "İSTATİSTİKLER")]
-    [InlineData("EXIT", "ÇIKIŞ")]
+    [InlineData("EXIT", "ÇIK")]
     public void ShortLabelsComeFromTheDictionaryKeepingTheirCase(string label, string turkish) =>
         Assert.Equal(turkish, UiCommands.TranslateLabel(label));
 

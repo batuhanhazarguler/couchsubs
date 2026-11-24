@@ -56,6 +56,11 @@ object ScreenTranslation {
         val room: TextBox? = null,
         /** Özgün yazının satır sayısı ([Group.rows]). */
         val rows: Int = 1,
+        /**
+         * Yerinde birebir çizim için kareden ölçülenler (örtü kutusu, zemin/degrade, satır aralığı, boş alan, grup;
+         * [TextPainter]); null ise eski çizim.
+         */
+        val paint: TextPaint? = null,
     ) {
         /** Birden çok parça var: satır satır, sola yaslı gösterilir. */
         val paragraphs: Boolean get() = translation.contains('\n')
@@ -622,11 +627,29 @@ object ScreenTranslation {
     }
 
     /**
+     * Oyunun logosu ve stilize başlığı çevrilmez: yalnız Roma rakamı ("VI"), oyun adı ("Grand Theft Auto", "GTA VI",
+     * "Rockstar Games"). Önceden PS5 ana ekranındaki "Grand Theft Auto VI" "araba hırsızlığı." oluyordu (Sinan Bey,
+     * beta.93; Mac ve Windows ile aynı).
+     */
+    internal fun isTitleMark(text: String): Boolean {
+        val words = text.uppercase(java.util.Locale.ROOT).split(Regex("[\\s:\\-]+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return false
+        fun isRoman(word: String) = romanNumeral.matches(word)
+        if (words.all(::isRoman)) return true
+        return words.filter { !isRoman(it) }.joinToString(" ") in titleMarks
+    }
+
+    private val romanNumeral = Regex("^(?=[IVX]+$)X{0,3}(IX|IV|V?I{0,3})$")
+    private val titleMarks = setOf("GRAND THEFT AUTO", "GTA", "ROCKSTAR GAMES", "ROCKSTAR")
+
+    /**
      * Yalnız özel adlardan oluşan yazı ("JASON & LUCIA", "Bonnie & Clyde"): "&" ile bağlı, her biri bir iki sözcüklük,
      * büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
      */
     fun keepsNames(text: String): Boolean {
-        val parts = IconText.plain(text).trim().split(" & ")
+        val plain = IconText.plain(text).trim()
+        if (isTitleMark(plain)) return true
+        val parts = plain.split(" & ")
         if (parts.size < 2) return false
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.
         val most = if (TextStyleSampler.isUpper(IconText.plain(text))) 1 else 2

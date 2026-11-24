@@ -14,7 +14,7 @@ public static class UiCommands
     {
         ["ADD MARKER"] = "İşaret ekle", ["SET DESTINATION"] = "Hedef belirle", ["REMOVE DESTINATION"] = "Hedefi kaldır",
         ["RECENTER"] = "Ortala", ["2D VIEW"] = "2B görünüm", ["3D VIEW"] = "3B görünüm", ["ZOOM"] = "Yakınlaştır",
-        ["EXIT"] = "Çıkış", ["BACK"] = "Geri", ["SELECT"] = "Seç", ["CLOSE"] = "Kapat", ["CLOSE MENU"] = "Menüyü kapat",
+        ["EXIT"] = "Çık", ["BACK"] = "Geri", ["SELECT"] = "Seç", ["CLOSE"] = "Kapat", ["CLOSE MENU"] = "Menüyü kapat",
         ["MENU"] = "Menü", ["OPEN"] = "Aç", ["NEXT PAGE"] = "Sonraki sayfa", ["PREVIOUS PAGE"] = "Önceki sayfa",
         ["SHOW TEXT"] = "Metni göster", ["SHOW"] = "Göster", ["FLIP"] = "Çevir", ["PUT DOWN"] = "Bırak", ["PICK UP"] = "Al",
         ["DRINK"] = "İç", ["EAT"] = "Ye", ["WEAR"] = "Giy", ["TAKE OFF"] = "Çıkar", ["BUY"] = "Satın al", ["SELL"] = "Sat",
@@ -26,7 +26,10 @@ public static class UiCommands
         ["RESTORE ALL"] = "Hepsini geri yükle", ["RESTORE DEFAULT"] = "Varsayılana döndür", ["PREVIEW"] = "Önizle",
         ["PAUSE PREVIEW"] = "Önizlemeyi durdur", ["ADJUST"] = "Ayarla", ["SCROLL"] = "Kaydır", ["REFUEL"] = "Yakıt al",
         ["LIFT"] = "Kaldır", ["ORDER"] = "Sipariş ver", ["MAYBE LATER"] = "Belki sonra", ["PHOTO STUDIO"] = "Fotoğraf stüdyosu",
-        ["REMINDERS"] = "Hatırlatıcılar", ["ROTATE"] = "Döndür", ["INTERACT"] = "Etkileşim", ["USE"] = "Kullan",
+        ["REMINDERS"] = "Hatırlatıcılar",
+        // GTA 6 duraklatma menüsü ve harita ipuçları (Sinan Bey, 24 Kas: sabit karşılıklar, çeviri motorundan önce).
+        ["ADD WAYPOINT"] = "İşaret ekle", ["RETRY CHECKPOINT"] = "Kontrol noktasını yeniden dene",
+        ["RESTART MISSION"] = "Görevi yeniden başlat", ["QUIT MISSION"] = "Görevden çık", ["ROTATE"] = "Döndür", ["INTERACT"] = "Etkileşim", ["USE"] = "Kullan",
         ["KNOCK"] = "Kapıyı çal", ["CALL"] = "Ara", ["HANG UP"] = "Telefonu kapat", ["ANSWER"] = "Cevapla",
         ["IGNORE"] = "Yoksay", ["REPLY"] = "Yanıtla", ["DELETE"] = "Sil", ["SAVE"] = "Kaydet", ["VIEW"] = "Görüntüle",
         ["INSPECT"] = "İncele", ["SEARCH"] = "Ara", ["HIDE"] = "Saklan", ["JOIN"] = "Katıl", ["TERMS"] = "Koşullar",
@@ -61,11 +64,51 @@ public static class UiCommands
         var words = label.Trim().Trim('.', ',', ':', '!', '?').Trim();
         if (words.Length == 0 || !words.Any(char.IsLetter)) return null;
         var key = Latin(words).ToUpperInvariant();
-        if (!Commands.TryGetValue(key, out var turkish) && !Labels.TryGetValue(key, out turkish)) return null;
+        if (!Commands.TryGetValue(key, out var turkish) && !Labels.TryGetValue(key, out turkish))
+        {
+            if (NearKey(key) is not { } near) return null;
+            turkish = Commands.TryGetValue(near, out var command) ? command : Labels[near];
+        }
         var letters = words.Where(char.IsLetter).ToList();
         if (letters.All(char.IsUpper)) return TurkishUpper(turkish);
         if (letters.All(char.IsLower)) return TurkishLower(turkish);
+        // Her sözcüğü büyük harfle başlayan etiket ("Set Destination", "Photo Studio"): Türkçesi de öyle ("Hedef Belirle").
+        var titled = words.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .All(word => char.IsUpper(word[0]) || !word.Any(char.IsLetter));
+        if (titled && words.Contains(' '))
+            return string.Join(' ', turkish.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                .Select(word => TurkishUpper(word[..1]) + word[1..]));
         return turkish;
+    }
+
+    /// <summary>
+    /// Yazı tanımanın tek harfini yanlış okuduğu etiket ("SET DESTINATlON", "SETTINQS"): en az yedi harflik anahtarlardan
+    /// tek harf farkla (değişen, eksik ya da fazla) eşleşen tek anahtar; birden çoğu eşleşirse null (Mac/Android aynı).
+    /// </summary>
+    internal static string? NearKey(string key)
+    {
+        if (key.Length < 7) return null;
+        var found = Commands.Keys.Union(Labels.Keys)
+            .Where(k => k.Length >= 7 && Math.Abs(k.Length - key.Length) <= 1 && OneEdit(k, key)).Distinct().ToList();
+        return found.Count == 1 ? found[0] : null;
+    }
+
+    /// <summary>İki yazı en çok bir düzenlemeyle (bir harf değişmesi, eklenmesi ya da silinmesi) aynı mı.</summary>
+    internal static bool OneEdit(string a, string b)
+    {
+        if (a == b) return true;
+        if (a.Length == b.Length) return a.Zip(b).Count(pair => pair.First != pair.Second) == 1;
+        var (longer, shorter) = a.Length > b.Length ? (a, b) : (b, a);
+        if (longer.Length != shorter.Length + 1) return false;
+        int i = 0, j = 0;
+        var skipped = false;
+        while (i < longer.Length && j < shorter.Length)
+        {
+            if (longer[i] == shorter[j]) { i++; j++; }
+            else if (skipped) return false;
+            else { skipped = true; i++; }
+        }
+        return true;
     }
 
     /// <summary>Yazı tanımanın Kiril harfle okuduğu Latin harfler ("Мар" → "Map").</summary>

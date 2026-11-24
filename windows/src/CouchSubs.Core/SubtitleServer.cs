@@ -786,6 +786,27 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             {
                 ["align"] = look.Align, ["bold"] = look.Bold, ["condensed"] = look.Condensed, ["upper"] = look.Upper,
             };
+        // Yerinde birebir çizim (TextPaint; eski TV yok sayar): opak kutu tam örtü sınırında, ölçülen zeminle (degrade
+        // dahil), yazı özgün renk, kalınlık, büyük harf, hiza ve satır aralığıyla; grup aynı boyda, boş alana uzayabilir.
+        if (item.Paint is { } paint && item.Look is { } painted && item.Style is { } colors && IsRgb(paint.Background)
+            && IsRgb(colors.Foreground))
+        {
+            json["bg"] = paint.Background;
+            if (paint.Background2 is { } second && IsRgb(second) && paint.Direction is { } direction)
+            {
+                json["bg2"] = second;
+                json["bgDir"] = direction;
+            }
+            if (paint.Patterned) json["bgPat"] = true;
+            json["fg"] = colors.Foreground;
+            json["weight"] = painted.Bold ? 700 : 400;
+            json["upper"] = painted.Upper;
+            json["align"] = painted.Align;
+            json["lineH"] = Round(paint.Pitch);
+            json["cover"] = BoxJson(paint.Cover);
+            if (paint.Grow is { } grow) json["grow"] = BoxJson(grow);
+            if (paint.Group is { } group) json["group"] = group;
+        }
         // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
         if (item.Bubble) json["bubble"] = true;
         // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla çizer; eski TV alanı yok sayar.

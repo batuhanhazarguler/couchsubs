@@ -69,6 +69,23 @@ html, body {
   overflow: hidden;
 }
 #screen .item.paragraphs, #regions .region-blocks .item.paragraphs { text-align: left; white-space: pre-line; }
+/* Yerinde birebir çizim (app.js placeExact): kutu özgün yazının tam örtü sınırında, opak, köşesiz, gölgesiz; renk, zemin
+   (degrade dahil), kalınlık, hiza ve satır aralığı bilgisayarın ölçtüğü gibi. Yazı kesilmez (taşma gizlenmez). */
+#screen .item.exact, #regions .region-blocks .item.exact {
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+  text-shadow: none;
+  line-height: normal;
+  white-space: nowrap;
+  overflow: visible;
+}
+#screen .item.exact .exact-line, #regions .region-blocks .item.exact .exact-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  white-space: nowrap;
+}
 #regions .region-blocks .item.phone {
   padding: 1px 2px;
   border-radius: 2px;

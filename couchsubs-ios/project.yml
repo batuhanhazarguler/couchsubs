@@ -58,6 +58,8 @@ targets:
       - path: ../mac/CouchSubs/UI/LocalAIText.swift
       # Altyazı bölgesinin canlı önizlemesi (sürüklenen çerçeve).
       - path: ../mac/CouchSubs/UI/RegionPreview.swift
+      # Ekran yazısının yerinde birebir çizimi (ScreenFit.exact; Mac yayın penceresiyle aynı görünüm).
+      - path: ../mac/CouchSubs/UI/ExactScreenText.swift
       # Ayarların ortak değerleri: hız ön ayarları, altyazı renk listeleri, açılış sesi (Mac ile aynı).
       - path: ../mac/CouchSubs/UI/Yeni/SubtitlePalette.swift
       # Perde tasarım dili: tasarim.json'un okunuşu, hareket kapısı, efektler, yeni bileşenler ve bileşen kataloğu (Mac ile

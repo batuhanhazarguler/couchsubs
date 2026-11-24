@@ -1,0 +1,1 @@
+0.9.102: Ekran yazısı çevirisi yerinde, arayüz Türkçe yapılmış gibi çiziliyor: kutu özgün yazıyı tam örtüyor, opak ve köşesiz; zemin rengi ve degradesi, yazı rengi, kalınlığı, hizası ve satır aralığı özgünle aynı. Aynı listedeki etiketler aynı boyda; uzun çeviri boş tarafa uzuyor, yazı kesilmiyor.

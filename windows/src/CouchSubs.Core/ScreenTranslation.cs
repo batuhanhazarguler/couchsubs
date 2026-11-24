@@ -49,6 +49,11 @@ public static class ScreenTranslation
         public TextBox? Room { get; init; }
         /// <summary>Özgün yazının satır sayısı (<see cref="Group.Rows"/>).</summary>
         public int Rows { get; init; } = 1;
+        /// <summary>
+        /// Yerinde birebir çizim için kareden ölçülenler (örtü kutusu, zemin/degrade, satır aralığı, boş alan, grup;
+        /// <see cref="TextPainter"/>); null ise eski çizim.
+        /// </summary>
+        public TextPaint? Paint { get; init; }
         /// <summary>Birden çok parça var: TV satır satır, sola yaslı gösterir.</summary>
         public bool Paragraphs => Translation.Contains('\n');
     }
@@ -672,12 +677,33 @@ public static class ScreenTranslation
     }
 
     /// <summary>
+    /// Oyunun logosu ve stilize başlığı çevrilmez: yalnız Roma rakamı ("VI"), oyun adı ("Grand Theft Auto", "GTA VI",
+    /// "Rockstar Games"). Önceden PS5 ana ekranındaki "Grand Theft Auto VI" "araba hırsızlığı." oluyordu (Sinan Bey, beta.93).
+    /// </summary>
+    internal static bool IsTitleMark(string text)
+    {
+        var words = System.Text.RegularExpressions.Regex.Split(text.ToUpperInvariant(), @"[\s:\-]+")
+            .Where(word => word.Length > 0).ToList();
+        if (words.Count == 0) return false;
+        static bool IsRoman(string word) => RomanNumeral.IsMatch(word);
+        if (words.All(IsRoman)) return true;
+        return TitleMarks.Contains(string.Join(' ', words.Where(word => !IsRoman(word))));
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex RomanNumeral =
+        new("^(?=[IVX]+$)X{0,3}(IX|IV|V?I{0,3})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly HashSet<string> TitleMarks = ["GRAND THEFT AUTO", "GTA", "ROCKSTAR GAMES", "ROCKSTAR"];
+
+    /// <summary>
     /// Yalnız özel adlardan oluşan yazı ("JASON &amp; LUCIA", "Bonnie &amp; Clyde"): "&amp;" ile bağlı, her biri bir iki
     /// sözcüklük (BÜYÜK HARFLİ yazıda tek sözcüklük), büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
     /// </summary>
     public static bool KeepsNames(string text)
     {
-        var parts = IconText.Plain(text).Trim().Split(" & ");
+        var plain = IconText.Plain(text).Trim();
+        if (IsTitleMark(plain)) return true;
+        var parts = plain.Split(" & ");
         if (parts.Length < 2) return false;
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.
         var most = TextStyleSampler.IsUpper(IconText.Plain(text)) ? 1 : 2;

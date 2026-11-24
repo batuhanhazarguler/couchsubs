@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.101';
+  var APP_VERSION = '0.9.102';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1337,7 +1337,7 @@
     var minWidth = phone ? 1 : 80;
     var card = panelCard(items);
     var reuse = phone ? takeChildren(host) : null;
-    var kept = [], seen = {}, order = 0;
+    var kept = [], seen = {}, order = 0, exact = [];
     if (card) {
       var panel = placePanel(host, items, card, width, height, reuse && reuse.panel);
       kept.push(panel);
@@ -1349,6 +1349,11 @@
       if (card && item && (item.panel === 'card' || PANEL_PARTS[item.panel])) continue;
       var box = validBox(item && item.box);
       if (!box || !item.text || tooBig(box)) continue;
+      // Bilgisayar özgün görünüşü ölçüp gönderdiyse yerinde birebir çizim (placeExact); telefon ve balon eski yolda.
+      if (!phone && setApart && item.bubble !== true && isExact(item)) {
+        exact.push(item);
+        continue;
+      }
       var el = null;
       if (reuse) {
         seen[item.text] = (seen[item.text] || 0) + 1;
@@ -1462,6 +1467,7 @@
       // En küçük okunabilir boyutta da sığmayan metni kesmeyiz/gizlemeyiz.
       // Bu uç durumda eski doğal büyüme davranışı korunur.
     }
+    if (exact.length) placeExact(host, exact, width, height);
     if (reuse) {
       for (var r = 0; r < reuse.all.length; r++) {
         if (kept.indexOf(reuse.all[r]) < 0 && reuse.all[r].parentNode === host) host.removeChild(reuse.all[r]);
@@ -1564,6 +1570,9 @@
     // 3) Satır kırılır, kutu aşağı uzar (yana değil).
     if (label && words > 1) {
       label = false;
+      // Satır aralığı tek satırlık kutunun yüksekliği değil, satırın kendisi: önceden satır sayısı gelmeyen görev kartı
+      // açıklamasının iki satırı arasında koca bir boşluk açılıyordu (Sinan Bey, beta.93).
+      pitch = Math.max(1, Math.min(pitch, line * 1.25));
       inner.style.whiteSpace = 'normal';
       el.style.whiteSpace = '';
       squeeze = 1;
@@ -1574,6 +1583,237 @@
     shrinkTo(FIT_LAST_SCALE, function () { return !wide(); }, true);
     if (squeezable) squeezeTo(FIT_FIRST_SQUEEZE);
     // Paragrafta kutunun yüksekliği sabit değil (en az özgün kutununki): yazı sığana kadar aşağı uzar.
+  }
+
+  // --- Yerinde birebir çizim (TV uygulaması 0.9.102) ---
+  // Bilgisayar her yazının özgün görünüşünü kareden ölçüp gönderir (TV pikselleri okuyamaz): cover (özgün yazıyı tam örten
+  // kutu), bg / bg2 + bgDir (zemin ya da degrade), bgPat (desenli zemin; bg ortalama renk), fg, weight, upper, align, lineH
+  // (özgün satır aralığı), grow (hizanın açık tarafındaki boş alan) ve group (aynı listedeki etiketler). Kutu tam örtü
+  // sınırında, opak, köşesiz ve gölgesiz çizilir; arayüz Türkçe yapılmış gibi görünsün (Sinan Bey, beta.93: yarı saydam,
+  // renkli, kayık kutular amatör görünüyordu). Yerleşim Mac, Windows, iPhone ve Android'deki ScreenFit.exact ile aynı
+  // sıradadır: grubun yazı boyu üyelerin özgün boyunun ortancası; sığmayan etiket boş alana uzar (yazı boyu sabit); boş alan
+  // yetmezse grubun tamamı birlikte küçülür (en çok EXACT_GROUP_MIN); yine sığmazsa satır kırılır, kutu aşağı uzar; tek
+  // sözcük yine sığmıyorsa yalnız o küçülür. Çok satırlı yazı özgün genişlikte ve satır aralığında kalır. Yazı hiçbir
+  // zaman "…" ile kesilmez. Alanları göndermeyen eski bilgisayarda eski çizim sürer.
+  var EXACT_FONT = 0.95;
+  var EXACT_GROUP_MIN = 0.7;
+  var EXACT_PARAGRAPH_MIN = 0.8;
+  var EXACT_WRAP_GAP = 1.2;
+
+  function isExact(item) {
+    return !!(item && typeof item.text === 'string' && item.text && phoneColor(item.bg) && phoneColor(item.fg)
+      && validBox(item.cover) && validBox(item.box));
+  }
+
+  function exactWrap(words, limit, measure) {
+    var lines = [], current = '';
+    for (var i = 0; i < words.length; i++) {
+      var next = current ? current + ' ' + words[i] : words[i];
+      if (current && measure(next) > limit + 0.5) {
+        lines.push(current);
+        current = words[i];
+      } else current = next;
+    }
+    if (current || !lines.length) lines.push(current);
+    return lines;
+  }
+
+  function exactWords(text) {
+    var words = text.split(/\s+/), result = [];
+    for (var i = 0; i < words.length; i++) if (words[i]) result.push(words[i]);
+    return result;
+  }
+
+  // Saf yerleşim (ScreenFit.exact): items piksel cinsinden {text, left, top, right, bottom, growLeft, growRight, line, pitch,
+  // rows, align, group}; measure(text, size, index) yazının genişliği. Dönen: {left, top, width, height, fontSize, lines,
+  // lineHeight, rowHeight}.
+  function exactLayout(items, measure) {
+    var base = [], members = {}, i;
+    for (i = 0; i < items.length; i++) {
+      base.push(EXACT_FONT * items[i].line);
+      if (typeof items[i].group === 'number') (members[items[i].group] = members[items[i].group] || []).push(i);
+    }
+    var key, list, k;
+    for (key in members) {
+      if (!Object.prototype.hasOwnProperty.call(members, key) || members[key].length < 2) continue;
+      list = members[key];
+      var sizes = [];
+      for (k = 0; k < list.length; k++) sizes.push(base[list[k]]);
+      sizes.sort(function (a, b) { return a - b; });
+      for (k = 0; k < list.length; k++) base[list[k]] = sizes[Math.floor(sizes.length / 2)];
+    }
+    function isLabel(item) { return !(item.rows > 1) && item.text.indexOf('\n') < 0; }
+    var natural = [], scale = [];
+    for (i = 0; i < items.length; i++) {
+      natural.push(isLabel(items[i]) ? measure(items[i].text, base[i], i) : 0);
+      scale.push(isLabel(items[i]) && natural[i] > 0
+        ? Math.max(EXACT_GROUP_MIN, Math.min(1, (items[i].growRight - items[i].growLeft) / natural[i])) : 1);
+    }
+    for (key in members) {
+      if (!Object.prototype.hasOwnProperty.call(members, key) || members[key].length < 2) continue;
+      list = members[key];
+      var least = 1;
+      for (k = 0; k < list.length; k++) least = Math.min(least, scale[list[k]]);
+      for (k = 0; k < list.length; k++) scale[list[k]] = least;
+    }
+    var result = [];
+    for (i = 0; i < items.length; i++) {
+      var item = items[i];
+      result.push(isLabel(item) ? exactLabel(item, i, base[i], scale[i], natural[i], measure)
+        : exactParagraph(item, i, base[i], measure));
+    }
+    return result;
+  }
+
+  function exactLabel(item, index, base, scale, natural, measure) {
+    var coverWidth = item.right - item.left, coverHeight = item.bottom - item.top;
+    var font = base * scale, avail = item.growRight - item.growLeft, width = natural * scale;
+    var lines = [item.text], gap = coverHeight, j;
+    function at(text) { return measure(text, font, index); }
+    if (width > avail + 0.5) {
+      var words = exactWords(item.text);
+      var widest = 0;
+      for (j = 0; j < words.length; j++) widest = Math.max(widest, at(words[j]));
+      if (words.length >= 2) {
+        // Satır kırılır; satıra sığmayan sözcük varsa yazı yalnız bu öğede küçülür (yana taşmaz).
+        if (widest > avail + 0.5) font *= avail / widest;
+        lines = exactWrap(words, avail, at);
+      } else {
+        font *= avail / Math.max(1e-9, width);
+      }
+      width = 0;
+      for (j = 0; j < lines.length; j++) width = Math.max(width, at(lines[j]));
+      if (lines.length > 1) gap = Math.max(coverHeight / lines.length, font * EXACT_WRAP_GAP);
+    }
+    var boxWidth = Math.max(coverWidth, Math.min(avail, width));
+    var left = item.align === 'right' ? item.right - boxWidth
+      : item.align === 'center' ? item.left - (boxWidth - coverWidth) / 2 : item.left;
+    left = Math.min(Math.max(left, item.growLeft), item.growRight - boxWidth);
+    return { left: left, top: item.top, width: boxWidth, height: Math.max(coverHeight, lines.length * gap), fontSize: font,
+      lines: lines, lineHeight: gap, rowHeight: gap };
+  }
+
+  function exactParagraph(item, index, base, measure) {
+    var coverWidth = item.right - item.left, coverHeight = item.bottom - item.top;
+    var factor = 1;
+    // Özgün bir satırın yüksekliği (kenar payıyla): son satır tam aralık değil, bu kadar yer kaplar.
+    var row = Math.max(base * 1.05, coverHeight - (Math.max(1, item.rows || 1) - 1) * item.pitch);
+    function layout() {
+      var font = base * factor, gap = Math.max(item.pitch, base * 1.05) * factor, lines = [];
+      var parts = item.text.split('\n');
+      for (var p = 0; p < parts.length; p++) {
+        var words = exactWords(parts[p]);
+        lines = lines.concat(words.length ? exactWrap(words, coverWidth, function (t) { return measure(t, font, index); }) : ['']);
+      }
+      return { font: font, lines: lines, gap: gap };
+    }
+    function tall(laid) { return (laid.lines.length - 1) * laid.gap + row * factor; }
+    var laid = layout();
+    while (tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
+      factor = Math.max(EXACT_PARAGRAPH_MIN, Math.round((factor - 0.05) * 100) / 100);
+      laid = layout();
+    }
+    var widest = 0;
+    for (var j = 0; j < laid.lines.length; j++) widest = Math.max(widest, measure(laid.lines[j], laid.font, index));
+    // Satıra sığmayan tek sözcük: yazı küçülür (yana taşmaz).
+    if (widest > coverWidth + 0.5) {
+      factor *= coverWidth / widest;
+      laid = layout();
+    }
+    return { left: item.left, top: item.top, width: coverWidth, height: Math.max(coverHeight, tall(laid)), fontSize: laid.font,
+      lines: laid.lines, lineHeight: laid.gap, rowHeight: row * factor };
+  }
+
+  // Satırların düz metindeki başlangıcı (simgeler satırına dağıtılsın diye).
+  function lineStarts(text, lines) {
+    var starts = [], from = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var at = lines[i] ? text.indexOf(lines[i].split(' ')[0], from) : from;
+      if (at < 0) at = from;
+      starts.push(at);
+      from = at + lines[i].length;
+    }
+    return starts;
+  }
+
+  function exactFamily(item) {
+    return item.style && item.style.condensed === true ? CONDENSED_FONT : '';
+  }
+
+  // Birebir öğeleri çizer: host'a eklenen kutular (sırayla).
+  function placeExact(host, items, width, height) {
+    var probe = document.createElement('span');
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.whiteSpace = 'pre';
+    probe.style.left = '-10000px';
+    probe.style.top = '0';
+    host.appendChild(probe);
+    var inputs = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i], cover = item.cover, grow = validBox(item.grow);
+      var line = typeof item.line === 'number' && item.line > 0 ? item.line * height : (cover.bottom - cover.top) * height;
+      var pitch = typeof item.lineH === 'number' && item.lineH > 0 ? item.lineH * height : line;
+      inputs.push({ text: item.text, left: cover.left * width, top: cover.top * height, right: cover.right * width,
+        bottom: cover.bottom * height, growLeft: Math.min(cover.left, grow ? grow.left : cover.left) * width,
+        growRight: Math.max(cover.right, grow ? grow.right : cover.right) * width, line: line, pitch: pitch,
+        rows: item.rows > 1 || item.text.indexOf('\n') >= 0 ? Math.max(2, item.rows || 2) : 1,
+        align: item.align === 'right' || item.align === 'center' ? item.align : 'left',
+        group: typeof item.group === 'number' ? item.group : null });
+    }
+    function measure(text, size, index) {
+      probe.style.fontFamily = exactFamily(items[index]);
+      probe.style.fontWeight = items[index].weight === 700 ? '700' : '400';
+      probe.style.fontSize = size + 'px';
+      probe.textContent = text;
+      // Ölçü yukarı yuvarlanır: kesirli piksel yazıyı kutudan taşırmasın.
+      return Math.ceil(probe.getBoundingClientRect().width / (window.COUCHSUBS_ZOOM || 1)) + 1;
+    }
+    var placed = exactLayout(inputs, measure);
+    host.removeChild(probe);
+    var drawn = [];
+    for (var n = 0; n < items.length; n++) {
+      var source = items[n], place = placed[n];
+      var el = document.createElement('div');
+      el.className = 'item exact';
+      el.couchsubsBox = validBox(source.box);
+      el.style.left = place.left + 'px';
+      el.style.top = place.top + 'px';
+      el.style.width = place.width + 'px';
+      el.style.height = place.height + 'px';
+      el.style.backgroundColor = source.bg;
+      if (phoneColor(source.bg2) && (source.bgDir === 'h' || source.bgDir === 'v')) {
+        var webkit = '-webkit-linear-gradient(' + (source.bgDir === 'h' ? 'left' : 'top') + ', ' + source.bg + ', ' + source.bg2 + ')';
+        var standard = 'linear-gradient(' + (source.bgDir === 'h' ? 'to right' : 'to bottom') + ', ' + source.bg + ', ' + source.bg2 + ')';
+        el.style.backgroundImage = webkit;
+        el.style.backgroundImage = standard;
+      }
+      el.style.color = source.fg;
+      el.style.fontWeight = source.weight === 700 ? '700' : '400';
+      el.style.fontFamily = exactFamily(source);
+      el.style.fontSize = place.fontSize + 'px';
+      el.style.textAlign = inputs[n].align;
+      var starts = lineStarts(source.text, place.lines);
+      for (var k = 0; k < place.lines.length; k++) {
+        var row = document.createElement('div');
+        row.className = 'exact-line';
+        row.style.top = (k * place.lineHeight) + 'px';
+        row.style.height = place.rowHeight + 'px';
+        row.style.lineHeight = place.rowHeight + 'px';
+        var icons = [];
+        for (var c = 0; source.icons && c < source.icons.length; c++) {
+          var icon = source.icons[c], end = k + 1 < starts.length ? starts[k + 1] : source.text.length + 1;
+          if (icon && typeof icon.at === 'number' && icon.at >= starts[k] && icon.at < end) {
+            icons.push({ at: icon.at - starts[k], src: icon.src });
+          }
+        }
+        fillText(row, place.lines[k], icons);
+        el.appendChild(row);
+      }
+      host.appendChild(el);
+      drawn.push(el);
+    }
+    return drawn;
   }
 
   function showScreen(items, duration) {

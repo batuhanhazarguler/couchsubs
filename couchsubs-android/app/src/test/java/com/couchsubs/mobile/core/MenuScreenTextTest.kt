@@ -294,8 +294,9 @@ class MenuScreenTextTest {
         assertEquals("#DCDCDC", first[0].surface!!.background)
         assertEquals("#141414", first[0].surface!!.foreground)
         assertEquals("#191919", first[1].surface!!.background)
-        // Harf düzeni korunur: karışık harfli özgün normal Türkçe; hepsi arayüz sözlüğünden, çevirmene gidilmez.
-        assertEquals(listOf("Harita", "Oyun", "Dükkân", "Yardım", "Fotoğraf stüdyosu", "Ayarlar"), first.map { it.translation })
+        // Harf düzeni korunur: her sözcüğü büyük harfle başlayan özgün ("Photo Studio") Türkçede de öyle; hepsi arayüz
+        // sözlüğünden, çevirmene gidilmez.
+        assertEquals(listOf("Harita", "Oyun", "Dükkân", "Yardım", "Fotoğraf Stüdyosu", "Ayarlar"), first.map { it.translation })
         assertEquals(0, engine.requests)
         val requests = engine.requests
         // Seçim bir alt satıra kayar: çeviri yeniden istenmez, yalnız renkler gider.

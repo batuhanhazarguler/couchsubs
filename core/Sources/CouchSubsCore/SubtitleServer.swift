@@ -564,6 +564,24 @@ public final class SubtitleServer: @unchecked Sendable {
             result["style"] = ["align": look.align.rawValue, "bold": look.bold, "condensed": look.condensed, "upper": look.upper]
         }
         if let icons = item.icons, !icons.isEmpty { result["icons"] = Self.json(icons) }
+        // Yerinde birebir çizim (`TextPaint`; eski TV yok sayar): opak kutu tam örtü sınırında, ölçülen zeminle (degrade
+        // dahil), yazı özgün renk, kalınlık, büyük harf, hiza ve satır aralığıyla; grup aynı boyda, boş alana uzayabilir.
+        if let paint = item.paint, let look = item.look, let style = item.style, isRGB(paint.background), isRGB(style.foreground) {
+            result["bg"] = paint.background
+            if let second = paint.background2, isRGB(second), let direction = paint.direction {
+                result["bg2"] = second
+                result["bgDir"] = direction.rawValue
+            }
+            if paint.patterned { result["bgPat"] = true }
+            result["fg"] = style.foreground
+            result["weight"] = look.bold ? 700 : 400
+            result["upper"] = look.upper
+            result["align"] = look.align.rawValue
+            result["lineH"] = Decimal(Int((max(0, min(1, paint.pitch)) * 10000).rounded())) / 10000
+            result["cover"] = Self.json(paint.cover)
+            if let grow = paint.grow { result["grow"] = Self.json(grow) }
+            if let group = paint.group { result["group"] = group }
+        }
         // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
         if item.bubble { result["bubble"] = true }
         // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla, yuvarlak köşeli yarı saydam kartta çizer;

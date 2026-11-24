@@ -197,7 +197,7 @@ final class FreeButtonIconsTests: XCTestCase {
     }
 
     func testCommandGlossaryPreservesMarkersAndFallsBackForUnknownCommands() {
-        XCTAssertEqual(UiCommands.translate("SET DESTINATION \(marker) EXIT \(marker)"), "Hedef belirle \(marker) Çıkış \(marker)")
+        XCTAssertEqual(UiCommands.translate("SET DESTINATION \(marker) EXIT \(marker)"), "Hedef belirle \(marker) Çık \(marker)")
         XCTAssertEqual(UiCommands.translate("OPEN \(marker)"), "Aç \(marker)")
         XCTAssertEqual(UiCommands.translate("REFUEL"), "Yakıt al")
         XCTAssertNil(UiCommands.translate("Open the door"))

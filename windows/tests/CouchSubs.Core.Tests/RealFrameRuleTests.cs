@@ -22,7 +22,7 @@ public class RealFrameRuleTests
     [InlineData("pi Settings", "Ayarlar")]
     [InlineData("R3 LOOK BEHIND", null)]
     [InlineData("R3 ZOOM", "R3 YAKINLAŞTIR")]
-    [InlineData("EXIT OR", "ÇIKIŞ OR")]
+    [InlineData("EXIT OR", "ÇIK OR")]
     [InlineData("ADD MARKER O", "İŞARET EKLE O")]
     public void LabelsAreFoundDespiteOcrCrumbs(string label, string? turkish) =>
         Assert.Equal(turkish, UiCommands.TranslateLabelLoosely(label));

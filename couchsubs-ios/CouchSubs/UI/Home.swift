@@ -634,7 +634,9 @@ struct SubtitleScreen: View {
             let panel = ScreenPhoneCard.panel(placed)
             GeometryReader { proxy in
                 if let panel { PhonePanelInFrame(panel, size: proxy.size, minFont: 12) }
-                ForEach(Array((panel?.outside ?? placed).enumerated()), id: \.offset) { _, item in
+                // Kareden ölçülmüş öğeler yerinde birebir (TV, Mac, Windows, Android ile aynı: `ScreenFit.exact`).
+                ExactScreenText(items: (panel?.outside ?? placed).filter { $0.paint != nil }, size: proxy.size)
+                ForEach(Array((panel?.outside ?? placed).filter { $0.paint == nil }.enumerated()), id: \.offset) { _, item in
                   if ScreenFit.takesPart(item) {
                     Self.fittedBlock(item, size: proxy.size)
                   } else {

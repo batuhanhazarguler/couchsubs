@@ -353,7 +353,9 @@ struct ScreenTextBlocks: View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 if let panel { PhonePanelInFrame(panel, size: proxy.size) }
-                ForEach(blocks.indices, id: \.self) { i in
+                // Kareden ölçülmüş öğeler yerinde birebir (TV, Windows, iPhone, Android ile aynı: `ScreenFit.exact`).
+                ExactScreenText(items: blocks.filter { $0.paint != nil }, size: proxy.size)
+                ForEach(blocks.indices.filter { blocks[$0].paint == nil }, id: \.self) { i in
                     block(blocks[i], size: proxy.size)
                 }
             }

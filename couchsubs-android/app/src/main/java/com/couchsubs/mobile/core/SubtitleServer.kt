@@ -316,6 +316,28 @@ class SubtitleServer(
                 else if (isRgb(it.background) && isRgb(it.foreground)) json["surface"] = mapOf("background" to it.background, "foreground" to it.foreground)
             }
             item.look?.let { json["style"] = mapOf("align" to it.align, "bold" to it.bold, "condensed" to it.condensed, "upper" to it.upper) }
+            // Yerinde birebir çizim ([TextPaint]; eski TV yok sayar): opak kutu tam örtü sınırında, ölçülen zeminle (degrade
+            // dahil), yazı özgün renk, kalınlık, büyük harf, hiza ve satır aralığıyla; grup aynı boyda, boş alana uzayabilir.
+            val paint = item.paint
+            val look = item.look
+            val surface = item.surface
+            if (paint != null && look != null && surface != null && isRgb(paint.background) && isRgb(surface.foreground)) {
+                json["bg"] = paint.background
+                val second = paint.background2
+                if (second != null && isRgb(second) && paint.direction != null) {
+                    json["bg2"] = second
+                    json["bgDir"] = paint.direction
+                }
+                if (paint.patterned) json["bgPat"] = true
+                json["fg"] = surface.foreground
+                json["weight"] = if (look.bold) 700 else 400
+                json["upper"] = look.upper
+                json["align"] = look.align
+                json["lineH"] = Json.Decimal(Math.round(paint.pitch.coerceIn(0.0, 1.0) * 10000) / 10000.0)
+                json["cover"] = boxJson(paint.cover)
+                paint.grow?.let { json["grow"] = boxJson(it) }
+                paint.group?.let { json["group"] = it }
+            }
             // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
             if (item.bubble) json["bubble"] = true
             // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla çizer; eski TV alanı yok sayar.

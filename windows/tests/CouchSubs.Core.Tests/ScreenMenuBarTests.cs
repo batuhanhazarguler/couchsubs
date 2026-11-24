@@ -42,6 +42,16 @@ public class ScreenMenuBarTests
         }
     }
 
+    /// <summary>Oyunun logosu ve stilize başlığı çevrilmez: Roma rakamı, "Grand Theft Auto VI", "GTA VI", "Rockstar Games".</summary>
+    [Fact]
+    public void OyunAdiVeRomaRakamiCevrilmez()
+    {
+        foreach (var text in new[] { "VI", "Grand Theft Auto VI", "GRAND THEFT AUTO", "GTA VI", "Rockstar Games", "ROCKSTAR" })
+            Assert.True(ScreenTranslation.KeepsNames(text), text);
+        foreach (var text in new[] { "Grand Theft", "GTA ONLINE", "VIEW", "MAP" })
+            Assert.False(ScreenTranslation.KeepsNames(text), text);
+    }
+
     [Fact]
     public void ClocksAreNotTranslated()
     {

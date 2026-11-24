@@ -172,7 +172,13 @@ public sealed partial class RegionWatcher
     /// <param name="Look">Otomatik ekran yazısında özgün yazının görünüşü (<see cref="TextStyleSampler"/>); diğerlerinde null.</param>
     /// <param name="Phone">GTA 6 telefonunda grubun rolü ve düz ekrandaki yeri (<see cref="GamePhoneText.Roles"/>); sohbet paneli bununla dizilir.</param>
     internal sealed record Block(int Start, int Count, TextBox Box, double LineHeight, PhoneTextStyle? Style = null, TextLook? Look = null,
-                                 ScreenPhoneCard.Placement? Phone = null);
+                                 ScreenPhoneCard.Placement? Phone = null)
+    {
+        /// <summary>Yerinde birebir çizim ölçüleri (<see cref="TextPainter"/>), karedeki yeriyle; otomatik ekran yazısında.</summary>
+        public TextPaint? Paint { get; init; }
+        /// <summary>Özgün yazının satır sayısı (<see cref="ScreenTranslation.Group.Rows"/>); TV çeviriyi bu satır aralığıyla dizer.</summary>
+        public int Rows { get; init; } = 1;
+    }
 
     /// <param name="Icons">Her parçadaki kumanda simgeleri (kareden kesilmiş), parçadaki sırasıyla.</param>
     /// <param name="Blocks">Alanda birden çok ayrı yazı grubu varsa grupları; tek grupta null (tek kutu).</param>
@@ -803,10 +809,27 @@ public sealed partial class RegionWatcher
                     (style, look) = TextStyleSampler.Sample(frame, group.Box, own, string.Join(' ', group.Paragraphs));
                 }
                 list.Add(new Block(start, group.Paragraphs.Count, group.Box.PlacedIn(place), group.LineHeight * height, style, look,
-                                   phone ? group.Phone : null));
+                                   phone ? group.Phone : null) { Rows = group.Rows });
                 start += group.Paragraphs.Count;
             }
             if (styled) list = AlignByNeighbours(list);
+            // Yerinde birebir çizim: örtü kutusu, zemin/degrade, satır aralığı, boş alan ve grup okunan alanın karesinden
+            // (alan koordinatında) ölçülür, sonra karedeki yere taşınır. Okuma turunda bir kez (her karede değil).
+            if (styled && frame is not null)
+            {
+                var painted = Enumerable.Range(0, list.Count).Where(i => list[i].Style is not null && list[i].Look is not null).ToList();
+                var targets = painted.Select(i =>
+                {
+                    var group = groups[i];
+                    var block = list[i];
+                    var rows = group.Paragraphs.Count > 1 ? Math.Max(2, group.Rows) : group.Rows;
+                    return new TextPainter.Target(group.Box, group.LineHeight, rows, block.Style!.Background, block.Style.Foreground,
+                                                  block.Look!.Upper, block.Look.Align);
+                }).ToList();
+                var paints = TextPainter.Paints(targets, frame);
+                for (var k = 0; k < painted.Count && k < paints.Count; k++)
+                    list[painted[k]] = list[painted[k]] with { Paint = paints[k].PlacedIn(place) };
+            }
             blocks = list;
             key = TextKey(paragraphs) + "|" + string.Join(',', list.Select(block => block.Count));
         }
@@ -921,6 +944,17 @@ public sealed partial class RegionWatcher
         a is null ? b is null : b is not null && a.SequenceEqual(b);
 
     /// <summary>
+    /// Okunan yazı arayüz etiketi mi: bütün parçaları arayüz sözlüğünde (yalnız İngilizceden Türkçeye) ya da parçalarından
+    /// birinde kareden kesilmiş tuş simgesi var (ipucu: "EXIT ○").
+    /// </summary>
+    internal bool IsUiLabel(Candidate candidate)
+    {
+        if (candidate.Icons?.Any(list => list.Count > 0) == true) return true;
+        if (!TranslatesUiCommands || candidate.Paragraphs.Count == 0) return false;
+        return candidate.Paragraphs.All(paragraph => UiCommands.TranslateLabelLoosely(IconText.Plain(paragraph)) is not null);
+    }
+
+    /// <summary>
     /// Otomatik alandaki yazının türü: haritanın görev kartı (menüde de) görevdir; yoksa alanın yerinden (hazır alan, görev
     /// satırı, menü) ya da okunan yazıdan çıkar. Kullanıcının kendi alanı null (her zaman çevrilir).
     /// </summary>
@@ -939,7 +973,11 @@ public sealed partial class RegionWatcher
             && Volatile.Read(ref session) == started)
             Hud?.Invoke(area.Id);
         var unwanted = area.Auto && Allows is { } allows && Kind(area, candidate) is { } kind && !allows(kind);
-        if (area.Auto && (candidate.Key.Length == 0 || ScreenTextNoise.IsNoise(string.Join(' ', candidate.Paragraphs), area.Menu)
+        // Arayüz sözlüğündeki tek sözcüklük menü/ipucu etiketi ("Map", "Settings", "EXIT") ve tuş simgeli ipucu kısa olsa da
+        // menü etiketi gibi çevrilir: kısa metin filtresi (en az 8 harf, iki sözcük) menü durumu kısa süre kaçınca onları
+        // atıyordu (Sinan Bey, beta.93: "Map", "Settings", "EXIT" İngilizce kaldı).
+        var labelLike = area.Menu || IsUiLabel(candidate);
+        if (area.Auto && (candidate.Key.Length == 0 || ScreenTextNoise.IsNoise(string.Join(' ', candidate.Paragraphs), labelLike)
                           || (!area.Menu && IsWorldText(candidate)) || unwanted))
         {
             // Kendiliğinden bulunan alanda yazı yok ya da gürültü (sayaç, harita, kısa etiket): çevrilmez, dedektöre
@@ -966,6 +1004,7 @@ public sealed partial class RegionWatcher
                         Box = current[block.Group].Box, LineHeight = current[block.Group].LineHeight,
                         // Seçim gezince yalnız renkler değişir: çeviri yeniden istenmez, zemin/yazı rengi güncellenir.
                         Style = current[block.Group].Style ?? block.Item.Style, Look = current[block.Group].Look ?? block.Item.Look,
+                        Paint = current[block.Group].Paint ?? block.Item.Paint,
                     })).ToList()
                 : null;
             server.SendRegion(area.Id, state.RenderedText, candidate.Box, candidate.LineHeight, state.RenderedIcons,
@@ -1296,7 +1335,10 @@ public sealed partial class RegionWatcher
             var source = string.Join('\n', range.Select(i => IconText.Plain(candidate.Paragraphs[i])));
             result.Add((g, new ScreenTranslation.Item(source, translation, block.Box, block.LineHeight,
                                                       icons.Count > 0 ? icons : null)
-            { Style = block.Style, Look = block.Look, Phone = block.Phone, Unchanged = unchanged }));
+            {
+                Style = block.Style, Look = block.Look, Phone = block.Phone, Unchanged = unchanged, Paint = block.Paint,
+                Rows = Math.Max(1, block.Rows),
+            }));
         }
         return result;
     }
@@ -1446,10 +1488,10 @@ public sealed partial class RegionWatcher
             if (!core.Any(char.IsLetter)) { part.Translation = part.Core; continue; }
             // Yalnız özel adlardan oluşan sekme ("JASON & LUCIA") çevrilmez (#859).
             if (ScreenTranslation.KeepsNames(core)) { part.Translation = core; continue; }
-            string? known;
-            lock (terms) terms.TryGetValue(core, out known);
-            known ??= (TranslatesUiCommands ? UiCommands.TranslateLabelLoosely(core) : null)
-                      ?? PackLookup?.Invoke(IconText.Plain(core))?.Text
+            // Arayüz sözlüğü (sabit karşılıklar) oturum terim sözlüğünden ve paketten önce (Mac ile aynı).
+            var known = TranslatesUiCommands ? UiCommands.TranslateLabelLoosely(core) : null;
+            if (known is null) lock (terms) terms.TryGetValue(core, out known);
+            known ??= PackLookup?.Invoke(IconText.Plain(core))?.Text
                       ?? (SkipsTurkish && TurkishText.IsSure(core) ? core : null);
             if (known is not null) part.Translation = known;
             // Yazı tanımanın bozuk okuması (sözlükte ve pakette yok, harflerinin çoğu tuhaf): çevrilmez, aslı kalır.

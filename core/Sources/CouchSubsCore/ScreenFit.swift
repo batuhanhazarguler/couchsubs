@@ -52,10 +52,34 @@ public enum ScreenFit {
             iconEdges(box, lineX: lineX, words: words, width: pixels.width, height: pixels.height, luma: luma)
         }
         let laid = uniform(aligned(tight, aspect: aspect), aspect: aspect)
-        return withRoom(laid, aspect: aspect) { x, y in
+        let color = { (x: Int, y: Int) -> (Int, Int, Int) in
             let p = pixels.offset(x, y)
             return (Int(pixels.bytes[p]), Int(pixels.bytes[p + 1]), Int(pixels.bytes[p + 2]))
-        } size: { (pixels.width, pixels.height) }
+        }
+        let roomy = withRoom(laid, aspect: aspect, color: color) { (pixels.width, pixels.height) }
+        return painted(roomy, width: pixels.width, height: pixels.height) { x, y in
+            let c = color(x, y)
+            return (c.0, c.1, c.2)
+        }
+    }
+
+    /// Yerinde birebir çizim ölçüleri (`TextPainter`): özgün stilli her öğeye `paint` (yalnız yazı değişince; çağıran
+    /// okuma turudur, her kare değil).
+    static func painted(_ items: [ScreenTranslation.Item], width: Int, height: Int,
+                        color: (Int, Int) -> TextPainter.RGB) -> [ScreenTranslation.Item] {
+        let indices = items.indices.filter { takesPart(items[$0]) && items[$0].style != nil && items[$0].look != nil }
+        guard !indices.isEmpty else { return items }
+        let targets = indices.map { i in target(items[i]) }
+        let paints = TextPainter.paints(targets, width: width, height: height, color: color)
+        var result = items
+        for (k, i) in indices.enumerated() where k < paints.count { result[i].paint = paints[k] }
+        return result
+    }
+
+    static func target(_ item: ScreenTranslation.Item) -> TextPainter.Target {
+        TextPainter.Target(box: item.box, lineHeight: item.lineHeight, rows: item.paragraphs ? max(2, item.rows) : item.rows,
+                           background: item.style!.background, foreground: item.style!.foreground,
+                           upper: item.look!.upper, align: item.look!.align)
     }
 
     /// Yerleşime giren öğe: özgün stilli, telefon kartının ya da balonun parçası değil.
@@ -280,6 +304,183 @@ public enum ScreenFit {
         }
         return result
     }
+    // MARK: - Yerinde birebir çizim (TV fitExact ile aynı sıra; `TextPaint` gelen öğeler)
+
+    /// Birebir çizilecek bir öğe (piksel, çizilen ekranda). `left/top/right/bottom`: örtü kutusu; `growLeft`/`growRight`:
+    /// kutunun yana uzayabileceği sınırlar (uzayamıyorsa örtünün kenarı); `line`: özgün satır yüksekliği; `pitch`: özgün
+    /// satır aralığı.
+    public struct ExactInput: Equatable, Sendable {
+        public var text: String
+        public var left: Double, top: Double, right: Double, bottom: Double
+        public var growLeft: Double, growRight: Double
+        public var line: Double
+        public var pitch: Double
+        public var rows: Int
+        public var align: TextLook.Align
+        public var group: Int?
+
+        public init(text: String, left: Double, top: Double, right: Double, bottom: Double, growLeft: Double? = nil,
+                    growRight: Double? = nil, line: Double, pitch: Double? = nil, rows: Int = 1, align: TextLook.Align = .left,
+                    group: Int? = nil) {
+            self.text = text
+            self.left = left
+            self.top = top
+            self.right = right
+            self.bottom = bottom
+            self.growLeft = min(left, growLeft ?? left)
+            self.growRight = max(right, growRight ?? right)
+            self.line = line
+            self.pitch = pitch ?? line
+            self.rows = rows
+            self.align = align
+            self.group = group
+        }
+
+        /// Ekrana oranlı öğeden (`Item.paint` olmalı) `width` x `height` piksellik çizim alanına.
+        public init?(_ item: ScreenTranslation.Item, width: Double, height: Double) {
+            guard let paint = item.paint else { return nil }
+            self.init(text: item.translation, left: paint.cover.left * width, top: paint.cover.top * height,
+                      right: paint.cover.right * width, bottom: paint.cover.bottom * height,
+                      growLeft: paint.grow.map { $0.left * width }, growRight: paint.grow.map { $0.right * width },
+                      line: max(1, item.lineHeight * height), pitch: max(1, paint.pitch * height),
+                      rows: item.paragraphs ? max(2, item.rows) : item.rows, align: item.look?.align ?? .left,
+                      group: paint.group)
+        }
+    }
+
+    /// Bir öğenin çizimi: kutu (piksel), yazı boyu, satırlar ve satır aralığı. Kutu opak, köşesiz, gölgesiz çizilir;
+    /// satırlar `lineHeight` aralıkla, hizaya göre; tek satır kutunun dikey ortasında.
+    public struct ExactPlacement: Equatable, Sendable {
+        public var left: Double, top: Double, width: Double, height: Double
+        public var fontSize: Double
+        public var lines: [String]
+        /// Satırların aralığı: k. satır `top + k * lineHeight`'tan başlar.
+        public var lineHeight: Double
+        /// Bir satırın yüksekliği: satır bu yüksekliğin dikey ortasında (özgün satırın yerinde) çizilir.
+        public var rowHeight: Double
+    }
+
+    /// Yazı boyu özgün satır yüksekliğinin bu katı (TV, Mac, Windows, iPhone, Android aynı).
+    public static let exactFont = 0.95
+    /// Sığmayan etiket (ve grubu) yazı boyunda en çok bu orana kadar küçülür; sonra satır kırılır.
+    public static let exactGroupMin = 0.7
+    /// Çok satırlı yazı en çok bu orana kadar küçülür; sonra kutu aşağı uzar.
+    public static let exactParagraphMin = 0.8
+    /// Satır kırılan etiketin satır aralığı, yazı boyunun katı.
+    public static let exactWrapGap = 1.2
+
+    /// Birebir yerleşim. Sırasıyla: (1) grubun (aynı listedeki etiketler) yazı boyu üyelerinin özgün boyunun ortancası;
+    /// (2) sığmayan etiket hizasının açık tarafındaki boş alana uzar, yazı boyu sabit; (3) boş alan da yetmezse grubun
+    /// tamamı birlikte küçülür (en çok `exactGroupMin`); (4) yine sığmayan etiketin satırı kırılır, kutu aşağı uzar; tek
+    /// sözcük yine sığmıyorsa yalnız o küçülür. Çok satırlı yazı özgün genişlik ve satır aralığında kalır; sığmazsa
+    /// `exactParagraphMin`'e kadar küçülür, sonra aşağı uzar. Yazı hiçbir zaman "…" ile kesilmez. `measure(text, size)`:
+    /// yazının çizicinin kendi yazı tipiyle genişliği.
+    public static func exact(_ items: [ExactInput], measure: (String, Double) -> Double) -> [ExactPlacement] {
+        var base = items.map { exactFont * $0.line }
+        var members: [Int: [Int]] = [:]
+        for (i, item) in items.enumerated() { if let g = item.group { members[g, default: []].append(i) } }
+        for list in members.values where list.count >= 2 {
+            let sizes = list.map { base[$0] }.sorted()
+            let median = sizes[sizes.count / 2]
+            for i in list { base[i] = median }
+        }
+        func isLabel(_ item: ExactInput) -> Bool { item.rows <= 1 && !item.text.contains("\n") }
+        let natural = items.indices.map { i in isLabel(items[i]) ? measure(items[i].text, base[i]) : 0 }
+        var scale = items.indices.map { i -> Double in
+            guard isLabel(items[i]), natural[i] > 0 else { return 1 }
+            return max(exactGroupMin, min(1, (items[i].growRight - items[i].growLeft) / natural[i]))
+        }
+        for list in members.values where list.count >= 2 {
+            let least = list.map { scale[$0] }.min() ?? 1
+            for i in list { scale[i] = least }
+        }
+        return items.indices.map { i in
+            let item = items[i]
+            let coverWidth = item.right - item.left, coverHeight = item.bottom - item.top
+            guard isLabel(item) else { return exactParagraph(item, base: base[i], measure: measure) }
+            var font = base[i] * scale[i]
+            let avail = item.growRight - item.growLeft
+            var width = natural[i] * scale[i]
+            var lines = [item.text]
+            var gap = coverHeight
+            if width > avail + 0.5 {
+                let words = item.text.split(whereSeparator: \.isWhitespace).map(String.init)
+                let widestWord = words.map { measure($0, font) }.max() ?? width
+                if words.count >= 2 {
+                    // Satır kırılır; satıra sığmayan sözcük varsa yazı yalnız bu öğede küçülür (yana taşmaz).
+                    if widestWord > avail + 0.5 { font *= avail / widestWord }
+                    lines = exactWrap(words, limit: avail) { measure($0, font) }
+                } else {
+                    font *= avail / max(1e-9, width)
+                }
+                width = lines.map { measure($0, font) }.max() ?? avail
+                if lines.count > 1 { gap = max(coverHeight / Double(lines.count), font * exactWrapGap) }
+            }
+            let boxWidth = max(coverWidth, min(avail, width))
+            var left: Double
+            switch item.align {
+            case .right: left = item.right - boxWidth
+            case .left: left = item.left
+            case .center: left = item.left - (boxWidth - coverWidth) / 2
+            }
+            left = min(max(left, item.growLeft), item.growRight - boxWidth)
+            return ExactPlacement(left: left, top: item.top, width: boxWidth,
+                                  height: max(coverHeight, Double(lines.count) * gap), fontSize: font, lines: lines,
+                                  lineHeight: gap, rowHeight: gap)
+        }
+    }
+
+    /// Çok satırlı yazı: özgün genişlik ve satır aralığı; sığmazsa `exactParagraphMin`'e kadar küçülür, sonra aşağı uzar.
+    private static func exactParagraph(_ item: ExactInput, base: Double,
+                                       measure: (String, Double) -> Double) -> ExactPlacement {
+        let coverWidth = item.right - item.left, coverHeight = item.bottom - item.top
+        var factor = 1.0
+        // Özgün bir satırın yüksekliği (kenar payıyla): son satır tam aralık değil, bu kadar yer kaplar.
+        let row = max(base * 1.05, coverHeight - Double(max(1, item.rows) - 1) * item.pitch)
+        func layout() -> (font: Double, lines: [String], gap: Double) {
+            let font = base * factor
+            let gap = max(item.pitch, base * 1.05) * factor
+            let lines = item.text.components(separatedBy: "\n").flatMap { paragraph -> [String] in
+                let words = paragraph.split(whereSeparator: \.isWhitespace).map(String.init)
+                return words.isEmpty ? [""] : exactWrap(words, limit: coverWidth) { measure($0, font) }
+            }
+            return (font, lines, gap)
+        }
+        var laid = layout()
+        func tall(_ laid: (font: Double, lines: [String], gap: Double)) -> Double {
+            Double(laid.lines.count - 1) * laid.gap + row * factor
+        }
+        while tall(laid) > coverHeight + 1, factor > exactParagraphMin + 1e-6 {
+            factor = max(exactParagraphMin, ((factor - 0.05) * 100).rounded() / 100)
+            laid = layout()
+        }
+        // Satıra sığmayan tek sözcük: yazı küçülür (yana taşmaz).
+        let widest = laid.lines.map { measure($0, laid.font) }.max() ?? 0
+        if widest > coverWidth + 0.5 {
+            factor *= coverWidth / widest
+            laid = layout()
+        }
+        return ExactPlacement(left: item.left, top: item.top, width: coverWidth, height: max(coverHeight, tall(laid)),
+                              fontSize: laid.font, lines: laid.lines, lineHeight: laid.gap, rowHeight: row * factor)
+    }
+
+    /// Sözcükler satırlara: her satır `limit`'e kadar dolar.
+    static func exactWrap(_ words: [String], limit: Double, measure: (String) -> Double) -> [String] {
+        var lines: [String] = []
+        var current = ""
+        for word in words {
+            let next = current.isEmpty ? word : current + " " + word
+            if !current.isEmpty, measure(next) > limit + 0.5 {
+                lines.append(current)
+                current = word
+            } else {
+                current = next
+            }
+        }
+        if !current.isEmpty || lines.isEmpty { lines.append(current) }
+        return lines
+    }
+
     // MARK: - Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra)
 
     /// Bir çevirinin çizimi: satırları, yazı boyunun ölçeği ve yatay sıkıştırması. Yazının alanı her zaman özgün yazının

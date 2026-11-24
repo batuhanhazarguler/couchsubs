@@ -145,6 +145,10 @@ public final class RegionWatcher {
         /// Otomatik ekran yazısında özgün yazının renkleri ve görünüşü (`TextStyleSampler`); diğerlerinde nil.
         var style: PhoneTextStyle? = nil
         var look: TextLook? = nil
+        /// Yerinde birebir çizim ölçüleri (`TextPainter`), karedeki yeriyle; otomatik ekran yazısında.
+        var paint: TextPaint? = nil
+        /// Özgün yazının satır sayısı (`Group.rows`); TV çeviriyi bu satır aralığıyla dizer.
+        var rows = 1
     }
 
     struct Candidate {
@@ -614,10 +618,25 @@ public final class RegionWatcher {
                                                             source: group.paragraphs.joined(separator: " "))
                 }
                 list.append(Block(start: start, count: group.paragraphs.count, box: group.box.placed(in: place),
-                                  lineHeight: group.lineHeight * height, style: style, look: look))
+                                  lineHeight: group.lineHeight * height, style: style, look: look, rows: group.rows))
                 start += group.paragraphs.count
             }
-            blocks = styled ? alignByNeighbours(list) : list
+            list = styled ? alignByNeighbours(list) : list
+            // Yerinde birebir çizim: örtü kutusu, zemin/degrade, satır aralığı, boş alan ve grup okunan alanın karesinden
+            // (alan koordinatında) ölçülür, sonra karedeki yere taşınır. Okuma turunda bir kez (her karede değil).
+            if styled, let frame {
+                let painted = list.indices.filter { list[$0].style != nil && list[$0].look != nil }
+                let targets = painted.map { i -> TextPainter.Target in
+                    let group = groups[i], block = list[i]
+                    let rows = group.paragraphs.count > 1 ? max(2, group.rows) : group.rows
+                    return TextPainter.Target(box: group.box, lineHeight: group.lineHeight, rows: rows,
+                                              background: block.style!.background, foreground: block.style!.foreground,
+                                              upper: block.look!.upper, align: block.look!.align)
+                }
+                let paints = TextPainter.paints(targets, frame: frame)
+                for (k, i) in painted.enumerated() where k < paints.count { list[i].paint = paints[k].placed(in: place) }
+            }
+            blocks = list
             key = textKey(paragraphs) + "|" + list.map { String($0.count) }.joined(separator: ",")
         }
         var cut: [[IconSlot]]?
@@ -707,6 +726,16 @@ public final class RegionWatcher {
         return x >= group.left - 1e-6 && x <= group.right + 1e-6 && y >= group.top - 1e-6 && y <= group.bottom + 1e-6
     }
 
+    /// Okunan yazı arayüz etiketi mi: bütün parçaları arayüz sözlüğünde (yalnız İngilizceden Türkçeye) ya da parçalarından
+    /// birinde kareden kesilmiş tuş simgesi var (ipucu: "EXIT ○").
+    func isUiLabel(_ candidate: Candidate) -> Bool { Self.isUiLabel(candidate, uiCommands: translatesUiCommands) }
+
+    static func isUiLabel(_ candidate: Candidate, uiCommands: Bool) -> Bool {
+        if candidate.icons?.contains(where: { !$0.isEmpty }) == true { return true }
+        guard uiCommands, !candidate.paragraphs.isEmpty else { return false }
+        return candidate.paragraphs.allSatisfy { UiCommands.translateLabelLoosely(IconText.plain($0)) != nil }
+    }
+
     /// Otomatik alandaki yazının türü: haritanın görev kartı (menüde de) görevdir; yoksa alanın yerinden (hazır alan, görev
     /// satırı, menü) ya da okunan yazıdan çıkar. Kullanıcının kendi alanı nil (her zaman çevrilir).
     static func kind(_ area: ExtraArea, _ candidate: Candidate) -> ScreenTextKind? {
@@ -722,7 +751,11 @@ public final class RegionWatcher {
         // çizilmez, dedektöre bildirilir.
         if area.auto, area.menu, !candidate.missionCard, ScreenTextKind.isHud(candidate.paragraphs) { onAutoHud?(area.id) }
         let unwanted = area.auto && (Self.kind(area, candidate).map { !allows($0) } ?? false)
-        if area.auto, candidate.key.isEmpty || ScreenTextNoise.isNoise(candidate.paragraphs.joined(separator: " "), menu: area.menu)
+        // Arayüz sözlüğündeki tek sözcüklük menü/ipucu etiketi ("Map", "Settings", "EXIT") ve tuş simgeli ipucu kısa olsa da
+        // menü etiketi gibi çevrilir: kısa metin filtresi (en az 8 harf, iki sözcük) menü durumu kısa süre kaçınca onları
+        // atıyordu (Sinan Bey, beta.93: "Map", "Settings", "EXIT" İngilizce kaldı).
+        let labelLike = area.menu || isUiLabel(candidate)
+        if area.auto, candidate.key.isEmpty || ScreenTextNoise.isNoise(candidate.paragraphs.joined(separator: " "), menu: labelLike)
             || (!area.menu && isWorldText(candidate)) || unwanted {
             // Kendiliğinden bulunan alanda yazı yok ya da gürültü (sayaç, harita, kısa etiket): çevrilmez, dedektöre
             // bildirilir; o görüntü değişmedikçe alan yeniden önerilmez.
@@ -754,6 +787,7 @@ public final class RegionWatcher {
                     // Seçim gezince yalnız renkler değişir: çeviri yeniden istenmez, zemin/yazı rengi güncellenir.
                     item.style = current[block.group].style ?? item.style
                     item.look = current[block.group].look ?? item.look
+                    item.paint = current[block.group].paint ?? item.paint
                     return (block.group, item)
                 }
             }
@@ -897,6 +931,8 @@ public final class RegionWatcher {
                                               lineHeight: block.lineHeight, icons: rendered.icons.isEmpty ? nil : rendered.icons)
             item.style = block.style
             item.look = block.look
+            item.paint = block.paint
+            item.rows = max(item.rows, block.rows)
             result.append((index, item))
         }
         return result
@@ -1045,7 +1081,7 @@ public final class RegionWatcher {
             // Yalnız özel adlardan oluşan sekme ("JASON & LUCIA") çevrilmez (#859).
             if ScreenTranslation.keepsNames(core) {
                 known[core] = core
-            } else if let found = terms[core] ?? (translatesUiCommands ? UiCommands.translateLabelLoosely(core) : nil)
+            } else if let found = (translatesUiCommands ? UiCommands.translateLabelLoosely(core) : nil) ?? terms[core]
                 ?? packLookup?(IconText.plain(core))?.text ?? (skipsTurkish && TurkishText.isSure(core) ? core : nil) {
                 known[core] = found
             } else {

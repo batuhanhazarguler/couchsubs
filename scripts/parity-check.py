@@ -281,6 +281,23 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "ScreenFitTests.cs", r"public void SharedLineVectors\("),
         ("android", _DROID_TESTS + "ScreenFitTest.kt", r"fun sharedLineVectors\("),
     ],
+    # Yerinde birebir çizim: gönderici kareden örtü kutusu, zemin/degrade, satır aralığı, boş alan ve grubu ölçer
+    # (TextPainter); çiziciler ortak yerleşimle çizer (ScreenFit.exact; TV placeExact). Ortak vakalar text-paint.json.
+    "Ekran yazısı yerinde birebir çizim (TextPainter, ScreenFit.exact)": [
+        ("mac", _CORE + "TextPaint.swift", r"public static func paints\("),
+        ("windows", _WIN + "TextPaint.cs", r"public static IReadOnlyList<TextPaint> Paints\("),
+        ("android", _DROID + "TextPaint.kt", r"fun paints\("),
+        ("mac", _CORE + "ScreenFit.swift", r"public static func exact\("),
+        ("windows", _WIN + "ScreenFit.cs", r"public static IReadOnlyList<ExactPlacement> Exact\("),
+        ("android", _DROID + "ScreenFit.kt", r"fun exact\("),
+        ("mac", _CORE_TESTS + "TextPaintTests.swift", r"text-paint\.json"),
+        ("windows", _WIN_TESTS + "TextPaintTests.cs", r"text-paint\.json"),
+        ("android", _DROID_TESTS + "TextPaintTest.kt", r"text-paint\.json"),
+        ("mac", "mac/CouchSubs/UI/StreamWindow.swift", r"ExactScreenText\("),
+        ("ios", "couchsubs-ios/CouchSubs/UI/Home.swift", r"ExactScreenText\("),
+        ("windows", "windows/src/CouchSubs.App/Views/ScreenTextCanvas.cs", r"ScreenFit\.Exact\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/ui/PhoneSubtitleActivity.kt", r"ScreenFit\.exact\("),
+    ],
     "Gerçek kare ekran yazısı ölçütü (menü, görev listesi)": [
         ("mac", "tools/frame-regression/Sources/frame-regression/ScreenCheck.swift", r"func checkScreen\("),
         ("android", _DROID_TESTS + "ScreenFramesTest.kt", r"ocr/screen/"),

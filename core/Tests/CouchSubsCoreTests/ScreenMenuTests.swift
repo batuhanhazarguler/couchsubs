@@ -194,7 +194,7 @@ final class ScreenMenuTests: XCTestCase {
     func testShortLabelsComeFromTheDictionaryKeepingTheirCase() {
         for (label, turkish) in [("OFF", "KAPALI"), ("Off", "Kapalı"), ("off", "kapalı"), ("ON", "AÇIK"),
                                  ("SETTINGS", "AYARLAR"), ("Inventory", "Envanter"), ("STATS", "İSTATİSTİKLER"),
-                                 ("EXIT", "ÇIKIŞ")] {
+                                 ("EXIT", "ÇIK")] {
             XCTAssertEqual(UiCommands.translateLabel(label), turkish, label)
         }
         XCTAssertNil(UiCommands.translateLabel("CURRENT OUTFIT"))

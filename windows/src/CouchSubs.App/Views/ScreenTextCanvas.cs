@@ -15,6 +15,12 @@ namespace CouchSubs.App.Views;
 /// kırılıp kutu aşağı uzar; kenar payı yalnız bilgisayarın verdiği alanda (<c>Room</c>), yandaki tuş simgesine binmez. Altyazıyla çakışan kutu yalnız gerektiği
 /// kadar yukarı ya da aşağı kayar. Önceden Windows'ta bu çeviriler pencerenin üstünde alt alta, hizalı bir liste olarak
 /// çiziliyordu.
+/// <para>
+/// Kareden ölçülmüş öğe (<see cref="ScreenTranslation.Item.Paint"/>) yerinde birebir çizilir (<see cref="ScreenFit.Exact"/>;
+/// TV fitExact ve Mac ScreenTextBlocks ile aynı yerleşim): opak, köşesiz, gölgesiz kutu tam örtü sınırında, ölçülen zeminle
+/// (düz ya da yatay/dikey degrade), yazı özgün renk, kalınlık ve hizayla; her satır özgün satır aralığında. Ölçüsü olmayan
+/// öğe eski yoldan çizilir.
+/// </para>
 /// </summary>
 internal sealed class ScreenTextCanvas : Canvas
 {
@@ -65,7 +71,9 @@ internal sealed class ScreenTextCanvas : Canvas
         double width = ActualWidth, height = ActualHeight;
         if (width <= 0 || height <= 0) return;
         var dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        foreach (var item in items.Where(Draws))
+        var drawn = items.Where(Draws).ToList();
+        LayoutExact([.. drawn.Where(item => item.Paint is not null)], width, height, dpi);
+        foreach (var item in drawn.Where(item => item.Paint is null))
         {
             var look = item.Look!;
             var surface = item.Style ?? TextStyleSampler.Neutral;
@@ -116,6 +124,84 @@ internal sealed class ScreenTextCanvas : Canvas
             SetTop(block, Top(rect, avoiding, height));
             Children.Add(block);
         }
+    }
+
+    /// <summary>
+    /// Yerinde birebir çizim: bütün ölçülü öğeler birlikte yerleşir (grup aynı yazı boyunda), ölçü bu katmanın kendi yazı
+    /// tipiyle alınır.
+    /// </summary>
+    private void LayoutExact(IReadOnlyList<ScreenTranslation.Item> painted, double width, double height, double dpi)
+    {
+        if (painted.Count == 0) return;
+        var typefaces = painted.Select(item => new Typeface(item.Look!.Condensed ? Condensed : Normal, FontStyles.Normal,
+            item.Look.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal)).ToList();
+        var texts = painted.Select(item => item.Look!.Upper ? item.Translation.ToUpper(Turkish) : item.Translation).ToList();
+        var inputs = painted.Select((item, i) => ScreenFit.ExactInput.From(item, width, height)! with { Text = texts[i] }).ToList();
+        // Her öğe kendi yazı tipiyle ölçülür. Grup aynı boyda kalsın diye bütün öğeler birlikte yerleşir; her yazı tipi
+        // (dar/normal, kalın/normal) için bir kez, o yazı tipindeki öğelerin sonucu alınır.
+        var placements = new ScreenFit.ExactPlacement[painted.Count];
+        foreach (var kind in Enumerable.Range(0, painted.Count).GroupBy(i => (typefaces[i].FontFamily, typefaces[i].Weight)))
+        {
+            var typeface = typefaces[kind.First()];
+            double Measure(string text, double size) =>
+                new FormattedText(text, Turkish, FlowDirection.LeftToRight, typeface, Math.Max(0.1, size), Brushes.White, dpi)
+                    .WidthIncludingTrailingWhitespace;
+            var laid = ScreenFit.Exact(inputs, Measure);
+            foreach (var i in kind) placements[i] = laid[i];
+        }
+        for (var i = 0; i < painted.Count; i++)
+        {
+            var item = painted[i];
+            var paint = item.Paint!;
+            var place = placements[i];
+            var look = item.Look!;
+            var foreground = new SolidColorBrush(Parse(item.Style?.Foreground, Colors.White));
+            var box = new Border
+            {
+                Width = Math.Max(1, place.Width),
+                Height = Math.Max(1, place.Height),
+                Background = Ground(paint),
+                CornerRadius = new CornerRadius(0),
+            };
+            SetLeft(box, place.Left);
+            SetTop(box, place.Top);
+            Children.Add(box);
+            var alignment = look.Align switch { "center" => HorizontalAlignment.Center, "right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Left };
+            for (var k = 0; k < place.Lines.Count; k++)
+            {
+                // Satır, özgün satırın yerinde: RowHeight yüksekliğin dikey ortasında, k. satır Top + k * LineHeight'ta.
+                var row = new Border
+                {
+                    Width = Math.Max(1, place.Width),
+                    Height = Math.Max(1, place.RowHeight),
+                    Child = new TextBlock
+                    {
+                        Text = place.Lines[k],
+                        FontFamily = typefaces[i].FontFamily,
+                        FontWeight = typefaces[i].Weight,
+                        FontSize = Math.Max(0.1, place.FontSize),
+                        Foreground = foreground,
+                        TextWrapping = TextWrapping.NoWrap,
+                        HorizontalAlignment = alignment,
+                        VerticalAlignment = VerticalAlignment.Center,
+                    },
+                };
+                SetLeft(row, place.Left);
+                SetTop(row, place.Top + (k * place.LineHeight));
+                Children.Add(row);
+            }
+        }
+    }
+
+    /// <summary>Ölçülen zemin: düz renk ya da iki uçlu doğrusal degrade (yatay: soldan sağa, dikey: üstten alta).</summary>
+    private static Brush Ground(TextPaint paint)
+    {
+        var start = Parse(paint.Background, Colors.Black);
+        if (paint.Background2 is not { } second || paint.Direction is not { } direction) return new SolidColorBrush(start);
+        var end = Parse(second, start);
+        return direction == TextPaint.Vertical
+            ? new LinearGradientBrush(start, end, new Point(0.5, 0), new Point(0.5, 1))
+            : new LinearGradientBrush(start, end, new Point(0, 0.5), new Point(1, 0.5));
     }
 
     private static Color Parse(string? hex, Color fallback) =>

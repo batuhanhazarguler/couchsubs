@@ -10,6 +10,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
 import kotlin.math.roundToInt
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -191,7 +193,11 @@ class PhoneSubtitleActivity : ComponentActivity() {
                         // GTA 6 telefonunun sohbet paneli akışla çizilir (PhonePanel; Mac, iPhone, Windows, TV ile aynı).
                         val screenPanel = com.couchsubs.mobile.core.ScreenPhoneCard.panel(status.screen)
                         screenPanel?.let { PhonePanelInFrame(it, maxWidth, maxHeight) }
-                        (screenPanel?.outside ?: status.screen).forEach { item ->
+                        // Ölçüleri gelen öğeler yerinde birebir çizilir (ExactBlocks); kalanlar eski yolla.
+                        val screenItems = screenPanel?.outside ?: status.screen
+                        ExactBlocks(screenItems.filter { it.surface != null && it.paint != null })
+                        screenItems.forEach { item ->
+                            if (item.surface != null && item.paint != null) return@forEach
                             if (item.surface != null) {
                                 StyledBlock(item, maxWidth, maxHeight, fill = com.couchsubs.mobile.core.ScreenPhoneCard.isBackdrop(item))
                                 return@forEach
@@ -227,7 +233,8 @@ class PhoneSubtitleActivity : ComponentActivity() {
                                 ?.let { com.couchsubs.mobile.core.ScreenTranslation.uncovered(it, status.screen) }
                             if (region.blocks?.any { it.surface != null } == true && styled.isNullOrEmpty()) return@forEach
                             if (!styled.isNullOrEmpty()) {
-                                styled.forEach { item -> StyledBlock(item, maxWidth, maxHeight) }
+                                ExactBlocks(styled.filter { it.paint != null })
+                                styled.filter { it.paint == null }.forEach { item -> StyledBlock(item, maxWidth, maxHeight) }
                                 return@forEach
                             }
                             val box = region.box ?: com.couchsubs.mobile.core.TextBox(0.6, 0.05, 0.95, 0.2)
@@ -269,6 +276,70 @@ class PhoneSubtitleActivity : ComponentActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip = isInPictureInPictureMode
+    }
+}
+
+/**
+ * Yerinde birebir çizim ([com.couchsubs.mobile.core.TextPaint] gelen öğeler; Mac StreamWindow ScreenTextBlocks, TV ve
+ * Windows ile aynı yerleşim: [com.couchsubs.mobile.core.ScreenFit.exact]). Kutu örtü sınırında, opak, köşesiz ve
+ * gölgesiz; zemin ölçülen renk ya da degrade (yatay/dikey), yazı özgün renk ve kalınlıkta; k. satır
+ * `top + k * lineHeight`'ta, `rowHeight` yüksekliğinin dikey ortasında, hizaya göre. Grup aynı boyda çizilir, uzun çeviri
+ * boş tarafa uzar; yazı kesilmez. Öğeler birlikte yerleşir (grubun ortak boyu için).
+ */
+@androidx.compose.runtime.Composable
+private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.Item>) {
+    if (items.isEmpty()) return
+    androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+        val w = size.width.toDouble()
+        val h = size.height.toDouble()
+        val inputs = items.mapNotNull { item -> com.couchsubs.mobile.core.ScreenFit.ExactInput.of(item, w, h)?.let { item to it } }
+        fun paintFor(bold: Boolean, condensed: Boolean, fontSize: Double) = android.graphics.Paint().apply {
+            isAntiAlias = true
+            textSize = fontSize.toFloat()
+            typeface = android.graphics.Typeface.create(if (condensed) "sans-serif-condensed" else "sans-serif",
+                if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+        }
+        // Ölçü çizilecek yazı tipiyle; öğeler karışıksa geniş olanı (kalın, dar olmayan) alınır: yazı kutudan taşmaz.
+        val measureBold = inputs.any { it.first.look?.bold == true }
+        val measureCondensed = inputs.all { it.first.look?.condensed == true }
+        val placed = com.couchsubs.mobile.core.ScreenFit.exact(inputs.map { it.second }) { text, fontSize ->
+            paintFor(measureBold, measureCondensed, fontSize).measureText(text).toDouble()
+        }
+        fun parse(hex: String?): Int? = hex?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
+        drawIntoCanvas { canvas ->
+            val native = canvas.nativeCanvas
+            for ((k, p) in placed.withIndex()) {
+                val item = inputs[k].first
+                val paint = item.paint ?: continue
+                val left = p.left.toFloat()
+                val top = p.top.toFloat()
+                val right = (p.left + p.width).toFloat()
+                val bottom = (p.top + p.height).toFloat()
+                val fill = android.graphics.Paint().apply { style = android.graphics.Paint.Style.FILL }
+                val first = parse(paint.background) ?: android.graphics.Color.BLACK
+                val second = parse(paint.background2)
+                if (second != null && paint.direction != null) {
+                    fill.shader = if (paint.direction == "v") android.graphics.LinearGradient(left, top, left, bottom, first, second, android.graphics.Shader.TileMode.CLAMP)
+                    else android.graphics.LinearGradient(left, top, right, top, first, second, android.graphics.Shader.TileMode.CLAMP)
+                } else fill.color = first
+                native.drawRect(left, top, right, bottom, fill)
+                val text = paintFor(item.look?.bold == true, item.look?.condensed == true, p.fontSize).apply {
+                    color = parse(item.surface?.foreground) ?: android.graphics.Color.WHITE
+                }
+                val metrics = text.fontMetrics
+                for ((row, line) in p.lines.withIndex()) {
+                    val width = text.measureText(line)
+                    val x = when (item.look?.align) {
+                        "right" -> right - width
+                        "center" -> left + (p.width.toFloat() - width) / 2
+                        else -> left
+                    }
+                    val rowTop = top + (row * p.lineHeight).toFloat()
+                    val baseline = rowTop + p.rowHeight.toFloat() / 2 - (metrics.ascent + metrics.descent) / 2
+                    native.drawText(line, x, baseline, text)
+                }
+            }
+        }
     }
 }
 

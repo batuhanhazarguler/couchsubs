@@ -1,0 +1,1 @@
+0.9.102: Screen text translations are drawn in place as if the game UI were in Turkish: the box fully covers the original text, opaque with square corners; background colour and gradient, text colour, weight, alignment and line spacing match the original. Labels in the same list share one size; a long translation grows into free space and is never cut off.

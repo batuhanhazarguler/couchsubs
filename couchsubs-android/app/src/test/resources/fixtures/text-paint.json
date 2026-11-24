@@ -1,0 +1,910 @@
+{
+  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05).",
+  "paint": [
+    {
+      "id": "duz-zemin-tasan-harf",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#202830"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            50,
+            200,
+            70
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            100,
+            52,
+            200,
+            66
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#202830",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            99,
+            49,
+            201,
+            71
+          ],
+          "bg": "#202830",
+          "bg2": null,
+          "patterned": false,
+          "group": null
+        }
+      ]
+    },
+    {
+      "id": "yatay-degrade",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "h",
+        "from": "#102040",
+        "to": "#3060A0"
+      },
+      "rects": [
+        {
+          "box": [
+            150,
+            80,
+            250,
+            100
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            150,
+            80,
+            250,
+            100
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#204070",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "center"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            148,
+            78,
+            252,
+            102
+          ],
+          "bg": "#1C3864",
+          "bg2": "#24487C",
+          "bgDir": "h",
+          "patterned": false
+        }
+      ]
+    },
+    {
+      "id": "dikey-degrade",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "v",
+        "from": "#000000",
+        "to": "#6464C8"
+      },
+      "rects": [
+        {
+          "box": [
+            150,
+            90,
+            250,
+            110
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            150,
+            90,
+            250,
+            110
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#323264",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            148,
+            88,
+            252,
+            112
+          ],
+          "bg": "#2C2C58",
+          "bg2": "#383870",
+          "bgDir": "v",
+          "patterned": false
+        }
+      ]
+    },
+    {
+      "id": "desenli-zemin",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "checker",
+        "from": "#303030",
+        "to": "#909090",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            150,
+            90,
+            250,
+            110
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            150,
+            90,
+            250,
+            110
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#606060",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            148,
+            88,
+            252,
+            112
+          ],
+          "bg": "#606060",
+          "bg2": null,
+          "patterned": true
+        }
+      ]
+    },
+    {
+      "id": "ipucu-listesi-grup-ve-bos-alan",
+      "width": 400,
+      "height": 260,
+      "background": {
+        "kind": "solid",
+        "from": "#1060E0"
+      },
+      "rects": [
+        {
+          "box": [
+            230,
+            40,
+            300,
+            60
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            310,
+            40,
+            330,
+            60
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            250,
+            80,
+            300,
+            100
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            310,
+            80,
+            330,
+            100
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            215,
+            120,
+            300,
+            140
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            310,
+            120,
+            330,
+            140
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            190,
+            160,
+            300,
+            180
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            310,
+            160,
+            330,
+            180
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            100,
+            160,
+            120,
+            180
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            270,
+            200,
+            300,
+            220
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            310,
+            200,
+            330,
+            220
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            230,
+            40,
+            300,
+            60
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#1060E0",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right"
+        },
+        {
+          "box": [
+            250,
+            80,
+            300,
+            100
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#1060E0",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right"
+        },
+        {
+          "box": [
+            215,
+            120,
+            300,
+            140
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#1060E0",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right"
+        },
+        {
+          "box": [
+            190,
+            160,
+            300,
+            180
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#1060E0",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right"
+        },
+        {
+          "box": [
+            270,
+            200,
+            300,
+            220
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#1060E0",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            228,
+            38,
+            302,
+            62
+          ],
+          "bg": "#1060E0",
+          "grow": [
+            0,
+            302
+          ],
+          "group": 0
+        },
+        {
+          "cover": [
+            248,
+            78,
+            302,
+            102
+          ],
+          "grow": [
+            9,
+            302
+          ],
+          "group": 0
+        },
+        {
+          "cover": [
+            213,
+            118,
+            302,
+            142
+          ],
+          "grow": [
+            0,
+            302
+          ],
+          "group": 0
+        },
+        {
+          "cover": [
+            188,
+            158,
+            302,
+            182
+          ],
+          "grow": [
+            125,
+            302
+          ],
+          "group": 0
+        },
+        {
+          "cover": [
+            268,
+            198,
+            302,
+            222
+          ],
+          "grow": [
+            29,
+            302
+          ],
+          "group": 0
+        }
+      ]
+    },
+    {
+      "id": "simgeye-dogru-uzamaz",
+      "width": 400,
+      "height": 120,
+      "background": {
+        "kind": "solid",
+        "from": "#202020"
+      },
+      "rects": [
+        {
+          "box": [
+            50,
+            40,
+            120,
+            60
+          ],
+          "color": "#F0F0F0"
+        },
+        {
+          "box": [
+            130,
+            40,
+            150,
+            60
+          ],
+          "color": "#F0F0F0"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            50,
+            40,
+            120,
+            60
+          ],
+          "line": 20,
+          "rows": 1,
+          "bg": "#202020",
+          "fg": "#F0F0F0",
+          "upper": false,
+          "align": "right"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            48,
+            38,
+            122,
+            62
+          ],
+          "grow": [
+            0,
+            122
+          ],
+          "group": null
+        }
+      ]
+    },
+    {
+      "id": "cok-satirli-aralik",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#14213D"
+      },
+      "rects": [
+        {
+          "box": [
+            20,
+            20,
+            380,
+            38
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            20,
+            50,
+            300,
+            68
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            20,
+            20,
+            380,
+            68
+          ],
+          "line": 18,
+          "rows": 2,
+          "bg": "#14213D",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "cover": [
+            19,
+            19,
+            381,
+            69
+          ],
+          "pitch": 30,
+          "grow": null
+        }
+      ]
+    }
+  ],
+  "exact": [
+    {
+      "id": "grup-esit-boy-bos-alana-uzar",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "ORTALA",
+          "box": [
+            230,
+            40,
+            302,
+            62
+          ],
+          "grow": [
+            0,
+            302
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "2B GÖRÜNÜM",
+          "box": [
+            250,
+            80,
+            302,
+            102
+          ],
+          "grow": [
+            0,
+            302
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "İŞARET EKLE",
+          "box": [
+            215,
+            120,
+            302,
+            142
+          ],
+          "grow": [
+            0,
+            302
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "HEDEF BELİRLE",
+          "box": [
+            190,
+            160,
+            302,
+            182
+          ],
+          "grow": [
+            125,
+            302
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "ÇIK",
+          "box": [
+            270,
+            200,
+            302,
+            222
+          ],
+          "grow": [
+            0,
+            302
+          ],
+          "line": 21,
+          "align": "right",
+          "group": 0
+        }
+      ],
+      "expect": [
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 230,
+          "lineHeight": 22,
+          "lines": [
+            "ORTALA"
+          ],
+          "rowHeight": 22,
+          "top": 40,
+          "width": 72
+        },
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 207,
+          "lineHeight": 22,
+          "lines": [
+            "2B GÖRÜNÜM"
+          ],
+          "rowHeight": 22,
+          "top": 80,
+          "width": 95
+        },
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 197.5,
+          "lineHeight": 22,
+          "lines": [
+            "İŞARET EKLE"
+          ],
+          "rowHeight": 22,
+          "top": 120,
+          "width": 104.5
+        },
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 178.5,
+          "lineHeight": 22,
+          "lines": [
+            "HEDEF BELİRLE"
+          ],
+          "rowHeight": 22,
+          "top": 160,
+          "width": 123.5
+        },
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 270,
+          "lineHeight": 22,
+          "lines": [
+            "ÇIK"
+          ],
+          "rowHeight": 22,
+          "top": 200,
+          "width": 32
+        }
+      ]
+    },
+    {
+      "id": "bos-alan-yok-grup-birlikte-kuculur",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "ORTALA",
+          "box": [
+            230,
+            40,
+            302,
+            62
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "2B GÖRÜNÜM",
+          "box": [
+            250,
+            80,
+            302,
+            102
+          ],
+          "grow": [
+            150,
+            302
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        },
+        {
+          "text": "HEDEF BELİRLE",
+          "box": [
+            250,
+            160,
+            302,
+            182
+          ],
+          "line": 20,
+          "align": "right",
+          "group": 0
+        }
+      ],
+      "expect": [
+        {
+          "fontSize": 13.3,
+          "height": 22,
+          "left": 230,
+          "lineHeight": 22,
+          "lines": [
+            "ORTALA"
+          ],
+          "rowHeight": 22,
+          "top": 40,
+          "width": 72
+        },
+        {
+          "fontSize": 13.3,
+          "height": 22,
+          "left": 235.5,
+          "lineHeight": 22,
+          "lines": [
+            "2B GÖRÜNÜM"
+          ],
+          "rowHeight": 22,
+          "top": 80,
+          "width": 66.5
+        },
+        {
+          "fontSize": 13.3,
+          "height": 31.92,
+          "left": 250,
+          "lineHeight": 15.96,
+          "lines": [
+            "HEDEF",
+            "BELİRLE"
+          ],
+          "rowHeight": 15.96,
+          "top": 160,
+          "width": 52
+        }
+      ]
+    },
+    {
+      "id": "ortali-iki-yana-uzar",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "FOTOĞRAF STÜDYOSU",
+          "box": [
+            100,
+            10,
+            180,
+            32
+          ],
+          "grow": [
+            60,
+            260
+          ],
+          "line": 20,
+          "align": "center"
+        }
+      ],
+      "expect": [
+        {
+          "fontSize": 19,
+          "height": 22,
+          "left": 60,
+          "lineHeight": 22,
+          "lines": [
+            "FOTOĞRAF STÜDYOSU"
+          ],
+          "rowHeight": 22,
+          "top": 10,
+          "width": 161.5
+        }
+      ]
+    },
+    {
+      "id": "cok-satirli-ozgun-aralik",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "Brian için polis otoparkından bir araba kurtarmak üzere Cal'le çalış.",
+          "box": [
+            0,
+            0,
+            380,
+            50
+          ],
+          "line": 18,
+          "pitch": 30,
+          "rows": 2,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "fontSize": 17.1,
+          "height": 50,
+          "left": 0,
+          "lineHeight": 30,
+          "lines": [
+            "Brian için polis otoparkından bir araba",
+            "kurtarmak üzere Cal'le çalış."
+          ],
+          "rowHeight": 20,
+          "top": 0,
+          "width": 380
+        }
+      ]
+    },
+    {
+      "id": "tek-sozcuk-kesilmez",
+      "charWidth": 0.5,
+      "items": [
+        {
+          "text": "FOTOĞRAFSTÜDYOSU",
+          "box": [
+            10,
+            10,
+            60,
+            30
+          ],
+          "line": 20,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "fontSize": 6.25,
+          "height": 20,
+          "left": 10,
+          "lineHeight": 20,
+          "lines": [
+            "FOTOĞRAFSTÜDYOSU"
+          ],
+          "rowHeight": 20,
+          "top": 10,
+          "width": 50
+        }
+      ]
+    }
+  ]
+}

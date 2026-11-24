@@ -1,7 +1,7 @@
 {
   "about": "Arayüz sözlüğü (UiCommands). Mac UiCommandsTests.swift, Windows UiCommandsTests.cs ve Android UiCommandsTest.kt aynı dosyayı okur. 'translate': tuş çubuğu; yalnız BÜYÜK HARFLİ komutlar, sözlükteki biçimiyle ('Hedef belirle'), simgeler ('￼') yerinde. 'translateLabel': menü etiketi; komutlar ve etiketler, biçim Türkçe kurallarıyla korunur (i → İ, ı → I). 'translateLabelLoosely': etiket, yazı tanımanın kattığı en çok iki harflik kırıntıyla. null: sözlükte yok.",
   "translate": [
-    { "text": "SET DESTINATION ￼ EXIT ￼", "expected": "Hedef belirle ￼ Çıkış ￼" },
+    { "text": "SET DESTINATION ￼ EXIT ￼", "expected": "Hedef belirle ￼ Çık ￼" },
     { "text": "OPEN ￼", "expected": "Aç ￼" },
     { "text": "REFUEL", "expected": "Yakıt al" },
     { "text": "INSPECT", "expected": "İncele" },
@@ -24,13 +24,24 @@
     { "text": "Settings", "expected": "Ayarlar" },
     { "text": "Мар", "expected": "Harita" },
     { "text": "2D VIEW", "expected": "2B GÖRÜNÜM" },
+    { "text": "Set Destination", "expected": "Hedef Belirle" },
+    { "text": "Retry Checkpoint", "expected": "Kontrol Noktasını Yeniden Dene" },
+    { "text": "Restart Mission", "expected": "Görevi Yeniden Başlat" },
+    { "text": "Quit Mission", "expected": "Görevden Çık" },
+    { "text": "Photo Studio", "expected": "Fotoğraf Stüdyosu" },
+    { "text": "ADD WAYPOINT", "expected": "İŞARET EKLE" },
+    { "text": "RECENTER", "expected": "ORTALA" },
+    { "text": "Map", "expected": "Harita" },
+    { "text": "EXIT", "expected": "ÇIK" },
+    { "text": "SET DESTINATI0N", "expected": "HEDEF BELİRLE" },
+    { "text": "SETTINQS", "expected": "AYARLAR" },
     { "text": "Open the door", "expected": null }
   ],
   "translateLabelLoosely": [
     { "text": "pi Settings", "expected": "Ayarlar" },
     { "text": "1 Map", "expected": "Harita" },
     { "text": "R3 SELECT", "expected": "R3 SEÇ" },
-    { "text": "EXIT OR", "expected": "ÇIKIŞ OR" },
+    { "text": "EXIT OR", "expected": "ÇIK OR" },
     { "text": "SELECT ￼", "expected": "SEÇ ￼" },
     { "text": "Open the door", "expected": null }
   ]

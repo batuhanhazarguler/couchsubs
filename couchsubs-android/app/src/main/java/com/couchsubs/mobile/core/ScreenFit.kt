@@ -42,10 +42,29 @@ object ScreenFit {
             }
         }
         val laid = uniform(aligned(tight, aspect), aspect)
-        return withRoom(laid, aspect, { x, y ->
-            if (color != null) color(x, y) else frame.at(x, y).let { (it shl 16) or (it shl 8) or it }
-        }, frame.width, frame.height)
+        val rgb: (Int, Int) -> Int = { x, y -> if (color != null) color(x, y) else frame.at(x, y).let { (it shl 16) or (it shl 8) or it } }
+        val roomy = withRoom(laid, aspect, rgb, frame.width, frame.height)
+        return painted(roomy, frame.width, frame.height, rgb)
     }
+
+    /**
+     * Yerinde birebir çizim ölçüleri ([TextPainter]): özgün stilli her öğeye `paint` (yalnız yazı değişince; çağıran
+     * okuma turudur, her kare değil). [color]: karenin noktası, 0xRRGGBB.
+     */
+    internal fun painted(
+        items: List<ScreenTranslation.Item>, width: Int, height: Int, color: (Int, Int) -> Int,
+    ): List<ScreenTranslation.Item> {
+        val indices = items.indices.filter { takesPart(items[it]) && items[it].surface != null && items[it].look != null }
+        if (indices.isEmpty()) return items
+        val paints = TextPainter.paints(indices.map { target(items[it]) }, width, height, color)
+        val result = items.toMutableList()
+        for ((k, i) in indices.withIndex()) if (k < paints.size) result[i] = result[i].copy(paint = paints[k])
+        return result
+    }
+
+    internal fun target(item: ScreenTranslation.Item): TextPainter.Target =
+        TextPainter.Target(item.box, item.lineHeight, if (item.paragraphs) max(2, item.rows) else item.rows,
+            item.surface!!.background, item.surface.foreground, item.look!!.upper, item.look.align)
 
     internal fun takesPart(item: ScreenTranslation.Item): Boolean =
         item.look != null && !ScreenTranslation.isCardPart(item) && !item.bubble
@@ -285,6 +304,167 @@ object ScreenFit {
             scan(box.left - edge, max(0.0, left - gap))?.let { left = max(left, it + gap) }
         }
         item.copy(room = TextBox(min(box.left, left), box.top, max(box.right, right), box.bottom))
+    }
+
+    // --- Yerinde birebir çizim (TV fitExact ile aynı sıra; [TextPaint] gelen öğeler; Mac/iPhone ve Windows ile aynı) ---
+
+    /**
+     * Birebir çizilecek bir öğe (piksel, çizilen ekranda). [left]/[top]/[right]/[bottom]: örtü kutusu; [growLeft]/
+     * [growRight]: kutunun yana uzayabileceği sınırlar (uzayamıyorsa örtünün kenarı); [line]: özgün satır yüksekliği;
+     * [pitch]: özgün satır aralığı; [align]: "left", "center", "right".
+     */
+    class ExactInput(
+        val text: String, val left: Double, val top: Double, val right: Double, val bottom: Double,
+        growLeft: Double? = null, growRight: Double? = null, val line: Double, pitch: Double? = null, val rows: Int = 1,
+        val align: String = "left", val group: Int? = null,
+    ) {
+        val growLeft: Double = min(left, growLeft ?: left)
+        val growRight: Double = max(right, growRight ?: right)
+        val pitch: Double = pitch ?: line
+
+        companion object {
+            /** Ekrana oranlı öğeden (`Item.paint` olmalı) [width] x [height] piksellik çizim alanına. */
+            fun of(item: ScreenTranslation.Item, width: Double, height: Double): ExactInput? {
+                val paint = item.paint ?: return null
+                return ExactInput(item.translation, paint.cover.left * width, paint.cover.top * height,
+                    paint.cover.right * width, paint.cover.bottom * height, paint.grow?.let { it.left * width },
+                    paint.grow?.let { it.right * width }, max(1.0, item.lineHeight * height), max(1.0, paint.pitch * height),
+                    if (item.paragraphs) max(2, item.rows) else item.rows, item.look?.align ?: "left", paint.group)
+            }
+        }
+    }
+
+    /**
+     * Bir öğenin çizimi: kutu (piksel), yazı boyu, satırlar ve satır aralığı. Kutu opak, köşesiz, gölgesiz çizilir;
+     * satırlar [lineHeight] aralıkla (k. satır `top + k * lineHeight`'tan başlar), her biri [rowHeight] yüksekliğinin
+     * dikey ortasında, hizaya göre.
+     */
+    data class ExactPlacement(
+        val left: Double, val top: Double, val width: Double, val height: Double, val fontSize: Double,
+        val lines: List<String>, val lineHeight: Double, val rowHeight: Double,
+    )
+
+    /** Yazı boyu özgün satır yüksekliğinin bu katı (TV, Mac, Windows, iPhone, Android aynı). */
+    const val EXACT_FONT = 0.95
+    /** Sığmayan etiket (ve grubu) yazı boyunda en çok bu orana kadar küçülür; sonra satır kırılır. */
+    const val EXACT_GROUP_MIN = 0.7
+    /** Çok satırlı yazı en çok bu orana kadar küçülür; sonra kutu aşağı uzar. */
+    const val EXACT_PARAGRAPH_MIN = 0.8
+    /** Satır kırılan etiketin satır aralığı, yazı boyunun katı. */
+    const val EXACT_WRAP_GAP = 1.2
+
+    private fun exactWords(text: String) = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+
+    /**
+     * Birebir yerleşim (Mac: ScreenFit.exact, aynı sıra). Sırasıyla: (1) grubun (aynı listedeki etiketler) yazı boyu
+     * üyelerinin özgün boyunun ortancası; (2) sığmayan etiket hizasının açık tarafındaki boş alana uzar, yazı boyu sabit;
+     * (3) boş alan da yetmezse grubun tamamı birlikte küçülür (en çok [EXACT_GROUP_MIN]); (4) yine sığmayan etiketin satırı
+     * kırılır, kutu aşağı uzar; tek sözcük yine sığmıyorsa yalnız o küçülür. Çok satırlı yazı özgün genişlik ve satır
+     * aralığında kalır; sığmazsa [EXACT_PARAGRAPH_MIN]'e kadar küçülür, sonra aşağı uzar. Yazı hiçbir zaman "…" ile
+     * kesilmez. [measure] (yazı, boy): yazının çizicinin kendi yazı tipiyle genişliği.
+     */
+    fun exact(items: List<ExactInput>, measure: (String, Double) -> Double): List<ExactPlacement> {
+        val base = items.map { EXACT_FONT * it.line }.toMutableList()
+        val members = LinkedHashMap<Int, MutableList<Int>>()
+        for ((i, item) in items.withIndex()) item.group?.let { members.getOrPut(it) { mutableListOf() }.add(i) }
+        for (list in members.values) {
+            if (list.size < 2) continue
+            val sizes = list.map { base[it] }.sorted()
+            val median = sizes[sizes.size / 2]
+            for (i in list) base[i] = median
+        }
+        fun isLabel(item: ExactInput) = item.rows <= 1 && !item.text.contains('\n')
+        val natural = items.indices.map { i -> if (isLabel(items[i])) measure(items[i].text, base[i]) else 0.0 }
+        val scale = items.indices.map { i ->
+            if (!isLabel(items[i]) || natural[i] <= 0) 1.0
+            else max(EXACT_GROUP_MIN, min(1.0, (items[i].growRight - items[i].growLeft) / natural[i]))
+        }.toMutableList()
+        for (list in members.values) {
+            if (list.size < 2) continue
+            val least = list.minOf { scale[it] }
+            for (i in list) scale[i] = least
+        }
+        return items.indices.map { i ->
+            val item = items[i]
+            val coverWidth = item.right - item.left
+            val coverHeight = item.bottom - item.top
+            if (!isLabel(item)) return@map exactParagraph(item, base[i], measure)
+            var font = base[i] * scale[i]
+            val avail = item.growRight - item.growLeft
+            var width = natural[i] * scale[i]
+            var lines = listOf(item.text)
+            var gap = coverHeight
+            if (width > avail + 0.5) {
+                val words = exactWords(item.text)
+                val widestWord = words.maxOfOrNull { measure(it, font) } ?: width
+                if (words.size >= 2) {
+                    // Satır kırılır; satıra sığmayan sözcük varsa yazı yalnız bu öğede küçülür (yana taşmaz).
+                    if (widestWord > avail + 0.5) font *= avail / widestWord
+                    val size = font
+                    lines = exactWrap(words, avail) { measure(it, size) }
+                } else {
+                    font *= avail / max(1e-9, width)
+                }
+                val size = font
+                width = lines.maxOfOrNull { measure(it, size) } ?: avail
+                if (lines.size > 1) gap = max(coverHeight / lines.size, font * EXACT_WRAP_GAP)
+            }
+            val boxWidth = max(coverWidth, min(avail, width))
+            var left = when (item.align) {
+                "right" -> item.right - boxWidth
+                "center" -> item.left - (boxWidth - coverWidth) / 2
+                else -> item.left
+            }
+            left = min(max(left, item.growLeft), item.growRight - boxWidth)
+            ExactPlacement(left, item.top, boxWidth, max(coverHeight, lines.size * gap), font, lines, gap, gap)
+        }
+    }
+
+    /** Çok satırlı yazı: özgün genişlik ve satır aralığı; sığmazsa [EXACT_PARAGRAPH_MIN]'e kadar küçülür, sonra aşağı uzar. */
+    private fun exactParagraph(item: ExactInput, base: Double, measure: (String, Double) -> Double): ExactPlacement {
+        val coverWidth = item.right - item.left
+        val coverHeight = item.bottom - item.top
+        var factor = 1.0
+        // Özgün bir satırın yüksekliği (kenar payıyla): son satır tam aralık değil, bu kadar yer kaplar.
+        val row = max(base * 1.05, coverHeight - (max(1, item.rows) - 1) * item.pitch)
+        class Laid(val font: Double, val lines: List<String>, val gap: Double)
+        fun layout(): Laid {
+            val font = base * factor
+            val gap = max(item.pitch, base * 1.05) * factor
+            val lines = item.text.split("\n").flatMap { paragraph ->
+                val words = exactWords(paragraph)
+                if (words.isEmpty()) listOf("") else exactWrap(words, coverWidth) { measure(it, font) }
+            }
+            return Laid(font, lines, gap)
+        }
+        var laid = layout()
+        fun tall(laid: Laid) = (laid.lines.size - 1) * laid.gap + row * factor
+        while (tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
+            factor = max(EXACT_PARAGRAPH_MIN, Math.round((factor - 0.05) * 100) / 100.0)
+            laid = layout()
+        }
+        // Satıra sığmayan tek sözcük: yazı küçülür (yana taşmaz).
+        val widest = laid.lines.maxOfOrNull { measure(it, laid.font) } ?: 0.0
+        if (widest > coverWidth + 0.5) {
+            factor *= coverWidth / widest
+            laid = layout()
+        }
+        return ExactPlacement(item.left, item.top, coverWidth, max(coverHeight, tall(laid)), laid.font, laid.lines, laid.gap, row * factor)
+    }
+
+    /** Sözcükler satırlara: her satır [limit]'e kadar dolar. */
+    internal fun exactWrap(words: List<String>, limit: Double, measure: (String) -> Double): List<String> {
+        val lines = mutableListOf<String>()
+        var current = ""
+        for (word in words) {
+            val next = if (current.isEmpty()) word else "$current $word"
+            if (current.isNotEmpty() && measure(next) > limit + 0.5) {
+                lines.add(current)
+                current = word
+            } else current = next
+        }
+        if (current.isNotEmpty() || lines.isEmpty()) lines.add(current)
+        return lines
     }
 
     // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Windows ile aynı) ---
