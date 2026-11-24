@@ -200,7 +200,7 @@ public struct UserSettings: Codable, Equatable {
     /// telefonun görüntüsüne çapayla yapışık, oyun penceresinin üstünde gösterilir (`PhoneAnchorSession`, `PhoneTwin`;
     /// docs/ekran-capasi.md). Telefon sarsılsa da kaysa da çizim onunla gider; OCR yalnız yazı değişince çalışır. Önce
     /// yalnız Mac'te (Sinan Bey kararı, 24 Kas): Mac'te varsayılan açık, öbür platformlar bu ayarı henüz okumaz.
-    public var drawScreenInPlace = true
+    public var drawScreenInPlace = false
     /// Bilinen oyunlarda hazır ek alanlar (bkz. `GameAreaPresets`); kullanıcının kendi ek alanı varsa o kullanılır.
     /// Varsayılan kapalı (beta.63–68'de açık geliyordu: otomatik ekran yazısı kapalıyken de GTA 6'nın sol üstünde menüyü,
     /// sağda bildirimleri çeviriyordu). Kullanıcı açmadıkça altyazı alanı dışında hiçbir şey çevrilmez.
