@@ -78,7 +78,7 @@ const items = [
   hint('İŞARET EKLE', 1636, 884, 1792),
   // Uzun çeviri, solunda boş alan var: kutu sola uzar, yazı boyu grubunkiyle aynı kalır.
   hint('HEDEF BELİRLE BURAYA ŞİMDİ', 1736, 936, 1792),
-  hint('ÇIK', 1742, 988, 1792),
+  hint('ÇIK', 1700, 988, 1792),
   // Görev kartı açıklaması: iki satır, özgün satır aralığı 54 piksel; dikey degrade.
   { text: 'Kenton\'ın dalış noktasında hazine ararken bekârlık partisine göz kulak ol.', box: px(282, 292, 880, 384),
     line: 38 / H, rows: 2, cover: px(280, 290, 882, 386), bg: '#14285A', bg2: '#102050', bgDir: 'v', fg: '#FFFFFF',
@@ -164,7 +164,7 @@ test('gerçek çizim: opak köşesiz kutu, degrade, tek boy grup, boş alana uza
   assert.equal(long.lines.length, 1, 'boş alan varken satır kırılmaz');
   assert.equal(long.lines[0].text, 'HEDEF BELİRLE BURAYA ŞİMDİ');
   // Kısa çeviri kutusunu büyütmez: örtü kutusu kadar.
-  assert.ok(Math.abs(hints[4].left - 1740) <= 1, 'kısa çeviri örtüde kalır: ' + hints[4].left);
+  assert.ok(Math.abs(hints[4].left - 1698) <= 1, 'kısa çeviri örtüde kalır: ' + hints[4].left);
   // Görev kartı: iki satır, aralık özgün (54 px); yazı kutudan taşmaz.
   const card = exact[5];
   assert.equal(card.lines.length, 2, 'görev kartı iki satır: ' + card.lines.map(l => l.text).join(' / '));
