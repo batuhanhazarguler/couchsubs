@@ -22,8 +22,8 @@ final class SubtitleLogTests: XCTestCase {
     }
 
     func testMenuStateLines() {
-        XCTAssertEqual(ScreenTextDetector.menuLog(true), "ekran menüsü açık: altyazı okunmuyor")
-        XCTAssertEqual(ScreenTextDetector.menuLog(false), "ekran menüsü kapandı: altyazı okunuyor")
+        XCTAssertEqual(ScreenTextDetector.menuLog(true), "ekran menüsü açık: altyazı bekletiliyor")
+        XCTAssertEqual(ScreenTextDetector.menuLog(false), "ekran menüsü kapandı: altyazı gösteriliyor")
     }
 
     func testWritesOnlyWhileEnabledAndKeepsOneBackup() throws {
