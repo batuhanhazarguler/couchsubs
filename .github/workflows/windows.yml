@@ -170,7 +170,7 @@ jobs:
           allowed='^(kernel32|user32|advapi32|shell32|ole32|oleaut32|gdi32|ws2_32|wsock32|iphlpapi|bcrypt|bcryptprimitives|crypt32|secur32|normaliz|msvcrt|ntdll|api-ms-win-.*|ucrtbase)\.dll$'
           bad=$(awk '{print tolower($3)}' deps.txt | grep -Ev "$allowed" || true)
           if [ -n "$bad" ]; then echo "İzin verilmeyen bağımlılık: $bad"; exit 1; fi
-          for fn in cs_init cs_discover cs_discover_ex cs_wake cs_register cs_session_start cs_session_stop cs_crash_install; do
+          for fn in cs_init cs_discover cs_discover_ex cs_discover_id cs_wake cs_register cs_session_start cs_session_stop cs_crash_install; do
             objdump -p "$DLL" | grep -qw "$fn" || { echo "Dışa aktarılmamış: $fn"; exit 1; }
           done
           ls -l "$DLL"

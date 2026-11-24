@@ -1259,7 +1259,7 @@ final class PhoneModel: ObservableObject {
         guard let host = ManualAddress.normalize(text), let current = console else { return false }
         if host != current.host {
             RemotePlayLog.write("PS5 adresi elle girildi: \(current.host) -> \(host)")
-            consoleMoved(RegisteredConsole(host: host, name: current.name, registKey: current.registKey, morning: current.morning))
+            consoleMoved(current.withHost(host))
         }
         reconnect(reason: "PS5 adresi elle girildi")
         return true
@@ -1271,10 +1271,18 @@ final class PhoneModel: ObservableObject {
         store.save(moved, for: StoreKey.console)
     }
 
+    /// Kayıtlı PS5'i (adresi değiştiyse ağda kimliğiyle) bulan arayıcı; kayıt değişirse saklanır. Kayıt yoksa nil.
+    private func consoleFinder() -> ConsoleFinder? {
+        guard let console else { return nil }
+        let finder = ConsoleFinder(console: console)
+        finder.onChange = { [weak self] moved in Task { @MainActor in self?.consoleMoved(moved) } }
+        return finder
+    }
+
     /// PS5'e bağlanınca çalışan oyun okunmaya başlar, bağlantı gidince bırakılır (havuz satırı oyunsuz gider).
     private func updateGameProbe(connected: Bool) {
         guard probesGame else { return }
-        guard connected, !isXbox, let host = console?.host else {
+        guard connected, !isXbox, console != nil else {
             gameProbe?.cancel()
             gameProbe = nil
             gameChoice.consoleReported(nil)
@@ -1284,7 +1292,9 @@ final class PhoneModel: ObservableObject {
         let services = self.services
         gameProbe = Task { [weak self] in
             while !Task.isCancelled {
-                let game = await services.runningGame(host: host)
+                // Her yoklamada güncel kayıt kullanılır (oturum PS5'i yeni adreste bulmuş olabilir).
+                guard let finder = self?.consoleFinder() else { break }
+                let game = await services.runningGame(finder: finder)
                 // Bu arada bağlantı bittiyse oyun yazılmaz (bırakılan oyun geri gelmesin).
                 guard !Task.isCancelled else { break }
                 // Yeni oyunda paket sunucusuna bakılması `gameChoice.onChange`te (Android'deki gibi).

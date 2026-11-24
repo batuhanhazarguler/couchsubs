@@ -697,22 +697,8 @@ class AppSettings(context: Context) : AreaStore {
         set(value) = secrets.put("accountId", value?.let { Base64.encodeToString(it, Base64.NO_WRAP) })
 
     var console: RegisteredConsole?
-        get() = secrets.get("console")?.let {
-            try {
-                val json = JSONObject(it)
-                RegisteredConsole(
-                    json.getString("host"), json.getString("name"),
-                    Base64.decode(json.getString("registKey"), Base64.NO_WRAP), Base64.decode(json.getString("morning"), Base64.NO_WRAP),
-                )
-            } catch (error: Exception) {
-                null
-            }
-        }
-        set(value) = secrets.put("console", value?.let {
-            JSONObject().put("host", it.host).put("name", it.name)
-                .put("registKey", Base64.encodeToString(it.registKey, Base64.NO_WRAP))
-                .put("morning", Base64.encodeToString(it.morning, Base64.NO_WRAP)).toString()
-        })
+        get() = secrets.get("console")?.let(RegisteredConsole::fromJson)
+        set(value) = secrets.put("console", value?.toJson())
 
     /** Konsol türü; seçilmediyse null (kurulumda sorulur). Eski kurulumlar PlayStation sayılır. */
     var platformChoice: ConsolePlatform?

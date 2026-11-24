@@ -124,6 +124,7 @@ typedef struct {
 	cs_console_cb cb;
 	cs_console_ex_cb ex_cb;
 	void *user;
+	cs_console_id_cb id_cb;
 } cs_discover_ctx;
 
 static void cs_discovery_cb(ChiakiDiscoveryHost *host, void *user)
@@ -133,7 +134,9 @@ static void cs_discovery_cb(ChiakiDiscoveryHost *host, void *user)
 		return;
 	const char *name = host->host_name ? host->host_name : "PS5";
 	int awake = host->state == CHIAKI_DISCOVERY_HOST_STATE_READY ? 1 : 0;
-	if(ctx->ex_cb)
+	if(ctx->id_cb)
+		ctx->id_cb(host->host_addr, name, awake, host->running_app_titleid, host->running_app_name, host->host_id, ctx->user);
+	else if(ctx->ex_cb)
 		ctx->ex_cb(host->host_addr, name, awake, host->running_app_titleid, host->running_app_name, ctx->user);
 	else
 		ctx->cb(host->host_addr, name, awake, ctx->user);
@@ -145,7 +148,7 @@ CS_API int cs_discover(const char *const *targets, int target_count, int timeout
 {
 	if(!targets || target_count <= 0 || !callback)
 		return 1;
-	cs_discover_ctx ctx = { callback, NULL, user };
+	cs_discover_ctx ctx = { callback, NULL, user, NULL };
 	return cs_discover_run(targets, target_count, timeout_ms, ctx);
 }
 
@@ -154,6 +157,14 @@ CS_API int cs_discover_ex(const char *const *targets, int target_count, int time
 	if(!targets || target_count <= 0 || !callback)
 		return 1;
 	cs_discover_ctx ctx = { NULL, callback, user };
+	return cs_discover_run(targets, target_count, timeout_ms, ctx);
+}
+
+CS_API int cs_discover_id(const char *const *targets, int target_count, int timeout_ms, cs_console_id_cb callback, void *user)
+{
+	if(!targets || target_count <= 0 || !callback)
+		return 1;
+	cs_discover_ctx ctx = { NULL, NULL, user, callback };
 	return cs_discover_run(targets, target_count, timeout_ms, ctx);
 }
 
@@ -373,6 +384,7 @@ CS_API int cs_register(const char *host, const uint8_t account_id[8], uint32_t p
 			out->nickname[sizeof(out->nickname) - 1] = '\0';
 			memcpy(out->regist_key, ctx->host.rp_regist_key, sizeof(out->regist_key));
 			memcpy(out->morning, ctx->host.rp_key, sizeof(out->morning));
+			memcpy(out->server_mac, ctx->host.server_mac, sizeof(out->server_mac));
 			result = 0;
 		}
 		else if(ctx->type == CHIAKI_REGIST_EVENT_TYPE_FINISHED_CANCELED)

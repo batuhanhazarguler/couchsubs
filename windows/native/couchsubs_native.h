@@ -40,6 +40,13 @@ typedef void (*cs_console_ex_cb)(const char *host, const char *name, int awake, 
 /* cs_discover ile aynı; yanıtlar cs_console_ex_cb ile bildirilir. */
 CS_API int cs_discover_ex(const char *const *targets, int target_count, int timeout_ms, cs_console_ex_cb callback, void *user);
 
+/* cs_console_ex_cb'ye ek olarak PS5'in değişmeyen kimliği (keşif yanıtındaki host-id, yani PS5'in MAC adresi; yoksa NULL). */
+typedef void (*cs_console_id_cb)(const char *host, const char *name, int awake, const char *running_app_titleid,
+		const char *running_app_name, const char *host_id, void *user);
+
+/* cs_discover ile aynı; yanıtlar cs_console_id_cb ile bildirilir. */
+CS_API int cs_discover_id(const char *const *targets, int target_count, int timeout_ms, cs_console_id_cb callback, void *user);
+
 /* Kayıtlı PS5'i dinlenme modundan uyandırır. credential: kayıt anahtarının onaltılık değeri. */
 CS_API int cs_wake(const char *host, uint64_t credential);
 
@@ -49,6 +56,7 @@ typedef struct {
     char nickname[0x20];      /* sıfırla biten PS5 adı */
     uint8_t regist_key[0x10]; /* ASCII onaltılık, sıfırla doldurulmuş */
     uint8_t morning[0x10];
+    uint8_t server_mac[6];    /* PS5'in MAC adresi (keşifteki host-id ile aynı) */
 } cs_registered_console;
 
 /* Bloklar (en çok ~30 sn). Başarısızlıkta *reason, PS5'in bildirdiği nedeni taşır

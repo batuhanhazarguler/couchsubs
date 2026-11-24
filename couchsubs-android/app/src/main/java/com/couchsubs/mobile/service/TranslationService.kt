@@ -42,6 +42,7 @@ import com.couchsubs.mobile.core.TextTranslator
 import com.couchsubs.mobile.ocr.RegionPixels
 import com.couchsubs.mobile.ocr.SubtitleReader
 import com.couchsubs.mobile.remoteplay.ConsoleDiscovery
+import com.couchsubs.mobile.remoteplay.ConsoleFinder
 import com.couchsubs.mobile.remoteplay.DisconnectKind
 import com.couchsubs.mobile.remoteplay.FrameSource
 import com.couchsubs.mobile.remoteplay.FrameSourceFactory
@@ -1011,8 +1012,12 @@ class TranslationService : Service() {
             // Bağlıyken iki dakikada bir PS5'e çalışan oyun sorulur (Xbox'ta bu soru yok; oyun paketten tanınır).
             if (xboxConsole == null) background.scheduleWithFixedDelay({
                 try {
-                    val host = settings.console?.host ?: console!!.host
-                    if (streaming) PlayedGame.consoleReported(ConsoleDiscovery.runningGame(host))
+                    // Her yoklamada güncel kayıt kullanılır (oturum PS5'i yeni adreste bulmuş olabilir); yanıt yoksa PS5 ağda
+                    // kimliğiyle aranır ve kayıt güncellenir.
+                    if (streaming) {
+                        val finder = ConsoleFinder(settings.console ?: console!!).also { it.onChange = { moved -> settings.console = moved } }
+                        PlayedGame.consoleReported(ConsoleDiscovery.runningGame(finder))
+                    }
                 } catch (error: Exception) {
                     Log.w(TAG, "running game", error)
                 }

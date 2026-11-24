@@ -158,12 +158,14 @@ static void cs_discovery_cb(ChiakiDiscoveryHost *host, void *user)
 	cs_discover_ctx *ctx = user;
 	if(!host || !host->host_addr || !chiaki_discovery_host_is_ps5(host))
 		return;
-	/* Sona PS5'te çalışan uygulamanın kimliği ve adı eklenir (yoksa boş): ortak havuz satırı oyunla gider. */
+	/* Sona PS5'te çalışan uygulamanın kimliği ve adı (ortak havuz satırı oyunla gider) ve PS5'in değişmeyen kimliği
+	 * (host-id, yani MAC; adresi değişen PS5 bununla tanınır) eklenir; yoksa boş. */
 	char line[512];
-	snprintf(line, sizeof(line), "%s\t%s\t%d\t%s\t%s", host->host_addr, host->host_name ? host->host_name : "PS5",
+	snprintf(line, sizeof(line), "%s\t%s\t%d\t%s\t%s\t%s", host->host_addr, host->host_name ? host->host_name : "PS5",
 			host->state == CHIAKI_DISCOVERY_HOST_STATE_READY ? 1 : 0,
 			host->running_app_titleid ? host->running_app_titleid : "",
-			host->running_app_name ? host->running_app_name : "");
+			host->running_app_name ? host->running_app_name : "",
+			host->host_id ? host->host_id : "");
 	for(char *c = line; *c; c++)
 		if(*c == '\n' || *c == '\r') *c = ' ';
 	for(char *c = line; *c; c++)
@@ -387,6 +389,7 @@ JNIEXPORT void JNICALL JNI_FCN(register)(JNIEnv *env, jclass cls, jstring host_s
 			set_object(env, outcome, "nickname", "Ljava/lang/String;", (*env)->NewStringUTF(env, nickname));
 			set_object(env, outcome, "registKey", "[B", byte_array(env, ctx.host.rp_regist_key, sizeof(ctx.host.rp_regist_key)));
 			set_object(env, outcome, "morning", "[B", byte_array(env, ctx.host.rp_key, sizeof(ctx.host.rp_key)));
+			set_object(env, outcome, "serverMac", "[B", byte_array(env, ctx.host.server_mac, sizeof(ctx.host.server_mac)));
 			result = 0;
 		}
 		else if(ctx.type == CHIAKI_REGIST_EVENT_TYPE_FINISHED_CANCELED)

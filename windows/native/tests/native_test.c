@@ -345,6 +345,27 @@ static void count_console_ex(const char *host, const char *name, int awake, cons
 	(*(int *)user)++;
 }
 
+static void count_console_id(const char *host, const char *name, int awake, const char *titleid, const char *app,
+		const char *host_id, void *user)
+{
+	(void)host;
+	(void)name;
+	(void)awake;
+	(void)titleid;
+	(void)app;
+	(void)host_id;
+	(*(int *)user)++;
+}
+
+static void test_discover_id_returns_after_timeout(void)
+{
+	const char *targets[] = { "127.0.0.1" };
+	int found = 0;
+	CHECK(cs_discover_id(targets, 1, 600, count_console_id, &found) == 0);
+	CHECK(found == 0);
+	CHECK(cs_discover_id(targets, 1, 100, NULL, &found) != 0);
+}
+
 static void test_discover_ex_returns_after_timeout(void)
 {
 	const char *targets[] = { "127.0.0.1" };
@@ -391,6 +412,7 @@ int main(int argc, char **argv)
 	test_garbage_does_not_crash();
 	test_discover_returns_after_timeout();
 	test_discover_ex_returns_after_timeout();
+	test_discover_id_returns_after_timeout();
 	test_session_to_closed_port_quits_and_stops();
 	test_stop_right_after_start();
 	test_stop_right_after_start_720p();

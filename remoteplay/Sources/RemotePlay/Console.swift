@@ -12,13 +12,18 @@ public struct ConsoleInfo: Codable, Hashable, Sendable {
     /// da dinlenme modunda yok.
     public let runningAppTitleId: String?
     public let runningAppName: String?
+    /// PS5'in değişmeyen kimliği (keşif yanıtındaki `host-id`: PS5'in MAC adresi, 12 onaltılık hane; bkz.
+    /// `ConsoleIdentity.normalized`). Adı ve adresi değişse de aynı kalır; yanıtta yoksa nil.
+    public let hostId: String?
 
-    public init(host: String, name: String, isAwake: Bool, runningAppTitleId: String? = nil, runningAppName: String? = nil) {
+    public init(host: String, name: String, isAwake: Bool, runningAppTitleId: String? = nil, runningAppName: String? = nil,
+                hostId: String? = nil) {
         self.host = host
         self.name = name
         self.isAwake = isAwake
         self.runningAppTitleId = runningAppTitleId
         self.runningAppName = runningAppName
+        self.hostId = ConsoleIdentity.normalized(hostId)
     }
 }
 
@@ -107,7 +112,8 @@ public enum Console {
                                    name: host.pointee.host_name.map { String(cString: $0) } ?? "PS5",
                                    isAwake: host.pointee.state == CHIAKI_DISCOVERY_HOST_STATE_READY,
                                    runningAppTitleId: host.pointee.running_app_titleid.map { String(cString: $0) },
-                                   runningAppName: host.pointee.running_app_name.map { String(cString: $0) })
+                                   runningAppName: host.pointee.running_app_name.map { String(cString: $0) },
+                                   hostId: host.pointee.host_id.map { String(cString: $0) })
             collector.lock.lock()
             collector.hosts[info.host] = info
             collector.lock.unlock()

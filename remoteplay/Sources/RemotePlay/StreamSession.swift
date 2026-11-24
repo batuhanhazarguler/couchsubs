@@ -613,12 +613,12 @@ public final class StreamSession: @unchecked Sendable {
     private let stepLock = NSLock()
     private func setStep(_ value: ConnectStep) { stepLock.lock(); step = value; stepLock.unlock() }
 
-    /// Yalnız `queue` üzerinde değişir (PS5'in adresi değişirse; Windows'taki gibi).
-    private var console: RegisteredConsole
+    /// Kayıtlı PS5'i kayıtlı adreste ya da (adresi değiştiyse) ağda kimliğiyle bulur; kayıt değişince `onConsoleMoved`.
+    /// Tüm ağı taramak pahalı; PS5 kapalıyken her yeniden denemede yapılmaz (`RelocateSchedule`).
+    private let finder: ConsoleFinder
+    private var console: RegisteredConsole { finder.console }
     /// Son aramanın sonucu ve "bulunamadı" etiketi (yalnız `queue`).
     private var search = ConsoleSearchState()
-    /// Tüm ağı taramak pahalı; PS5 kapalıyken her yeniden denemede yapılmaz.
-    private var nextRelocate = Date.distantPast
     private let accountId: Data
     /// PS5 bu hesap için giriş şifresi isterse gönderilecek 4 hane (Ayarlar'da kayıtlıysa).
     private let loginPasscode: String?
@@ -651,9 +651,10 @@ public final class StreamSession: @unchecked Sendable {
     private var generation = 0
 
     public init(console: RegisteredConsole, accountId: Data, loginPasscode: String? = nil) {
-        self.console = console
+        finder = ConsoleFinder(console: console)
         self.accountId = accountId
         self.loginPasscode = LoginPasscode.normalized(loginPasscode)
+        finder.onChange = { [weak self] in self?.onConsoleMoved?($0) }
     }
 
     deinit {
@@ -743,17 +744,12 @@ public final class StreamSession: @unchecked Sendable {
         emit(.connecting)
 
         // PS5 uyuyorsa uyandır; uyanmayı kuyruğu bloklamadan, aralıklı kontrollerle bekle.
-        // Kayıtlı adreste başka bir PS5 yanıt verirse (aynı evde iki PS5, modem adresleri değiştirmiş; GitHub #425)
-        // kayıtlı PS5 adıyla ağda aranır; bulunamazsa eskisi gibi o adrese bağlanılır.
-        let atHost = Console.blockingDiscover(timeout: 2, host: console.host).first
-        let info: ConsoleInfo?
-        if let atHost, Self.isRegistered(atHost, name: console.name) {
-            info = atHost
-        } else {
-            if let atHost {
-                RemotePlayLog.write("PS5 oturumu: \(console.host) adresinde başka PS5 yanıt verdi (\(atHost.name)), \(console.name) aranıyor")
-            }
-            info = relocate() ?? atHost
+        // Kayıtlı adreste yanıt yoksa ya da başka bir PS5 yanıt verirse (aynı evde iki PS5, modem adresleri değiştirmiş;
+        // GitHub #425) kayıtlı PS5 ağda kimliğiyle (eski kayıtta adıyla) aranır. Bulunamazsa ve kayıtlı adreste yanıt veren
+        // PS5'in başka bir PS5 olduğu kimlikten belli değilse eskisi gibi o adrese bağlanılır.
+        let located = finder.locate()
+        let info = located.info ?? located.atHost.flatMap { other in
+            console.hostId != nil && other.hostId != nil ? nil : other
         }
         if search.searched(answered: info != nil) {
             RemotePlayLog.write("PS5 aranıyor: art arda \(search.unanswered). yanıtsız arama; bu cihaz: \(DeviceDiagnostics.line())")
@@ -778,41 +774,23 @@ public final class StreamSession: @unchecked Sendable {
         }
     }
 
-    /// Kayıtlı adreste PS5 yoksa (modem adresini değiştirmiş olabilir) ağda arar; bulursa adresi günceller.
-    /// Eskiden yalnız Windows'ta vardı; Mac'te adres değişince bağlantı hiç kurulamıyordu.
-    private func relocate() -> ConsoleInfo? {
-        guard Date() >= nextRelocate else { return nil }
-        nextRelocate = Date().addingTimeInterval(30)
-        guard let moved = Self.pickMoved(Console.search(timeout: .seconds(3), host: nil), name: console.name),
-              moved.host != console.host else { return nil }
-        RemotePlayLog.write("PS5 yeni adreste: \(console.host) -> \(moved.host)")
-        console = console.withHost(moved.host)
-        onConsoleMoved?(console)
-        return moved
-    }
-
-    /// Taramada bulunanlar arasından kayıtlı PS5: adı (kayıtta PS5'in verdiği ad) tek eşleşen; emin değilse nil.
-    /// Eskiden ağda tek PS5 varsa adına bakılmadan o seçiliyordu; aynı evde iki PS5 varken biri yeniden başlarken
-    /// uygulama diğerine geçip onun adresini kaydediyordu (GitHub #425).
-    /// Ad, boşluk ve büyük/küçük harf gözetmeden eşlenir (eskiden harf farkında PS5 yeni adreste bulunamıyordu); kayıtta ad
-    /// yoksa ağdaki tek PS5 seçilir (Windows ve Android ile aynı).
+    /// Taramada bulunanlar arasından kimliksiz (eski) kayıttaki PS5: adı tek eşleşen; emin değilse nil (GitHub #425). Kimlikli
+    /// kayıt için `ConsoleIdentity.pickMoved`.
     static func pickMoved(_ found: [ConsoleInfo], name: String) -> ConsoleInfo? {
-        let named = found.filter { isRegistered($0, name: name) }
-        return named.count == 1 ? named[0] : nil
+        ConsoleIdentity.pickMoved(found, RegisteredConsole(host: "", name: name, registKey: Data(), morning: Data()))
     }
 
-    /// Aramaya yanıt veren PS5 kayıtlı PS5 mi (ad eşleşmesi, boşluk ve harf büyüklüğü gözetilmez; kayıtta ad yoksa her yanıt
-    /// kabul edilir).
-    static func isRegistered(_ info: ConsoleInfo, name: String) -> Bool {
-        let wanted = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return wanted.isEmpty
-            || info.name.trimmingCharacters(in: .whitespacesAndNewlines).caseInsensitiveCompare(wanted) == .orderedSame
-    }
+    /// Ad kuralı (boşluk ve harf büyüklüğü gözetilmez; kayıtta ad yoksa her yanıt kabul edilir).
+    static func isRegistered(_ info: ConsoleInfo, name: String) -> Bool { ConsoleIdentity.matchesName(info, name) }
 
     private func waitForWake(_ current: Int, deadline: Date) {
         queue.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self, self.isCurrent(current) else { return }
             if Console.blockingDiscover(timeout: 2, host: self.console.host).contains(where: \.isAwake) {
+                self.setStep(.opening)
+                self.openSession(current)
+            } else if let moved = self.finder.relocate(), moved.host == self.console.host, moved.isAwake {
+                // Uyanan PS5 yeni adres almış olabilir (modem yeniden başladı): ağda kimliğiyle bulunduysa oraya bağlanılır.
                 self.setStep(.opening)
                 self.openSession(current)
             } else if Date() < deadline {
@@ -947,7 +925,8 @@ public final class StreamSession: @unchecked Sendable {
                 }
                 // PS5'in adresi TCP bağlantısını reddetti: PS5 yeni uyanıyor olabilir ya da adres başka bir cihaza geçmiş
                 // olabilir. Bir sonraki denemede beklemeden ağda da aranır (eşlemeyi yenilemek bunu çözmez).
-                if reason == .refused { self.nextRelocate = .distantPast }
+                // Akış sürerken koptuysa da ilk yeniden denemede beklemeden aranır (PS5 ya da modem yeniden başlamış olabilir).
+                if reason == .refused || wasStreaming { self.finder.connectionFailed() }
                 self.scheduleReconnect(eventGeneration, reason: reason)
             }
         default:

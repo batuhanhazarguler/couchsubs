@@ -12,6 +12,8 @@ class NativeOutcome {
     @JvmField var nickname: String? = null
     @JvmField var registKey: ByteArray? = null
     @JvmField var morning: ByteArray? = null
+    /** PS5'in MAC adresi (6 bayt; keşifteki host-id ile aynı). */
+    @JvmField var serverMac: ByteArray? = null
     /** libchiaki'nin hata satırları, alt alta. */
     @JvmField var errors: String? = null
 

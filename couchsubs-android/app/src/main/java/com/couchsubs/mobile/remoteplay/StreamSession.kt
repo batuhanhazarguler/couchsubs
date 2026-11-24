@@ -562,10 +562,14 @@ class StreamSession(
 ) : FrameSource {
     private companion object {
         const val TAG = "CouchSubsSession"
-        const val RELOCATE_INTERVAL_MS = 30_000L
     }
 
-    @Volatile private var console = console
+    /**
+     * Kayıtlı PS5'i kayıtlı adreste ya da (adresi değiştiyse) ağda kimliğiyle bulur; kayıt değişince [onConsoleMoved]. Tüm ağı
+     * taramak pahalı; PS5 kapalıyken her yeniden denemede yapılmaz ([RelocateSchedule]).
+     */
+    private val finder = ConsoleFinder(console).also { it.onChange = onConsoleMoved }
+    private val console: RegisteredConsole get() = finder.console
     private val queue = Executors.newSingleThreadScheduledExecutor { Thread(it, "CouchSubs session").apply { isDaemon = true } }
     private val policy = ReconnectPolicy()
     /** Dinlenmedeki PS5 yalnız çeviri başlarken uyandırılır (yalnız kuyrukta). */
@@ -583,7 +587,6 @@ class StreamSession(
     private val stateLock = Any()
     private var running = false
     private var generation = 0
-    private var nextRelocate = 0L
     /** Son aramanın sonucu ve "bulunamadı" etiketi (yalnız kuyrukta). */
     private val search = ConsoleSearchState()
 
@@ -663,13 +666,12 @@ class StreamSession(
     private fun connect(current: Int) {
         if (!isCurrent(current) || native != 0L) return
         emit(SessionState.Connecting)
-        // Kayıtlı adreste başka bir PS5 yanıt verirse (aynı evde iki PS5, modem adresleri değiştirmiş; GitHub #425)
-        // kayıtlı PS5 adıyla ağda aranır; bulunamazsa eskisi gibi o adrese bağlanılır.
-        val atHost = ConsoleDiscovery.discover(console.host, 2000).firstOrNull()
-        val info = if (atHost != null && ConsoleDiscovery.isRegistered(atHost, console.name)) atHost else {
-            if (atHost != null) Log.i(TAG, "PS5 ${console.host} adresinde başka PS5 yanıt verdi (${atHost.name}), ${console.name} aranıyor")
-            relocate() ?: atHost
-        }
+        // Kayıtlı adreste yanıt yoksa ya da başka bir PS5 yanıt verirse (aynı evde iki PS5, modem adresleri değiştirmiş;
+        // GitHub #425) kayıtlı PS5 ağda kimliğiyle (eski kayıtta adıyla) aranır. Bulunamazsa ve kayıtlı adreste yanıt veren
+        // PS5'in başka bir PS5 olduğu kimlikten belli değilse eskisi gibi o adrese bağlanılır.
+        val located = finder.locate()
+        val info = located.info
+            ?: located.atHost?.takeIf { console.hostId == null || it.hostId == null }
         if (search.searched(answered = info != null)) {
             val text = "PS5 aranıyor: art arda ${search.unanswered}. yanıtsız arama; bu cihaz: ${DeviceDiagnostics.line()}"
             Log.w(TAG, text)
@@ -703,23 +705,16 @@ class StreamSession(
         }
     }
 
-    private fun relocate(): ConsoleInfo? {
-        val now = System.currentTimeMillis()
-        if (now < nextRelocate) return null
-        nextRelocate = now + RELOCATE_INTERVAL_MS
-        val moved = ConsoleDiscovery.pickMoved(ConsoleDiscovery.discover(null, 3000), console.name)
-        if (moved == null || moved.host == console.host) return null
-        Log.i(TAG, "PS5 yeni adreste: ${console.host} -> ${moved.host}")
-        console = console.withHost(moved.host)
-        onConsoleMoved(console)
-        return moved
-    }
-
     private fun waitForWake(current: Int, deadline: Long) {
         queue.schedule({
             if (!isCurrent(current)) return@schedule
             when {
                 ConsoleDiscovery.discover(console.host, 2000).any { it.isAwake } -> {
+                    step = com.couchsubs.mobile.core.ConnectStep.OPENING
+                    openSession(current)
+                }
+                // Uyanan PS5 yeni adres almış olabilir (modem yeniden başladı): ağda kimliğiyle bulunduysa oraya bağlanılır.
+                finder.relocate()?.let { it.isAwake && it.host == console.host } == true -> {
                     step = com.couchsubs.mobile.core.ConnectStep.OPENING
                     openSession(current)
                 }
@@ -868,7 +863,8 @@ class StreamSession(
                     }
                     // PS5'in adresi TCP bağlantısını reddetti: PS5 yeni uyanıyor olabilir ya da adres başka bir cihaza geçmiş
                     // olabilir. Bir sonraki denemede beklemeden ağda da aranır (eşlemeyi yenilemek bunu çözmez).
-                    if (kind == DisconnectKind.REFUSED) nextRelocate = 0L
+                    // Akış sürerken koptuysa da ilk yeniden denemede beklemeden aranır (PS5 ya da modem yeniden başlamış olabilir).
+                    if (kind == DisconnectKind.REFUSED || wasStreaming) finder.connectionFailed()
                     scheduleReconnect(eventGeneration, state)
                 }
             }

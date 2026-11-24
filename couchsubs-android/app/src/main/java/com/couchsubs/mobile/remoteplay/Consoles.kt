@@ -2,12 +2,15 @@
 package com.couchsubs.mobile.remoteplay
 
 import com.couchsubs.mobile.core.RunningGame
+import org.json.JSONObject
 import java.net.Inet4Address
+import java.util.Base64
 import java.net.NetworkInterface
 
 /**
  * Ağda bulunan PS5. [runningAppTitleId] ve [runningAppName]: o an çalışan uygulama (keşif yanıtındaki
- * `running-app-titleid`, `running-app-name`); ana ekranda ya da dinlenme modunda null.
+ * `running-app-titleid`, `running-app-name`); ana ekranda ya da dinlenme modunda null. [hostId]: PS5'in değişmeyen kimliği
+ * (keşif yanıtındaki `host-id`, yani PS5'in MAC adresi; bkz. [ConsoleIdentity.normalized]); yanıtta yoksa null.
  */
 data class ConsoleInfo(
     val host: String,
@@ -15,10 +18,24 @@ data class ConsoleInfo(
     val isAwake: Boolean,
     val runningAppTitleId: String? = null,
     val runningAppName: String? = null,
+    val hostId: String? = null,
 )
 
-/** PS5'e kaydedilmiş bu telefonun bağlantı bilgileri (Windows: RegisteredConsole). Şifreli saklanır. */
-class RegisteredConsole(val host: String, val name: String, val registKey: ByteArray, val morning: ByteArray) {
+/**
+ * PS5'e kaydedilmiş bu telefonun bağlantı bilgileri (Windows: RegisteredConsole). Şifreli saklanır. [hostId]: PS5'in
+ * değişmeyen kimliği (keşifteki `host-id`, yani PS5'in MAC adresi). Kayıtta PS5'in bildirdiği MAC'ten yazılır; eski
+ * kayıtlarda yoktur ve PS5 ilk kez adıyla bulunduğunda öğrenilir. PS5 yeni adreste bununla aranır: ad değişse de, aynı
+ * adlı iki PS5 olsa da doğru PS5 bulunur.
+ */
+class RegisteredConsole(
+    val host: String,
+    val name: String,
+    val registKey: ByteArray,
+    val morning: ByteArray,
+    hostId: String? = null,
+) {
+    val hostId: String? = ConsoleIdentity.normalized(hostId)
+
     /** Uyandırma için kayıt anahtarının onaltılık değeri. */
     val wakeCredential: Long?
         get() {
@@ -31,7 +48,27 @@ class RegisteredConsole(val host: String, val name: String, val registKey: ByteA
             }
         }
 
-    fun withHost(newHost: String) = RegisteredConsole(newHost, name, registKey, morning)
+    fun withHost(newHost: String) = RegisteredConsole(newHost, name, registKey, morning, hostId)
+
+    /** Saklanan biçim (AppSettings, şifreli). */
+    fun toJson(): String = JSONObject().put("host", host).put("name", name)
+        .put("registKey", Base64.getEncoder().encodeToString(registKey))
+        .put("morning", Base64.getEncoder().encodeToString(morning))
+        .apply { hostId?.let { put("hostId", it) } }.toString()
+
+    companion object {
+        /** Saklanan kayıt; okunamazsa null. Eski kayıtlarda "hostId" yok: PS5 ilk kez adıyla bulununca yazılır ([ConsoleIdentity]). */
+        fun fromJson(text: String): RegisteredConsole? = try {
+            val json = JSONObject(text)
+            RegisteredConsole(
+                json.getString("host"), json.getString("name"),
+                Base64.getDecoder().decode(json.getString("registKey")), Base64.getDecoder().decode(json.getString("morning")),
+                json.optString("hostId").ifEmpty { null },
+            )
+        } catch (error: Exception) {
+            null
+        }
+    }
 }
 
 /**
@@ -118,7 +155,8 @@ object Registration {
             val outcome = NativeOutcome()
             NativeBridge.register(host, accountId, pin, outcome)
             if (outcome.code == 0) {
-                return RegisteredConsole(host, outcome.nickname ?: "PS5", outcome.registKey!!, outcome.morning!!)
+                return RegisteredConsole(host, outcome.nickname ?: "PS5", outcome.registKey!!, outcome.morning!!,
+                    ConsoleIdentity.fromMac(outcome.serverMac))
             }
             val lines = outcome.errorLines
             val reported = if (outcome.code == 1 && outcome.reason != 0) outcome.reason else null
@@ -148,16 +186,21 @@ object ConsoleDiscovery {
         } ?: emptyList()
     }
 
-    /** "adres\tad\tuyanık(0/1)[\toyun kimliği\toyun adı]" (yerel kütüphanenin yanıt satırı). */
+    /** "adres\tad\tuyanık(0/1)[\toyun kimliği\toyun adı[\thost-id]]" (yerel kütüphanenin yanıt satırı). */
     fun parseLine(line: String): ConsoleInfo? {
         val parts = line.split('\t')
         if (parts.size < 3) return null
-        return ConsoleInfo(parts[0], parts[1], parts[2] == "1", parts.getOrNull(3)?.ifEmpty { null }, parts.getOrNull(4)?.ifEmpty { null })
+        return ConsoleInfo(parts[0], parts[1], parts[2] == "1", parts.getOrNull(3)?.ifEmpty { null }, parts.getOrNull(4)?.ifEmpty { null },
+            ConsoleIdentity.normalized(parts.getOrNull(5)))
     }
 
-    /** PS5'te o an çalışan oyun: yalnız bağlı PS5'in adresine sorulur (bloklar; ortak havuz için). */
-    fun runningGame(host: String): RunningGame? =
-        discover(host, 2000).firstOrNull()?.let { RunningGame.create(it.runningAppTitleId, it.runningAppName) }
+    /**
+     * PS5'te o an çalışan oyun (bloklar; ortak havuz için): kayıtlı adrese sorulur. Yanıt yoksa ya da yanıt veren başka bir
+     * PS5'se kayıtlı PS5 ağda kimliğiyle aranır; yeni adreste bulunursa kayıt güncellenir ([ConsoleFinder.onChange]).
+     * Eskiden yoklama hep ilk adrese bakıyordu.
+     */
+    fun runningGame(finder: ConsoleFinder): RunningGame? =
+        finder.locate().info?.let { RunningGame.create(it.runningAppTitleId, it.runningAppName) }
 
     fun wake(console: RegisteredConsole) {
         val credential = console.wakeCredential ?: throw IllegalStateException("Registration key is not a wake credential")
@@ -165,18 +208,14 @@ object ConsoleDiscovery {
     }
 
     /**
-     * Adresi değişen kayıtlı PS5: adı (kayıtta PS5'in verdiği ad) tek eşleşen; emin değilse null. Eskiden ağda tek PS5
-     * varsa adına bakılmadan o seçiliyordu; aynı evde iki PS5 varken uygulama diğerine geçiyordu (GitHub #425).
+     * Kimliksiz (eski) kayıttaki PS5: adı tek eşleşen; emin değilse null (GitHub #425). Kimlikli kayıt için
+     * [ConsoleIdentity.pickMoved].
      */
     fun pickMoved(found: List<ConsoleInfo>, name: String): ConsoleInfo? =
-        found.filter { isRegistered(it, name) }.singleOrNull()
+        ConsoleIdentity.pickMoved(found, RegisteredConsole("", name, ByteArray(0), ByteArray(0)))
 
-    /**
-     * Aramaya yanıt veren PS5 kayıtlı PS5 mi (ad eşleşmesi, boşluk ve harf büyüklüğü gözetilmez; eskiden harf farkında PS5
-     * yeni adreste bulunamıyordu; kayıtta ad yoksa her yanıt kabul edilir, Windows ve Mac ile aynı).
-     */
-    fun isRegistered(info: ConsoleInfo, name: String): Boolean =
-        name.isBlank() || info.name.trim().equals(name.trim(), ignoreCase = true)
+    /** Ad kuralı (boşluk ve harf büyüklüğü gözetilmez; kayıtta ad yoksa her yanıt kabul edilir). */
+    fun isRegistered(info: ConsoleInfo, name: String): Boolean = ConsoleIdentity.matchesName(info, name)
 
     /** Telefonun Wi-Fi ya da Ethernet adresinin /24 ağındaki diğer adresler. */
     fun subnetAddresses(): List<String> {

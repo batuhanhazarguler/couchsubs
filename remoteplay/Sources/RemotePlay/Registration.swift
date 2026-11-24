@@ -11,12 +11,17 @@ public struct RegisteredConsole: Codable, Equatable, Sendable {
     public let registKey: Data
     /// 16 baytlık oturum anahtarı ("morning").
     public let morning: Data
+    /// PS5'in değişmeyen kimliği (keşifteki `host-id`, yani PS5'in MAC adresi; bkz. `ConsoleIdentity`). Kayıtta PS5'in
+    /// bildirdiği MAC'ten yazılır; eski kayıtlarda yoktur ve PS5 ilk kez adıyla bulunduğunda öğrenilir. PS5 yeni adreste
+    /// bununla aranır: ad değişse de, aynı adlı iki PS5 olsa da doğru PS5 bulunur.
+    public let hostId: String?
 
-    public init(host: String, name: String, registKey: Data, morning: Data) {
+    public init(host: String, name: String, registKey: Data, morning: Data, hostId: String? = nil) {
         self.host = host
         self.name = name
         self.registKey = registKey
         self.morning = morning
+        self.hostId = ConsoleIdentity.normalized(hostId)
     }
 
     /// Uyandırma için kayıt anahtarının onaltılık değeri.
@@ -25,8 +30,9 @@ public struct RegisteredConsole: Codable, Equatable, Sendable {
         return UInt64(String(decoding: registKey[..<end], as: UTF8.self), radix: 16)
     }
 
-    func withHost(_ newHost: String) -> RegisteredConsole {
-        RegisteredConsole(host: newHost, name: name, registKey: registKey, morning: morning)
+    /// Aynı kayıt (anahtarlar, kimlik) yeni adreste.
+    public func withHost(_ newHost: String) -> RegisteredConsole {
+        RegisteredConsole(host: newHost, name: name, registKey: registKey, morning: morning, hostId: hostId)
     }
 }
 
@@ -239,7 +245,8 @@ public enum Registration {
         case CHIAKI_REGIST_EVENT_TYPE_FINISHED_SUCCESS:
             guard let host else { return .failure(RegistrationError(.failed, detail: "success without host")) }
             let console = RegisteredConsole(host: "", name: string(of: host.server_nickname),
-                                            registKey: data(of: host.rp_regist_key), morning: data(of: host.rp_key))
+                                            registKey: data(of: host.rp_regist_key), morning: data(of: host.rp_key),
+                                            hostId: ConsoleIdentity.hostId(mac: Array(data(of: host.server_mac))))
             // Anahtarsız kayıt sonra bağlanamaz; başarı sayılmaz.
             guard console.registKey.contains(where: { $0 != 0 }), console.morning.contains(where: { $0 != 0 }) else {
                 return .failure(RegistrationError(.failed, detail: "empty registration key"))

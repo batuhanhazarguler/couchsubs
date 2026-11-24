@@ -29,9 +29,12 @@ extension AppServices {
     func captureWindows() async -> [WindowCaptureTarget] { await RemotePlayWindowStream.captureWindows() }
     func screenRecordingAllowed() -> Bool { RemotePlayWindowStream.screenRecordingAllowed }
     func openScreenRecordingSettings() { RemotePlayWindowStream.openScreenRecordingSettings() }
-    /// PS5'te o an çalışan oyun: yalnız bağlı PS5'in adresine keşif sorusu gider (ortak havuz için; bkz. `RunningGame`).
-    func runningGame(host: String) async -> RunningGame? {
-        guard let info = await Console.discover(timeout: .seconds(2), host: host).first else { return nil }
+    /// PS5'te o an çalışan oyun (ortak havuz için; bkz. `RunningGame`): kayıtlı adrese keşif sorusu gider. Yanıt yoksa ya
+    /// da yanıt veren başka bir PS5'se kayıtlı PS5 ağda kimliğiyle aranır; yeni adreste bulunursa kayıt güncellenir
+    /// (`ConsoleFinder.onChange`). Eskiden yoklama hep ilk adrese bakıyordu.
+    func runningGame(finder: ConsoleFinder) async -> RunningGame? {
+        let info = await Task.detached { finder.locate().info }.value
+        guard let info else { return nil }
         return RunningGame(titleId: info.runningAppTitleId, name: info.runningAppName)
     }
     /// Xbox (Beta): Microsoft girişi ve jeton zinciri (testlerde sahte HTTP'li bir `XboxAuth` verilir).
@@ -1188,11 +1191,19 @@ final class AppModel: ObservableObject {
         RemotePlayLog.write("Paketler güncellendi: \((result.downloaded + result.removed).joined(separator: ", "))")
     }
 
+    /// Kayıtlı PS5'i (adresi değiştiyse ağda kimliğiyle) bulan arayıcı; kayıt değişirse saklanır. Kayıt yoksa nil.
+    private func consoleFinder() -> ConsoleFinder? {
+        guard let console else { return nil }
+        let finder = ConsoleFinder(console: console)
+        finder.onChange = { [weak self] moved in Task { @MainActor in self?.consoleMoved(moved) } }
+        return finder
+    }
+
     /// PS5'e bağlanınca çalışan oyun okunmaya başlar, bağlantı gidince bırakılır (havuz satırı oyunsuz gider).
     private func updateGameProbe(connected: Bool) {
         guard probesGame else { return }
         // Xbox'ta çalışan oyun sorulmaz (PS5 keşif sorusu); kayıtlı bir PS5 olsa da.
-        guard connected, !isXbox, let host = console?.host else {
+        guard connected, !isXbox, console != nil else {
             gameProbe?.cancel()
             gameProbe = nil
             gameChoice.consoleReported(nil)
@@ -1203,7 +1214,9 @@ final class AppModel: ObservableObject {
         gameProbe = Task { [weak self] in
             var last: RunningGame?
             while !Task.isCancelled {
-                let game = await services.runningGame(host: host)
+                // Her yoklamada güncel kayıt kullanılır (oturum PS5'i yeni adreste bulmuş olabilir).
+                guard let finder = self?.consoleFinder() else { break }
+                let game = await services.runningGame(finder: finder)
                 // Bu arada bağlantı bittiyse oyun yazılmaz (bırakılan oyun geri gelmesin).
                 guard !Task.isCancelled else { break }
                 self?.gameChoice.consoleReported(game)
@@ -3697,7 +3710,7 @@ final class AppModel: ObservableObject {
         guard let host = ManualAddress.normalize(text), let current = console else { return false }
         if host != current.host {
             RemotePlayLog.write("PS5 adresi elle girildi: \(current.host) -> \(host)")
-            consoleMoved(RegisteredConsole(host: host, name: current.name, registKey: current.registKey, morning: current.morning))
+            consoleMoved(current.withHost(host))
         }
         reconnect(reason: "PS5 adresi elle girildi")
         return true

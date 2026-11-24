@@ -102,9 +102,12 @@ extension PhoneServices {
     func identifyTV(host: String) async -> LGTV? { await PairedTV.identify(host: host) }
     func tvResponds(host: String, brand: TVBrand) async -> Bool { await TVReach.responds(host: host, brand: brand) }
 
-    /// PS5'te o an çalışan oyun: yalnız bağlı PS5'in adresine keşif sorusu gider (ortak havuz için; bkz. `RunningGame`).
-    func runningGame(host: String) async -> RunningGame? {
-        guard let info = await Console.discover(timeout: .seconds(2), host: host).first else { return nil }
+    /// PS5'te o an çalışan oyun (ortak havuz için; bkz. `RunningGame`): kayıtlı adrese keşif sorusu gider. Yanıt yoksa ya
+    /// da yanıt veren başka bir PS5'se kayıtlı PS5 ağda kimliğiyle aranır; yeni adreste bulunursa kayıt güncellenir
+    /// (`ConsoleFinder.onChange`). Eskiden yoklama hep ilk adrese bakıyordu.
+    func runningGame(finder: ConsoleFinder) async -> RunningGame? {
+        let info = await Task.detached { finder.locate().info }.value
+        guard let info else { return nil }
         return RunningGame(titleId: info.runningAppTitleId, name: info.runningAppName)
     }
 }
