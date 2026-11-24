@@ -708,13 +708,15 @@ class StreamSession(
     private fun waitForWake(current: Int, deadline: Long) {
         queue.schedule({
             if (!isCurrent(current)) return@schedule
+            val atHost = ConsoleDiscovery.discover(console.host, 2000)
             when {
-                ConsoleDiscovery.discover(console.host, 2000).any { it.isAwake } -> {
+                atHost.any { it.isAwake } -> {
                     step = com.couchsubs.mobile.core.ConnectStep.OPENING
                     openSession(current)
                 }
-                // Uyanan PS5 yeni adres almış olabilir (modem yeniden başladı): ağda kimliğiyle bulunduysa oraya bağlanılır.
-                finder.relocate()?.let { it.isAwake && it.host == console.host } == true -> {
+                // Kayıtlı adreste hiç yanıt yok: uyanan PS5 yeni adres almış olabilir (modem yeniden başladı); ağda kimliğiyle
+                // bulunduysa oraya bağlanılır.
+                atHost.isEmpty() && finder.relocate()?.let { it.isAwake && it.host == console.host } == true -> {
                     step = com.couchsubs.mobile.core.ConnectStep.OPENING
                     openSession(current)
                 }

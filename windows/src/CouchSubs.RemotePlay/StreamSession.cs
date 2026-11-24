@@ -672,13 +672,15 @@ public sealed class StreamSession : IStreamSession
         queue.PostAfter(TimeSpan.FromSeconds(2), () =>
         {
             if (!IsCurrent(current)) return;
-            if (ConsoleDiscovery.Discover(console.Host, TimeSpan.FromSeconds(2)).Any(c => c.IsAwake))
+            var atHost = ConsoleDiscovery.Discover(console.Host, TimeSpan.FromSeconds(2));
+            if (atHost.Any(c => c.IsAwake))
             {
                 SetStep(ConnectStep.Opening);
                 OpenSession(current);
             }
-            // Uyanan PS5 yeni adres almış olabilir (modem yeniden başladı): ağda kimliğiyle bulunduysa oraya bağlanılır.
-            else if (finder.Relocate() is { IsAwake: true } moved && moved.Host == console.Host)
+            // Kayıtlı adreste hiç yanıt yok: uyanan PS5 yeni adres almış olabilir (modem yeniden başladı); ağda kimliğiyle
+            // bulunduysa oraya bağlanılır.
+            else if (atHost.Count == 0 && finder.Relocate() is { IsAwake: true } moved && moved.Host == console.Host)
             {
                 SetStep(ConnectStep.Opening);
                 OpenSession(current);

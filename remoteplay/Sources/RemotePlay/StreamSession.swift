@@ -786,11 +786,13 @@ public final class StreamSession: @unchecked Sendable {
     private func waitForWake(_ current: Int, deadline: Date) {
         queue.asyncAfter(deadline: .now() + 2) { [weak self] in
             guard let self, self.isCurrent(current) else { return }
-            if Console.blockingDiscover(timeout: 2, host: self.console.host).contains(where: \.isAwake) {
+            let atHost = Console.blockingDiscover(timeout: 2, host: self.console.host)
+            if atHost.contains(where: \.isAwake) {
                 self.setStep(.opening)
                 self.openSession(current)
-            } else if let moved = self.finder.relocate(), moved.host == self.console.host, moved.isAwake {
-                // Uyanan PS5 yeni adres almış olabilir (modem yeniden başladı): ağda kimliğiyle bulunduysa oraya bağlanılır.
+            } else if atHost.isEmpty, let moved = self.finder.relocate(), moved.host == self.console.host, moved.isAwake {
+                // Kayıtlı adreste hiç yanıt yok: uyanan PS5 yeni adres almış olabilir (modem yeniden başladı); ağda
+                // kimliğiyle bulunduysa oraya bağlanılır.
                 self.setStep(.opening)
                 self.openSession(current)
             } else if Date() < deadline {
