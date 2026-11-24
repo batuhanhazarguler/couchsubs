@@ -1,0 +1,1 @@
+0.9.99: Screen text translations no longer cover button icons (△ ○ ✕ □, R2, L1) or menu icons: the box never grows sideways, a long translation shrinks and wraps downwards. Short sentences are no longer squeezed or made tiny; phone bubble text is larger.

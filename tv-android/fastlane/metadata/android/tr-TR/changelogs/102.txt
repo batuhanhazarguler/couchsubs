@@ -1,0 +1,1 @@
+0.9.99: Ekran yazısı çevirisi tuş simgesinin (△ ○ ✕ □, R2, L1) ve menü simgesinin üstüne binmiyor: kutu yana genişlemez, sığmayan çeviri küçülür ve aşağı uzar. Kısa cümleler yatayda sıkışmıyor, yazı çok küçülmüyor; telefon balonundaki yazı daha büyük.

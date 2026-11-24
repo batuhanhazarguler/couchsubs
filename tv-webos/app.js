@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.98';
+  var APP_VERSION = '0.9.99';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1453,7 +1453,7 @@
     }
   }
 
-  // Özgün görünüşlü çeviri ("Ekranı çevir", otomatik ekran yazısı) özgün yazının birebir yerinde (TV uygulaması 0.9.98;
+  // Özgün görünüşlü çeviri ("Ekranı çevir", otomatik ekran yazısı) özgün yazının birebir yerinde (TV uygulaması 0.9.99;
   // ScreenFit.lines ile aynı sıra): yazının alanı özgün yazının kutusudur ve yana hiç genişlemez. Türkçe uzunsa sırasıyla:
   // yalnız en çok iki sözcüklük tek satırlık etikette (menü sekmesi, düğme) yazı yatayda en çok %10 sıkışır; yazı boyu
   // küçülür (tek satırlık etiket %50'ye, çok satırlı yazı %60'a kadar); satır kırılır ve kutu aşağı uzar.
