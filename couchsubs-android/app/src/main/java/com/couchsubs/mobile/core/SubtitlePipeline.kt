@@ -214,6 +214,8 @@ class SubtitlePipeline(
         onLog?.invoke("sahne yazısı: \"$excerpt\" altyazı sayılmadı ($reason)")
     }
     private val mission = MissionLine()
+    /** Düşürülen ya da bekletilen satırın nedeni, sınırlı ve tekrarsız ([DropLog]). */
+    private val drops = DropLog(now)
 
     /**
      * Görev satırının bölgesi değişti (null: görev kalktı). Görev altyazıya girmez; bölgesi "auto-mission" ek alanı olarak
@@ -343,6 +345,9 @@ class SubtitlePipeline(
             if (mission.observe(stickyRows.removed, area, now())) {
                 missionChanged = true
                 missionRegion = mission.region
+            }
+            for (line in mission.dropped) {
+                drops.note("MissionLine", "${MissionLine.SETTLE_MS / 1000} sn dolmadan kalktı, görev sayılmadı, çevrilmedi", line, onLog)
             }
             // Bu oturumda altyazının okunduğu yükseklikteki kısa satır tabela sayılmaz; atılan blok günlüğe (GitHub #822).
             val edge = mutableListOf<Reading>()
@@ -648,7 +653,10 @@ class SubtitlePipeline(
      * kez yazılır. Mac/iPhone (quietDrop) ve Windows (QuietDrop) aynı kuralları uygular.
      */
     private fun quietDrop(source: String, box: TextBox?): Boolean {
-        if (settled.isSettled(source)) return true
+        if (settled.isSettled(source)) {
+            settled.noteSkip(source)?.let { drops.note("SettledText", "karara bağlanmış satırla $it, yeniden işlenmedi", source, onLog) }
+            return true
+        }
         val excerpt = if (source.length > 120) source.take(120) + "…" else source
         val target = skipsTurkish && TurkishText.looksTurkish(source)
         val note = when {

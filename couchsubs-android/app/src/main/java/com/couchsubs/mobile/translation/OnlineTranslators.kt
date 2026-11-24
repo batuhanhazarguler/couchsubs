@@ -745,6 +745,21 @@ object AiRequest {
      */
     fun screenLimits(sentences: List<String>): List<Int> = sentences.map { maxOf(4, kotlin.math.ceil(it.length * 1.15).toInt()) }
 
+    /**
+     * Ekran çevirisinin günlüğe yazılacak sorunu ([com.couchsubs.mobile.core.DropLog]): boş döndü, aslıyla aynı döndü
+     * (İngilizce kaldı) ya da [screenLimits] sınırını aştı. Sorun yoksa null. Mac/iPhone (AIRequest.screenIssue) ve
+     * Windows (AiRequest.ScreenIssue) aynı.
+     */
+    fun screenIssue(source: String, translation: String, limit: Int): String? {
+        val trimmed = translation.trim()
+        if (trimmed.isEmpty()) return "motor boş çeviri döndü"
+        if (trimmed.lowercase() == source.trim().lowercase() && source.any { it.isLetter() }) {
+            return "çeviri aslıyla aynı döndü, İngilizce kaldı"
+        }
+        if (trimmed.length > limit) return "%115 sınırını aştı (${trimmed.length}/$limit)"
+        return null
+    }
+
     /** Karakter sınırlarının istemdeki açıklaması (küfür kuralı: sansür ve yumuşatma yok). */
     const val LIMITS_NOTE = "On-screen texts (menus, objectives, labels): each Turkish translation must fit in the place of the English text. Use at most the number of characters given for it in this JSON array, in the same order; choose shorter Turkish wording, but keep the meaning and never censor or soften profanity."
 
@@ -1049,6 +1064,9 @@ class AiTranslator(
 
     override val logName: String get() = provider.id
 
+    /** Ekran çevirisinin boş, aslıyla aynı ya da sınırı aşan yanıtı altyazı günlüğüne ([com.couchsubs.mobile.core.DropLog]). */
+    private val drops = com.couchsubs.mobile.core.DropLog()
+
     /** Tek çeviri çağrısında istek ve tüm önbellek işlemleri aynı talimat anlık görüntüsünü kullanır. */
     override fun translate(text: String): String {
         val previous = enterInstructionScope()
@@ -1100,7 +1118,10 @@ class AiTranslator(
                 if (status !in 200..299) throw AiRequest.error(status, body)
                 val translated = AiRequest.translations(AiRequest.text(provider, body), sentences.size)
                 succeeded()
-                for ((index, translation) in chunk.zip(translated)) {
+                val limits = AiRequest.screenLimits(sentences)
+                for ((offset, pair) in chunk.zip(translated).withIndex()) {
+                    val (index, translation) = pair
+                    AiRequest.screenIssue(texts[index], translation, limits[offset])?.let { drops.note("translateAll", it, texts[index]) }
                     results[index] = translation
                     cache.store(cacheKey(texts[index], game), translation)
                 }

@@ -134,6 +134,8 @@ public final class SubtitlePipeline {
     /// bloğun bozuk okunmuş parçası çevrilmez, aynı satır değişmeyen ekranda yeniden işlenmez.
     private var settled = SettledText()
     private var mission = MissionLine()
+    /// Düşürülen ya da bekletilen satırın nedeni, sınırlı ve tekrarsız (`DropLog`).
+    private let drops: DropLog
     /// Görev satırının bölgesi değişti (nil: görev kalktı). Görev altyazıya girmez; bölgesi "auto-mission" ek alanı olarak
     /// kendi yerinde ve özgün stilinde gösterilir (bkz. `MissionLine`).
     public var onMissionChanged: ((CropRegion?) -> Void)?
@@ -229,6 +231,7 @@ public final class SubtitlePipeline {
         self.now = clock
         self.stabilizer = SubtitleStabilizer(clock: clock)
         self.own = OwnSubtitles(clock: clock)
+        self.drops = DropLog(clock: clock)
         sessionStart = clock()
         quiet = QuietReads(since: sessionStart)
     }
@@ -344,6 +347,9 @@ public final class SubtitlePipeline {
         if mission.observe(stickyRows.removed, area: place, at: now()) {
             log(mission.region == nil ? "görev satırı kalktı" : "görev satırı kendi yerinde gösteriliyor")
             onMissionChanged?(mission.region)
+        }
+        for line in mission.dropped {
+            drops.note("MissionLine", "\(MissionLine.settleMs / 1000) sn dolmadan kalktı, görev sayılmadı, çevrilmedi", line, log: onLog)
         }
         var edge: [Reading] = []
         var sceneTexts: [String] = []
@@ -598,7 +604,12 @@ public final class SubtitlePipeline {
     /// parçası, ya da kapanmayan parantezle bölünmüş çöp okuma (`OcrNoise.looksBracketGarbled`). Atılan satır günlüğe bir
     /// kez yazılır. Windows (QuietDrop) ve Android (quietDrop) aynı kuralları uygular.
     private func quietDrop(_ source: String, box: TextBox?) -> Bool {
-        if settled.isSettled(source) { return true }
+        if settled.isSettled(source) {
+            if let reason = settled.noteSkip(source) {
+                drops.note("SettledText", "karara bağlanmış satırla \(reason), yeniden işlenmedi", source, log: onLog)
+            }
+            return true
+        }
         let note: String
         let target = skipsTurkish && TurkishText.looksTurkish(source)
         if target {

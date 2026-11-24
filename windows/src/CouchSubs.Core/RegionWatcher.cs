@@ -108,6 +108,8 @@ public sealed partial class RegionWatcher
         public string Remembered = "";
         /// <summary>Bekletilen okuma ve kaç turdur bekletildiği (<see cref="HoldLimit"/>).</summary>
         public string? Held;
+        /// <summary>Bekletilen okumanın yazısı (günlük için).</summary>
+        public string? HeldText;
         public int Holds;
         public string? RenderedKey;
         public string? RenderedText;
@@ -174,6 +176,8 @@ public sealed partial class RegionWatcher
     private readonly IRegionSender server;
     private readonly int intervalMs;
     private readonly Func<long> now;
+    /// <summary>Düşürülen ya da bekletilen okumanın nedeni, sınırlı ve tekrarsız (<see cref="DropLog"/>).</summary>
+    private readonly DropLog drops;
     private Dictionary<string, State> states = [];
     private long? lastPass;
     private long? lastPhonePass;
@@ -225,6 +229,7 @@ public sealed partial class RegionWatcher
         this.server = server;
         this.intervalMs = intervalMs;
         now = clock ?? (() => Environment.TickCount64);
+        drops = new DropLog(now);
     }
 
     /// <summary>Tur aralığının çarpanı (<see cref="ReadPressure.Slowdown"/>); verilmezse 1.</summary>
@@ -773,9 +778,16 @@ public sealed partial class RegionWatcher
             state.RenderedBlocks = moved;
             return;
         }
+        // Bekletilen okuma gösterilmeden yerine başka okuma geldi: o okuma hiç çevrilmedi (günlüğe bir kez).
+        if (state.Held is { } held && held != candidate.Key)
+        {
+            drops.Note("RegionWatcher", $"{area.Name}: bekletilen okuma gösterilmeden yerine yenisi geldi, çevrilmedi", state.HeldText ?? "", Log);
+            state.Held = null;
+        }
         if (ShouldHold(candidate, state))
         {
-            if (state.Held != candidate.Key) (state.Held, state.Holds) = (candidate.Key, 0);
+            if (state.Held != candidate.Key)
+                (state.Held, state.HeldText, state.Holds) = (candidate.Key, IconText.Plain(string.Join(' ', candidate.Paragraphs)), 0);
             if (++state.Holds <= HoldLimit)
             {
                 // Sonraki tur (iz değişmese de) bu okumayı yeniden dener; o hâlde kalırsa sınırda gösterilir.
@@ -928,7 +940,13 @@ public sealed partial class RegionWatcher
                 }
                 // TV'de ve masaüstünde aynı görünen gönderi yinelenmez (panel mesajlarının akış kutuları önemsiz).
                 if (blocks is { Count: > 0 } shown && state.SentPhoneShown is { } sent && options == state.SentPhoneOptions
-                    && PhoneSteady.SamePicture(shown, sent)) return;
+                    && PhoneSteady.SamePicture(shown, sent))
+                {
+                    // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe; Mac ile aynı).
+                    if (!shown.Select(item => item.Source).SequenceEqual(sent.Select(item => item.Source)))
+                        PhoneNote("PhoneSteady", "samePicture: görüntü aynı sayıldı, gönderilmedi", string.Join(' ', shown.Select(item => item.Source)));
+                    return;
+                }
                 state.SentPhoneShown = blocks;
                 state.SentPhoneOptions = options;
             }
@@ -1012,6 +1030,7 @@ public sealed partial class RegionWatcher
         // Sohbet panelinde yalnız aslıyla aynı mesajlar ("ok", kişinin adı) olsa da panel görünür.
         if (similar.All(same => same) && !(keepUnchanged && candidate.Blocks?.Any(block => block.Phone is not null) == true))
         {
+            drops.Note("RegionWatcher", $"{area.Name}: çevirisi aslıyla aynı, gösterilmedi", IconText.Plain(string.Join(' ', candidate.Paragraphs)), Log);
             SendCurrent(area, state, started, "", null);
             state.RenderedKey = candidate.Key;
             state.RenderedText = "";

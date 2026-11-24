@@ -583,6 +583,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     private readonly ScreenStyleLock screenStyle = new();
     /// <summary>Ekrandaki çeviriler ve özgün yazılarının takibi (<see cref="ScreenPresence"/>).</summary>
     private readonly ScreenPresence presence = new();
+    /// <summary><see cref="ScreenPresence"/>'ın kaldırma ve geri getirme kararları altyazı günlüğüne (<see cref="DropLog"/>; sınırlı, tekrarsız).</summary>
+    private readonly DropLog presenceDrops = new();
     private (IReadOnlyList<ScreenTranslation.Item> Items, long Until)? screenShown;
     /// <summary>
     /// Her <see cref="SendScreen"/> ve <see cref="ClearScreen"/> bir üst numara verir. <c>Observe</c> değişikliği kilidin
@@ -608,6 +610,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         List<ScreenTranslation.Item>? screenChange = null;
         var regionChanges = new List<(string Id, RegionSent Sent, List<ScreenTranslation.Item> Kept)>();
         long until;
+        var flips = new List<(string Source, bool Visible)>();
         long epoch;
         lock (screenStyle)
         {
@@ -621,6 +624,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             var flags = visible.Take(screen.Count).ToList();
             var before = screenVisible.Count == 0 ? [.. screen.Select(_ => true)] : screenVisible;
             if (screen.Count > 0 && !flags.SequenceEqual(before)) screenChange = [.. screen.Where((_, i) => flags[i])];
+            // Kaldırma ya da geri getirme kararı günlüğe (DropLog): periyodik kopmalarda hangi yazının izinin kaçtığı görünsün.
+            for (var i = 0; i < screen.Count && i < before.Count; i++) if (before[i] != flags[i]) flips.Add((screen[i].Source, flags[i]));
             screenVisible = screen.Count == 0 ? [] : flags;
             var offset = screen.Count;
             var previous = new Dictionary<string, List<bool>>(regionVisible);
@@ -631,10 +636,14 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
                 offset += sent.Blocks.Count;
                 var old = previous.TryGetValue(id, out var seen) ? seen : [.. sent.Blocks.Select(_ => true)];
                 regionVisible[id] = part;
+                for (var i = 0; i < sent.Blocks.Count && i < old.Count; i++) if (old[i] != part[i]) flips.Add((sent.Blocks[i].Source, part[i]));
                 if (!part.SequenceEqual(old)) regionChanges.Add((id, sent, [.. sent.Blocks.Where((_, i) => part[i])]));
             }
             until = screenShown?.Until ?? now;
         }
+        foreach (var (source, shown) in flips)
+            presenceDrops.Note("ScreenPresence",
+                shown ? "özgün yazı geri geldi, çeviri yeniden gösterildi" : "özgün yazının izi kaçtı, çeviri kaldırıldı", source);
         if (screenChange is not null)
         {
             bool current;

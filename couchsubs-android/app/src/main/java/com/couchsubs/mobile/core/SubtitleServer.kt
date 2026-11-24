@@ -555,6 +555,8 @@ class SubtitleServer(
 
     /** Ekrandaki çeviriler ve özgün yazılarının takibi ([ScreenPresence]). */
     private val presence = ScreenPresence()
+    /** [ScreenPresence]'ın kaldırma ve geri getirme kararları altyazı günlüğüne ([DropLog]; sınırlı, tekrarsız). */
+    private val presenceDrops = DropLog()
     private var screenShown: Pair<List<ScreenTranslation.Item>, Long>? = null
     /**
      * Her [sendScreen] ve [clearScreen] bir üst numara verir. [observe] değişikliği kilidin dışında gönderir; arada
@@ -579,6 +581,7 @@ class SubtitleServer(
         var screenChange: List<ScreenTranslation.Item>? = null
         val regionChanges = mutableListOf<Triple<String, RegionSent, List<ScreenTranslation.Item>>>()
         var until = now
+        val flips = mutableListOf<Pair<String, Boolean>>()
         var epoch = 0L
         synchronized(screenStyle) {
             epoch = screenEpoch
@@ -591,6 +594,8 @@ class SubtitleServer(
             val flags = visible.take(screen.size)
             val before = if (screenVisible.isEmpty()) screen.map { true } else screenVisible
             if (screen.isNotEmpty() && flags != before) screenChange = screen.filterIndexed { i, _ -> flags[i] }
+            // Kaldırma ya da geri getirme kararı günlüğe ([DropLog]): periyodik kopmalarda hangi yazının izinin kaçtığı görünsün.
+            for (i in screen.indices) if (i < before.size && before[i] != flags[i]) flips.add(screen[i].source to flags[i])
             screenVisible = if (screen.isEmpty()) emptyList() else flags
             var offset = screen.size
             val previous = regionVisible.toMap()
@@ -599,11 +604,17 @@ class SubtitleServer(
                 val part = visible.subList(offset, offset + sent.blocks.size).toList()
                 offset += sent.blocks.size
                 regionVisible[id] = part
-                if (part != (previous[id] ?: sent.blocks.map { true })) {
+                val was = previous[id] ?: sent.blocks.map { true }
+                for (i in sent.blocks.indices) if (i < was.size && was[i] != part[i]) flips.add(sent.blocks[i].source to part[i])
+                if (part != was) {
                     regionChanges.add(Triple(id, sent, sent.blocks.filterIndexed { i, _ -> part[i] }))
                 }
             }
             until = screenShown?.second ?: now
+        }
+        for ((source, shown) in flips) {
+            presenceDrops.note("ScreenPresence",
+                if (shown) "özgün yazı geri geldi, çeviri yeniden gösterildi" else "özgün yazının izi kaçtı, çeviri kaldırıldı", source)
         }
         screenChange?.let { items ->
             if (synchronized(screenStyle) { screenEpoch == epoch }) emitScreen(items, maxOf(1L, until - now).toInt())

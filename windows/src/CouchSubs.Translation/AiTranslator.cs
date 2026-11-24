@@ -86,6 +86,21 @@ public static class AiRequest
     public static IReadOnlyList<int> ScreenLimits(IReadOnlyList<string> sentences) =>
         [.. sentences.Select(s => Math.Max(4, (int)Math.Ceiling(s.Length * 1.15)))];
 
+    /// <summary>
+    /// Ekran çevirisinin günlüğe yazılacak sorunu (<see cref="DropLog"/>): boş döndü, aslıyla aynı döndü (İngilizce kaldı)
+    /// ya da <see cref="ScreenLimits"/> sınırını aştı. Sorun yoksa null. Mac/iPhone (AIRequest.screenIssue) ve Android
+    /// (AiRequest.screenIssue) aynı.
+    /// </summary>
+    public static string? ScreenIssue(string source, string translation, int limit)
+    {
+        var trimmed = translation.Trim();
+        if (trimmed.Length == 0) return "motor boş çeviri döndü";
+        if (string.Equals(trimmed, source.Trim(), StringComparison.CurrentCultureIgnoreCase) && source.Any(char.IsLetter))
+            return "çeviri aslıyla aynı döndü, İngilizce kaldı";
+        if (trimmed.Length > limit) return $"%115 sınırını aştı ({trimmed.Length}/{limit})";
+        return null;
+    }
+
     /// <summary>Karakter sınırlarının istemdeki açıklaması (küfür kuralı: sansür ve yumuşatma yok).</summary>
     public const string LimitsNote = "On-screen texts (menus, objectives, labels): each Turkish translation must fit in the place of the English text. Use at most the number of characters given for it in this JSON array, in the same order; choose shorter Turkish wording, but keep the meaning and never censor or soften profanity.";
 
@@ -521,6 +536,8 @@ public sealed class AiTranslator : ITextTranslator, IOnlineTranslator
     /// <summary>"Ekranı çevir"in uzun yanıtlı tek isteği için daha uzun bekleyen istemci.</summary>
     private readonly HttpClient _screenHttp;
     private readonly TranslationCache _cache;
+    /// <summary>Ekran çevirisinin boş, aslıyla aynı ya da sınırı aşan yanıtı altyazı günlüğüne (<see cref="DropLog"/>).</summary>
+    private readonly DropLog _drops = new();
     private readonly RequestBudget? _budget;
     private readonly ConcurrentDictionary<string, IReadOnlyList<SpokenLine>> _speech = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _names = new(StringComparer.Ordinal);
@@ -762,8 +779,11 @@ public sealed class AiTranslator : ITextTranslator, IOnlineTranslator
                     maxOutputTokens: AiRequest.ScreenOutputTokens, thinkingOff: thinkingOff, instruction: _instruction,
                     limits: AiRequest.ScreenLimits(sentences)), _screenHttp, sentences.Count, cancellationToken).ConfigureAwait(false);
                 Report(null);
+                var limits = AiRequest.ScreenLimits(sentences);
                 for (var i = 0; i < chunk.Count; i++)
                 {
+                    if (AiRequest.ScreenIssue(texts[chunk[i]], translated[i], limits[i]) is { } issue)
+                        _drops.Note("translateAll", issue, texts[chunk[i]]);
                     results[chunk[i]] = translated[i];
                     _cache.Store(CacheKey(texts[chunk[i]], game), translated[i]);
                 }

@@ -648,6 +648,8 @@ class RegionWatcher(
         var remembered = ""
         /** Bekletilen okuma ve kaç turdur bekletildiği ([HOLD_LIMIT]). */
         var held: String? = null
+        /** Bekletilen okumanın yazısı (günlük için). */
+        var heldText: String? = null
         var holds = 0
         var renderedKey: String? = null
         var renderedText: String? = null
@@ -703,6 +705,11 @@ class RegionWatcher(
         return true
     }
 
+    /** Altyazı günlüğü (Mac/iPhone `onLog`, Windows `Log`): ek alanda okunup çevrilmeyen yazının nedeni. */
+    @Volatile var onLog: ((String) -> Unit)? = null
+    /** Düşürülen ya da bekletilen okumanın nedeni, sınırlı ve tekrarsız ([DropLog]). */
+    private val drops = DropLog(clock)
+
     /** Açık oyun telefonunun oturumu ("GTA 6'daki telefonu otomatik çevir"); telefon kapalıyken null. */
     private var phoneSession: PhoneRegionSession? = null
     /** Telefon mesajları İngilizce: kısaltmalar çevirmene açık yazılır ([GamePhoneText.englishModelInput]). */
@@ -714,7 +721,8 @@ class RegionWatcher(
     fun observePhone(capture: PhoneCapture) {
         val read = readPhone ?: return
         synchronized(lock) {
-            (phoneSession ?: PhoneRegionSession(read, translator, sender, { phonePanel() }).also { phoneSession = it }).observe(capture)
+            (phoneSession ?: PhoneRegionSession(read, translator, sender, { phonePanel() })
+                .also { it.onLog = { line -> onLog?.invoke(line) }; phoneSession = it }).observe(capture)
         }
     }
 
@@ -959,9 +967,17 @@ class RegionWatcher(
             state.renderedStyles = candidate.styles
             return
         }
+        // Bekletilen okuma gösterilmeden yerine başka okuma geldi: o okuma hiç çevrilmedi (günlüğe bir kez).
+        state.held?.let { held ->
+            if (held != candidate.key) {
+                drops.note("RegionWatcher", "${area.name}: bekletilen okuma gösterilmeden yerine yenisi geldi, çevrilmedi", state.heldText ?: "", onLog)
+                state.held = null
+            }
+        }
         if (shouldHold(candidate, state)) {
             if (state.held != candidate.key) {
                 state.held = candidate.key
+                state.heldText = IconText.plain(candidate.paragraphs.joinToString(" "))
                 state.holds = 0
             }
             if (++state.holds <= HOLD_LIMIT) {
@@ -996,6 +1012,9 @@ class RegionWatcher(
             task.get()
         } catch (error: Exception) {
             // Çevrilemedi: önceki yazı kutuda kalır, aynı yazı sonraki turda yeniden denenir.
+            if (started == session) {
+                onLog?.invoke("ek alan ${area.name}: ${logExcerpt(IconText.plain(candidate.paragraphs.joinToString(" ")), 120)} çevrilemedi (${error.message})")
+            }
             if (started == session && state.shown == candidate.key) {
                 state.shown = previousShown
                 state.shownText = previousText
@@ -1019,6 +1038,7 @@ class RegionWatcher(
             TextMatch.isSimilar(TextMatch.normalize(IconText.plain(a)), TextMatch.normalize(IconText.plain(b)), 0.90)
         }
         if (similar.all { it }) {
+            drops.note("RegionWatcher", "${area.name}: çevirisi aslıyla aynı, gösterilmedi", IconText.plain(candidate.paragraphs.joinToString(" ")), onLog)
             // Kutu hiç gösterilmediyse boşaltma olayı gönderilmez.
             if (!state.renderedText.isNullOrEmpty()) send { sender.sendRegion(area.id, "", null, null) }
             state.renderedText = ""

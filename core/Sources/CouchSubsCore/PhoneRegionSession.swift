@@ -68,6 +68,9 @@ final class PhoneRegionSession {
     private var steady = PhonePanelSteady()
     /// Boş okumanın art arda kaç turdur sürdüğü: `PhoneSteady.missTurns` tur (~1,35 sn) sürmeden ekran silinmez.
     private var empties = 0
+    /// Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni (`DropLog`; Windows ve Android ile aynı).
+    var onLog: ((String) -> Void)?
+    private let drops = DropLog()
 
     init(reader: TextReader, translator: TextTranslator, server: RegionSending) {
         self.reader = reader
@@ -136,7 +139,7 @@ final class PhoneRegionSession {
         var fresh = false
         if changed || emptyOnce {
             do { page = try await read(start, signature: signature) }
-            catch { page = nil; return }
+            catch { page = nil; note("PhoneSession", "okunamadı (\(error.localizedDescription))", ""); return }
             fresh = true
         } else if !needsWork && !emptyOnce {
             // "GTA 6 Telefon Mesajları" ayarı değişti: aynı sayfa yeni düzende hemen gösterilir.
@@ -159,6 +162,10 @@ final class PhoneRegionSession {
         if fresh, holds < PhoneSteady.holdTurns, let shown = shownPage, !rendered.isEmpty,
            Self.missingInteriorBubble(shown, current)
             || (Self.sameLayout(shown, current, frameSize) && GamePhoneText.hasAdjacentOcrEdits(Self.text(shown), Self.text(current))) {
+            if holds == 0 {
+                let why = Self.missingInteriorBubble(shown, current) ? "balon düştü" : "harf oynaması"
+                note("PhoneSteady", "okuma \(PhoneSteady.holdTurns) tura dek bekletildi (\(why))", Self.text(current))
+            }
             holds += 1
             page = nil
             return
@@ -170,6 +177,10 @@ final class PhoneRegionSession {
             // bulanıklık) panel kaybolup geri geliyordu (X, 22 Kas).
             empties += 1
             if empties >= (rendered.isEmpty ? 2 : PhoneSteady.missTurns) {
+                if !rendered.isEmpty {
+                    note("PhoneSteady", "\(PhoneSteady.missTurns) tur boş okundu, çeviri silindi",
+                         rendered.map(\.source).joined(separator: " "))
+                }
                 publish([])
                 shownPage = nil
                 emptyOnce = false
@@ -188,6 +199,9 @@ final class PhoneRegionSession {
         publish(items(current, translations: available))
         var missing = paragraphs.filter { available[$0] == nil }
         guard !missing.isEmpty else {
+            if fresh, let shown = shownPage, Self.text(shown) != Self.text(current) {
+                note("PhoneSession", "mesajlar değişti, hepsinin çevirisi hazır sayıldı, motora gitmedi", Self.text(current))
+            }
             needsWork = false
             shownPage = current
             return
@@ -213,12 +227,24 @@ final class PhoneRegionSession {
         do {
             let result = try await translator.translateAll(inputs)
             guard !Task.isCancelled, latest != nil else { return }
-            guard result.count == inputs.count else { needsWork = true; return }
-            for (source, translated) in zip(missing, result) where !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard result.count == inputs.count else {
+                needsWork = true
+                note("PhoneSession", "çevrilemedi (motor \(result.count)/\(inputs.count) yanıt)", missing.joined(separator: " "))
+                return
+            }
+            for (source, translated) in zip(missing, result) {
+                guard !translated.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
+                    continue
+                }
                 remember(source, translated)
                 available[source] = translated
             }
-        } catch { needsWork = true; return }
+        } catch {
+            needsWork = true
+            note("PhoneSession", "çevrilemedi (\(error.localizedDescription))", missing.joined(separator: " "))
+            return
+        }
 
         guard let latest else { return }
         if latest.frame !== verified.frame, !matches(current, latest) {
@@ -231,6 +257,11 @@ final class PhoneRegionSession {
         publish(items(current, translations: available))
         needsWork = current.bubbles.contains { $0.group.paragraphs.contains { available[$0] == nil } }
         shownPage = needsWork ? nil : current
+    }
+
+    /// Mesajın düşürülme ya da bekletilme nedeni (`DropLog`: aynı neden + metin yinelenmez, dakikada sınırlı).
+    private func note(_ component: String, _ reason: String, _ text: String) {
+        drops.note(component, reason, IconText.plain(text), log: onLog)
     }
 
     private static func text(_ page: Page) -> String {
@@ -434,7 +465,14 @@ final class PhoneRegionSession {
         // yinelenmez.
         let line = steady.steadyLine(ScreenPhoneCard.measuredLine(items), now: now)
         let shown = Self.arranged(items, pose: placed?.pose, frameSize: frameSize, options: options, line: line)
-        if sameOptions, PhoneSteady.samePicture(shown, sentShown) { return }
+        if sameOptions, PhoneSteady.samePicture(shown, sentShown) {
+            // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe).
+            let sources = shown.map(\.source)
+            if sources != sentShown.map(\.source) {
+                note("PhoneSteady", "samePicture: görüntü aynı sayıldı, gönderilmedi", sources.joined(separator: " "))
+            }
+            return
+        }
         sentShown = shown
         let boxes = shown.map(\.box)
         let box = boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }

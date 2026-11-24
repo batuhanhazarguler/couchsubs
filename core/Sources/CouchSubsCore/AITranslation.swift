@@ -326,6 +326,19 @@ public enum AIRequest {
         sentences.map { max(4, Int((Double($0.count) * 1.15).rounded(.up))) }
     }
 
+    /// Ekran çevirisinin günlüğe yazılacak sorunu (`DropLog`): boş döndü, aslıyla aynı döndü (İngilizce kaldı) ya da
+    /// `screenLimits` sınırını aştı. Sorun yoksa nil. Windows (AiRequest.ScreenIssue) ve Android (AiRequest.screenIssue) aynı.
+    public static func screenIssue(source: String, translation: String, limit: Int) -> String? {
+        let trimmed = translation.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "motor boş çeviri döndü" }
+        if trimmed.lowercased() == source.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           source.contains(where: \.isLetter) {
+            return "çeviri aslıyla aynı döndü, İngilizce kaldı"
+        }
+        if trimmed.count > limit { return "%115 sınırını aştı (\(trimmed.count)/\(limit))" }
+        return nil
+    }
+
     /// Karakter sınırlarının istemdeki açıklaması (küfür kuralı: sansür ve yumuşatma yok).
     public static let limitsNote = "On-screen texts (menus, objectives, labels): each Turkish translation must fit in the place of the English text. Use at most the number of characters given for it in this JSON array, in the same order; choose shorter Turkish wording, but keep the meaning and never censor or soften profanity."
 
@@ -641,6 +654,8 @@ public final class AITranslationCore: @unchecked Sendable {
     private let cache: TranslationCache
     private let budget: RequestBudget?
     private let names = SpeakerNames()
+    /// Ekran çevirisinin boş, aslıyla aynı ya da sınırı aşan yanıtı altyazı günlüğüne (`DropLog`).
+    private let drops = DropLog()
     private let lock = NSLock()
     private var speech: [String: [SpokenLine]] = [:]
     /// Son gösterilen satırlar, eskiden yeniye.
@@ -872,7 +887,11 @@ public final class AITranslationCore: @unchecked Sendable {
                                    instruction: instruction, limits: AIRequest.screenLimits(sentences))
                 }
                 setFailure(nil)
-                for (index, translation) in zip(chunk, translated) {
+                let limits = AIRequest.screenLimits(sentences)
+                for (offset, (index, translation)) in zip(chunk, translated).enumerated() {
+                    if let issue = AIRequest.screenIssue(source: texts[index], translation: translation, limit: limits[offset]) {
+                        drops.note("translateAll", issue, texts[index])
+                    }
                     results[index] = translation
                     cache.store(translation, for: self.cacheKey(texts[index], game: game))
                 }

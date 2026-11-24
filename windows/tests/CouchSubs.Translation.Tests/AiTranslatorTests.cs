@@ -1460,4 +1460,15 @@ public class AiTranslatorTests
         Assert.Contains("never censor or soften profanity", AiRequest.LimitsNote);
         Assert.DoesNotContain(AiRequest.LimitsNote, AiRequest.UserMessage(["MAP"], []));
     }
+
+    /// <summary>Ekran çevirisinin günlüğe düşen sorunları (Mac DropLogTests.testScreenIssue, Android DropLogTest aynı).</summary>
+    [Fact]
+    public void ScreenIssueNamesEmptyEchoedAndOverLimitTranslations()
+    {
+        Assert.Null(AiRequest.ScreenIssue("Open map", "Haritayı aç", 12));
+        Assert.Equal("motor boş çeviri döndü", AiRequest.ScreenIssue("Open map", " ", 10));
+        Assert.Equal("çeviri aslıyla aynı döndü, İngilizce kaldı", AiRequest.ScreenIssue("Open map", "open map", 10));
+        Assert.Null(AiRequest.ScreenIssue("42", "42", 4));
+        Assert.Equal("%115 sınırını aştı (17/10)", AiRequest.ScreenIssue("Open map", "Haritayı şimdi aç", 10));
+    }
 }

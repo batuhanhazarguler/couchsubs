@@ -72,6 +72,8 @@ public final class RegionWatcher {
         var remembered = ""
         /// Bekletilen okuma ve kaç turdur bekletildiği (`holdLimit`).
         var held: String?
+        /// Bekletilen okumanın yazısı (günlük için).
+        var heldText: String?
         var holds = 0
         /// Son gönderilen çeviri, aynı yazı yeni bir konuma taşındığında yeniden kullanılır.
         var renderedKey: String?
@@ -151,6 +153,8 @@ public final class RegionWatcher {
     /// Kısa İngilizce tuş komutlarını Türkçeye çevirir. Yalnız en → tr için açılır.
     public var translatesUiCommands = false
     public var onLog: ((String) -> Void)?
+    /// Düşürülen ya da bekletilen okumanın nedeni, sınırlı ve tekrarsız (`DropLog`).
+    private let drops: DropLog
     /// Bu tür ekran yazısı çevrilir mi (Ayarlar'daki türler, `UserSettings.screenTextAllows`); varsayılan hepsi.
     public var allows: (ScreenTextKind) -> Bool = { _ in true }
     /// Altyazı hattının son satırları ve alanı (bkz. `SubtitleEcho`); uygulama `SubtitleEcho.shared` verir.
@@ -173,6 +177,7 @@ public final class RegionWatcher {
         self.server = server
         self.intervalMs = intervalMs
         self.now = clock
+        self.drops = DropLog(clock: clock)
     }
 
     /// Bir tur sürüyor mu.
@@ -183,6 +188,7 @@ public final class RegionWatcher {
         if let pose {
             if phoneSession == nil {
                 let session = PhoneRegionSession(reader: reader, translator: translator, server: server)
+                session.onLog = { [weak self] in self?.onLog?($0) }
                 session.panel = { [weak self] in self?.phonePanel() ?? PhonePanelOptions() }
                 phoneSession = session
             }
@@ -588,9 +594,16 @@ public final class RegionWatcher {
             states[area.id] = state
             return
         }
+        // Bekletilen okuma gösterilmeden yerine başka okuma geldi: o okuma hiç çevrilmedi (günlüğe bir kez).
+        if let held = state.held, held != candidate.key {
+            drops.note("RegionWatcher", "\(area.name): bekletilen okuma gösterilmeden yerine yenisi geldi, çevrilmedi",
+                       state.heldText ?? "", log: onLog)
+            state.held = nil
+        }
         if Self.shouldHold(candidate, state) {
             if state.held != candidate.key {
                 state.held = candidate.key
+                state.heldText = IconText.plain(candidate.paragraphs.joined(separator: " "))
                 state.holds = 0
             }
             state.holds += 1
@@ -662,6 +675,8 @@ public final class RegionWatcher {
             TextMatch.isSimilar(TextMatch.normalize(IconText.plain($0)), TextMatch.normalize(IconText.plain($1)), threshold: 0.90)
         }
         if similar.allSatisfy({ $0 }) {
+            drops.note("RegionWatcher", "\(area.name): çevirisi aslıyla aynı, gösterilmedi",
+                       IconText.plain(candidate.paragraphs.joined(separator: " ")), log: onLog)
             server.sendRegion(id: area.id, text: "", box: nil, lineHeight: nil)
             states[area.id]?.renderedKey = candidate.key
             states[area.id]?.renderedText = ""

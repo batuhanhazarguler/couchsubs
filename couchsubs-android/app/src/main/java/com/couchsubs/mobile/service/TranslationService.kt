@@ -557,6 +557,9 @@ class TranslationService : Service() {
         super.onCreate()
         settings = AppSettings(this)
         current = this
+        // Kendi günlüğü olmayan bileşenlerin (ScreenPresence, translateAll) düşen satır notları logcat'e (Mac/iPhone
+        // ve Windows'ta altyazı günlüğü); "Günlükleri paylaş" bunları da toplar.
+        com.couchsubs.mobile.core.DropLog.sink = { Log.i(TAG, it) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -817,6 +820,8 @@ class TranslationService : Service() {
             readPhone = { flat -> areaReader.read(RegionPixels(flat.nv21, flat.width, flat.height, 0L)) }).apply {
             prefetchesTranslations = earlyTranslator != null
             subtitleEcho = com.couchsubs.mobile.core.SubtitleEcho.shared
+            // Ek alanda (telefon mesajı, görev, bildirim) okunup çevrilmeyen yazının nedeni altyazı günlüğüne.
+            onLog = { Log.i(TAG, it) }
             // Ayarlar'daki ekran yazısı türleri (telefon, görev, yardım/eylemler, menüler, diğer).
             allows = { kind -> settings.screenTextAllows(kind) }
             // "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde"; panelin yazısı altyazı boyutuyla (Mac ile aynı).

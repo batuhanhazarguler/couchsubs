@@ -129,6 +129,14 @@ internal class PhoneRegionSession(
     private var shownPage: Page? = null
     /** Son okuma kaç turdur bekletiliyor (en çok [PhoneSteady.HOLD_TURNS]); sonra okuma her durumda ilerler. */
     private var holds = 0
+    /** Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni ([DropLog]; Mac/iPhone ve Windows ile aynı). */
+    @Volatile var onLog: ((String) -> Unit)? = null
+    private val drops = DropLog()
+
+    /** Mesajın düşürülme ya da bekletilme nedeni ([DropLog]: aynı neden + metin yinelenmez, dakikada sınırlı). */
+    private fun note(component: String, reason: String, text: String) {
+        drops.note(component, reason, IconText.plain(text), onLog)
+    }
     /** Okumanın art arda doğrulanamadığı tur sayısı ([missed]). */
     private var absences = 0
     private var recheck = false
@@ -192,6 +200,7 @@ internal class PhoneRegionSession(
                 read(start, signature)
             } catch (error: Exception) {
                 page = null
+                note("PhoneSession", "okunamadı (${error.message})", "")
                 return
             }
             // Yerinde duran iki komşu arasından düşen balon ya da uzun mesajdaki birkaç bozuk harf tek okumada ekrandan
@@ -200,6 +209,10 @@ internal class PhoneRegionSession(
             if (holds < PhoneSteady.HOLD_TURNS && previous != null && previous.region.isClose(fresh.region, 0.01) &&
                 (missingInteriorBubble(previous, fresh) ||
                     (sameLayout(previous, fresh, start.image) && GamePhoneText.hasAdjacentOcrEdits(text(previous), text(fresh))))) {
+                if (holds == 0) {
+                    val why = if (missingInteriorBubble(previous, fresh)) "balon düştü" else "harf oynaması"
+                    note("PhoneSteady", "okuma ${PhoneSteady.HOLD_TURNS} tura dek bekletildi ($why)", text(fresh))
+                }
                 holds++
                 recheck = true
                 return
@@ -227,6 +240,9 @@ internal class PhoneRegionSession(
             // okunamayınca panel kaybolup geri geliyordu (X, 22 Kas; Mac ile aynı).
             empties++
             if (rendered.isEmpty() || empties >= PhoneSteady.MISS_TURNS) {
+                if (rendered.isNotEmpty()) {
+                    note("PhoneSteady", "${PhoneSteady.MISS_TURNS} tur boş okundu, çeviri silindi", rendered.joinToString(" ") { it.source })
+                }
                 publish(emptyList())
                 emptyOnce = false
                 empties = 0
@@ -246,6 +262,10 @@ internal class PhoneRegionSession(
         publish(items(current, available))
         var missing = paragraphs.filter { available[it] == null }
         if (missing.isEmpty()) {
+            val shown = shownPage
+            if (shown != null && text(shown) != text(current)) {
+                note("PhoneSession", "mesajlar değişti, hepsinin çevirisi hazır sayıldı, motora gitmedi", text(current))
+            }
             needsWork = false
             return
         }
@@ -272,14 +292,20 @@ internal class PhoneRegionSession(
             if (closed) return
             if (result.size != inputs.size) {
                 needsWork = true
+                note("PhoneSession", "çevrilemedi (motor ${result.size}/${inputs.size} yanıt)", missing.joinToString(" "))
                 return
             }
-            for ((source, translated) in missing.zip(result)) if (translated.isNotBlank()) {
+            for ((source, translated) in missing.zip(result)) {
+                if (translated.isBlank()) {
+                    note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
+                    continue
+                }
                 remember(source, translated)
                 available[source] = translated
             }
         } catch (error: Exception) {
             needsWork = true
+            note("PhoneSession", "çevrilemedi (${error.message})", missing.joinToString(" "))
             return
         }
         val last = latest ?: return
@@ -446,7 +472,14 @@ internal class PhoneRegionSession(
         // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez ([PhonePanelSteady]); aynı görünen gönderi yinelenmez.
         val line = panelSteady.steadyLine(ScreenPhoneCard.measuredLine(items), now)
         val shown = arranged(items, placed?.pose, aspect, options, line)
-        if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) return
+        if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) {
+            // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe; Mac ile aynı).
+            val sources = shown.map { it.source }
+            if (sources != sentShown.map { it.source }) {
+                note("PhoneSteady", "samePicture: görüntü aynı sayıldı, gönderilmedi", sources.joinToString(" "))
+            }
+            return
+        }
         sentShown = shown
         val box = shown.map { it.box }.reduceOrNull { a, b -> a.union(b) }
         val heights = shown.map { it.lineHeight }.sorted()

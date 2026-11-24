@@ -659,6 +659,8 @@ public final class SubtitleServer: @unchecked Sendable {
     private var screenStyle = ScreenStyleLock()
     /// Ekrandaki çeviriler ve özgün yazılarının takibi (`ScreenPresence`): yazı kalkınca çevirisi de aynı karede kalkar.
     private var presence = ScreenPresence()
+    /// `ScreenPresence`'ın kaldırma ve geri getirme kararları altyazı günlüğüne (`DropLog`; sınırlı, tekrarsız).
+    private let presenceDrops = DropLog()
     private var screenShown: (items: [ScreenTranslation.Item], until: Int)?
     /// Her `sendScreen` ve `clearScreen` bir üst numara verir. `observe` değişikliği kilidin dışında gönderir; arada çeviri
     /// kaldırıldıysa eski öğeler yeniden gönderilmez (kaldırılan çeviri TV'de geri çiziliyordu, #1182).
@@ -692,8 +694,14 @@ public final class SubtitleServer: @unchecked Sendable {
         let visible = presence.visible(all, patch: patch)
         var screenChange: [ScreenTranslation.Item]?
         let screenFlags = Array(visible.prefix(screen.count))
-        if screenFlags != (screenVisible.isEmpty ? screen.map { _ in true } : screenVisible), !screen.isEmpty {
+        let screenBefore = screenVisible.isEmpty ? screen.map { _ in true } : screenVisible
+        if screenFlags != screenBefore, !screen.isEmpty {
             screenChange = zip(screen, screenFlags).filter(\.1).map(\.0)
+        }
+        // Kaldırma ya da geri getirme kararı günlüğe (`DropLog`): periyodik kopmalarda hangi yazının izinin kaçtığı görünsün.
+        var flips: [(source: String, visible: Bool)] = []
+        for (index, item) in screen.enumerated() where index < screenBefore.count && screenBefore[index] != screenFlags[index] {
+            flips.append((item.source, screenFlags[index]))
         }
         screenVisible = screen.isEmpty ? [] : screenFlags
         var regionChanges: [(String, String, TextBox?, Double?, [IconPlacement]?, [ScreenTranslation.Item])] = []
@@ -704,7 +712,11 @@ public final class SubtitleServer: @unchecked Sendable {
             let flags = Array(visible[offset..<(offset + blocks.count)])
             offset += blocks.count
             flagsById[id] = flags
-            if flags != (regionVisible[id] ?? blocks.map { _ in true }) {
+            let before = regionVisible[id] ?? blocks.map { _ in true }
+            for (index, block) in blocks.enumerated() where index < before.count && before[index] != flags[index] {
+                flips.append((block.source, flags[index]))
+            }
+            if flags != before {
                 let kept = zip(blocks, flags).filter(\.1).map(\.0)
                 regionChanges.append((id, kept.isEmpty ? "" : sent.text, sent.box, sent.lineHeight, sent.icons, kept))
             }
@@ -712,6 +724,10 @@ public final class SubtitleServer: @unchecked Sendable {
         regionVisible = flagsById
         let until = screenShown?.until ?? now
         screenStyleGuard.unlock()
+        for flip in flips {
+            presenceDrops.note("ScreenPresence", flip.visible ? "özgün yazı geri geldi, çeviri yeniden gösterildi"
+                               : "özgün yazının izi kaçtı, çeviri kaldırıldı", flip.source)
+        }
         if let screenChange, screenStyleGuard.withLock({ screenEpoch == epoch }) {
             emitScreen(screenChange, durationMs: max(1, until - now))
         }
