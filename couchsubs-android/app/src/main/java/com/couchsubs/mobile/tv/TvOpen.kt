@@ -146,3 +146,63 @@ class AndroidTvOpenRule(private val maxOpens: Int = DEFAULT_MAX_OPENS, private v
         lastAttempt = null
     }
 }
+
+/**
+ * Samsung bekçisinin "şimdi açmayı dene" kararı (Mac/iPhone'daki ve Windows'taki SamsungOpenRule ile aynı kural).
+ *
+ * TV uygulaması bağlı değilken bekçi her denemede TV'ye yeni bir uzaktan kumanda bağlantısı açıp açma komutu gönderir.
+ * Eskiden bu 30 sn'de bir ve çeviri boyunca sınırsızdı; kullanıcılar bir süre sonra "Otomatik açılamadı" uyarısı alıyor, TV
+ * fişten çekilince düzeliyordu (döngü TV'nin uzaktan kumanda servisini tıkıyor olabilir). Artık denemeler arası LG'deki gibi
+ * seyrelir ([intervalMs]'nin 1, 2, 4 ve 10 katı: 30 sn, 1, 2, 5 dk; sonra 5 dk'da bir); çeviri başına en çok [maxAttempts]
+ * deneme (sonucu ne olursa olsun her bağlantı sayılır); uygulama [HEALTHY_RESET_MS] boyunca kesintisiz bağlı kalırsa sayaç
+ * sıfırlanır; "Otomatik açmayı dene" ve çevirinin yeniden başlaması ([reset]) sayacı sıfırlar.
+ */
+class SamsungOpenRule(val maxAttempts: Int = DEFAULT_MAX_ATTEMPTS, private val intervalMs: Long = DEFAULT_INTERVAL_MS) {
+    companion object {
+        const val DEFAULT_MAX_ATTEMPTS = 6
+        const val DEFAULT_INTERVAL_MS = 30_000L
+        /** Ardışık denemeler arası bekleme, [intervalMs]'nin katı olarak (30 sn, 1, 2, 5 dk). */
+        val BACKOFF_STEPS = longArrayOf(1, 2, 4, 10)
+        /** Uygulama bu kadar kesintisiz bağlı kalınca sayaç sıfırlanır. */
+        const val HEALTHY_RESET_MS = 600_000L
+    }
+
+    /** Bu sayaçtaki denemeler (açma komutu gitti, TV yanıt vermedi ya da kurulu değil); sınır bunu sayar. */
+    var attempts = 0
+        private set
+    private var lastAttempt: Long? = null
+    private var connectedSince: Long? = null
+
+    /** Sınır doldu: bekçi [reset]e kadar TV'ye dokunmaz. */
+    val exhausted: Boolean @Synchronized get() = attempts >= maxAttempts
+
+    /** Son denemeden sonra en az bu kadar ms beklenir. */
+    val waitMs: Long @Synchronized get() =
+        if (attempts == 0) 0L else intervalMs * BACKOFF_STEPS[minOf(attempts - 1, BACKOFF_STEPS.size - 1)]
+
+    /**
+     * Bu kontrolde TV'ye bağlanıp açma denensin mi ([now]: ms, tekdüze saat); true dönerse deneme sayılır. Uygulama bağlıyken
+     * TV'ye hiç dokunulmaz.
+     */
+    @Synchronized fun shouldTry(connected: Boolean, now: Long): Boolean {
+        if (connected) {
+            val since = connectedSince ?: now
+            connectedSince = since
+            if (now - since >= HEALTHY_RESET_MS) { attempts = 0; lastAttempt = null }
+            return false
+        }
+        connectedSince = null
+        if (attempts >= maxAttempts) return false
+        lastAttempt?.let { if (now - it < waitMs) return false }
+        lastAttempt = now
+        attempts++
+        return true
+    }
+
+    /** "Otomatik açmayı dene" ya da çevirinin yeniden başlaması: yeniden en çok [maxAttempts], beklemeden. */
+    @Synchronized fun reset() {
+        attempts = 0
+        lastAttempt = null
+        connectedSince = null
+    }
+}

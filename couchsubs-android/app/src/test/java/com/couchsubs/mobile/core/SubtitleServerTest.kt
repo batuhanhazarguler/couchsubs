@@ -33,6 +33,13 @@ class SubtitleServerTest {
             Json.write(SubtitleServer.boxJson(TextBox(-0.2, 0.5, 0.12345678, 1.7))))
     }
 
+    /** NaN oran BigDecimal'e çevrilirken NumberFormatException ile çöküyordu; artık 0 (Mac/iPhone ve Windows ile aynı). */
+    @Test
+    fun nonFiniteBoxValuesDoNotCrash() {
+        assertEquals("{\"bottom\":0,\"left\":0,\"right\":1,\"top\":0}",
+            Json.write(SubtitleServer.boxJson(TextBox(Double.NaN, Double.NEGATIVE_INFINITY, Double.POSITIVE_INFINITY, Double.NaN))))
+    }
+
     @Test
     fun clearAndStyleFrames() {
         assertEquals("event: clear\ndata: {}\n\n", SubtitleServer.clearFrame())

@@ -127,6 +127,67 @@ public sealed class AndroidTvOpenRule(int maxOpens = AndroidTvOpenRule.DefaultMa
 }
 
 /// <summary>
+/// Samsung bekçisinin "şimdi açmayı dene" kararı (Mac/iPhone'daki ve Android telefondaki SamsungOpenRule ile aynı kural).
+/// </summary>
+/// <remarks>
+/// TV uygulaması bağlı değilken bekçi her denemede TV'ye yeni bir uzaktan kumanda bağlantısı açıp açma komutu gönderir.
+/// Eskiden bu 30 sn'de bir ve çeviri boyunca sınırsızdı; kullanıcılar bir süre sonra "Otomatik açılamadı" uyarısı alıyor,
+/// TV fişten çekilince düzeliyordu (döngü TV'nin uzaktan kumanda servisini tıkıyor olabilir). Artık denemeler arası LG'deki
+/// gibi seyrelir (<c>interval</c>'ın 1, 2, 4 ve 10 katı: 30 sn, 1, 2, 5 dk; sonra 5 dk'da bir); çeviri başına en çok
+/// <c>maxAttempts</c> deneme (sonucu ne olursa olsun her bağlantı sayılır); uygulama <see cref="HealthyReset"/> boyunca
+/// kesintisiz bağlı kalırsa sayaç sıfırlanır; "Otomatik açmayı dene", uykudan dönüş ve çevirinin yeniden başlaması
+/// (<see cref="Reset"/>) sayacı sıfırlar.
+/// </remarks>
+public sealed class SamsungOpenRule(int maxAttempts = SamsungOpenRule.DefaultMaxAttempts, TimeSpan? interval = null)
+{
+    public const int DefaultMaxAttempts = 6;
+    public static readonly TimeSpan DefaultInterval = TimeSpan.FromSeconds(30);
+    /// <summary>Ardışık denemeler arası bekleme, <c>interval</c>'ın katı olarak (30 sn, 1, 2, 5 dk).</summary>
+    public static readonly double[] BackoffSteps = [1, 2, 4, 10];
+    /// <summary>Uygulama bu kadar kesintisiz bağlı kalınca sayaç sıfırlanır.</summary>
+    public static readonly TimeSpan HealthyReset = TimeSpan.FromMinutes(10);
+
+    private DateTime? lastAttempt;
+    private DateTime? connectedSince;
+    public int MaxAttempts => maxAttempts;
+    /// <summary>Bu sayaçtaki denemeler (açma komutu gitti, TV yanıt vermedi ya da kurulu değil); sınır bunu sayar.</summary>
+    public int Attempts { get; private set; }
+    /// <summary>Sınır doldu: bekçi <see cref="Reset"/>'e kadar TV'ye dokunmaz.</summary>
+    public bool Exhausted => Attempts >= maxAttempts;
+
+    /// <summary>Son denemeden sonra en az bu kadar beklenir.</summary>
+    public TimeSpan Wait => Attempts == 0 ? TimeSpan.Zero
+        : (interval ?? DefaultInterval) * BackoffSteps[Math.Min(Attempts - 1, BackoffSteps.Length - 1)];
+
+    /// <summary>
+    /// Bu kontrolde TV'ye bağlanıp açma denensin mi; true dönerse deneme sayılır. Uygulama bağlıyken TV'ye hiç dokunulmaz.
+    /// </summary>
+    public bool ShouldTry(bool connected, DateTime now)
+    {
+        if (connected)
+        {
+            connectedSince ??= now;
+            if (now - connectedSince >= HealthyReset) { Attempts = 0; lastAttempt = null; }
+            return false;
+        }
+        connectedSince = null;
+        if (Exhausted) return false;
+        if (lastAttempt is { } last && now - last < Wait) return false;
+        lastAttempt = now;
+        Attempts++;
+        return true;
+    }
+
+    /// <summary>"Otomatik açmayı dene", uykudan dönüş ya da çevirinin yeniden başlaması: yeniden en çok <c>maxAttempts</c>, beklemeden.</summary>
+    public void Reset()
+    {
+        Attempts = 0;
+        lastAttempt = null;
+        connectedSince = null;
+    }
+}
+
+/// <summary>
 /// Android TV'de CouchSubs TV'yi bilgisayarın adresiyle açar (ADB açıksa); ne zaman açılacağı <see cref="AndroidTvOpenRule"/>'dadır
 /// (iPhone/Mac'teki AndroidTVKeeper ve Android telefondaki keepAndroidTvOpen ile aynı). Eskiden bilgisayar Android TV'ye
 /// hiç dokunmuyordu: çeviri başlayınca TV uygulaması kendiliğinden açılmıyordu. ADB kapalıysa ya da TV bu bilgisayarı

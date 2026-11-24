@@ -268,42 +268,68 @@ object TvSessionLauncher {
     const val SAMSUNG_OPEN_CHECK_MS = 15_000L
 
     /**
-     * Samsung: [launch]'tan sonra TV uygulaması bağlı değilken en çok [ANDROID_RELAUNCH_MS]'de bir yeniden açar (Windows,
-     * Mac ve iPhone'daki bekçiyle aynı; Samsung önplandaki uygulamayı söylemez, yalnız açılır). "Otomatik açmayı dene"
-     * beklemeyi keser. Eskiden Android telefon Samsung'da uygulamayı yalnız bir kez açmayı deniyordu. Bloklar.
-     * [openWithSdb]: önce geliştirici bağlantısıyla (sdb `was_execute`) açmayı dener (bkz. [launch]). [lastResult]: ana
-     * ekranda şu an gösterilen neden.
+     * Samsung: [launch]'tan sonra TV uygulaması bağlı değilken yeniden açar; ne zaman açılacağı [SamsungOpenRule]'dadır
+     * (seyrelen aralık ve üst sınır; Windows, Mac ve iPhone'daki bekçiyle aynı; Samsung önplandaki uygulamayı söylemez,
+     * yalnız açılır). "Otomatik açmayı dene" sayacı sıfırlar ve beklemeyi keser. Eskiden Android telefon Samsung'da uygulamayı
+     * yalnız bir kez açmayı deniyordu. Bloklar. [openWithSdb]: önce geliştirici bağlantısıyla (sdb `was_execute`) açmayı
+     * dener (bkz. [launch]). [lastResult]: ana ekranda şu an gösterilen neden. Her denemenin sonucu [log]'a yazılır.
      */
     fun keepSamsungOpen(settings: AppSettings, port: Int, key: String, connected: () -> Boolean, log: (String) -> Unit = {},
                         onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: (() -> Boolean)? = null,
                         lastResult: () -> TvOpenProblem? = { null }, installLog: (String) -> Unit = {},
                         relocate: () -> Boolean = { false }, active: () -> Boolean) =
-        keepSamsungOpen(settings.installedTv, connected, active,
-            notOpened = { if (lastResult() == null) onOpenResult(TvOpenProblem.NOT_OPENED) }, relocate = relocate) {
+        keepSamsungOpen(settings.installedTv, connected, active, log = log,
+            notOpened = { if (lastResult() == null) onOpenResult(TvOpenProblem.NOT_OPENED) }, relocate = relocate) { attempt ->
             // TV bir önceki komutta da açmadıysa neden satırı yeniden gönderilen komutla silinmez (her 30 sn'de yanıp sönmesin).
             val keep = lastResult() == TvOpenProblem.NOT_OPENED
             launch(settings, port, key, connected = connected, log = log, openWithSdb = openWithSdb,
-                onOpenResult = { if (!(keep && it == null)) onOpenResult(it) }, installLog = installLog, active = active)
+                onOpenResult = {
+                    log("TV uygulamasını açma denemesi $attempt (Samsung): ${it?.let { problem -> "olmadı, $problem" } ?: "açma komutu gitti"}")
+                    if (!(keep && it == null)) onOpenResult(it)
+                }, installLog = installLog, active = active)
         }
 
     /**
-     * [SAMSUNG_OPEN_CHECK_MS] sonra uygulama hâlâ bağlı değilse [notOpened]; [ANDROID_RELAUNCH_MS] dolunca yeniden [open].
-     * "Otomatik açmayı dene" ([sleep] true dönerse) beklemeden açar.
+     * Her [SAMSUNG_OPEN_CHECK_MS]'de bir bakar: son açma komutundan bu kadar sonra uygulama hâlâ bağlı değilse [notOpened];
+     * [SamsungOpenRule] izin verirse yeniden [open] (deneme etiketiyle, "3/6"). İlk açma [launch]'ta olduğu için ilk deneme
+     * sayılır. "Otomatik açmayı dene" ([sleep] true dönerse) sayacı sıfırlar, beklemeden açar.
      */
     internal fun keepSamsungOpen(tv: InstalledTv?, connected: () -> Boolean, active: () -> Boolean,
                                  sleep: (Long) -> Boolean = { TvOpenRetry.waitOrRetry(it) }, notOpened: () -> Unit = {},
-                                 relocate: () -> Boolean = { false }, open: () -> Unit) {
+                                 relocate: () -> Boolean = { false },
+                                 now: () -> Long = { android.os.SystemClock.elapsedRealtime() }, log: (String) -> Unit = {},
+                                 rule: SamsungOpenRule = SamsungOpenRule(), open: (String) -> Unit) {
         if (tv?.brand != TvBrand.SAMSUNG) return
+        rule.shouldTry(connected = false, now = now())
+        var sentAt: Long? = now()
+        var exhaustedLogged = false
         while (active()) {
-            if (!sleep(SAMSUNG_OPEN_CHECK_MS)) {
-                if (active() && !connected()) notOpened()
-                sleep(ANDROID_RELAUNCH_MS - SAMSUNG_OPEN_CHECK_MS)
+            if (sleep(SAMSUNG_OPEN_CHECK_MS)) {
+                // "Otomatik açmayı dene": "açmadı" denetimi atlanır, sayaç sıfırlanır, hemen açılır.
+                rule.reset()
+                exhaustedLogged = false
+                sentAt = null
             }
-            if (active() && !connected()) {
+            if (!active()) return
+            val isConnected = connected()
+            val time = now()
+            if (isConnected) sentAt = null
+            sentAt?.let {
+                if (time - it >= SAMSUNG_OPEN_CHECK_MS) {
+                    sentAt = null
+                    notOpened()
+                }
+            }
+            if (rule.shouldTry(isConnected, time)) {
                 // TV uygulaması bağlanmadı: kayıtlı adres sessizse TV ağda aranır, yeni adreste bulunursa kayıt güncellenir ve
-                // açma komutu yeni adrese gider (open kayıttan okur). Eskiden kayıtlı eski adres aynen kullanılıyordu.
+                // açma komutu yeni adrese gider (open kayıttan okur). Eskiden kayıtlı eski adres aynen kullanılıyordu. Arama da
+                // açma denemesiyle aynı seyrelen aralığa ve sınıra uyar.
                 relocate()
-                open()
+                sentAt = time
+                open("${rule.attempts}/${rule.maxAttempts}")
+            } else if (!isConnected && rule.exhausted && !exhaustedLogged) {
+                exhaustedLogged = true
+                log("TV uygulamasını açma (Samsung): ${rule.maxAttempts} denemede bağlanmadı, otomatik açma durdu (\"TV'de aç\" ya da çeviriyi yeniden başlatmak yeniden dener)")
             }
         }
     }

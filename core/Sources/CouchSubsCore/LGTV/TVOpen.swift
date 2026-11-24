@@ -127,6 +127,71 @@ public struct AndroidTVOpenRule: Sendable {
     }
 }
 
+/// Samsung bekçisinin "şimdi açmayı dene" kararı (Windows'taki ve Android telefondaki SamsungOpenRule ile aynı kural).
+///
+/// TV uygulaması bağlı değilken bekçi her denemede TV'ye yeni bir uzaktan kumanda bağlantısı açıp açma komutu gönderir.
+/// Eskiden bu 30 sn'de bir ve çeviri boyunca sınırsızdı; kullanıcılar bir süre sonra "Otomatik açılamadı" uyarısı alıyor,
+/// TV fişten çekilince düzeliyordu (döngü TV'nin uzaktan kumanda servisini tıkıyor olabilir). Artık:
+/// - denemeler arası LG'deki gibi seyrelir: `interval`'ın 1, 2, 4 ve 10 katı (30 sn, 1, 2, 5 dk; sonra 5 dk'da bir);
+/// - çeviri başına en çok `maxAttempts` deneme (sonucu ne olursa olsun her bağlantı sayılır);
+/// - uygulama `healthyReset` boyunca kesintisiz bağlı kalırsa sayaç sıfırlanır (sonradan kapanırsa yeniden açılır);
+/// - "Otomatik açmayı dene", uykudan dönüş ve çevirinin yeniden başlaması (`reset`) sayacı sıfırlar.
+public struct SamsungOpenRule: Sendable {
+    public static let defaultMaxAttempts = 6
+    public static let defaultInterval: TimeInterval = 30
+    /// Ardışık denemeler arası bekleme, `interval`'ın katı olarak (30 sn, 1, 2, 5 dk).
+    public static let backoffSteps: [Double] = [1, 2, 4, 10]
+    /// Uygulama bu kadar saniye kesintisiz bağlı kalınca sayaç sıfırlanır.
+    public static let healthyReset: TimeInterval = 600
+
+    public let maxAttempts: Int
+    public let interval: TimeInterval
+    /// Bu sayaçtaki denemeler (açma komutu gitti, TV yanıt vermedi ya da kurulu değil); sınır bunu sayar.
+    public private(set) var attempts = 0
+    private var lastAttempt: TimeInterval?
+    private var connectedSince: TimeInterval?
+
+    public init(maxAttempts: Int = SamsungOpenRule.defaultMaxAttempts, interval: TimeInterval = SamsungOpenRule.defaultInterval) {
+        self.maxAttempts = maxAttempts
+        self.interval = interval
+    }
+
+    /// Sınır doldu: bekçi `reset`e kadar TV'ye dokunmaz.
+    public var exhausted: Bool { attempts >= maxAttempts }
+
+    /// Son denemeden sonra en az bu kadar saniye beklenir.
+    public var wait: TimeInterval {
+        attempts == 0 ? 0 : interval * Self.backoffSteps[min(attempts - 1, Self.backoffSteps.count - 1)]
+    }
+
+    /// Bu kontrolde TV'ye bağlanıp açma denensin mi (`now`: saniye, tekdüze saat). true dönerse deneme sayılır. Uygulama
+    /// bağlıyken TV'ye hiç dokunulmaz.
+    public mutating func shouldTry(connected: Bool, now: TimeInterval) -> Bool {
+        if connected {
+            let since = connectedSince ?? now
+            connectedSince = since
+            if now - since >= Self.healthyReset {
+                attempts = 0
+                lastAttempt = nil
+            }
+            return false
+        }
+        connectedSince = nil
+        if exhausted { return false }
+        if let lastAttempt, now - lastAttempt < wait { return false }
+        lastAttempt = now
+        attempts += 1
+        return true
+    }
+
+    /// "Otomatik açmayı dene", uykudan dönüş ya da çevirinin yeniden başlaması: yeniden en çok `maxAttempts`, beklemeden.
+    public mutating func reset() {
+        attempts = 0
+        lastAttempt = nil
+        connectedSince = nil
+    }
+}
+
 /// CouchSubs TV Android TV'de çalışıyor mu (ADB kabuğundan; Windows ve Android telefondaki AndroidTvApp ile aynı).
 public enum AndroidTVApp {
     public static let packageName = "com.couchsubs.tv"

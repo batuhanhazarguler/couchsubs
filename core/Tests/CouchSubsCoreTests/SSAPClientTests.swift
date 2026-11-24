@@ -500,6 +500,48 @@ final class TVKeeperTests: XCTestCase {
         XCTAssertFalse(SamsungLauncher.sdbLaunched(""))
     }
 
+    /// Samsung: TV uygulaması hiç bağlanmazsa açma seyrelir (30 sn, 1, 2, 5 dk) ve en çok 6 deneme olur; eskiden çeviri boyunca
+    /// 30 sn'de bir yeni uzaktan kumanda bağlantısı açılıyordu, TV bir süre sonra "Otomatik açılamadı" diyordu. "TV'de aç"
+    /// (`reconnect`) sayacı sıfırlar (Windows ve Android ile aynı).
+    func testSamsungOpenBacksOffAndStops() async throws {
+        let control = FakeControl(foreground: [])
+        var connects = 0
+        let start = ContinuousClock.now
+        var time = start
+        let keeper = TVKeeper(connect: { connects += 1; return control }, appId: "x", params: [:], appConnected: { false },
+                              now: { time })
+        var at: [Int] = []
+        for second in stride(from: 0, through: 3600, by: 5) {
+            time = start + .seconds(second)
+            let before = connects
+            await keeper.tick()
+            if connects > before { at.append(second) }
+        }
+        XCTAssertEqual(at, [0, 30, 90, 210, 510, 810])
+        XCTAssertEqual(control.launches.count, 6)
+        keeper.reconnect()                      // "TV'de aç": hemen açar, aralık yeniden 30 sn'den
+        await keeper.tick()
+        time += .seconds(25)
+        await keeper.tick()
+        time += .seconds(5)
+        await keeper.tick()
+        XCTAssertEqual(control.launches.count, 8)
+    }
+
+    func testSamsungOpenRuleResetsAfterAHealthyConnection() {
+        var rule = SamsungOpenRule(maxAttempts: 2)
+        XCTAssertTrue(rule.shouldTry(connected: false, now: 0))
+        XCTAssertTrue(rule.shouldTry(connected: false, now: 30))
+        XCTAssertFalse(rule.shouldTry(connected: false, now: 600))
+        XCTAssertTrue(rule.exhausted)
+        XCTAssertFalse(rule.shouldTry(connected: true, now: 660))     // bağlandı: TV'ye dokunulmaz
+        XCTAssertFalse(rule.shouldTry(connected: true, now: 1260))    // 10 dk kesintisiz bağlı: sayaç sıfırlandı
+        XCTAssertFalse(rule.exhausted)
+        XCTAssertTrue(rule.shouldTry(connected: false, now: 1320))    // sonradan kapandı: yeniden açılır
+        rule.reset()
+        XCTAssertEqual(rule.attempts, 0)
+    }
+
     func testSamsungIsLeftAloneWhileTheAppIsConnected() async throws {
         let control = FakeControl(foreground: [])
         let connected = Flag()

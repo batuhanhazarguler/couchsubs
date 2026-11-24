@@ -12,9 +12,13 @@ object Json {
     /** [value]: String, Boolean, Int/Long, [Decimal], Map<String, Any?>, List<Any?> ya da null. */
     fun write(value: Any?): String = StringBuilder().also { append(it, value) }.toString()
 
-    /** Dört basamağa yuvarlanmış, sondaki sıfırları atılmış oran (0.8750 → 0.875); masaüstündeki Round ile aynı. */
+    /**
+     * Dört basamağa yuvarlanmış, sondaki sıfırları atılmış oran (0.8750 → 0.875); masaüstündeki Round ile aynı. NaN 0 olur:
+     * `coerceIn` NaN'ı olduğu gibi döndürüyor, `BigDecimal.valueOf` NumberFormatException ile çöküyordu (Mac/iPhone ve
+     * Windows ile aynı).
+     */
     class Decimal(value: Double) {
-        val text: String = BigDecimal.valueOf(value.coerceIn(0.0, 1.0)).setScale(4, RoundingMode.HALF_EVEN)
+        val text: String = BigDecimal.valueOf((if (value.isNaN()) 0.0 else value).coerceIn(0.0, 1.0)).setScale(4, RoundingMode.HALF_EVEN)
             .stripTrailingZeros().toPlainString()
     }
 

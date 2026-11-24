@@ -21,9 +21,10 @@ namespace CouchSubs.Core.LgTv;
 /// </para>
 /// </summary>
 /// <param name="appConnected">
-/// Verilirse (Samsung) TV'ye yalnız TV uygulaması bilgisayara bağlı değilken ve en çok <paramref name="relaunchInterval"/>'da
-/// bir dokunulur: uygulama açılır, bağlantı hemen kapatılır. Samsung önplandaki uygulamayı söylemediği için sürekli açık
-/// "uzaktan kumanda" bağlantısı gereksizdi; yeniden kurulan bağlantı TV'de bildirim çıkarıp PS5 kolunu düşürüyordu (#5).
+/// Verilirse (Samsung) TV'ye yalnız TV uygulaması bilgisayara bağlı değilken dokunulur: uygulama açılır, bağlantı hemen
+/// kapatılır. Samsung önplandaki uygulamayı söylemediği için sürekli açık "uzaktan kumanda" bağlantısı gereksizdi; yeniden
+/// kurulan bağlantı TV'de bildirim çıkarıp PS5 kolunu düşürüyordu (#5). Denemeler <paramref name="relaunchInterval"/>'dan
+/// başlayıp seyrelir ve sınırlıdır (bkz. <see cref="SamsungOpenRule"/>).
 /// </param>
 /// <param name="consolePort">TV uygulamasının gösterdiği HDMI girişi (1-4; altyazı akışına bağlanırken bildirir), bilinmiyorsa null.</param>
 /// <param name="onOpenResult">Her açma denemesinin sonucu: açıldıysa null, TV'ye ulaşılamadıysa ya da açamadıysa
@@ -78,7 +79,6 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
     private readonly SemaphoreSlim tickLock = new(1, 1);
     private ITvControl? control;
     private CancellationTokenSource? loop;
-    private DateTime? lastLaunch;
 
     /// <summary>Kullanıcının bilerek açtığı uygulamalara (Netflix vb.) dokunulmaz; yalnız giriş ve yayın ekranları.</summary>
     public static bool IsInputOrLiveTv(string appId) =>
@@ -237,9 +237,15 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
     private DateTime? sentAt;
     private TvOpenProblem? lastReported;
 
+    /// <summary>Samsung: ne zaman açılacağı (seyrelen aralık ve üst sınır; <see cref="Reconnect"/> sıfırlar).</summary>
+    private readonly SamsungOpenRule samsungRule = new(interval: relaunchInterval);
+    /// <summary>Samsung: sınır dolunca günlüğe bir kez yazılır.</summary>
+    private bool exhaustedLogged;
+
     private async Task LaunchIfAppIsAwayAsync(bool connected)
     {
         var time = now();
+        var tryNow = samsungRule.ShouldTry(connected, time);
         if (connected)
         {
             sentAt = null;
@@ -250,13 +256,22 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
             sentAt = null;
             Report(TvOpenProblem.NotOpened);
         }
-        if (lastLaunch is { } last && time - last < (relaunchInterval ?? TimeSpan.FromSeconds(30))) return;
-        lastLaunch = time;
+        if (!tryNow)
+        {
+            if (samsungRule.Exhausted && !exhaustedLogged)
+            {
+                exhaustedLogged = true;
+                SubtitleLog.Write($"TV uygulamasını açma ({appId}): {samsungRule.MaxAttempts} denemede bağlanmadı, otomatik açma durdu (\"TV'de aç\" ya da çeviriyi yeniden başlatmak yeniden dener)");
+            }
+            return;
+        }
+        var attempt = $"{samsungRule.Attempts}/{samsungRule.MaxAttempts}";
         try
         {
             using var fresh = await connect();
             await fresh.LaunchAsync(appId, parameters);
             sentAt = now();
+            SubtitleLog.Write($"TV uygulamasını açma denemesi {attempt} ({appId}): açma komutu gitti");
             // TV bir önceki komutta da açmadıysa neden satırı yeniden gönderilen komutla silinmez (her 30 sn'de yanıp sönmesin).
             if (lastReported == TvOpenProblem.NotOpened) return;
             Report(null);
@@ -264,11 +279,13 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
         catch (SsapException error) when (error.Reason == SamsungClient.NotInstalledReason)
         {
             // Samsung: TV kurulu olduğunu doğrulamadı, açma komutu gönderilmedi (kurulum gerekiyor; TV yanıt verdi).
+            SubtitleLog.Write($"TV uygulamasını açma denemesi {attempt} ({appId}): kurulu değil");
             Report(TvOpenProblem.NotInstalled);
         }
-        catch (Exception)
+        catch (Exception error)
         {
             // TV kapalı ya da ulaşılamıyor; bir sonraki denemede yeniden.
+            SubtitleLog.Write($"TV uygulamasını açma denemesi {attempt} ({appId}): TV'ye ulaşılamadı ({error.GetType().Name})");
             Report(TvOpenProblem.Unreachable);
         }
     }
@@ -308,7 +325,8 @@ public sealed class TvKeeper(Func<Task<ITvControl>> connect, string appId, IRead
     {
         control?.Dispose();
         control = null;
-        lastLaunch = null;
+        samsungRule.Reset();
+        exhaustedLogged = false;
         sentAt = null;
         lastReported = null;
         stoodDown = false;

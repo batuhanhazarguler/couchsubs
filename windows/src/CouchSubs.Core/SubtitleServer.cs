@@ -438,9 +438,10 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     }
 
     /// <summary>Dört basamağa yuvarlanır (decimal: JSON'da 0.8 olarak yazılsın).</summary>
-    /// Bölme sondaki sıfırları atar (0.8750 → 0.875).
-    private static decimal Round(double value) =>
-        Math.Round((decimal)Math.Clamp(value, 0, 1), 4) / 1.000000000000000000000000000000000m;
+    /// Bölme sondaki sıfırları atar (0.8750 → 0.875). NaN 0 olur: <c>Math.Clamp</c> NaN'ı olduğu gibi döndürüyor, decimal'e
+    /// çevirirken OverflowException ile çöküyordu (Mac/iPhone ve Android ile aynı).
+    internal static decimal Round(double value) =>
+        Math.Round((decimal)Math.Clamp(double.IsNaN(value) ? 0 : value, 0, 1), 4) / 1.000000000000000000000000000000000m;
 
     public void Clear()
     {

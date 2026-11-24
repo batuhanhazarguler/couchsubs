@@ -264,16 +264,61 @@ class TvSessionLauncherTest {
 
     /** Samsung: eskiden Android telefon uygulamayı yalnız bir kez açmayı deniyordu; bağlı değilken yeniden açılır. */
     @Test fun samsungIsReopenedWhileTheAppIsAway() {
-        // Her turda iki bekleme: 15 sn (açıldı mı) ve 30 sn'ye kalan.
-        var sleeps = 0
+        // 15 sn'de bir bakılır; ilk açma launch()'ta (0. sn), ikincisi 30. sn'de, 60. sn'de uygulama bağlanır.
+        var time = 0L
         var opens = 0
         var notOpened = 0
-        TvSessionLauncher.keepSamsungOpen(InstalledTv(TvBrand.SAMSUNG, "192.168.1.50"), connected = { sleeps >= 4 }, active = { sleeps < 6 },
-            sleep = { sleeps++; false }, notOpened = { notOpened++ }) { opens++ }
+        TvSessionLauncher.keepSamsungOpen(InstalledTv(TvBrand.SAMSUNG, "192.168.1.50"), connected = { time >= 60_000 },
+            active = { time < 90_000 }, sleep = { time += it; false }, now = { time }, notOpened = { notOpened++ }) { opens++ }
         assertEquals(1, opens)
         assertEquals(2, notOpened)
         TvSessionLauncher.keepSamsungOpen(InstalledTv(TvBrand.LG, "192.168.1.50"), connected = { false }, active = { true }) { opens++ }
         assertEquals(1, opens)
+    }
+
+    /**
+     * Samsung: TV uygulaması hiç bağlanmazsa açma seyrelir (30 sn, 1, 2, 5 dk) ve en çok 6 deneme olur; eskiden çeviri boyunca
+     * 30 sn'de bir yeni uzaktan kumanda bağlantısı açılıyordu, TV bir süre sonra "Otomatik açılamadı" diyordu. "Otomatik
+     * açmayı dene" sayacı sıfırlar (Mac/iPhone ve Windows ile aynı).
+     */
+    @Test fun samsungOpenBacksOffAndStops() {
+        var time = 0L
+        val opens = mutableListOf<Long>()
+        val labels = mutableListOf<String>()
+        val logs = mutableListOf<String>()
+        var retryAt: Long? = null
+        TvSessionLauncher.keepSamsungOpen(InstalledTv(TvBrand.SAMSUNG, "192.168.1.50"), connected = { false },
+            active = { time < 60 * 60_000L }, now = { time }, log = { logs += it },
+            sleep = { time += it; if (retryAt != null && time >= retryAt!!) { retryAt = null; true } else false }) {
+            opens += time
+            labels += it
+        }
+        // ilk deneme launch()'ta (0. sn); sonra 30, 90, 210, 510, 810. sn; bir saat boyunca başka deneme yok.
+        assertEquals(listOf(30_000L, 90_000L, 210_000L, 510_000L, 810_000L), opens)
+        assertEquals(listOf("2/6", "3/6", "4/6", "5/6", "6/6"), labels)
+        assertEquals(1, logs.count { it.contains("otomatik açma durdu") })
+
+        time = 0L
+        opens.clear()
+        retryAt = 20 * 60_000L
+        TvSessionLauncher.keepSamsungOpen(InstalledTv(TvBrand.SAMSUNG, "192.168.1.50"), connected = { false },
+            active = { time < 25 * 60_000L }, now = { time }, sleep = { time += it; if (retryAt != null && time >= retryAt!!) { retryAt = null; true } else false }) {
+            opens += time
+        }
+        // 20. dk'da "Otomatik açmayı dene": hemen açılır, aralık yeniden 30 sn'den başlar.
+        assertEquals(listOf(30_000L, 90_000L, 210_000L, 510_000L, 810_000L, 1_200_000L, 1_230_000L, 1_290_000L, 1_410_000L), opens)
+    }
+
+    @Test fun samsungOpenRuleResetsAfterAHealthyConnection() {
+        val rule = SamsungOpenRule(maxAttempts = 2)
+        assertTrue(rule.shouldTry(false, 0))
+        assertTrue(rule.shouldTry(false, 30_000))
+        assertFalse(rule.shouldTry(false, 10 * 60_000))
+        assertTrue(rule.exhausted)
+        assertFalse(rule.shouldTry(true, 11 * 60_000))   // bağlandı: TV'ye dokunulmaz
+        assertFalse(rule.shouldTry(true, 21 * 60_000))   // 10 dk kesintisiz bağlı: sayaç sıfırlandı
+        assertFalse(rule.exhausted)
+        assertTrue(rule.shouldTry(false, 22 * 60_000))   // sonradan kapandı: yeniden açılır
     }
 
     /** "Otomatik açmayı dene" beklemeyi keser: "açmadı" denetimi atlanır, hemen açılır. */

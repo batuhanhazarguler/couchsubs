@@ -448,4 +448,62 @@ public class TvKeeperTests
         Assert.False(TvKeeper.IsConsoleInput("com.webos.app.hdmi2", null));
         Assert.False(TvKeeper.IsConsoleInput("com.webos.app.livetv", 2));
     }
+
+    /// <summary>
+    /// Samsung: TV uygulaması hiç bağlanmazsa açma seyrelir (30 sn, 1, 2, 5 dk) ve en çok 6 deneme olur; eskiden çeviri boyunca
+    /// 30 sn'de bir yeni uzaktan kumanda bağlantısı açılıyordu, TV bir süre sonra "Otomatik açılamadı" diyordu. "TV'de aç"
+    /// (<see cref="TvKeeper.Reconnect"/>) sayacı sıfırlar (Mac/iPhone ve Android ile aynı).
+    /// </summary>
+    [Fact]
+    public async Task SamsungOpenBacksOffAndStops()
+    {
+        var control = new FakeControl();
+        var connects = 0;
+        var start = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        var time = start;
+        var keeper = new TvKeeper(() => { connects++; return Task.FromResult<ITvControl>(control); }, "x",
+            new Dictionary<string, string>(), () => false, clock: () => time);
+        var at = new List<int>();
+        for (var second = 0; second <= 3600; second += 5)
+        {
+            time = start.AddSeconds(second);
+            var before = connects;
+            await keeper.TickAsync();
+            if (connects > before) at.Add(second);
+        }
+        Assert.Equal([0, 30, 90, 210, 510, 810], at);
+        Assert.Equal(6, control.Launches.Count);
+        keeper.Reconnect(); // "TV'de aç": hemen açar, aralık yeniden 30 sn'den
+        await keeper.TickAsync();
+        time += TimeSpan.FromSeconds(25);
+        await keeper.TickAsync();
+        time += TimeSpan.FromSeconds(5);
+        await keeper.TickAsync();
+        Assert.Equal(8, control.Launches.Count);
+    }
+
+    [Fact]
+    public void SamsungOpenRuleResetsAfterAHealthyConnection()
+    {
+        var rule = new SamsungOpenRule(maxAttempts: 2);
+        var start = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+        Assert.True(rule.ShouldTry(false, start));
+        Assert.True(rule.ShouldTry(false, start.AddSeconds(30)));
+        Assert.False(rule.ShouldTry(false, start.AddMinutes(10)));
+        Assert.True(rule.Exhausted);
+        Assert.False(rule.ShouldTry(true, start.AddMinutes(11)));  // bağlandı: TV'ye dokunulmaz
+        Assert.False(rule.ShouldTry(true, start.AddMinutes(21)));  // 10 dk kesintisiz bağlı: sayaç sıfırlandı
+        Assert.False(rule.Exhausted);
+        Assert.True(rule.ShouldTry(false, start.AddMinutes(22)));  // sonradan kapandı: yeniden açılır
+    }
+
+    /// <summary>NaN oran decimal'e çevrilirken OverflowException ile çöküyordu; artık 0 (Mac/iPhone ve Android ile aynı).</summary>
+    [Fact]
+    public void NonFiniteRatiosDoNotCrash()
+    {
+        Assert.Equal(0m, SubtitleServer.Round(double.NaN));
+        Assert.Equal(1m, SubtitleServer.Round(double.PositiveInfinity));
+        Assert.Equal(0m, SubtitleServer.Round(double.NegativeInfinity));
+        Assert.Equal(0.875m, SubtitleServer.Round(0.875));
+    }
 }

@@ -542,13 +542,13 @@ public final class SubtitleServer: @unchecked Sendable {
 
     /// Dört basamağa yuvarlanır; Decimal, JSON'da 0.80000000000000004 yerine 0.8 yazılsın diye.
     static func json(_ box: TextBox) -> [String: Decimal] {
-        let round = { (value: Double) in Decimal(Int((max(0, min(1, value)) * 10000).rounded())) / 10000 }
+        let round = unitNumber
         return ["left": round(box.left), "top": round(box.top), "right": round(box.right), "bottom": round(box.bottom)]
     }
 
     /// Yeriyle bir çeviri ("Ekranı çevir" öğesi ya da ek alan bloğu).
     static func json(_ item: ScreenTranslation.Item, phone: Bool = false) -> [String: Any] {
-        let line = Decimal(Int((max(0, min(1, item.lineHeight)) * 10000).rounded())) / 10000
+        let line = unitNumber(item.lineHeight)
         var result: [String: Any] = ["box": Self.json(item.box), "line": line, "text": item.translation]
         if item.paragraphs { result["paragraphs"] = true }
         // Yerleşim (`ScreenFit`): kutunun genişleyebileceği alan ve özgün satır sayısı (eski TV yok sayar).
@@ -681,7 +681,7 @@ public final class SubtitleServer: @unchecked Sendable {
         if let icons, !icons.isEmpty { json["icons"] = Self.json(icons) }
         if let blocks, !blocks.isEmpty, !text.isEmpty { json["blocks"] = blocks.map { Self.json($0, phone: id == "game-phone") } }
         if let box { json["box"] = Self.json(box) }
-        if let lineHeight { json["line"] = Decimal(Int((max(0, min(1, lineHeight)) * 10000).rounded())) / 10000 }
+        if let lineHeight { json["line"] = Self.unitNumber(lineHeight) }
         broadcast(event: "region", json: json)
         if id == "game-phone" { onEvent?(.gamePhone(text.isEmpty ? [] : blocks ?? [])) }
         else if let blocks, !blocks.isEmpty, !text.isEmpty, blocks.contains(where: { $0.look != nil }) {
@@ -820,12 +820,32 @@ public final class SubtitleServer: @unchecked Sendable {
     /// oranlı, merkezi `region` olayındaki `anchor.ref` dörtgeninin ortası. Kaybolunca `{"gen": kuşak, "lost": true}`:
     /// o kuşağın balon çevirileri hemen gizlenir. Olayı tanımayan TV yok sayar. Son olay yeni bağlanan TV'ye bölgelerden
     /// sonra yinelenir.
+    /// Sonlu olmayan (NaN, sonsuz) dönüşüm gönderilmez: TV son geçerli yerde kalır.
     public func sendAnchor(_ change: PhoneAnchorSession.Change) {
+        if case .moved(let pose) = change, !Self.isFinite(pose.motion) { return }
         broadcast(event: "anchor", json: Self.json(change))
     }
 
+    static func isFinite(_ m: ScreenAnchor.Motion) -> Bool {
+        [m.a, m.b, m.c, m.d, m.dx, m.dy, m.g, m.h].allSatisfy(\.isFinite)
+    }
+
+    /// Çapa dönüşümünün bir sayısı, altı basamağa yuvarlanmış. NaN ya da sonsuz 0 olur, çok büyük değer ±1e6'ya kırpılır:
+    /// eskiden `Int(...)` NaN, sonsuz ya da ~9e12'den büyük değerde uygulamayı çökertiyordu (yalnız deneysel "yerinde çizim").
+    static func anchorNumber(_ value: Double) -> Decimal {
+        guard value.isFinite else { return 0 }
+        let clamped = max(-1_000_000, min(1_000_000, value))
+        return Decimal(Int((clamped * 1_000_000).rounded())) / 1_000_000
+    }
+
+    /// Ekrana oranlı değer [0, 1]'e kırpılmış, dört basamağa yuvarlanmış. NaN 0 olur (Windows ve Android ile aynı; Windows'ta
+    /// decimal'e, Android'de BigDecimal'e çevirirken çöküyordu).
+    static func unitNumber(_ value: Double) -> Decimal {
+        Decimal(Int((max(0, min(1, value.isNaN ? 0 : value)) * 10000).rounded())) / 10000
+    }
+
     static func json(_ change: PhoneAnchorSession.Change) -> [String: Any] {
-        func rounded(_ value: Double) -> Decimal { Decimal(Int((value * 1_000_000).rounded())) / 1_000_000 }
+        let rounded = anchorNumber
         switch change {
         case .moved(let pose):
             let m = pose.motion

@@ -250,12 +250,16 @@ public final class TVKeeper: @unchecked Sendable {
     private let params: [String: Any]
     private let appConnected: (@Sendable () -> Bool)?
     private let consolePort: (@Sendable () -> Int?)?
-    private let relaunchInterval: Duration
     /// Her açma denemesinin sonucu: açıldıysa nil, TV'ye ulaşılamadıysa ya da açamadıysa `.unreachable` (ana ekrandaki satır).
     private let onOpenResult: (@Sendable (TVOpenProblem?) -> Void)?
     private var control: TVControlling?
     private var loop: Task<Void, Never>?
-    private var lastLaunch: ContinuousClock.Instant?
+    /// Samsung: ne zaman açılacağı (seyrelen aralık ve üst sınır; `reconnect` sıfırlar).
+    private var samsungRule: SamsungOpenRule
+    /// Samsung: sınır dolunca günlüğe bir kez yazılır.
+    private var exhaustedLogged = false
+    /// `samsungRule`'un tekdüze saatinin başlangıcı.
+    private let started: ContinuousClock.Instant
     /// Samsung: son açma komutunun gittiği an (uygulama bağlanınca ya da "TV açmadı" bildirilince sıfırlanır).
     private var sentAt: ContinuousClock.Instant?
     private var lastReported: TVOpenProblem?
@@ -282,10 +286,10 @@ public final class TVKeeper: @unchecked Sendable {
     /// Uygulama bu kadar kesintisiz bağlı kalınca geri çekilme sıfırlanır.
     public static let healthyReset: Duration = .seconds(600)
 
-    /// `appConnected` verilirse (Samsung) TV'ye yalnız TV uygulaması bilgisayara bağlı değilken ve en çok
-    /// `relaunchInterval`'da bir dokunulur: uygulama açılır, bağlantı hemen kapatılır. Samsung önplandaki uygulamayı
-    /// söylemediği için sürekli açık "uzaktan kumanda" bağlantısı gereksizdi; birkaç saniyede bir yeniden kurulan
-    /// bağlantı TV'de "uzaktan kumanda bağlandı" bildirimi çıkarıyor, PS5 kolunu düşürüyordu (#5).
+    /// `appConnected` verilirse (Samsung) TV'ye yalnız TV uygulaması bilgisayara bağlı değilken dokunulur: uygulama açılır,
+    /// bağlantı hemen kapatılır. Samsung önplandaki uygulamayı söylemediği için sürekli açık "uzaktan kumanda" bağlantısı
+    /// gereksizdi; birkaç saniyede bir yeniden kurulan bağlantı TV'de "uzaktan kumanda bağlandı" bildirimi çıkarıyor, PS5
+    /// kolunu düşürüyordu (#5). Denemeler `relaunchInterval`'dan başlayıp seyrelir ve sınırlıdır (bkz. `SamsungOpenRule`).
     /// `consolePort`: TV uygulamasının gösterdiği HDMI girişi (1-4; altyazı akışına bağlanırken bildirir), bilinmiyorsa nil.
     public init(connect: @escaping () async throws -> TVControlling, appId: String, params: [String: Any],
                 appConnected: (@Sendable () -> Bool)? = nil, relaunchInterval: Duration = .seconds(30),
@@ -301,7 +305,12 @@ public final class TVKeeper: @unchecked Sendable {
         self.params = params
         self.appConnected = appConnected
         self.consolePort = consolePort
-        self.relaunchInterval = relaunchInterval
+        self.samsungRule = SamsungOpenRule(interval: Self.seconds(relaunchInterval))
+        self.started = now()
+    }
+
+    private static func seconds(_ duration: Duration) -> TimeInterval {
+        Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
     /// Kullanıcının bilerek açtığı uygulamalara (Netflix vb.) dokunulmaz; yalnız giriş ve yayın ekranları.
@@ -446,6 +455,7 @@ public final class TVKeeper: @unchecked Sendable {
 
     private func launchIfAppIsAway(_ connected: Bool) async {
         let time = now()
+        let tryNow = samsungRule.shouldTry(connected: connected, now: Self.seconds(time - started))
         guard !connected else {
             sentAt = nil
             return
@@ -454,9 +464,16 @@ public final class TVKeeper: @unchecked Sendable {
             self.sentAt = nil
             report(.notOpened)
         }
-        if let lastLaunch, time - lastLaunch < relaunchInterval { return }
-        lastLaunch = time
+        guard tryNow else {
+            if samsungRule.exhausted, !exhaustedLogged {
+                exhaustedLogged = true
+                SubtitleLog.write("TV uygulamasını açma (\(appId)): \(samsungRule.maxAttempts) denemede bağlanmadı, otomatik açma durdu (\"TV'de aç\" ya da çeviriyi yeniden başlatmak yeniden dener)")
+            }
+            return
+        }
+        let attempt = "\(samsungRule.attempts)/\(samsungRule.maxAttempts)"
         guard let fresh = try? await connect() else {
+            SubtitleLog.write("TV uygulamasını açma denemesi \(attempt) (\(appId)): TV'ye bağlanılamadı")
             report(.unreachable)
             return
         }
@@ -471,6 +488,7 @@ public final class TVKeeper: @unchecked Sendable {
             notInstalled = (error as? SamsungClient.SamsungError) == .notInstalled
             opened = false
         }
+        SubtitleLog.write("TV uygulamasını açma denemesi \(attempt) (\(appId)): \(opened ? "açma komutu gitti" : notInstalled ? "kurulu değil" : "TV açma komutunu almadı")")
         if opened {
             sentAt = now()
             // TV bir önceki komutta da açmadıysa neden satırı yeniden gönderilen komutla silinmez (her 30 sn'de yanıp sönmesin).
@@ -504,7 +522,8 @@ public final class TVKeeper: @unchecked Sendable {
     public func reconnect() {
         control?.close()
         control = nil
-        lastLaunch = nil
+        samsungRule.reset()
+        exhaustedLogged = false
         sentAt = nil
         lastReported = nil
         stoodDown = false

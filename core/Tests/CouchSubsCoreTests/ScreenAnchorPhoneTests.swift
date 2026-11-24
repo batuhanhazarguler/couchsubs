@@ -144,6 +144,20 @@ final class ScreenAnchorPhoneTests: XCTestCase {
         XCTAssertEqual(lost["gen"] as? Int, 4)
     }
 
+    /// NaN ya da sonsuz dönüşüm uygulamayı çökertmez (eskiden `Int(...)` çöküyordu; yalnız deneysel "yerinde çizim").
+    func testAnchorEventJsonSurvivesNonFiniteValues() {
+        let pose = AnchorPose(generation: 5, reference: region,
+                              motion: ScreenAnchor.Motion(a: .nan, b: .infinity, c: -.infinity, dx: 1e300, dy: -1e300))
+        let m = SubtitleServer.json(.moved(pose))["m"] as! [Decimal]
+        XCTAssertEqual(Array(m.prefix(6)), [0, 0, 0, 1, 1_000_000, -1_000_000])
+        XCTAssertFalse(SubtitleServer.isFinite(pose.motion))
+        XCTAssertTrue(SubtitleServer.isFinite(.identity))
+        XCTAssertEqual(SubtitleServer.unitNumber(.nan), 0)
+        XCTAssertEqual(SubtitleServer.unitNumber(.infinity), 1)
+        XCTAssertEqual(SubtitleServer.unitNumber(-.infinity), 0)
+        XCTAssertEqual(SubtitleServer.json(TextBox(left: .nan, top: 0.25, right: .infinity, bottom: 0.5))["left"], 0)
+    }
+
     /// Türkçe ikiz: düz zeminde yazının harfleri silinip yerine çeviri çizilir; yazı kutusunun dışı saydam kalır (oyunun
     /// görüntüsü, simgeler örtülmez), kutunun içi opak.
     func testTwinErasesOnlyTextBoxes() throws {
