@@ -6,10 +6,13 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
-- **GTA 6 telefon mesajları:** Elde hafifçe sallanan oyun içi telefonun mesajları artık her seferinde çevriliyor; "bir kez çeviriyor, sonra takılıyor" sorunu giderildi, yeni gelen mesaj da hemen gösteriliyor (Windows, Mac, iPhone, Android).
-- **Yanıp sönen çeviri kutusu:** Arkasında sahne oynayan sabit tabela, ipucu ve menü yazısının çeviri kutusu artık birkaç saniyede bir kalkıp geri gelmiyor; yazı gerçekten kalkınca çevirisi de hemen kalkıyor (Windows, Mac, iPhone, Android).
-- **Reklam şeridinin boşluğu:** Çeviri sürerken gizlenen reklam şeridi düğmelerin altında boş koyu alan bırakmıyor; içerik pencerenin altına kadar uzanıyor (Mac, Windows).
-- **TV kartı metinleri:** TV kartındaki düğme ve bekleme metinleri dört platformda aynı; eşli olmayan TV için hepsinde "TV'yi Eşleştir" yazıyor (Windows, Mac, iPhone, Android).
+- **TV yeniden bulunuyor:** TV kapanıp açılınca ya da modem yeniden başlayınca adresi değişen TV artık kimliğiyle (UUID/MAC) bulunuyor; ad değişse ya da aynı adlı iki TV olsa da doğru TV seçiliyor. Android TV ve telefonun arka planı yeni adresi izliyor, bilgisayarın ya da telefonun adresi değişince TV'ye hemen bildiriliyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.100).
+- **Menü sanılınca kaybolan altyazı:** Ekran yanlışlıkla menü sanıldığında konuşma satırı artık atılmıyor; ipucu ve görev yazısı menü sayılmıyor, GTA 6'da altyazı atlanmıyor (Windows, Mac, iPhone, Android).
+- **GTA 6 Mesajlar listesi:** Elde sallanan telefonda TV'deki mesaj listesi iki düzen arasında gidip gelmiyor, sabit kalıyor; kişi adı kalın, önizleme altında, kesik önizlemeden yarım sözcük uydurulmuyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.101).
+- **Samsung TV açma denemeleri:** TV uygulaması bağlı değilken açma denemeleri artık 30 sn'de bir sınırsız sürmüyor; aralar uzuyor (30 sn, 1, 2, 5 dk) ve çeviri başına en çok 6 deneme yapılıyor. "Otomatik açılamadı" uyarısı ve TV'yi fişten çekme gereği ortadan kalkıyor (Windows, Mac, iPhone, Android).
+- **Çökme:** Deneysel yerinde çizimde geçersiz bir ölçü değeri uygulamayı çökertmiyor (Windows, Mac, iPhone, Android).
+
+**beta.95'te gelenler:** GTA 6 telefon mesajlarının her seferinde çevrilmesi, sabit yazının çeviri kutusunun yanıp sönmemesi, reklam şeridinin boşluk bırakmaması, TV kartı metinlerinin her platformda aynı olması.
 
 **beta.94'te gelenler:** koyu zeminin OLED'de tam siyah olması (TV uygulaması 0.9.97), Mac'te yanlış "yazı okuma yanıt vermiyor" uyarısı, her replikte konuşan adı ve on ad rengi, TV'de ses durumu (TV uygulaması 0.9.98), tuş simgelerini örtmeyen ekran yazısı çevirisi (TV uygulaması 0.9.99), Xbox yayınının kendiliğinden yeniden bağlanması, PS5'in adresi değişince kimliğiyle yeniden bulunması, Mac'te altyazı önizlemesinin ince şerit olmaması, TV kartında doğru eşleştirme düğmeleri ve süren iş göstergesi, yumuşatılmayan küfür, çevrimdışı kuyruk.
 
