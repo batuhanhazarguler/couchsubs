@@ -230,4 +230,40 @@ final class TextPaintTests: XCTestCase {
         }
         for text in ["Map", "VIEW", "Grand prize", "I told you"] { XCTAssertFalse(ScreenTranslation.keepsNames(text), text) }
     }
+
+    /// #1255: kare dışına taşan kutu (sol, sağ, üst, alt) boş alan taramasını sonsuz döngüye sokmaz; ölçüm biter ve
+    /// kutular kareye kırpılır. Nokta okuması `GamePhonePixels.offset` gibi kenara sabitlenir; sayaç bütçeyi aşarsa
+    /// (eski kodda sonsuz döngü) farklı renk döner ki deneme takılmasın, sonra bütçe aşımı hata sayılır.
+    func testPaintsEndsWhenBoxOverflowsFrame() {
+        let width = 200, height = 100, budget = 2_000_000
+        let boxes = [
+            TextBox(left: -0.08, top: 0.4, right: 0.3, bottom: 0.6),
+            TextBox(left: 0.7, top: 0.4, right: 1.08, bottom: 0.6),
+            TextBox(left: 0.3, top: -0.1, right: 0.6, bottom: 0.15),
+            TextBox(left: 0.3, top: 0.85, right: 0.6, bottom: 1.1),
+            TextBox(left: -0.2, top: -0.2, right: 1.2, bottom: 1.2),
+        ]
+        for box in boxes {
+            var calls = 0
+            let target = TextPainter.Target(box: box, lineHeight: 0.1, rows: 1, background: "#202020", foreground: "#F0F0F0",
+                                            upper: false, align: .center)
+            let paints = TextPainter.paints([target], width: width, height: height) { x, y in
+                calls += 1
+                if calls > budget { return (255, 0, 0) }
+                let cx = min(width - 1, max(0, x)), cy = min(height - 1, max(0, y))
+                // Kutunun ortasında yazı noktaları.
+                let ink = Double(cx) / Double(width) > max(0, box.left) + 0.02 && Double(cx) / Double(width) < min(1, box.right) - 0.02
+                    && cy % 4 == 0 && Double(cy) / Double(height) > max(0, box.top) && Double(cy) / Double(height) < min(1, box.bottom)
+                return ink ? (240, 240, 240) : (32, 32, 32)
+            }
+            XCTAssertLessThanOrEqual(calls, budget, "sonsuz döngü: \(box)")
+            XCTAssertEqual(paints.count, 1)
+            guard let paint = paints.first else { continue }
+            for b in [paint.cover] + (paint.grow.map { [$0] } ?? []) {
+                XCTAssertGreaterThanOrEqual(b.left, 0, "\(box)"); XCTAssertGreaterThanOrEqual(b.top, 0, "\(box)")
+                XCTAssertLessThanOrEqual(b.right, 1, "\(box)"); XCTAssertLessThanOrEqual(b.bottom, 1, "\(box)")
+                XCTAssertLessThanOrEqual(b.left, b.right, "\(box)"); XCTAssertLessThanOrEqual(b.top, b.bottom, "\(box)")
+            }
+        }
+    }
 }

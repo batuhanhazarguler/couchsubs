@@ -222,4 +222,40 @@ public class TextPaintTests
         Assert.Equal(0.55, placed.Grow!.Value.Left, 6);
         Assert.Equal(0.05, placed.Pitch, 6);
     }
+
+    /// <summary>
+    /// #1255: kare dışına taşan kutu (sol, sağ, üst, alt) boş alan taramasını sonsuz döngüye sokmaz; ölçüm biter ve kutular
+    /// kareye kırpılır. Nokta okuması kenara sabitlenir; sayaç bütçeyi aşarsa (eski kodda sonsuz döngü) farklı renk döner ki
+    /// deneme takılmasın, sonra bütçe aşımı hata sayılır.
+    /// </summary>
+    [Theory]
+    [InlineData(-0.08, 0.4, 0.3, 0.6)]
+    [InlineData(0.7, 0.4, 1.08, 0.6)]
+    [InlineData(0.3, -0.1, 0.6, 0.15)]
+    [InlineData(0.3, 0.85, 0.6, 1.1)]
+    [InlineData(-0.2, -0.2, 1.2, 1.2)]
+    public void PaintsEndsWhenBoxOverflowsFrame(double left, double top, double right, double bottom)
+    {
+        const int width = 200, height = 100, budget = 2_000_000;
+        var box = new TextBox(left, top, right, bottom);
+        var calls = 0;
+        var target = new TextPainter.Target(box, 0.1, 1, "#202020", "#F0F0F0", false, "center");
+        var paints = TextPainter.Paints([target], width, height, (x, y) =>
+        {
+            calls++;
+            if (calls > budget) return (255, 0, 0);
+            int cx = Math.Min(width - 1, Math.Max(0, x)), cy = Math.Min(height - 1, Math.Max(0, y));
+            double fx = (double)cx / width, fy = (double)cy / height;
+            var ink = fx > Math.Max(0, left) + 0.02 && fx < Math.Min(1, right) - 0.02 && cy % 4 == 0 && fy > Math.Max(0, top)
+                      && fy < Math.Min(1, bottom);
+            return ink ? (240, 240, 240) : (32, 32, 32);
+        });
+        Assert.True(calls <= budget, $"sonsuz döngü: {box}");
+        var paint = Assert.Single(paints);
+        foreach (var b in paint.Grow is { } grow ? new[] { paint.Cover, grow } : new[] { paint.Cover })
+        {
+            Assert.True(b.Left >= 0 && b.Top >= 0 && b.Right <= 1 && b.Bottom <= 1, $"{box}: {b}");
+            Assert.True(b.Left <= b.Right && b.Top <= b.Bottom, $"{box}: {b}");
+        }
+    }
 }

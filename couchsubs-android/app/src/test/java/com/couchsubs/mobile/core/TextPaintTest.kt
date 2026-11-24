@@ -229,4 +229,44 @@ class TextPaintTest {
             assertTrue(paint.grow!!.left < paint.cover.left - 0.05)
         }
     }
+
+    /**
+     * #1255: kare dışına taşan kutu (sol, sağ, üst, alt) boş alan taramasını sonsuz döngüye sokmaz; ölçüm biter ve kutular
+     * kareye kırpılır. Nokta okuması kenara sabitlenir; sayaç bütçeyi aşarsa (eski kodda sonsuz döngü) farklı renk döner ki
+     * deneme takılmasın, sonra bütçe aşımı hata sayılır.
+     */
+    @Test
+    fun paintsEndsWhenBoxOverflowsFrame() {
+        val width = 200
+        val height = 100
+        val budget = 2_000_000
+        val boxes = listOf(
+            TextBox(-0.08, 0.4, 0.3, 0.6),
+            TextBox(0.7, 0.4, 1.08, 0.6),
+            TextBox(0.3, -0.1, 0.6, 0.15),
+            TextBox(0.3, 0.85, 0.6, 1.1),
+            TextBox(-0.2, -0.2, 1.2, 1.2),
+        )
+        for (box in boxes) {
+            var calls = 0
+            val target = TextPainter.Target(box, 0.1, 1, "#202020", "#F0F0F0", false, "center")
+            val paints = TextPainter.paints(listOf(target), width, height) { x, y ->
+                calls++
+                if (calls > budget) return@paints 0xFF0000
+                val cx = x.coerceIn(0, width - 1)
+                val cy = y.coerceIn(0, height - 1)
+                val fx = cx.toDouble() / width
+                val fy = cy.toDouble() / height
+                val ink = fx > maxOf(0.0, box.left) + 0.02 && fx < minOf(1.0, box.right) - 0.02 && cy % 4 == 0 &&
+                    fy > maxOf(0.0, box.top) && fy < minOf(1.0, box.bottom)
+                if (ink) 0xF0F0F0 else 0x202020
+            }
+            assertTrue("sonsuz döngü: $box", calls <= budget)
+            assertEquals(1, paints.size)
+            for (b in listOfNotNull(paints[0].cover, paints[0].grow)) {
+                assertTrue("$box: $b", b.left >= 0 && b.top >= 0 && b.right <= 1 && b.bottom <= 1)
+                assertTrue("$box: $b", b.left <= b.right && b.top <= b.bottom)
+            }
+        }
+    }
 }

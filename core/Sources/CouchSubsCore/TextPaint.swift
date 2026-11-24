@@ -97,10 +97,15 @@ public enum TextPainter {
     public static func paints(_ targets: [Target], width: Int, height: Int, color: (Int, Int) -> RGB) -> [TextPaint] {
         guard width > 0, height > 0 else { return [] }
         let fw = Double(width), fh = Double(height)
-        // Hedeflerin piksel kutuları (öbür hedefler engeldir).
+        // Hedeflerin piksel kutuları (öbür hedefler engeldir); karenin dışına taşan kutu kareye kırpılır (#1255).
+        func pixel(_ v: Double, _ size: Int, up: Bool) -> Int {
+            guard v.isFinite else { return v > 0 ? size : 0 }
+            let p = (v * Double(size)).rounded(up ? .up : .down)
+            return Int(min(Double(size), max(0, p)))
+        }
         let rects = targets.map { t in
-            (l: Int((t.box.left * fw).rounded(.down)), t: Int((t.box.top * fh).rounded(.down)),
-             r: Int((t.box.right * fw).rounded(.up)), b: Int((t.box.bottom * fh).rounded(.up)))
+            (l: pixel(t.box.left, width, up: false), t: pixel(t.box.top, height, up: false),
+             r: pixel(t.box.right, width, up: true), b: pixel(t.box.bottom, height, up: true))
         }
         var result: [TextPaint] = []
         for (index, target) in targets.enumerated() {
@@ -235,7 +240,10 @@ public enum TextPainter {
                     var ground = first
                     var x = start
                     let end = step < 0 ? max(-1, start - limit) : min(width, start + limit)
-                    while x != end {
+                    // Sınır karşılaştırması ve adım sınırı: başlangıç karenin dışında kalsa da döngü biter (#1255).
+                    var steps = 0
+                    while step < 0 ? x > end : x < end, x >= 0, x < width, steps <= width {
+                        steps += 1
                         if band.contains(where: { others(x, $0) }) || rects.indices.contains(where: { j in
                             j != index && x >= rects[j].l && x < rects[j].r && rects[j].b > ct && rects[j].t < cb
                         }) { return x - step * gap }

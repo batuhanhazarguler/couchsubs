@@ -90,9 +90,15 @@ public static class TextPainter
     {
         if (width <= 0 || height <= 0) return [];
         double fw = width, fh = height;
-        // Hedeflerin piksel kutuları (öbür hedefler engeldir).
-        var rects = targets.Select(t => (L: (int)Math.Floor(t.Box.Left * fw), T: (int)Math.Floor(t.Box.Top * fh),
-                                         R: (int)Math.Ceiling(t.Box.Right * fw), B: (int)Math.Ceiling(t.Box.Bottom * fh))).ToArray();
+        // Hedeflerin piksel kutuları (öbür hedefler engeldir); karenin dışına taşan kutu kareye kırpılır (#1255).
+        static int Pixel(double v, int size, bool up)
+        {
+            if (!double.IsFinite(v)) return v > 0 ? size : 0;
+            var p = up ? Math.Ceiling(v * size) : Math.Floor(v * size);
+            return (int)Math.Min(size, Math.Max(0, p));
+        }
+        var rects = targets.Select(t => (L: Pixel(t.Box.Left, width, false), T: Pixel(t.Box.Top, height, false),
+                                         R: Pixel(t.Box.Right, width, true), B: Pixel(t.Box.Bottom, height, true))).ToArray();
         var result = new List<TextPaint>(targets.Count);
         for (var index = 0; index < targets.Count; index++)
         {
@@ -254,8 +260,11 @@ public static class TextPainter
                     var ground = first;
                     var x = start;
                     var end = step < 0 ? Math.Max(-1, start - limit) : Math.Min(width, start + limit);
-                    while (x != end)
+                    // Sınır karşılaştırması ve adım sınırı: başlangıç karenin dışında kalsa da döngü biter (#1255).
+                    var steps = 0;
+                    while ((step < 0 ? x > end : x < end) && x >= 0 && x < width && steps <= width)
                     {
+                        steps++;
                         var blocked = band.Any(y => Others(x, y));
                         for (var j = 0; j < rects.Length && !blocked; j++)
                             blocked = j != index && x >= rects[j].L && x < rects[j].R && rects[j].B > ct && rects[j].T < cb;

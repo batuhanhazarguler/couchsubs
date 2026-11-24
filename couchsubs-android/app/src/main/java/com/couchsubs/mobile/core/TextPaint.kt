@@ -98,9 +98,14 @@ object TextPainter {
         val fw = width.toDouble()
         val fh = height.toDouble()
         val pixel = { x: Int, y: Int -> rgbOf(color(x, y)) }
-        // Hedeflerin piksel kutuları (öbür hedefler engeldir).
+        // Hedeflerin piksel kutuları (öbür hedefler engeldir); karenin dışına taşan kutu kareye kırpılır (#1255).
+        fun px(v: Double, size: Int, up: Boolean): Int {
+            if (!v.isFinite()) return if (v > 0) size else 0
+            val p = if (up) ceil(v * size) else floor(v * size)
+            return p.coerceIn(0.0, size.toDouble()).toInt()
+        }
         val rects = targets.map { t ->
-            Rect(floor(t.box.left * fw).toInt(), floor(t.box.top * fh).toInt(), ceil(t.box.right * fw).toInt(), ceil(t.box.bottom * fh).toInt())
+            Rect(px(t.box.left, width, false), px(t.box.top, height, false), px(t.box.right, width, true), px(t.box.bottom, height, true))
         }
         val result = mutableListOf<TextPaint>()
         for ((index, target) in targets.withIndex()) {
@@ -256,7 +261,10 @@ object TextPainter {
                     var ground = first
                     var at = start
                     val end = if (step < 0) max(-1, start - limit) else min(width, start + limit)
-                    while (at != end) {
+                    // Sınır karşılaştırması ve adım sınırı: başlangıç karenin dışında kalsa da döngü biter (#1255).
+                    var steps = 0
+                    while ((if (step < 0) at > end else at < end) && at >= 0 && at < width && steps <= width) {
+                        steps++
                         if (band.any { others(at, it) } || rects.indices.any { j ->
                                 j != index && at >= rects[j].l && at < rects[j].r && rects[j].b > ct && rects[j].t < cb
                             }) return at - step * gap
