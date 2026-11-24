@@ -664,6 +664,82 @@ final class ReadQueueTests: XCTestCase {
         XCTAssertEqual(rescuer.standDowns.value, 1)
     }
 
+    private static func count(_ events: Events, _ match: (ReadQueue.Event) -> Bool) -> Int { events.all.filter(match).count }
+    private static func isAbandoned(_ event: ReadQueue.Event) -> Bool { if case .abandoned = event { true } else { false } }
+    private static func isRebuilt(_ event: ReadQueue.Event) -> Bool { if case .recoveredAfterRebuild = event { true } else { false } }
+
+    /// #1247 (Mac, beta.95): takılan Vision isteği hiç dönmüyordu; okumalar oturum boyunca yedekte kaldı, "macOS'in yazı
+    /// okuması yanıt vermiyor" uyarısı 839 sn kalkmadı. Artık takılan okuma süre dolunca kendiliğinden bırakılır, okuyucu
+    /// yeniden kurulur; yeni okuyucu sınanırken altyazı yedekten sürer, art arda okumaları süresinde bitirince yedek
+    /// kapatılır, uyarının dayandığı durum (`isRescuing`) kalkar.
+    func testNeverReturningReadIsAbandonedAndRebuiltReaderRecovers() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let hang = Hang()
+        defer { hang.release() }
+        let queue = ReadQueue(label: "test.rebuild", timeoutMs: 5000, subtitleTimeoutMs: 80,
+                              abandonStallAfterMs: 300, recoverAfterReads: 3)
+        let rescuer = FakeRescuer()
+        queue.rescuer = rescuer
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+
+        // Hiç dönmeyen istek (test sonuna dek).
+        _ = try? await queue.run(priority: .subtitle) { hang.wait() }
+        XCTAssertTrue(queue.isRescuing)
+        let rescued = try await queue.run(priority: .subtitle) { try Self.rescuedOrPrimary() }
+        XCTAssertEqual(rescued.text, "yedekten")
+
+        for _ in 0..<200 where Self.count(events, Self.isAbandoned) == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        guard case .abandoned(let ms, rescued: true)? = events.all.first(where: Self.isAbandoned) else {
+            return XCTFail("takılan okuma bırakılmadı")
+        }
+        XCTAssertGreaterThanOrEqual(ms, 300)
+        XCTAssertNil(queue.stalledMs)
+        XCTAssertTrue(queue.isRescuing, "yeni okuyucu sınanırken uyarı sürer, altyazı yedekten gelir")
+
+        // Yeni okuyucu okumaları süresinde bitirir: yedekten çıkılır.
+        for _ in 0..<100 where Self.count(events, Self.isRebuilt) == 0 {
+            _ = try await queue.run(priority: .subtitle) { try Self.rescuedOrPrimary() }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(events.all.last(where: Self.isRebuilt), .recoveredAfterRebuild(reads: 3))
+        XCTAssertFalse(queue.isRescuing, "uyarı kalkar")
+        XCTAssertEqual(rescuer.standDowns.value, 1)
+        let primary = try await queue.run(priority: .subtitle) { try Self.rescuedOrPrimary() }
+        XCTAssertEqual(primary.text, "asıl")
+    }
+
+    /// Yeniden kurulan okuyucu da takılırsa sınama biter: okumalar yedekte sürer, uyarı kalmaz sanılmaz; takılma yine
+    /// süre dolunca bırakılır.
+    func testRebuiltReaderThatStallsAgainStaysRescued() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let hang = Hang()
+        defer { hang.release() }
+        let queue = ReadQueue(label: "test.rebuild.again", timeoutMs: 5000, subtitleTimeoutMs: 80,
+                              abandonStallAfterMs: 200, recoverAfterReads: 3)
+        let rescuer = FakeRescuer()
+        queue.rescuer = rescuer
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+
+        _ = try? await queue.run(priority: .subtitle) { hang.wait() }
+        for _ in 0..<200 where Self.count(events, Self.isAbandoned) == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), 1)
+
+        // Yeni okuyucu da dönmüyor: okuma yedekten teslim edilir, sınamadaki kopya takılır.
+        let reading = try await queue.run(priority: .subtitle) { () throws -> Reading in
+            if ReadQueue.activeRescuer == nil { hang.wait() }
+            return try Self.rescuedOrPrimary()
+        }
+        XCTAssertEqual(reading.text, "yedekten")
+        for _ in 0..<100 where queue.stalledMs == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(queue.stalledMs)
+        XCTAssertTrue(queue.isRescuing)
+        XCTAssertEqual(Self.count(events, Self.isRebuilt), 0)
+        for _ in 0..<200 where Self.count(events, Self.isAbandoned) < 2 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), 2, "yeniden takılma da süre dolunca bırakılır")
+    }
+
     /// iPhone: asla dönmeyen okuma altyazıyı uygulama kapatılana dek durduruyordu (TestFlight, X). Takılma yeterince
     /// uzunsa bırakılır; sonraki okuma yeni kuyrukta ve hızlı düzeyde verilir. Sınır kadar bırakıldıktan sonra yine `stuck`.
     func testNeverReturningReadIsAbandonedWithoutRescue() async throws {

@@ -52,8 +52,15 @@ public protocol ReadRescuer: AnyObject, Sendable {
 ///   ancak uygulamayı yeniden açmak düzeltiyordu.
 /// - **Yedek de takılırsa** bağlamı bırakılıp yenisi kurulur; art arda `maxRescueFailures` kez olursa yedek, asıl
 ///   okuyucu düzelene kadar kullanılmaz.
+/// - **Hiç dönmeyen okuma bırakılır** (#1247, #1210): takılma `abandonStallAfterMs`'i aşarsa takılan okuma bırakılır,
+///   asıl okuyucuya yeni kuyruk kurulur (`abandonStall`). Yedek varsa okumalar yedekte sürer; yeni okuyucu yanında
+///   sınanır (aynı okuma ona da verilir, önce biten teslim edilir). Yeni okuyucu art arda `recoverAfterReads` okumayı
+///   sınırında bitirince yedek kapatılır, uyarı kalkar. Eskiden takılan Vision isteği hiç dönmezse Mac'te okumalar
+///   oturum boyunca yedekte kalıyor, "yazı okuması yanıt vermiyor" uyarısı kalkmıyordu; uygulamayı yeniden açmak da
+///   kısa süre sonra yeniden takılınca düzeltmiyordu.
 public final class ReadQueue: @unchecked Sendable {
-    public static let shared = ReadQueue(degradeAfterStalls: 2, subtitleTimeoutMs: ReadQueue.defaultSubtitleTimeoutMs)
+    public static let shared = ReadQueue(degradeAfterStalls: 2, subtitleTimeoutMs: ReadQueue.defaultSubtitleTimeoutMs,
+                                         abandonStallAfterMs: ReadQueue.defaultAbandonStallAfterMs)
     /// Bütün karenin derin okuması (üç Vision isteği) yavaş Mac'te birkaç saniye sürer; `FrameGate`'in 15 saniyesinden
     /// önce dönmeli ki hat yeniden kurulmadan sonraki kare okunsun.
     public static let defaultTimeoutMs = 10_000
@@ -66,6 +73,11 @@ public final class ReadQueue: @unchecked Sendable {
     public static let defaultMaxRescueFailures = 3
     /// Takılma yinelenince okumaların hızlı düzeyde verildiği süre; sonra isabetli düzeye dönülür (#1210).
     public static let defaultFastLevelHoldMs = 120_000
+    /// Asıl okuyucudaki okuma bundan uzun süredir dönmüyorsa bırakılır, okuyucu yeniden kurulur (`abandonStall`).
+    /// Takılan okuma çoğu zaman yarım dakikada biter (model hazırlanıyor); hemen bırakılmaz.
+    public static let defaultAbandonStallAfterMs = 20_000
+    /// Yeniden kurulan okuyucu art arda bu kadar okumayı sınırında bitirince yedekten çıkılır.
+    public static let defaultRecoverAfterReads = 3
     /// Uyarlanan altyazı sınırı için tutulan son altyazı okuması sayısı ve gereken en az okuma.
     static let subtitleSampleCount = 15
     static let subtitleMinSamples = 5
@@ -89,8 +101,13 @@ public final class ReadQueue: @unchecked Sendable {
         /// Altyazı, asıl okuyucuda süren arka plan okumasının arkasında sınır kadar bekledi. Takılma sayılmadı:
         /// sıradaki `dropped` arka plan okuması düşürüldü; `rescued`: altyazı bu tur yedekten okundu.
         case backgroundYielded(Stall, dropped: Int, rescued: Bool)
-        /// Bırakılan (iPhone) takılı okuma sonunda bitti; `stillStuck`: hâlâ bitmemiş bırakılan okuma sayısı.
+        /// Bırakılan takılı okuma sonunda bitti; `stillStuck`: hâlâ bitmemiş bırakılan okuma sayısı.
         case abandonedFinished(stillStuck: Int)
+        /// `ms`'dir dönmeyen okuma bırakıldı, asıl okuyucu yeniden kuruldu (`abandonStall`). `rescued`: yeni okuyucu
+        /// sınanırken okumalar yedekte sürüyor.
+        case abandoned(ms: Int, rescued: Bool)
+        /// Yeniden kurulan okuyucu art arda `reads` okumayı sınırında bitirdi: asıl okuyucuya dönüldü, yedek kapatıldı.
+        case recoveredAfterRebuild(reads: Int)
     }
 
     /// Dönmeyen okumanın ayrıntısı.
@@ -176,11 +193,20 @@ public final class ReadQueue: @unchecked Sendable {
     private var lastSubtitleWaitMs = 0
     private var _rescuer: ReadRescuer?
     private var _onEvent: (@Sendable (Event) -> Void)?
+    /// Takılma bu kadar sürünce takılan okuma kendiliğinden bırakılır; nil: bırakılmaz (yalnız `abandonStall` çağrılınca).
+    private let abandonStallAfterMs: Int?
+    /// Yeniden kurulan okuyucunun yedekten çıkmak için art arda sınırında bitirmesi gereken okuma sayısı.
+    private let recoverAfterReads: Int
+    /// Okuyucu yeniden kuruldu ve sınanıyor: art arda sınırında biten okuma sayısı; nil: sınanmıyor.
+    private var probation: Int?
 
     public init(label: String = "com.couchsubs.ocr", timeoutMs: Int = ReadQueue.defaultTimeoutMs,
                 maxRescueFailures: Int = ReadQueue.defaultMaxRescueFailures, degradeAfterStalls: Int? = nil,
                 subtitleTimeoutMs: Int? = nil, subtitleTimeoutCapMs: Int? = nil,
-                fastLevelHoldMs: Int = ReadQueue.defaultFastLevelHoldMs) {
+                fastLevelHoldMs: Int = ReadQueue.defaultFastLevelHoldMs, abandonStallAfterMs: Int? = nil,
+                recoverAfterReads: Int = ReadQueue.defaultRecoverAfterReads) {
+        self.abandonStallAfterMs = abandonStallAfterMs
+        self.recoverAfterReads = max(1, recoverAfterReads)
         self.degradeAfterStalls = degradeAfterStalls
         self.label = label
         self.timeoutMs = timeoutMs
@@ -223,11 +249,12 @@ public final class ReadQueue: @unchecked Sendable {
     /// Asıl okuyucu takılı mı ve kaç milisaniyedir.
     public var stalledMs: Int? { lock.withLock { primary.stalledSince.map { Self.uptimeMs() - $0 } } }
 
-    /// Bağımsız yedeği olmayan yerde (iPhone; ayrı süreç açılamaz) takılan okuma bırakılır: asıl okuyucuya yeni kuyruk
-    /// kurulur ve okumalar bundan sonra hızlı düzeyde (Neural Engine'siz) verilir. Eskiden iPhone'da takılan tek okuma
-    /// bitmezse altyazı bir daha gelmiyordu; "Durdur / Başlat" düzeltmiyor, yalnız uygulamayı kapatıp açmak
-    /// düzeltiyordu (Android'de takılan tanıyıcı zaten bırakılıp yenisi kuruluyor). Bırakılan okuma arka planda kalır
-    /// (iş parçacığı durdurulamaz); bu yüzden süreç başına en çok `maxAbandons` kez yapılır.
+    /// Takılan okuma bırakılır: asıl okuyucuya yeni kuyruk kurulur ve okumalar bir süre hızlı düzeyde (Neural Engine'siz)
+    /// verilir. `abandonStallAfterMs` verildiyse takılma o kadar sürünce kendiliğinden çağrılır (Mac ve iPhone). Yedek
+    /// varsa (Mac) okumalar, yeni okuyucu `recoverAfterReads` okumayı sınırında bitirene dek yedekte sürer. Eskiden
+    /// iPhone'da takılan tek okuma bitmezse altyazı bir daha gelmiyordu; "Durdur / Başlat" düzeltmiyor, yalnız uygulamayı
+    /// kapatıp açmak düzeltiyordu (Android'de takılan tanıyıcı zaten bırakılıp yenisi kuruluyor). Bırakılan okuma arka
+    /// planda kalır (iş parçacığı durdurulamaz); bu yüzden aynı anda en çok `maxAbandons` okuma bırakılmış olabilir.
     ///
     /// `olderThanMs`: takılma en az bu kadar sürmüş olmalı (takılan okuma çoğu zaman kendiliğinden biter). Bırakıldıysa
     /// takılmanın süresi (ms), bırakılmadıysa nil.
@@ -242,12 +269,14 @@ public final class ReadQueue: @unchecked Sendable {
             primaryGeneration += 1
             // Eski kuyruğun bekleyenleri yoktur (takılınca yedeğe taşındı ya da hata aldı); takılan iş orada kalır.
             primary = Lane(label: "\(label).\(primaryGeneration)")
+            probation = 0
             // Hızlı düzey süreli: bırakılan okumalar bitip süre dolunca isabetli düzeye dönülür.
             useFastLevelForAWhile(now: Self.uptimeMs())
             return ms
         }
-        guard abandoned != nil else { return nil }
-        let current = lock.withLock { primary }
+        guard let abandoned else { return nil }
+        let (current, rescued) = lock.withLock { (primary, rescueUsable) }
+        onEvent?(.abandoned(ms: abandoned, rescued: rescued))
         pump(current)
         return abandoned
     }
@@ -255,14 +284,14 @@ public final class ReadQueue: @unchecked Sendable {
     /// iPhone'da süreç başına bırakılabilecek takılı okuma sayısı (her biri bir iş parçacığını tutar).
     public static let defaultMaxAbandons = 3
 
-    /// Takılıyken okumalar yedekten mi geliyor.
-    public var isRescuing: Bool { lock.withLock { primary.stalledSince != nil && rescueUsable } }
+    /// Takılıyken (ya da yeniden kurulan okuyucu sınanırken) okumalar yedekten mi geliyor.
+    public var isRescuing: Bool { lock.withLock { (primary.stalledSince != nil || probation != nil) && rescueUsable } }
 
     /// Arka plan okumalarının aralığı bununla çarpılır: altyazı okuması sırada beklediyse 2, çok beklediyse 4; asıl
     /// okuyucu takılıyken 4 (yedek yalnız altyazıya yetsin).
     public var backgroundSlowdown: Int {
         lock.withLock {
-            if primary.stalledSince != nil { return 4 }
+            if primary.stalledSince != nil || (probation != nil && rescueUsable) { return 4 }
             if lastSubtitleWaitMs > Self.subtitleWaitLimitMs * 4 { return 4 }
             return lastSubtitleWaitMs > Self.subtitleWaitLimitMs ? 2 : 1
         }
@@ -297,9 +326,19 @@ public final class ReadQueue: @unchecked Sendable {
     }
 
     private func submit(_ item: Item) {
+        var probe: Lane?
         let (lane, limitMs): (Lane?, Int) = lock.withLock {
             var lane: Lane?
-            if primary.stalledSince == nil {
+            if primary.stalledSince == nil, probation != nil, rescueUsable, rescue.stalledSince == nil {
+                // Yeniden kurulan okuyucu sınanıyor: okuma yedekte sürer; asıl okuyucu boştaysa aynı okuma ona da verilir
+                // (önce biten teslim edilir).
+                lane = rescue
+                if primary.running == nil, primary.pending.isEmpty {
+                    let copy = Item(priority: item.priority, detail: item.detail, droppable: true, work: item.work, fail: { _ in })
+                    Self.enqueue(copy, in: primary)
+                    probe = primary
+                }
+            } else if primary.stalledSince == nil {
                 // Asıl okuyucu altyazıyı bekleten bir arka plan okumasıyla meşgulse yeni altyazı doğrudan yedeğe gider.
                 if item.priority == .subtitle, primary.running?.yielded == true, rescueUsable, rescue.stalledSince == nil {
                     rescueBorrowed = true
@@ -353,6 +392,7 @@ public final class ReadQueue: @unchecked Sendable {
             if waiting { item.fail(ReadQueueError.timedOut(ms: timeoutMs)) }
         }
         pump(lane)
+        if let probe { pump(probe) }
     }
 
     /// Altyazı okuması bekleyen arka plan okumalarının önüne geçer; aynı öncelikte geliş sırası korunur.
@@ -400,7 +440,7 @@ public final class ReadQueue: @unchecked Sendable {
     /// Kilit altında çağrılır: yedek yalnız arka plan okumasının yanından geçirilen altyazılar için açıldıysa ve artık
     /// gerekmiyorsa kapatılacak yedeği döndürür.
     private func endBorrowedRescue() -> ReadRescuer? {
-        guard rescueBorrowed, primary.stalledSince == nil, primary.running?.yielded != true,
+        guard rescueBorrowed, primary.stalledSince == nil, probation == nil, primary.running?.yielded != true,
               rescue.running == nil, rescue.pending.isEmpty else { return nil }
         rescueBorrowed = false
         return _rescuer
@@ -474,6 +514,7 @@ public final class ReadQueue: @unchecked Sendable {
                     let ran = now - (lane.stallStarted ?? since - timeoutMs)
                     lane.stalledSince = nil
                     lane.stallStarted = nil
+                    probation = nil
                     rescueFailures = 0
                     rescueBorrowed = false
                     standDown = _rescuer
@@ -487,6 +528,16 @@ public final class ReadQueue: @unchecked Sendable {
                     if ran >= timeoutMs, let degradeAfterStalls, stalls >= degradeAfterStalls, fastLevelSince == nil {
                         useFastLevelForAWhile(now: now)
                         events.append(.degraded(stalls: stalls))
+                    }
+                } else if let passed = probation {
+                    // Yeniden kurulan okuyucu okumayı sınırında bitirdi (süresi dolan okuma takılma sayılırdı).
+                    probation = passed + 1
+                    if passed + 1 >= recoverAfterReads {
+                        probation = nil
+                        rescueFailures = 0
+                        rescueBorrowed = false
+                        standDown = _rescuer
+                        events.append(.recoveredAfterRebuild(reads: passed + 1))
                     }
                 } else {
                     standDown = endBorrowedRescue()
@@ -506,6 +557,7 @@ public final class ReadQueue: @unchecked Sendable {
         var event: Event?
         var abandon: ReadRescuer?
         var stranded: [Item] = []
+        var abandonIn: Int?
         let stuck: Bool = lock.withLock {
             guard lane.running === item, !item.expired else { return false }
             item.expired = true
@@ -516,6 +568,9 @@ public final class ReadQueue: @unchecked Sendable {
             if lane === primary {
                 lane.stalledSince = Self.uptimeMs()
                 lane.stallStarted = item.started ?? item.submitted
+                // Yeniden kurulan okuyucu da takıldıysa sınama biter, okumalar yine yedekte.
+                probation = nil
+                if let abandonStallAfterMs { abandonIn = abandonStallAfterMs - stall.ms }
                 // Bekleyenler yedeğe taşınır; yedek yoksa beklemeden hata alırlar.
                 let waiting = lane.pending
                 lane.pending = []
@@ -535,12 +590,32 @@ public final class ReadQueue: @unchecked Sendable {
         guard stuck else { return }
         abandon?.abandon()
         if let event { onEvent?(event) }
+        if let abandonIn { scheduleAbandon(lane, inMs: abandonIn) }
         // `resume` bir kez teslim eder: iş sonradan bitse de çağıran süre aşımını almış olur.
         item.fail(ReadQueueError.timedOut(ms: item.limitMs ?? timeoutMs))
         stranded.forEach { $0.fail(ReadQueueError.stuck) }
         let next = lock.withLock { rescue }
         pump(next)
     }
+
+    /// Takılan asıl okuyucu `abandonStallAfterMs` dolunca hâlâ takılıysa bırakılır. Bırakılamadıysa (`maxAbandons`
+    /// dolu: önceki bırakılan okumalar henüz bitmedi) takılma sürdükçe yeniden denenir.
+    private func scheduleAbandon(_ lane: Lane, inMs: Int) {
+        guard let abandonStallAfterMs else { return }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + .milliseconds(max(1, inMs))) { [self, weak lane] in
+            guard let lane else { return }
+            let stalledFor: Int? = lock.withLock {
+                guard lane === primary, let since = lane.stalledSince else { return nil }
+                return Self.uptimeMs() - (lane.stallStarted ?? since - timeoutMs)
+            }
+            guard let stalledFor else { return }
+            if stalledFor >= abandonStallAfterMs, abandonStall(olderThanMs: abandonStallAfterMs) != nil { return }
+            scheduleAbandon(lane, inMs: stalledFor < abandonStallAfterMs ? abandonStallAfterMs - stalledFor : Self.abandonRetryMs)
+        }
+    }
+
+    /// Bırakılamayan takılmanın yeniden denenme aralığı (ms).
+    static let abandonRetryMs = 5_000
 
     /// Sonucu yalnız bir kez teslim eden sarmalayıcı.
     private final class Once<T: Sendable>: @unchecked Sendable {

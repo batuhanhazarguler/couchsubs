@@ -146,8 +146,8 @@ final class PhoneModel: ObservableObject {
     private let historyQueue = DispatchQueue(label: "history.json", qos: .utility)
     @Published private(set) var translatorStatus: TranslatorStatus = .ready
     /// Yazı tanıma (Vision) takıldı (#679); takılan okuma bitince kendiliğinden düzelir. iPhone'da ayrı süreçte yedek
-    /// okuyucu açılamaz; takılıyken yeni okuma verilmez, ana ekranda not görünür. Takılma `abandonStallAfterMs`'i aşarsa
-    /// ya da çeviri yeniden başlatılırsa takılan okuma bırakılır (`abandonStalledRead`).
+    /// okuyucu açılamaz; takılıyken yeni okuma verilmez, ana ekranda not görünür. Takılma
+    /// `ReadQueue.defaultAbandonStallAfterMs`'i aşarsa ya da çeviri yeniden başlatılırsa takılan okuma bırakılır (`abandonStalledRead`).
     @Published private(set) var readingStuck = false
     @Published private(set) var onlineIssue: OnlineKeyState?
     /// Son altyazı oyun paketinden mi geldi (ana ekrandaki "paket kullanılıyor" göstergesi).
@@ -279,9 +279,6 @@ final class PhoneModel: ObservableObject {
     private var skippedFrame: (frame: CGImage, capturedAt: Int)?
     /// Çözücüden gelen son kare (ana iş parçacığında bekleyen en çok bir kare); çeviri sürerken var.
     private var frameMailbox: FrameMailbox<(frame: CGImage, capturedAt: Int)>?
-    /// Takılan okuma bu kadar sürdüyse bırakılır, okuma yeni kuyrukta sürer (bkz. `ReadQueue.abandonStall`). Takılan okuma
-    /// çoğu zaman bir iki dakikada kendiliğinden biter (model hazırlanıyor); bu yüzden hemen bırakılmaz.
-    static let abandonStallAfterMs = 45_000
     private var savedKeys: Set<TranslationEngine> = []
     private var stack = SubtitleStack()
     private var stackTimer: Task<Void, Never>?
@@ -1430,8 +1427,8 @@ final class PhoneModel: ObservableObject {
             self.showsGamePhoneHint = true
         }
         pipeline.onReadResult = { [weak self] error in
-            // Takılıyken her kare beklemeden `stuck` alır; takılma uzadıysa okuma bırakılır, altyazı yeni kuyrukta sürer.
-            if case ReadQueueError.stuck? = error { self?.abandonStalledRead(olderThanMs: Self.abandonStallAfterMs) }
+            // Takılıyken her kare beklemeden `stuck` alır; takılma uzarsa (`ReadQueue.defaultAbandonStallAfterMs`) okuma
+            // kendiliğinden bırakılır, altyazı yeni kuyrukta sürer (Mac ile aynı).
             let stuck = ReadQueue.shared.stalledMs != nil
             if self?.readingStuck != stuck { self?.readingStuck = stuck }
         }
@@ -1442,6 +1439,10 @@ final class PhoneModel: ObservableObject {
             case .rescueFailed: break
             case .abandonedFinished(let still):
                 SubtitleLog.write("bırakılan takılı okuma sonunda bitti (bitmeyen bırakılmış okuma: \(still))")
+            case .abandoned(let ms, _):
+                SubtitleLog.write("takılan okuma bırakıldı, okuyucu yeniden kuruldu: okuma \(ms) ms'dir dönmüyordu; okuma yeni okuyucuda hızlı düzeyde sürüyor")
+            case .recoveredAfterRebuild(let reads):
+                SubtitleLog.write("okuma düzeldi (yeniden kurulumdan sonra): yeni okuyucu art arda \(reads) okumayı süresinde bitirdi")
             case .degraded(let stalls):
                 SubtitleLog.write("okuma \(stalls) kez takıldı; \(ReadQueue.shared.fastLevelHoldMs / 1000) sn hızlı düzeyde okunacak (Neural Engine yolu bırakıldı), sonra isabetli düzey yeniden denenecek")
             case .restored(let ms):
@@ -1476,8 +1477,8 @@ final class PhoneModel: ObservableObject {
     /// iPhone'da bağımsız yedek okuyucu yok: takılan okuma bırakılır, sonraki okumalar yeni kuyrukta hızlı düzeyde verilir
     /// (Android'de takılan tanıyıcı da bırakılıp yenisi kuruluyor).
     private func abandonStalledRead(olderThanMs: Int) {
-        guard let ms = ReadQueue.shared.abandonStall(olderThanMs: olderThanMs) else { return }
-        SubtitleLog.write("okuma \(ms) ms'dir takılı; takılan okuma bırakıldı, okuma yeni kuyrukta hızlı düzeyde sürüyor")
+        // Günlük satırı `ReadQueue.Event.abandoned` ile yazılır.
+        guard ReadQueue.shared.abandonStall(olderThanMs: olderThanMs) != nil else { return }
         if readingStuck { readingStuck = false }
     }
 
