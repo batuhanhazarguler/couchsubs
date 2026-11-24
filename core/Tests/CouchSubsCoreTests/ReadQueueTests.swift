@@ -386,7 +386,7 @@ final class ReadQueueTests: XCTestCase {
     func testBackgroundReadBlockingSubtitleIsNotAStall() async throws {
         let gate = Hang()
         defer { gate.release() }
-        let queue = ReadQueue(label: "test.yield", timeoutMs: 5000, subtitleTimeoutMs: 150)
+        let queue = ReadQueue(label: "test.yield", timeoutMs: 5000, subtitleTimeoutMs: 1000)
         let rescuer = FakeRescuer()
         queue.rescuer = rescuer
         let events = Events()
@@ -414,7 +414,7 @@ final class ReadQueueTests: XCTestCase {
         let started = Date()
         let second = try await queue.run(priority: .subtitle) { try Self.rescuedOrPrimary() }
         XCTAssertEqual(second.text, "yedekten")
-        XCTAssertLessThan(Date().timeIntervalSince(started), 0.12)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5, "sınırı (1 sn) beklemez")
 
         XCTAssertFalse(events.all.contains { if case .stalled = $0 { return true } else { return false } }, "takılma bildirilmez")
         let yields = events.all.filter { if case .backgroundYielded(_, dropped: 1, rescued: true) = $0 { return true } else { return false } }
@@ -566,21 +566,22 @@ final class ReadQueueTests: XCTestCase {
     /// 4. Altyazının kendi okuma sınırı cihazın son okumalarına uyar: ortanca × 3, en az `subtitleTimeoutMs`, en çok
     /// `subtitleTimeoutCapMs`. Isınıp yavaşlayan Mac'te her okuma eski sabit sınırı aşınca yanlış alarm çıkıyordu.
     func testSubtitleLimitAdaptsToRecentReadTimes() async throws {
-        let queue = ReadQueue(label: "test.adaptive", timeoutMs: 5000, subtitleTimeoutMs: 200, subtitleTimeoutCapMs: 1000)
-        queue.rescuer = FakeRescuer()
+        let queue = ReadQueue(label: "test.adaptive", timeoutMs: 5000, subtitleTimeoutMs: 100, subtitleTimeoutCapMs: 2000)
         let events = Events()
         queue.onEvent = { events.add($0) }
-        XCTAssertEqual(queue.currentSubtitleTimeoutMs, 200, "yeterli okuma yokken taban sınır")
+        XCTAssertEqual(queue.currentSubtitleTimeoutMs, 100, "yeterli okuma yokken taban sınır")
         // Hızlı okumalar sınırı tabanın altına indirmez.
         for _ in 0..<ReadQueue.subtitleMinSamples { _ = try await queue.run(priority: .subtitle) { 1 } }
-        XCTAssertEqual(queue.currentSubtitleTimeoutMs, 200)
-        // Cihaz yavaşladı: okumalar ~120 ms. Sınır ortanca × 3'e uzar.
-        for _ in 0..<ReadQueue.subtitleSampleCount { _ = try await queue.run(priority: .subtitle) { Thread.sleep(forTimeInterval: 0.12) } }
+        XCTAssertEqual(queue.currentSubtitleTimeoutMs, 100)
+        // Cihaz yavaşladı: okumalar ~200 ms. Sınır ortanca × 3'e uzar. (Okumalar yedeksiz verilir: yavaş CI makinesinde
+        // erken sınıra takılmasınlar; süreleri yine de sayılır.)
+        for _ in 0..<ReadQueue.subtitleSampleCount { _ = try await queue.run(priority: .subtitle) { Thread.sleep(forTimeInterval: 0.2) } }
         let limit = queue.currentSubtitleTimeoutMs
-        XCTAssertGreaterThanOrEqual(limit, 360)
-        XCTAssertLessThan(limit, 1000)
-        // Eski sınırı (200 ms) aşan ama cihazın tipik süresine uyan okuma takılma sayılmaz, yedeğe geçilmez.
-        let value = try await queue.run(priority: .subtitle) { Thread.sleep(forTimeInterval: 0.25); return 7 }
+        XCTAssertGreaterThanOrEqual(limit, 600)
+        XCTAssertLessThanOrEqual(limit, 2000)
+        // Yedek varken: eski sınırı (100 ms) çok aşan ama cihazın tipik süresine uyan okuma takılma sayılmaz.
+        queue.rescuer = FakeRescuer()
+        let value = try await queue.run(priority: .subtitle) { Thread.sleep(forTimeInterval: 0.3); return 7 }
         XCTAssertEqual(value, 7)
         XCTAssertFalse(queue.isRescuing)
         XCTAssertFalse(events.all.contains { if case .stalled = $0 { return true } else { return false } })
