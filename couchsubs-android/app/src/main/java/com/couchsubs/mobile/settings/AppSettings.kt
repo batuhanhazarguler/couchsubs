@@ -311,7 +311,7 @@ class AppSettings(context: Context) : AreaStore {
 
     /** GTA 6 telefonu bir kez açılır ([GamePhoneMigration]). */
     private fun migrateGamePhone() {
-        if (!GamePhoneMigration.apply(prefs.getBoolean("gamePhoneReenabled", false))) return
+        if (!GamePhoneMigration.apply(gamePhoneReenabled)) return
         prefs.edit().putBoolean("gamePhoneReenabled", true).putBoolean("autoReadGamePhone", true).apply()
     }
 
@@ -392,6 +392,11 @@ class AppSettings(context: Context) : AreaStore {
     var autoReadGamePhone: Boolean
         get() = prefs.getBoolean("autoReadGamePhone", true)
         set(value) = prefs.edit().putBoolean("autoReadGamePhone", value).apply()
+
+    /** GTA 6 telefonu bir kerelik açıldı ([GamePhoneMigration]; Mac/iPhone gamePhoneReenabled). Eski kurulumlarda false. */
+    var gamePhoneReenabled: Boolean
+        get() = prefs.getBoolean("gamePhoneReenabled", false)
+        set(value) = prefs.edit().putBoolean("gamePhoneReenabled", value).apply()
 
     /**
      * "GTA 6 Telefon Mesajları": açıkken (Yanda Panel, varsayılan) telefonun mesajları telefonun yanındaki sohbet panelinde
