@@ -851,6 +851,8 @@ class RegionWatcher(
     @Volatile var onLog: ((String) -> Unit)? = null
     /** Düşürülen ya da bekletilen okumanın nedeni, sınırlı ve tekrarsız ([DropLog]). */
     private val drops = DropLog(clock)
+    /** Telefonun sessiz yolları ([PhoneTrace]): ayrı sınır, telefon her açılışta yeniden başlamaz. */
+    private val phoneTrace = DropLog(clock)
 
     /** Açık oyun telefonunun oturumu ("GTA 6'daki telefonu otomatik çevir"); telefon kapalıyken null. */
     private var phoneSession: PhoneRegionSession? = null
@@ -864,7 +866,7 @@ class RegionWatcher(
         val read = readPhone ?: return
         synchronized(lock) {
             (phoneSession ?: PhoneRegionSession(read, translator, sender, { phonePanel() })
-                .also { it.onLog = { line -> onLog?.invoke(line) }; phoneSession = it }).observe(capture)
+                .also { it.onLog = { line -> onLog?.invoke(line) }; it.trace = phoneTrace; phoneSession = it }).observe(capture)
         }
     }
 

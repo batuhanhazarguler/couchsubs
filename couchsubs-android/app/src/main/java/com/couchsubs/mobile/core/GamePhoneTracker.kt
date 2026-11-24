@@ -50,11 +50,20 @@ class GamePhoneTracker(private val locate: (PhoneImage) -> GamePhoneGeometry.Pos
     private var lastTime: Long? = null
     private var previous: GamePhoneGeometry.Pose? = null
     private var shown: GamePhoneGeometry.Pose? = null
+    private var clock = 0L
+    private val trace = DropLog({ clock })
+
+    /** Telefonun açılması, kapanması ve oynadığı için açılmaması altyazı günlüğüne ([PhoneTrace]; sınırlı). null: uygulamanın günlüğü. */
+    @Volatile var onLog: ((String) -> Unit)? = null
+
+    private fun note(reason: String) = trace.note(PhoneTrace.COMPONENT, reason, "", onLog)
 
     @Synchronized
     fun sample(image: PhoneImage, now: Long): Sample {
         lastTime?.let { if (now >= it && now - it < INTERVAL_MS) return Sample(false, shown) }
         lastTime = now
+        clock = now
+        val wasShown = shown != null
         // Akıl sınırı: telefon ekranın küçük, dikey bir parçasıdır. Dışındaki bir aday (menüde ya da koyu ekranda yanlış
         // eşleşme) kabul edilmez; TV'de büyük opak telefon kutusu oyun görüntüsünü kapatırdı.
         var found = locate(image)
@@ -75,6 +84,9 @@ class GamePhoneTracker(private val locate: (PhoneImage) -> GamePhoneGeometry.Pos
             shown = null
             misses = 0
         }
+        if (!wasShown && shown != null) note(PhoneTrace.OPENED) else if (wasShown && shown == null) note(PhoneTrace.CLOSED)
+        // Telefon art arda iki örnekte bulundu ama yeri çok oynadı: hiç açılmıyor, okuma da başlamıyor (önceden sessizdi).
+        if (shown == null && found != null && before != null) note(PhoneTrace.moving(PhoneTrace.shift(found.bounds, before.bounds)))
         previous = found
         return Sample(true, shown)
     }

@@ -3863,7 +3863,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             watcherRequested = false;
             var running = pipeline is not null && !subtitlesPaused;
             if (running && settings.ReadsGamePhone && GameName.Key(gameSense.Current?.Name) == "gta 6")
-                phoneTracker ??= new GamePhoneTracker();
+                phoneTracker ??= new GamePhoneTracker { Log = SubtitleLog.Write };
             else
             {
                 ClosePhone();

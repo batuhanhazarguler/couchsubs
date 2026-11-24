@@ -14,9 +14,13 @@ final class PhoneRegionSession {
         var time = 0
         var region: CropRegion { pose.bounds }
 
-        func isPresent() -> Bool {
-            guard let found = GamePhoneGeometry.locate(frame) else { return false }
-            return region.isClose(to: found.bounds, tolerance: 0.035)
+        func isPresent() -> Bool { absence() == nil }
+
+        /// Telefon bu karede yoksa ya da izlenen yerden çok uzaktaysa nedeni (`PhoneTrace`); yerindeyse nil.
+        func absence() -> String? {
+            guard let found = GamePhoneGeometry.locate(frame) else { return PhoneTrace.missing }
+            return region.isClose(to: found.bounds, tolerance: 0.035) ? nil
+                : PhoneTrace.displaced(PhoneTrace.shift(found.bounds, region))
         }
     }
 
@@ -35,6 +39,8 @@ final class PhoneRegionSession {
         var anchor: AnchorPose? = nil
         /// Balonların koordinatında telefonun bölgesi (çapasızsa `region`).
         var layout: CropRegion? = nil
+        /// Eğik ekranın düzeltilmiş okuması hiç satır vermedi (`PhoneTrace.emptyFlat`).
+        var flatEmpty = false
         var layoutRegion: CropRegion { layout ?? region }
     }
 
@@ -97,6 +103,15 @@ final class PhoneRegionSession {
     /// Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni (`DropLog`; Windows ve Android ile aynı).
     var onLog: ((String) -> Void)?
     private let drops = DropLog()
+    /// Telefonun sessiz yolları (`PhoneTrace`); izleyici verir ki telefon her açılışta sınır baştan başlamasın.
+    var trace = DropLog()
+
+    /// Telefon bu karede yerinde mi; değilse nedeni günlüğe (önceden sessizdi, #1251).
+    private func present(_ capture: Capture) -> Bool {
+        guard let reason = capture.absence() else { return true }
+        trace.note(PhoneTrace.component, reason, "Phone", log: onLog)
+        return false
+    }
 
     init(reader: TextReader, translator: TextTranslator, server: RegionSending) {
         self.reader = reader
@@ -163,10 +178,10 @@ final class PhoneRegionSession {
 
     private func read(_ capture: Capture, signature: [UInt8]) async throws -> Page {
         let reader = self.reader, retry = self.retry, anchor = self.anchor, anchored = bubblesAnchored
-        return try await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail("telefon", capture.frame)) {
+        let page = try await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail("telefon", capture.frame)) {
             let region = capture.region
-            let reading = GamePhoneText.forTranslation(try GamePhoneReader.read(capture.frame, region: region,
-                                                                                pose: capture.pose, reader: reader, retry: retry))
+            let raw = try GamePhoneReader.read(capture.frame, region: region, pose: capture.pose, reader: reader, retry: retry)
+            let reading = GamePhoneText.forTranslation(raw)
             let crop = RegionCropper.crop(capture.frame, to: region)
             let place = TextBox(left: region.left, top: region.top, right: region.right, bottom: region.bottom)
             // Yapışık çeviri: çapa yoksa bu kareyle kurulur (telefonun bu karede bulunan yeriyle; izleyicinin yeri 330 ms
@@ -189,13 +204,15 @@ final class PhoneRegionSession {
             }
             return Page(region: region, signature: signature,
                         pixels: GamePhonePage(frame: capture.frame, region: region, reading: reading), bubbles: bubbles,
-                        anchor: placement, layout: placement?.toReference(region))
+                        anchor: placement, layout: placement?.toReference(region), flatEmpty: raw.lines.isEmpty)
         }
+        if page.flatEmpty { trace.note(PhoneTrace.component, PhoneTrace.emptyFlat, "Phone", log: onLog) }
+        return page
     }
 
     private func update(packLookup: ((String) -> PackMatch?)?, skipsTurkish: Bool, english: Bool) async {
         scrolling = false
-        guard let start = latest, start.isPresent() else { missed(); return }
+        guard let start = latest, present(start) else { missed(); return }
         absences = 0
         frameSize = (start.frame.width, start.frame.height)
         let signature = RegionCropper.signature(of: RegionCropper.crop(start.frame, to: start.region))
@@ -499,7 +516,7 @@ final class PhoneRegionSession {
     /// çevriliyor, ilk çeviriden sonra yeni mesaj gelmiyordu (#1202, #1197, #1193, #1170). Sayfa gerçekten değiştiyse
     /// sonraki tur zaten yeniden okur (Windows ve Android ile aynı).
     private func reread(_ capture: Capture) async -> Page? {
-        guard capture.isPresent(), !Task.isCancelled else { return nil }
+        guard present(capture), !Task.isCancelled else { return nil }
         let signature = RegionCropper.signature(of: RegionCropper.crop(capture.frame, to: capture.region))
         guard let fresh = try? await read(capture, signature: signature), latest != nil, !Task.isCancelled else { return nil }
         page = fresh

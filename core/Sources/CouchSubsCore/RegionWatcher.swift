@@ -213,6 +213,8 @@ public final class RegionWatcher {
     public var onLog: ((String) -> Void)?
     /// Düşürülen ya da bekletilen okumanın nedeni, sınırlı ve tekrarsız (`DropLog`).
     private let drops: DropLog
+    /// Telefonun sessiz yolları (`PhoneTrace`): ayrı sınır, telefon her açılışta yeniden başlamaz.
+    private let phoneTrace: DropLog
     /// Bu tür ekran yazısı çevrilir mi (Ayarlar'daki türler, `UserSettings.screenTextAllows`); varsayılan hepsi.
     public var allows: (ScreenTextKind) -> Bool = { _ in true }
     /// Altyazı hattının son satırları ve alanı (bkz. `SubtitleEcho`); uygulama `SubtitleEcho.shared` verir.
@@ -239,6 +241,7 @@ public final class RegionWatcher {
         self.intervalMs = intervalMs
         self.now = clock
         self.drops = DropLog(clock: clock)
+        self.phoneTrace = DropLog(clock: clock)
     }
 
     /// Bir tur sürüyor mu.
@@ -250,6 +253,7 @@ public final class RegionWatcher {
             if phoneSession == nil {
                 let session = PhoneRegionSession(reader: reader, translator: translator, server: server)
                 session.onLog = { [weak self] in self?.onLog?($0) }
+                session.trace = phoneTrace
                 session.panel = { [weak self] in self?.phonePanel() ?? PhonePanelOptions() }
                 session.anchor = phoneAnchor
                 phoneSession = session

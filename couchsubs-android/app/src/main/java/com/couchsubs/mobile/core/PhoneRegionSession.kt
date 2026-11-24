@@ -139,6 +139,8 @@ internal class PhoneRegionSession(
     /** Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni ([DropLog]; Mac/iPhone ve Windows ile aynı). */
     @Volatile var onLog: ((String) -> Unit)? = null
     private val drops = DropLog()
+    /** Telefonun sessiz yolları ([PhoneTrace]); izleyici verir ki telefon her açılışta sınır baştan başlamasın. */
+    @Volatile var trace = DropLog()
 
     /** Mesajın düşürülme ya da bekletilme nedeni ([DropLog]: aynı neden + metin yinelenmez, dakikada sınırlı). */
     private fun note(component: String, reason: String, text: String) {
@@ -185,7 +187,10 @@ internal class PhoneRegionSession(
 
     private fun read(capture: PhoneCapture, signature: ByteArray): Page {
         val region = capture.region
-        val reading = GamePhoneText.forTranslation(GamePhoneReader.read(capture.image, region, capture.pose, rescue, reader))
+        val raw = GamePhoneReader.read(capture.image, region, capture.pose, rescue, reader)
+        // Eğik ekranın düzeltilmiş okuması hiç satır vermedi: önceden sessizdi (#1251).
+        if (raw.lines.isEmpty()) trace.note(PhoneTrace.COMPONENT, PhoneTrace.EMPTY_FLAT, "Phone", onLog)
+        val reading = GamePhoneText.forTranslation(raw)
         val place = region.box
         val groups = GamePhoneText.groups(reading)
         val icons = if (groups.any { it.icons != null }) capture.image.gray(region) else null

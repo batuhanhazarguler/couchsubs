@@ -10,12 +10,22 @@ public final class GamePhoneTracker {
     private var previous: GamePhoneGeometry.Pose?
     private var shown: GamePhoneGeometry.Pose?
 
+    private var clock = 0
+    private lazy var trace = DropLog(clock: { [unowned self] in self.clock })
+    /// Telefonun açılması, kapanması ve oynadığı için açılmaması altyazı günlüğüne (`PhoneTrace`; sınırlı). nil: altyazı
+    /// günlüğü (Windows ve Android ile aynı satırlar).
+    public var onLog: ((String) -> Void)?
+
     public init() { locate = GamePhoneGeometry.locate }
     init(locate: @escaping (CGImage) -> GamePhoneGeometry.Pose?) { self.locate = locate }
+
+    private func note(_ reason: String) { trace.note(PhoneTrace.component, reason, "", log: onLog) }
 
     public func sample(_ image: CGImage, now: Int) -> (sampled: Bool, pose: GamePhoneGeometry.Pose?) {
         if let lastTime, now >= lastTime, now - lastTime < Self.intervalMs { return (false, shown) }
         lastTime = now
+        clock = now
+        let wasShown = shown != nil
         // Akıl sınırı: telefon ekranın küçük, dikey bir parçasıdır. Dışındaki bir aday (menüde ya da koyu ekranda yanlış
         // eşleşme) kabul edilmez; TV'de büyük opak telefon kutusu oyun görüntüsünü kapatırdı (Windows ile aynı).
         var found = locate(image)
@@ -35,6 +45,11 @@ public final class GamePhoneTracker {
         } else {
             shown = nil
             misses = 0
+        }
+        if !wasShown, shown != nil { note(PhoneTrace.opened) } else if wasShown, shown == nil { note(PhoneTrace.closed) }
+        // Telefon art arda iki örnekte bulundu ama yeri çok oynadı: hiç açılmıyor, okuma da başlamıyor (önceden sessizdi).
+        if shown == nil, let found, let previous {
+            note(PhoneTrace.moving(PhoneTrace.shift(found.bounds, previous.bounds)))
         }
         previous = found
         return (true, shown)

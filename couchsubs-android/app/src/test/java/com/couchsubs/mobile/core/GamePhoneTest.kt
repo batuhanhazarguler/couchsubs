@@ -477,6 +477,22 @@ class PhoneRegionSessionTest {
         RegionWatcher.Crop(Unit, ByteArray(RegionSignature.WIDTH * RegionSignature.HEIGHT))
     }) { work.execute(it) }
 
+    /** #1251: eğik ekranın düzeltilmiş okuması boş gelince günlüğe yazılır (önceden sessizdi; Windows, Mac/iPhone ile aynı). */
+    @Test
+    fun emptyStraightenedPhoneReadingIsLogged() {
+        val reader = Reader()
+        val watcher = watcher(reader, Translator(), Server())
+        val log = java.util.Collections.synchronizedList(mutableListOf<String>())
+        watcher.onLog = { log.add(it) }
+        val a = TestPhoneImage.phone()
+        val pose = GamePhoneGeometry.locate(a)!!
+        watcher.observePhone(PhoneCapture(a, pose))
+        watcher.offer()
+        wait { !watcher.isBusy }
+        assertTrue(reader.count.get() > 0)
+        assertTrue(log.toString(), log.contains("düşen satır [PhoneTrace] eğik ekran düzeltilmiş okuması boş: \"Phone\""))
+    }
+
     @Test
     fun changedBubbleDropsOldTextWhileKeepingItsTranslatedNeighbor() {
         val reader = Reader()
