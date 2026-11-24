@@ -194,6 +194,14 @@ public final class SubtitleServer: @unchecked Sendable {
     private var viewers: Set<ObjectIdentifier> = []
     private var lastStyle: SubtitleStyle?
     private var pingTimer: DispatchSourceTimer?
+    /// Gösterilen ek alanların son `region` olayları (sunucunun kuyruğunda). TV yeniden bağlanınca bunlar yeniden
+    /// gönderilir, gösterilmeyenler kaldırılır (`region-sync`); her `regionRefreshInterval`'da telefon kartı dışındakiler
+    /// `keep` bayrağıyla yenilenir. TV, yenilenmeyen alanı 15 sn sonra kendisi kaldırır (#1198; tv-webos/app.js
+    /// REGION_LIFE_MS). Windows: SubtitleServer.liveRegions, Android: SubtitleServer.liveRegions.
+    private var liveRegions: [String: [String: Any]] = [:]
+    private var regionTimer: DispatchSourceTimer?
+    /// Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri).
+    var regionRefreshInterval: TimeInterval = 5
     /// `GET` ile verilen dosyalar: dublaj sesleri ve seslendirme modelinin ses örnekleri.
     private var files: [String: (data: Data, type: String)] = [:]
     private var speechPaths: [String] = []
@@ -452,6 +460,7 @@ public final class SubtitleServer: @unchecked Sendable {
                     if case .failed(let error) = state, self.listener === listener {
                         self.listening = false
                         self.pingTimer?.cancel()
+                        self.regionTimer?.cancel()
                         self.pingTimer = nil
                         listener.cancel()
                         self.onListenerFailed?(error.localizedDescription)
@@ -463,6 +472,7 @@ public final class SubtitleServer: @unchecked Sendable {
                     self.startContinuation = nil
                     self.listening = true
                     self.pingTimer?.cancel()
+                    self.regionTimer?.cancel()
                     self.startPing()
                     continuation.resume(returning: listener.port?.rawValue ?? 0)
                 case .failed(let error), .waiting(let error):
@@ -492,6 +502,7 @@ public final class SubtitleServer: @unchecked Sendable {
         queue.sync {
             listening = false
             pingTimer?.cancel()
+            regionTimer?.cancel()
             pingTimer = nil
             listener?.cancel()
             listener = nil
@@ -501,6 +512,7 @@ public final class SubtitleServer: @unchecked Sendable {
             legacyClients.removeAll()
             linkIds.removeAll()
             ackMisses.removeAll()
+            if !keepPairing { liveRegions.removeAll() }
         }
     }
 
@@ -985,6 +997,7 @@ public final class SubtitleServer: @unchecked Sendable {
             if let latest = latestVersion, !Self.tvAppVersion(latest).isEmpty { json["latest"] = latest }
             head += Self.frame(event: "link", json: json)
         }
+        head += regionReplay(tv: viewer || tvEnabled)
         connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in })
 
         clients[id] = connection
@@ -1050,9 +1063,15 @@ public final class SubtitleServer: @unchecked Sendable {
         let data = Data(Self.frame(event: event, json: json).utf8)
         // Dublaj sesi altyazı yerinden bağımsızdır; yalnız altyazı olayları kapatılır.
         let subtitle = Self.subtitleEvents.contains(event)
+        let regionId = event == "region" ? json["id"] as? String : nil
         let now = Date()
         let hold = event == "subtitle" ? Self.legacyClearHold(textLength: (json["text"] as? String)?.count ?? 0) : 0
         queue.async {
+            if let regionId {
+                self.liveRegions[regionId] = (json["text"] as? String ?? "").isEmpty ? nil : json
+            } else if event == "region-clear" {
+                self.liveRegions.removeAll()
+            }
             let tvs = !subtitle || self.tvEnabled
             if event == "subtitle" {
                 self.legacyHoldGeneration += 1
@@ -1087,7 +1106,38 @@ public final class SubtitleServer: @unchecked Sendable {
         }
     }
 
+    /// Yeni bağlanan TV'ye (ya da OBS'e) gösterilen ek alanlar: önce `region-sync` (listede olmayan alanları TV kaldırır;
+    /// kopukken kaçan temizleme komutları), sonra her alanın son `region` olayı `keep` bayrağıyla (TV'de duran aynı alan
+    /// yeniden çizilmez). Sunucunun kuyruğunda.
+    func regionReplay(tv: Bool) -> String {
+        let live = tv ? liveRegions.sorted { $0.key < $1.key } : []
+        var frames = Self.frame(event: "region-sync", json: ["ids": live.map(\.key)])
+        for (_, json) in live {
+            var kept = json
+            kept["keep"] = true
+            frames += Self.frame(event: "region", json: kept)
+        }
+        return frames
+    }
+
+    /// Gösterilen ek alanları (telefon kartı hariç) `keep` bayrağıyla yeniden gönderir: TV'de sahnede kalan yazının
+    /// çevirisi 15 sn'lik ömrü dolup kalkmasın. Sunucunun kuyruğunda.
+    func refreshRegions() {
+        guard tvEnabled || !viewers.isEmpty else { return }
+        for (id, json) in liveRegions.sorted(by: { $0.key < $1.key }) where id != "game-phone" {
+            var kept = json
+            kept["keep"] = true
+            sendToAll(Data(Self.frame(event: "region", json: kept).utf8), includingTVs: tvEnabled)
+        }
+    }
+
     private func startPing() {
+        let refresh = DispatchSource.makeTimerSource(queue: queue)
+        refresh.schedule(deadline: .now() + regionRefreshInterval, repeating: regionRefreshInterval)
+        refresh.setEventHandler { [weak self] in self?.refreshRegions() }
+        refresh.resume()
+        regionTimer = refresh
+
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + pingInterval, repeating: pingInterval)
         timer.setEventHandler { [weak self] in

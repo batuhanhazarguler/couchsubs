@@ -375,6 +375,60 @@ final class SubtitleServerTests: XCTestCase {
         XCTAssertEqual(received.all, [.region(id: "q", text: "Demirciyi bul", box: box), .region(id: "q", text: "", box: nil), .regionClear])
     }
 
+    /// #1198: yeniden bağlanan TV o an gösterilen alanları alır (`region-sync` ve `keep`'li olaylar); kopukken kaçan
+    /// temizleme komutu yüzünden kalmış alanları TV listeye bakıp kaldırır.
+    func testNewStreamGetsTheLiveRegionsAfterASync() async throws {
+        let server = SubtitleServer(port: 0)
+        let port = try await server.start()
+        defer { server.stop() }
+        let box = TextBox(left: 0.7, top: 0.05, right: 0.95, bottom: 0.12)
+        server.sendRegion(id: "q", text: "Demirciyi bul", box: box, lineHeight: 0.03)
+        server.sendRegion(id: "game-phone", text: "Neredesin?", box: box, lineHeight: 0.03)
+        server.sendRegion(id: "gone", text: "Eski", box: box, lineHeight: 0.03)
+        server.sendRegion(id: "gone", text: "", box: nil)
+        let (bytes, _) = try await URLSession.shared.bytes(from: URL(string: "http://127.0.0.1:\(port)/events")!)
+        var lines: [String] = []
+        for try await line in bytes.lines {
+            lines.append(line)
+            if line.contains(#""id":"q""#) { break }
+        }
+        let sync = try XCTUnwrap(lines.firstIndex(of: "event: region-sync"))
+        XCTAssertEqual(lines[sync + 1], #"data: {"ids":["game-phone","q"]}"#)
+        XCTAssertTrue(lines.contains { $0.contains(#""id":"game-phone""#) && $0.contains(#""keep":true"#) }, "\(lines)")
+        XCTAssertTrue(lines.last!.contains(#""keep":true"#))
+        XCTAssertFalse(lines.contains { $0.contains(#""id":"gone""#) })
+
+        server.clearRegions()
+        let (again, _) = try await URLSession.shared.bytes(from: URL(string: "http://127.0.0.1:\(port)/events")!)
+        var next: [String] = []
+        for try await line in again.lines {
+            next.append(line)
+            if line.hasPrefix(#"data: {"ids""#) { break }
+        }
+        XCTAssertEqual(next.last, #"data: {"ids":[]}"#)
+    }
+
+    /// Gösterilen alanlar düzenli yenilenir (TV'deki 15 sn'lik ömür dolmasın); telefon kartı yenilenmez.
+    func testLiveRegionsAreRefreshedExceptThePhoneCard() async throws {
+        let server = SubtitleServer(port: 0)
+        server.regionRefreshInterval = 0.05
+        let port = try await server.start()
+        defer { server.stop() }
+        let (bytes, _) = try await URLSession.shared.bytes(from: URL(string: "http://127.0.0.1:\(port)/events")!)
+        try await waitUntil { server.connectedClients == 1 }
+        let box = TextBox(left: 0.7, top: 0.05, right: 0.95, bottom: 0.12)
+        server.sendRegion(id: "game-phone", text: "Neredesin?", box: box, lineHeight: 0.03)
+        server.sendRegion(id: "q", text: "Demirciyi bul", box: box, lineHeight: 0.03)
+        var lines: [String] = []
+        var refreshes = 0
+        for try await line in bytes.lines {
+            lines.append(line)
+            if line.contains(#""id":"q""#), line.contains(#""keep":true"#) { refreshes += 1 }
+            if refreshes == 3 { break }
+        }
+        XCTAssertFalse(lines.contains { $0.contains(#""id":"game-phone""#) && $0.contains(#""keep":true"#) }, "\(lines)")
+    }
+
     func testOnlyPhoneBlocksCarryNativeSurfaceOnTVAndDesktop() async throws {
         let server = SubtitleServer(port: 0)
         let port = try await server.start()

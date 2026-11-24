@@ -233,6 +233,65 @@ public class SubtitleServerTests
                       new SubtitleEvent(SubtitleEventKind.RegionClear)], received);
     }
 
+    /// <summary>
+    /// #1198: yeni bağlanan TV önce gösterilen alanların listesini (<c>region-sync</c>; listede olmayanı kaldırır), sonra her
+    /// alanın son çevirisini <c>keep</c> bayrağıyla alır. Temizlenmiş ya da boşalmış alan gelmez.
+    /// </summary>
+    [Fact]
+    public async Task NewStreamGetsTheLiveRegionsAfterASync()
+    {
+        using var server = new SubtitleServer(0);
+        var port = await server.StartAsync();
+        server.SendRegion("q", "Demirciyi bul", new TextBox(0.7, 0.05, 0.95, 0.12), 0.03);
+        server.SendRegion("game-phone", "Merhaba", null);
+        server.SendRegion("gone", "Geçti", null);
+        server.SendRegion("gone", "", null);
+
+        using (var response = await Http.GetAsync($"http://127.0.0.1:{port}/events", HttpCompletionOption.ResponseHeadersRead))
+        {
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+            const string quest = "data: {\"box\":{\"bottom\":0.12,\"left\":0.7,\"right\":0.95,\"top\":0.05},\"id\":\"q\",\"keep\":true,\"line\":0.03,\"text\":\"Demirciyi bul\"}";
+            var lines = await ReadLines(reader, quest);
+            var sync = lines.IndexOf("event: region-sync");
+            Assert.True(sync >= 0);
+            Assert.Equal("data: {\"ids\":[\"game-phone\",\"q\"]}", lines[sync + 1]);
+            var phone = lines.IndexOf("data: {\"id\":\"game-phone\",\"keep\":true,\"text\":\"Merhaba\"}");
+            Assert.True(phone > sync);
+            Assert.Equal("event: region", lines[phone - 1]);
+            Assert.DoesNotContain(lines, line => line.Contains("Geçti"));
+        }
+
+        server.ClearRegions();
+        using (var response = await Http.GetAsync($"http://127.0.0.1:{port}/events", HttpCompletionOption.ResponseHeadersRead))
+        {
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+            var lines = await ReadLines(reader, "event: region-sync");
+            Assert.Equal("data: {\"ids\":[]}", await reader.ReadLineAsync());
+            Assert.Equal("", await reader.ReadLineAsync());
+            server.SendSubtitle("Sonra", 1000);
+            Assert.Equal("event: subtitle", await reader.ReadLineAsync());
+        }
+    }
+
+    /// <summary>#1198: gösterilen alanlar aralıkla <c>keep</c> bayrağıyla yenilenir (TV'deki ömrü dolmasın); telefon kartı hariç.</summary>
+    [Fact]
+    public async Task LiveRegionsAreRefreshedExceptThePhoneCard()
+    {
+        using var server = new SubtitleServer(0) { RegionRefreshInterval = TimeSpan.FromMilliseconds(50) };
+        var port = await server.StartAsync();
+        server.SendRegion("q", "Demirciyi bul", null);
+        server.SendRegion("game-phone", "Merhaba", null);
+        using var response = await Http.GetAsync($"http://127.0.0.1:{port}/events", HttpCompletionOption.ResponseHeadersRead);
+        using var reader = new StreamReader(await response.Content.ReadAsStreamAsync());
+        const string refresh = "data: {\"id\":\"q\",\"keep\":true,\"text\":\"Demirciyi bul\"}";
+        // Bağlanırken gelen yeniden gönderim, sonra iki yenileme.
+        var lines = await ReadLines(reader, refresh);
+        lines.AddRange(await ReadLines(reader, refresh));
+        lines.AddRange(await ReadLines(reader, refresh));
+        Assert.Equal(1, lines.Count(line => line.Contains("\"game-phone\",\"keep\"")));
+        Assert.Equal(3, lines.Count(line => line == refresh));
+    }
+
     /// <summary>Ek alanın ayrı yazı grupları <c>blocks</c> ile kendi yerleriyle gider; birleşik <c>text</c> eski TV'ler için kalır.</summary>
     [Fact]
     public async Task StreamsRegionBlocksBesideTheJoinedText()

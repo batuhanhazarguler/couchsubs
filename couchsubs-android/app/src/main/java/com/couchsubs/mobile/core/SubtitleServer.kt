@@ -240,7 +240,13 @@ class SubtitleServer(
         fun regionFrame(
             id: String, text: String, box: TextBox?, lineHeight: Double?, icons: List<IconPlacement>? = null,
             blocks: List<ScreenTranslation.Item>? = null,
-        ): String {
+        ): String = frame("region", regionJson(id, text, box, lineHeight, icons, blocks))
+
+        /** [regionFrame]'in verisi; gösterilen alanlar TV'ye yeniden gönderilmek üzere saklanır ([liveRegions]). */
+        fun regionJson(
+            id: String, text: String, box: TextBox?, lineHeight: Double?, icons: List<IconPlacement>? = null,
+            blocks: List<ScreenTranslation.Item>? = null,
+        ): Map<String, Any?> {
             val (text, blocks) = guarded(text, box, blocks)
             val json = mutableMapOf<String, Any?>("id" to id, "text" to text)
             if (!icons.isNullOrEmpty()) json["icons"] = iconsJson(icons)
@@ -248,8 +254,14 @@ class SubtitleServer(
             if (!blocks.isNullOrEmpty() && text.isNotEmpty()) json["blocks"] = blocks.map { itemJson(it, phone = id == GAME_PHONE_ID) }
             if (box != null) json["box"] = boxJson(box)
             if (lineHeight != null) json["line"] = Json.Decimal(Math.round(lineHeight.coerceIn(0.0, 1.0) * 10000) / 10000.0)
-            return frame("region", json)
+            return json
         }
+
+        /** Saklanan alanın yeniden gönderimi: `keep` ile TV aynı alanı yeniden çizmez, yalnız ömrünü uzatır. */
+        private fun keptFrame(json: Map<String, Any?>) = frame("region", json + ("keep" to true))
+
+        /** Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri; tv-webos REGION_LIFE_MS). */
+        const val REGION_REFRESH_MS = 5_000L
 
         /**
          * "Ekranı çevir" sonuçları: her çeviri yazının yeri (`box`), tipik satır yüksekliği (`line`, ekrana oranla) ve
@@ -364,6 +376,17 @@ class SubtitleServer(
     private var pinger: ScheduledExecutorService? = null
     private var lastStyle: SubtitleStyle? = null
 
+    /**
+     * Gösterilen ek alanların son `region` olayları ([lock] ile). TV yeniden bağlanınca bunlar yeniden gönderilir,
+     * gösterilmeyenler kaldırılır (`region-sync`); her [regionRefreshMs]'de telefon kartı dışındakiler `keep` bayrağıyla
+     * yenilenir. TV, yenilenmeyen alanı 15 sn sonra kendisi kaldırır: kopukken kaçan boşaltma olayı yüzünden menü ve
+     * tabela çevirisi ekranda kalıyordu (#1198; Mac/iPhone ve Windows SubtitleServer.liveRegions ile aynı).
+     */
+    private val liveRegions = HashMap<String, Map<String, Any?>>()
+
+    /** [liveRegions]'ın yenilenme aralığı; [start]'tan önce ayarlanır (testler kısaltır). */
+    internal var regionRefreshMs = REGION_REFRESH_MS
+
     /** "Ekran yazılarını altyazıdan ayır" (bkz. [styleFrame]); değişince [sendStyle] yeniden çağrılmalı. */
     @Volatile var setApart: Boolean = true
 
@@ -433,6 +456,7 @@ class SubtitleServer(
                     dropSilentTvs()
                     broadcast(PING_FRAME)
                 }, pingIntervalMs, pingIntervalMs, TimeUnit.MILLISECONDS)
+                it.scheduleWithFixedDelay(::refreshRegions, regionRefreshMs, regionRefreshMs, TimeUnit.MILLISECONDS)
             }
         return socket.localPort
     }
@@ -450,7 +474,11 @@ class SubtitleServer(
         } catch (error: IOException) {
         }
         listener = null
-        val closing = synchronized(lock) { clients.toList().also { clients.clear() } }
+        val closing = synchronized(lock) {
+            // Sunucu hemen yeniden açılacaksa TV yeniden bağlanınca gösterilen alanlar geri gelsin.
+            if (!keepPairing) liveRegions.clear()
+            clients.toList().also { clients.clear() }
+        }
         closing.forEach { closeQuietly(it.socket) }
         sender.shutdown()
     }
@@ -523,7 +551,12 @@ class SubtitleServer(
         id: String, text: String, box: TextBox?, lineHeight: Double?, icons: List<IconPlacement>?,
         blocks: List<ScreenTranslation.Item>?,
     ) {
-        broadcast(regionFrame(id, text, box, lineHeight, icons, blocks), subtitle = true)
+        val json = regionJson(id, text, box, lineHeight, icons, blocks)
+        // Sıra gönderimle aynı kalsın: yeni bağlanan TV, kuyruktaki son olaydan eskisini almasın.
+        synchronized(lock) {
+            if ((json["text"] as String).isEmpty()) liveRegions.remove(id) else liveRegions[id] = json
+            broadcast(frame("region", json), subtitle = true)
+        }
         if (id == GAME_PHONE_ID) {
             // Telefon ekranında oyun telefonunun çevirisi ek alan kutusu gibi tek kutuda görünür (iPhone ile aynı); büyük
             // kutu korumasından geçen balonlar gösterilir.
@@ -541,7 +574,10 @@ class SubtitleServer(
             regionShown.clear()
             regionVisible.clear()
         }
-        broadcast(frame("region-clear", emptyMap()), subtitle = true)
+        synchronized(lock) {
+            liveRegions.clear()
+            broadcast(frame("region-clear", emptyMap()), subtitle = true)
+        }
         onEvent?.invoke(SubtitleEvent.RegionsCleared)
     }
 
@@ -827,6 +863,7 @@ class SubtitleServer(
                     val json = if (latest.isEmpty()) mapOf("id" to link) else mapOf("id" to link, "latest" to latest)
                     head.append("event: link\ndata: ").append(Json.write(json)).append("\n\n")
                 }
+                head.append(regionReplay(tv = viewer || sendsToTv))
                 clients.add(client)
                 clients.count { !it.viewer }
             }
@@ -866,6 +903,30 @@ class SubtitleServer(
         silent.forEach { remove(it) }
         if (remaining == 0) onTvStale?.invoke()
         return true
+    }
+
+    /**
+     * Yeni bağlanan TV'ye (ya da OBS'e) gösterilen ek alanlar: önce `region-sync` (listede olmayan alanları TV kaldırır;
+     * kopukken kaçan boşaltma olayları), sonra her alanın son `region` olayı `keep` bayrağıyla (TV'de duran aynı alan
+     * yeniden çizilmez). [lock] tutulurken çağrılır.
+     */
+    private fun regionReplay(tv: Boolean): String {
+        val live = if (tv) liveRegions.entries.sortedBy { it.key } else emptyList()
+        val out = StringBuilder(frame("region-sync", mapOf("ids" to live.map { it.key })))
+        for ((_, json) in live) out.append(keptFrame(json))
+        return out.toString()
+    }
+
+    /**
+     * Gösterilen ek alanları (telefon kartı hariç) `keep` bayrağıyla yeniden gönderir: sahnede kalan yazının çevirisi TV'deki
+     * 15 sn'lik ömrü dolup kalkmasın. Telefon kartı kendi okumasıyla sık güncellenir.
+     */
+    internal fun refreshRegions() {
+        synchronized(lock) {
+            for ((id, json) in liveRegions.entries.sortedBy { it.key }) {
+                if (id != GAME_PHONE_ID) broadcast(keptFrame(json), subtitle = true)
+            }
+        }
     }
 
     private fun remove(client: Client) {

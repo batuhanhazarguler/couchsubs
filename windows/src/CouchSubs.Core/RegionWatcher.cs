@@ -128,6 +128,10 @@ public sealed partial class RegionWatcher
         public IReadOnlyList<string>? RenderedPhoneParagraphs;
         /// <summary>Gönderilen bloklar ve her birinin <see cref="Candidate.Blocks"/> içindeki sırası.</summary>
         public IReadOnlyList<(int Group, ScreenTranslation.Item Item)>? RenderedBlocks;
+        /// <summary>Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı (<see cref="UnsteadyLimit"/>).</summary>
+        public int Unsteady;
+        /// <summary>Bir önceki turun izi (<see cref="BigChangeShare"/> için; <see cref="Signature"/> yalnız okumada güncellenir).</summary>
+        public byte[]? PassSignature;
         // Yalnız açık telefon için. Kısa bir OCR sapmasından veya sohbetten geri dönünce aynı metin yeniden istenmez.
         public Dictionary<string, string>? PhoneTranslations { get; private set; }
         private Queue<string>? phoneKeys;
@@ -347,6 +351,16 @@ public sealed partial class RegionWatcher
         }
     }
 
+    /// <summary>
+    /// Çevirisi gösterilen alanda okuma bu kadar tur art arda değişip doğrulanamazsa (yazı gitti, yerinde sahne oynuyor)
+    /// çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan kalktıktan sonra TV'de kalıyordu (#1198).
+    /// </summary>
+    public const int UnsteadyLimit = 3;
+    /// <summary>Alanın izindeki örneklerin bu kadarı bir turda değiştiyse görüntü bütünüyle değişmiştir: beklemeden kaldırılır.</summary>
+    public const double BigChangeShare = 0.5;
+    /// <summary>Çeviri motoru bu süreyi aşarsa tur biter (aday sonraki turda yeniden denenir): asılı istek turu kilitliyordu.</summary>
+    public int TranslationTimeoutMs { get; set; } = 8000;
+
     private async Task VisitAsync(WatchedArea area, Frame frame, Dictionary<string, State> map, int started, bool confirmOnly)
     {
         State state;
@@ -371,6 +385,8 @@ public sealed partial class RegionWatcher
             return;
         }
         var signature = RegionCropper.Signature(crop);
+        var passSignature = state.PassSignature;
+        state.PassSignature = signature;
         var changed = PixelsChanged(state, crop, signature);
         // Örneklerin arasına düşen ya da eski satır kutusunun dışında beliren bir yazıyı da yakala.
         // Birebir aynı görüntüde süre dolsa bile OCR çalışmaz.
@@ -383,6 +399,7 @@ public sealed partial class RegionWatcher
         if (!changed)
         {
             // İz bir tur değişmedi: okunan yazı kararlıdır.
+            state.Unsteady = 0;
             if (state.Candidate is { } stable)
             {
                 state.Candidate = null;
@@ -421,10 +438,54 @@ public sealed partial class RegionWatcher
         if (candidate is null) return;
         if (state.LastRead == candidate.Key)
         {
+            state.Unsteady = 0;
             state.Candidate = null;
             await CommitAsync(candidate, area, state, started).ConfigureAwait(false);
         }
-        else Stage(candidate, state);
+        else
+        {
+            Stage(candidate, state);
+            if (!string.IsNullOrEmpty(state.RenderedText)) ClearIfUnsteady(candidate, area, state, passSignature, signature);
+        }
+    }
+
+    /// <summary>
+    /// Çevirisi gösterilen alanda okuma doğrulanamadı: <see cref="UnsteadyLimit"/> tur sürdüyse ya da görüntü bütünüyle
+    /// değiştiyse (<see cref="BigChangeShare"/>) ve yeni okuma gösterilen yazıya benzemiyorsa çeviri kaldırılır. Yazı
+    /// gidince yerinde oynayan sahne hiç kararlı okunmuyor, eski çeviri TV'de kalıyordu (#1198; Mac ile aynı).
+    /// </summary>
+    private void ClearIfUnsteady(Candidate candidate, WatchedArea area, State state, byte[]? before, byte[] signature)
+    {
+        var turns = ++state.Unsteady;
+        // Görüntünün bütünüyle değişmesi tek başına ilk turda yetmez: yeni komut eski komutun yerine geçerken eski çeviri
+        // yenisi doğrulanana dek kalır (kutu yanıp sönmesin). Yazı da gittiyse (boş okuma) ya da ikinci turdaysa kaldırılır.
+        var bigChange = before is not null && ChangedShare(before, signature) >= BigChangeShare
+                        && (candidate.Key.Length == 0 || turns >= 2);
+        if (turns < UnsteadyLimit && !bigChange) return;
+        if (Matches(candidate.Text, state.ShownText) || IsPartOf(candidate.Text, state.ShownText)) return;
+        var shownText = state.ShownText;
+        server.SendRegion(area.Id, "", null);
+        state.Shown = state.ShownText = "";
+        state.ShownIcons = 0;
+        state.RenderedKey = state.RenderedText = null;
+        state.RenderedIcons = null;
+        state.RenderedBox = null;
+        state.RenderedLineHeight = null;
+        state.RenderedLayout = null;
+        state.RenderedPhoneParagraphs = null;
+        state.RenderedBlocks = null;
+        state.Unsteady = 0;
+        drops.Note("RegionWatcher", $"{area.Name}: {turns} tur kararlı okunmadı ya da görüntü çok değişti, çevirisi kaldırıldı",
+                   IconText.Plain(shownText), Log);
+    }
+
+    /// <summary>İzdeki örneklerin <see cref="ReadScheduler.ChangeThreshold"/>'dan çok değişen payı.</summary>
+    internal static double ChangedShare(byte[] a, byte[] b)
+    {
+        if (a.Length != b.Length || a.Length == 0) return 1;
+        var changed = 0;
+        for (var i = 0; i < a.Length; i++) if (Math.Abs(a[i] - b[i]) > ReadScheduler.ChangeThreshold) changed++;
+        return (double)changed / a.Length;
     }
 
     private static void Stage(Candidate candidate, State state)
@@ -835,12 +896,13 @@ public sealed partial class RegionWatcher
         lock (translations) translations.TryGetValue(key, out cached);
         Translation translation;
         var waited = false;
+        using var cancel = new CancellationTokenSource();
         try
         {
             if (cached is not null) translation = cached;
             else
             {
-                var request = TranslateAsync(candidate.Paragraphs, labelsFirst: area.Auto);
+                var request = TranslateAsync(candidate.Paragraphs, labelsFirst: area.Auto, cancel.Token);
                 waited = !request.IsCompleted;
                 // Yeni komut doğrulandı; yavaş motor yanıtını beklerken eski Türkçe onun üstünde kalmasın.
                 if (waited && !string.IsNullOrEmpty(state.RenderedText) && Volatile.Read(ref session) == started)
@@ -850,7 +912,7 @@ public sealed partial class RegionWatcher
                     state.RenderedKey = null;
                     previous = ("", "", 0);
                 }
-                translation = await request.ConfigureAwait(false);
+                translation = await Deadline(request, cancel).ConfigureAwait(false);
             }
         }
         catch (Exception error)
@@ -1135,9 +1197,23 @@ public sealed partial class RegionWatcher
     /// Otomatik bulunan ekran yazısı: kısa arayüz etiketi ("OFF", "Back") paket ve motordan önce, anında sözlükten
     /// (<see cref="UiCommands.TranslateLabel"/>) çevrilir; büyük/küçük harf biçimi korunur.
     /// </param>
-    private async Task<Translation> TranslateAsync(IReadOnlyList<string> paragraphs, bool labelsFirst = false)
+    /// <summary>
+    /// Çeviri <see cref="TranslationTimeoutMs"/> içinde bitmezse <see cref="TimeoutException"/> (aday korunur, sonraki turda
+    /// yeniden denenir). İptali dinlemeyen motorun görevi beklenmez; hatası gözlenmiş sayılır.
+    /// </summary>
+    private async Task<Translation> Deadline(Task<Translation> request, CancellationTokenSource cancel)
     {
-        if (labelsFirst) return await TranslateLabelsAsync(paragraphs).ConfigureAwait(false);
+        if (request.IsCompleted) return await request.ConfigureAwait(false);
+        var timeout = Task.Delay(TranslationTimeoutMs);
+        if (await Task.WhenAny(request, timeout).ConfigureAwait(false) == request) return await request.ConfigureAwait(false);
+        cancel.Cancel();
+        _ = request.ContinueWith(task => _ = task.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        throw new TimeoutException($"çeviri {TranslationTimeoutMs / 1000.0:0.#} sn'de bitmedi");
+    }
+
+    private async Task<Translation> TranslateAsync(IReadOnlyList<string> paragraphs, bool labelsFirst = false, CancellationToken cancellationToken = default)
+    {
+        if (labelsFirst) return await TranslateLabelsAsync(paragraphs, cancellationToken).ConfigureAwait(false);
         // Simgeler paket aramasında yok sayılır, çeviride uydurma adlarla korunur (IconText).
         var prepared = paragraphs.Select(IconText.Protect).ToList();
         string?[] result = [.. paragraphs.Select(paragraph =>
@@ -1153,7 +1229,7 @@ public sealed partial class RegionWatcher
         if (missing.Count > 0)
         {
             var texts = missing.Select(i => prepared[i].Text).ToList();
-            var translated = await translator.TranslateAllAsync(texts).ConfigureAwait(false);
+            var translated = await translator.TranslateAllAsync(texts, cancellationToken).ConfigureAwait(false);
             for (var i = 0; i < missing.Count && i < translated.Count; i++) result[missing[i]] = translated[i];
         }
         return new Translation(result, readyCount);
@@ -1240,7 +1316,7 @@ public sealed partial class RegionWatcher
     /// olduğu gibi kalır. Parçalar önce oturum terim sözlüğünden, arayüz sözlüğünden ve paketten; kalanların hepsi tek
     /// toplu istekte motordan çevrilir ve terim sözlüğüne yazılır (aynı ekrana dönüşte anında, aynı etiket hep aynı).
     /// </summary>
-    private async Task<Translation> TranslateLabelsAsync(IReadOnlyList<string> paragraphs)
+    private async Task<Translation> TranslateLabelsAsync(IReadOnlyList<string> paragraphs, CancellationToken cancellationToken = default)
     {
         var parts = paragraphs.Select(paragraph => SplitLabel(paragraph).Select(part => new LabelPart(part.Prefix, part.Core, part.Suffix)).ToList()).ToList();
         var pending = new List<LabelPart>();
@@ -1264,7 +1340,7 @@ public sealed partial class RegionWatcher
         if (unique.Count > 0)
         {
             var protectedTexts = unique.Select(text => IconText.Protect(text)).ToList();
-            var translated = await translator.TranslateAllAsync([.. protectedTexts.Select(item => item.Text)]).ConfigureAwait(false);
+            var translated = await translator.TranslateAllAsync([.. protectedTexts.Select(item => item.Text)], cancellationToken).ConfigureAwait(false);
             var map = new Dictionary<string, string>(StringComparer.Ordinal);
             for (var i = 0; i < unique.Count && i < translated.Count; i++)
                 if (translated[i]?.Trim() is { Length: > 0 } text) map[unique[i]] = text;

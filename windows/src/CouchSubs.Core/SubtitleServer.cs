@@ -265,6 +265,16 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     private TcpListener? listener;
     private Timer? pingTimer;
     private SubtitleStyle? lastStyle;
+    /// <summary>
+    /// Gösterilen ek alanların son <c>region</c> olayları (<c>gate</c> altında). TV yeniden bağlanınca bunlar yeniden
+    /// gönderilir, gösterilmeyenler kaldırılır (<c>region-sync</c>); her <see cref="RegionRefreshInterval"/>'da telefon kartı
+    /// dışındakiler <c>keep</c> bayrağıyla yenilenir. TV, yenilenmeyen alanı 15 sn sonra kendisi kaldırır (#1198;
+    /// tv-webos/app.js REGION_LIFE_MS). Mac: SubtitleServer.liveRegions.
+    /// </summary>
+    private readonly SortedDictionary<string, SortedDictionary<string, object>> liveRegions = new(StringComparer.Ordinal);
+    private Timer? regionTimer;
+    /// <summary>Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri).</summary>
+    internal TimeSpan RegionRefreshInterval { get; set; } = TimeSpan.FromSeconds(5);
     /// <summary>GET ile verilen dosyalar: dublaj sesleri ve seslendirme modelinin ses örnekleri.</summary>
     private readonly Dictionary<string, (byte[] Data, string Type)> files = new(StringComparer.Ordinal);
     private readonly Queue<string> speechPaths = new();
@@ -373,6 +383,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             DropSilentTvs();
             Broadcast(PingFrame);
         }, null, every, every);
+        regionTimer = new Timer(_ => RefreshRegions(), null, RegionRefreshInterval, RegionRefreshInterval);
         return Task.FromResult(((IPEndPoint)listener.LocalEndpoint).Port);
     }
 
@@ -385,6 +396,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         if (!keepPairing) Pairing.SetSession(false);
         pingTimer?.Dispose();
         pingTimer = null;
+        regionTimer?.Dispose();
+        regionTimer = null;
         listener?.Stop();
         listener = null;
         List<Client> closing;
@@ -392,6 +405,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         {
             closing = [.. clients];
             clients.Clear();
+            // Port değişip hemen yeniden açılıyorsa gösterilenler yeni akışa yeniden gönderilsin.
+            if (!keepPairing) liveRegions.Clear();
         }
         foreach (var client in closing) client.Tcp.Dispose();
     }
@@ -571,7 +586,13 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     private void EmitRegion(string id, string text, TextBox? box, double? lineHeight, IReadOnlyList<IconPlacement>? icons,
                             IReadOnlyList<ScreenTranslation.Item>? blocks)
     {
-        Broadcast(Frame("region", RegionData(id, text, box, lineHeight, icons, blocks)), subtitle: true);
+        var data = RegionData(id, text, box, lineHeight, icons, blocks);
+        lock (gate)
+        {
+            if (text.Length == 0) liveRegions.Remove(id);
+            else liveRegions[id] = data;
+        }
+        Broadcast(Frame("region", data), subtitle: true);
         EventSent?.Invoke(new SubtitleEvent(SubtitleEventKind.Region, text, Id: id, Box: box,
                                             Blocks: blocks is { Count: > 0 } && text.Length > 0 ? blocks : null));
     }
@@ -721,6 +742,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             regionShown.Clear();
             regionVisible.Clear();
         }
+        lock (gate) liveRegions.Clear();
         Broadcast(Frame("region-clear", new SortedDictionary<string, object>()), subtitle: true);
         EventSent?.Invoke(new SubtitleEvent(SubtitleEventKind.RegionClear));
     }
@@ -999,6 +1021,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
                 if (ParseTvAppVersion(LatestTvAppVersion) is { Length: > 0 } latest) json["latest"] = latest;
                 head.Append(Frame("link", json));
             }
+            head.Append(RegionReplay(viewer || SendsToTv));
             clients.Add(client);
             if (hdmi is not null) consolePort = hdmi;
             count = TvCount();
@@ -1006,6 +1029,33 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         await Write(client, head.ToString());
         ClientsChanged?.Invoke(count);
         await WatchForClose(client);
+    }
+
+    /// <summary>
+    /// Yeni bağlanan TV'ye (ya da OBS'e) gösterilen ek alanlar: önce <c>region-sync</c> (listede olmayan alanları TV kaldırır;
+    /// kopukken kaçan temizleme komutları), sonra her alanın son <c>region</c> olayı <c>keep</c> bayrağıyla (TV'de duran aynı
+    /// alan yeniden çizilmez). <c>gate</c> altında çağrılır.
+    /// </summary>
+    private string RegionReplay(bool tv)
+    {
+        var live = tv ? liveRegions.ToList() : [];
+        var frames = new StringBuilder(Frame("region-sync", new SortedDictionary<string, object> { ["ids"] = live.Select(r => r.Key).ToList() }));
+        foreach (var (_, data) in live) frames.Append(Frame("region", Kept(data)));
+        return frames.ToString();
+    }
+
+    private static SortedDictionary<string, object> Kept(SortedDictionary<string, object> data) =>
+        new(data) { ["keep"] = true };
+
+    /// <summary>
+    /// Gösterilen ek alanları (telefon kartı hariç) <c>keep</c> bayrağıyla yeniden gönderir: TV'de sahnede kalan yazının
+    /// çevirisi 15 sn'lik ömrü dolup kalkmasın. Telefon kartı kendi takibiyle yenilenir.
+    /// </summary>
+    internal void RefreshRegions()
+    {
+        List<SortedDictionary<string, object>> live;
+        lock (gate) live = [.. liveRegions.Where(r => r.Key != "game-phone").Select(r => Kept(r.Value))];
+        foreach (var data in live) Broadcast(Frame("region", data), subtitle: true);
     }
 
     /// <summary><c>link</c> olayındaki bağlantı kimliği: tahmin edilemez, URL'de kaçışsız gider.</summary>

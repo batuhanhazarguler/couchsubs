@@ -91,7 +91,17 @@ public final class RegionWatcher {
         var renderedBlocks: [(group: Int, item: ScreenTranslation.Item)]?
         /// Hazır alanda arayüz kutusunun art arda bulunamadığı tur sayısı (`panelMissTurns`).
         var panelMisses = 0
+        /// Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı (`unsteadyLimit`).
+        var unsteady = 0
     }
+
+    /// Çevirisi gösterilen alanda okuma bu kadar tur art arda değişip doğrulanamazsa (yazı gitti, yerinde sahne oynuyor)
+    /// çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan kalktıktan sonra TV'de kalıyordu (#1198).
+    static let unsteadyLimit = 3
+    /// Alanın izindeki örneklerin bu kadarı bir turda değiştiyse görüntü bütünüyle değişmiştir (`clearIfUnsteady`).
+    static let bigChangeShare = 0.5
+    /// Çeviri motoru bu süreyi aşarsa tur biter (aday sonraki turda yeniden denenir): asılı istek turu kilitliyordu.
+    public var translationTimeoutMs = 8000
 
     /// Alanda ayrı duran bir yazı grubu: `Candidate.paragraphs` içinde `start`'tan başlayan `count` parça, karedeki yeri
     /// ve satır yüksekliği (kareye oranla).
@@ -252,12 +262,14 @@ public final class RegionWatcher {
         }.value
         guard session == self.session else { return }
         var state = states[area.id] ?? State()
+        let before = state.signature
         let changed = state.signature.map {
             ReadScheduler.changed($0, signature, threshold: ReadScheduler.defaultChangeThreshold)
         } ?? true
         state.signature = signature
         guard changed else {
             // İz bir tur değişmedi: okunan yazı kararlıdır.
+            state.unsteady = 0
             if let candidate = state.candidate {
                 state.candidate = nil
                 states[area.id] = state
@@ -326,6 +338,7 @@ public final class RegionWatcher {
         let candidate = Self.candidate(own, in: region, frame: crop, auto: area.auto, menu: area.menu,
                                        styled: GameAreaPresets.isPreset(area.id))
         if state.lastRead == candidate.key {
+            state.unsteady = 0
             state.candidate = nil
             states[area.id] = state
             await commit(candidate, area: area)
@@ -334,8 +347,46 @@ public final class RegionWatcher {
             state.held = nil
             state.holds = 0
             state.candidate = candidate
+            if !(state.renderedText ?? "").isEmpty { clearIfUnsteady(candidate, area: area, state: &state, before: before, signature: signature) }
             states[area.id] = state
         }
+    }
+
+    /// Çevirisi gösterilen alanda okuma doğrulanamadı: `unsteadyLimit` tur sürdüyse ya da görüntü bütünüyle değiştiyse
+    /// (`bigChangeShare`) ve yeni okuma gösterilen yazıya benzemiyorsa çeviri kaldırılır. Yazı gidince yerinde oynayan
+    /// sahne hiç kararlı okunmuyor, eski çeviri TV'de kalıyordu (#1198; Windows ve Android ile aynı).
+    private func clearIfUnsteady(_ candidate: Candidate, area: ExtraArea, state: inout State, before: [UInt8]?,
+                                 signature: [UInt8]) {
+        state.unsteady += 1
+        let turns = state.unsteady
+        // Görüntünün bütünüyle değişmesi ilk turda tek başına yetmez: yeni yazı eskisinin yerine geçerken eski çeviri yenisi
+        // doğrulanana dek kalır (kutu yanıp sönmesin). Yazı da gittiyse (boş okuma) ya da ikinci turdaysa kaldırılır.
+        let bigChange = before.map { Self.changedShare($0, signature) >= Self.bigChangeShare } ?? false
+            && (candidate.key.isEmpty || turns >= 2)
+        guard turns >= Self.unsteadyLimit || bigChange else { return }
+        guard !Self.matches(candidate.text, state.shownText), !Self.isPartOf(candidate.text, state.shownText) else { return }
+        let shownText = state.shownText
+        server.sendRegion(id: area.id, text: "", box: nil, lineHeight: nil)
+        state.shown = ""
+        state.shownText = ""
+        state.shownIcons = 0
+        state.renderedKey = nil
+        state.renderedText = nil
+        state.renderedIcons = nil
+        state.renderedBox = nil
+        state.renderedLineHeight = nil
+        state.renderedLayout = nil
+        state.renderedBlocks = nil
+        state.unsteady = 0
+        drops.note("RegionWatcher", "\(area.name): \(turns) tur kararlı okunmadı ya da görüntü çok değişti, çevirisi kaldırıldı",
+                   IconText.plain(shownText), log: onLog)
+    }
+
+    /// İzdeki örneklerin `ReadScheduler.defaultChangeThreshold`'dan çok değişen payı.
+    static func changedShare(_ a: [UInt8], _ b: [UInt8]) -> Double {
+        guard a.count == b.count, !a.isEmpty else { return 1 }
+        let changed = zip(a, b).filter { abs(Int($0) - Int($1)) > ReadScheduler.defaultChangeThreshold }.count
+        return Double(changed) / Double(a.count)
     }
 
     private static func iconCount(_ candidate: Candidate) -> Int {
@@ -654,7 +705,7 @@ public final class RegionWatcher {
         let translation: Translation
         do {
             if let cached { translation = cached }
-            else { translation = try await (area.auto ? translateLabels(candidate.paragraphs) : translate(candidate.paragraphs)) }
+            else { translation = try await deadline(auto: area.auto, candidate.paragraphs) }
         } catch {
             guard session == self.session else { return }
             if states[area.id]?.shown == candidate.key {
@@ -740,6 +791,39 @@ public final class RegionWatcher {
             result.append((index, item))
         }
         return result
+    }
+
+    struct TranslationTimeout: Error, CustomStringConvertible {
+        let ms: Int
+        var description: String { "çeviri \(ms) ms'de bitmedi" }
+    }
+
+    /// Çeviri `translationTimeoutMs` içinde bitmezse `TranslationTimeout` (aday korunur, sonraki turda yeniden denenir).
+    /// İptali dinlemeyen motorun görevi beklenmez: tur biter, kilit (`running`) açılır.
+    private func deadline(auto: Bool, _ paragraphs: [String]) async throws -> Translation {
+        let work = Task { @MainActor in try await (auto ? self.translateLabels(paragraphs) : self.translate(paragraphs)) }
+        let limit = translationTimeoutMs
+        final class Once { var done = false }
+        let once = Once()
+        var timer: Task<Void, Never>?
+        defer { timer?.cancel() }
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Translation, Error>) in
+                Task { @MainActor in
+                    let result = await work.result
+                    guard !once.done else { return }
+                    once.done = true
+                    continuation.resume(with: result)
+                }
+                timer = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: UInt64(limit) * 1_000_000)
+                    guard !once.done else { return }
+                    once.done = true
+                    work.cancel()
+                    continuation.resume(throwing: TranslationTimeout(ms: limit))
+                }
+            }
+        } onCancel: { work.cancel() }
     }
 
     /// Saklanan çevirinin anahtarı: paragraflar ayrı ayrı. Aynı yazı başka satırlardan bölünürse paragraf sayısı değişir;

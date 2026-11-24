@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.95';
+  var APP_VERSION = '0.9.96';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1597,6 +1597,11 @@
   // hepsini kaldırır. Ana altyazıya dokunulmaz.
 
   var regionBoxes = {};
+  // Güvenlik ağı (#1198): telefon kartı dışındaki alan, gönderici REGION_LIFE_MS boyunca ne yeniler ne temizlerse
+  // kendiliğinden kalkar. Gönderici gösterdiği alanları her 5 sn'de bir "keep" bayrağıyla yeniden gönderir (Mac, iPhone:
+  // SubtitleServer.refreshRegions, Windows: RefreshRegions, Android: refreshRegions); kaçan temizleme komutu yüzünden
+  // oyundan kalkmış yazının çevirisi TV'de sonsuza dek kalmaz. Eski göndericiler yenilemez: alan 15 sn'de kalkar.
+  var REGION_LIFE_MS = 15000;
   var REGION_PAD = 0.004;
   var REGION_MIN_FONT = 18;
   var REGION_MAX_FONT = 44;
@@ -1612,11 +1617,19 @@
     var blocks = Array.isArray(data.blocks) ? data.blocks : null;
     var kind = blocks && blocks.length ? 'region-blocks' : 'region';
     var el = regionBoxes[id];
+    var now = Date.now();
+    // Göndericinin yenilemesi (keep): aynı alan yeniden çizilmez, katmanların sırası değişmez; yalnız ömrü uzar.
+    var raw = JSON.stringify([data.text, data.box, data.line || 0, data.icons || null, data.blocks || null]);
+    if (data.keep === true && el && el.couchsubsRaw === raw) {
+      el.couchsubsSeen = now;
+      return;
+    }
     // Oyun telefonunun aynı gönderisi yeniden çizilmez; değişen gönderi yerinde güncellenir (placeItems, placePanel).
     var phoneBlocks = id === 'game-phone' && kind === 'region-blocks';
     var payload = phoneBlocks ? JSON.stringify(blocks) + JSON.stringify(box) : null;
     if (phoneBlocks && el && el.className === kind && el.couchsubsPayload === payload) {
       el.couchsubsStamp = ++regionStamp;
+      el.couchsubsSeen = now;
       return;
     }
     // Bloklar her olayda baştan dizilir; tek kutudan bloklara (ya da tersine) geçen alanın eski kutusu kalkar.
@@ -1631,6 +1644,8 @@
       regionBoxes[id] = el;
     }
     $('regions').className = '';
+    el.couchsubsRaw = raw;
+    el.couchsubsSeen = now;
     // En son gelen alan, kendisiyle aynı yeri çizen eski alanın önüne geçer (resolveLayers).
     el.couchsubsStamp = ++regionStamp;
     el.couchsubsBox = box;
@@ -1846,6 +1861,29 @@
     var down = phone.bottom + gap - sub.top;
     if (sub.top + up >= 0) setSubtitleShift(0, up);
     else if (sub.bottom + down <= height) setSubtitleShift(0, down);
+  }
+
+  // Ömrü dolan alanları kaldırır (telefon kartı hariç: onu gönderici kendisi kaldırır). Kaldırılanların kimlikleri döner.
+  function expireRegions(now) {
+    var gone = [];
+    for (var id in regionBoxes) {
+      if (!Object.prototype.hasOwnProperty.call(regionBoxes, id) || id === 'game-phone') continue;
+      if (now - (regionBoxes[id].couchsubsSeen || 0) >= REGION_LIFE_MS) gone.push(id);
+    }
+    for (var i = 0; i < gone.length; i++) hideRegion(gone[i]);
+    return gone;
+  }
+
+  // TV yeniden bağlandı: gönderici o an gösterdiği alanların kimliklerini yollar ("region-sync"), ardından her birini
+  // "keep" ile yeniden gönderir. Listede olmayan alan (kopukken kaçan temizleme komutu) kalkar.
+  function syncRegions(data) {
+    var ids = data && Array.isArray(data.ids) ? data.ids : [];
+    var gone = [];
+    for (var id in regionBoxes) {
+      if (Object.prototype.hasOwnProperty.call(regionBoxes, id) && ids.indexOf(id) < 0) gone.push(id);
+    }
+    for (var i = 0; i < gone.length; i++) hideRegion(gone[i]);
+    return gone;
   }
 
   function hideRegions() {
@@ -2367,6 +2405,7 @@
     onEvent('screen-clear', hideScreen);
     onEvent('region', showRegion);
     onEvent('region-clear', hideRegions);
+    onEvent('region-sync', syncRegions);
     onEvent('exit', function () { leaving = true; platform.exit(); });
     onEvent('style', applyStyle);
     onEvent('speech', function (data) { if (data.url && data.url.charAt(0) === '/' && data.url.charAt(1) !== '/') playSpeech(authenticatedUrl(server, data.url)); });
@@ -2395,6 +2434,7 @@
   }
 
   setInterval(watchConnection, 10000);
+  setInterval(function () { expireRegions(Date.now()); }, 1000);
 
   // --- Alındı ---
   // Ping yalnız bilgisayardan/telefondan TV'ye gidiyordu: TV uygulaması arka plana düşüp askıya alınınca (LG, Android TV)
