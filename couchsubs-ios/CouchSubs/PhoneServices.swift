@@ -35,6 +35,9 @@ protocol KeeperControlling: AnyObject {
 }
 
 extension StreamSession: StreamControlling {}
+/// Bu cihazın ev ağı adresini izleyen görevli (gerçekte `SenderAddressWatcher`).
+protocol AddressWatching: AnyObject { func stop() }
+extension SenderAddressWatcher: AddressWatching {}
 /// Xbox ev yayını (Beta): Mac uygulamasıyla ortak oturum (remoteplay/Sources/XboxStream).
 extension XboxStreamSession: StreamControlling {}
 extension TVKeeper: KeeperControlling {}
@@ -74,7 +77,14 @@ struct TVPairing: Equatable {
 
 /// Dış dünyayla (PS5, PSN, TV, çeviri hizmetleri) konuşan her şey; testlerde sahtesi kullanılır.
 /// Mac'teki `AppServices`'in telefonda çalışan kısmı: TV uygulamasını kurmak (ssh, sdb, adb) iOS'ta yapılamaz.
+extension PhoneServices {
+    /// Varsayılan: izlenmez (testlerin sahte hizmetleri).
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching? { nil }
+}
+
 protocol PhoneServices: AnyObject {
+    /// Bu telefonun ev ağı adresini izler; değişince `onChange` (bkz. `SenderAddressWatcher`).
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching?
     func discoverConsoles() async -> [ConsoleInfo]
     func accountId(fromRedirect url: URL) async throws -> Data
     func register(host: String, accountId: Data, pin: UInt32) async throws -> RegisteredConsole
@@ -166,6 +176,12 @@ final class LivePhoneServices: PhoneServices {
         StreamSession(console: console, accountId: accountId, loginPasscode: loginPasscode)
     }
 
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching? {
+        let watcher = SenderAddressWatcher(onChange: onChange)
+        watcher.start()
+        return watcher
+    }
+
     func makeKeeper(tv: LGTV, key: String?, params: [String: Any], appConnected: @escaping @Sendable () -> Bool,
                     onMoved: @escaping (LGTV) -> Void, onKey: @escaping @Sendable (String) -> Void,
                     consolePort: @escaping @Sendable () -> Int?,
@@ -173,8 +189,11 @@ final class LivePhoneServices: PhoneServices {
         switch tv.brand {
         case .androidTV:
             guard let server = params["server"] as? String, !tv.host.isEmpty else { return IdleKeeper() }
+            // TV'ye ulaşılamazsa ağda yeniden aranır (LG ve Samsung'daki TVLocator gibi; Mac ve Windows ile aynı).
+            let locator = AndroidTVLocator(tv: tv, onMoved: { moved in DispatchQueue.main.async { onMoved(moved) } },
+                                           log: { InstallLog.shared.write($0) })
             return AndroidTVKeeper(host: tv.host, port: InstalledTVApp.adbPort(for: tv.host), server: server, appConnected: appConnected,
-                                   onOpenResult: onOpenResult)
+                                   locator: locator, onOpenResult: onOpenResult)
         case .samsung:
             SamsungAppKnowledge.installLog = { InstallLog.shared.write($0) }
             let token = SamsungTokenHolder(token: key, onChange: onKey)
@@ -191,7 +210,7 @@ final class LivePhoneServices: PhoneServices {
                     throw error
                 }
                 return client
-            }, search: { await SamsungDiscovery.search() }, onMoved: onMoved)
+            }, search: { await SamsungDiscovery.search() }, onMoved: onMoved, log: { InstallLog.shared.write($0) })
             // Önce geliştirici bağlantısı (sdb) denenir (Mac ve Windows ile aynı): uzaktan kumanda bağlantısıyla açmayı bazı
             // TV'ler sessizce yok sayıyor, kullanıcı CouchSubs'ı kumandayla açmak zorunda kalıyordu (TestFlight build 27).
             let host = tv.host
@@ -203,7 +222,7 @@ final class LivePhoneServices: PhoneServices {
                 let client = SSAPClient(tv: tv, clientKey: key)
                 do { _ = try await client.connect() } catch { client.close(); throw error }
                 return client
-            }, search: { await LGDiscovery.search() }, onMoved: onMoved)
+            }, search: { await LGDiscovery.search() }, onMoved: onMoved, log: { InstallLog.shared.write($0) })
             // Açık ve bağlı TV uygulamasına yeni bağlantıda açma komutu gitmez (#1055; Mac, Windows ve Android ile aynı).
             return TVKeeper(connect: { try await locator.connect() }, appId: AppIdentity.tvAppId, params: params, consolePort: consolePort,
                             onOpenResult: onOpenResult, tvConnected: appConnected)

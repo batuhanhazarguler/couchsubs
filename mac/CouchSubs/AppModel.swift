@@ -94,6 +94,8 @@ protocol AppServices: AnyObject {
                     onMoved: @escaping (LGTV) -> Void, onKey: @escaping @Sendable (String) -> Void,
                     consolePort: @escaping @Sendable () -> Int?,
                     onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void) -> KeeperControlling
+    /// Bu Mac'in ev ağı adresini izler; değişince `onChange` (bkz. `SenderAddressWatcher`). Testlerde izlenmez.
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching?
     /// Uygulamayla gelen TV paketinin sürümü (geliştirici derlemesinde paket olmayabilir).
     var bundledTVAppVersion: String? { get }
     func isDevModeOn(host: String) async -> Bool
@@ -212,6 +214,13 @@ extension KeeperControlling {
 }
 
 extension StreamSession: StreamControlling {}
+/// Bu cihazın ev ağı adresini izleyen görevli (gerçekte `SenderAddressWatcher`).
+protocol AddressWatching: AnyObject { func stop() }
+extension SenderAddressWatcher: AddressWatching {}
+extension AppServices {
+    /// Varsayılan: izlenmez (testlerin sahte hizmetleri).
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching? { nil }
+}
 /// Xbox ev yayını (Beta): iPhone'la ortak oturum (remoteplay/Sources/XboxStream).
 extension XboxStreamSession: StreamControlling {}
 extension TVKeeper: KeeperControlling {}
@@ -301,6 +310,12 @@ final class LiveServices: AppServices {
         StreamSession(console: console, accountId: accountId, loginPasscode: loginPasscode)
     }
 
+    func makeAddressWatcher(onChange: @escaping @Sendable ([String], [String]) -> Void) -> AddressWatching? {
+        let watcher = SenderAddressWatcher(onChange: onChange)
+        watcher.start()
+        return watcher
+    }
+
     func makeKeeper(tv: LGTV, key: String?, params: [String: Any], appConnected: @escaping @Sendable () -> Bool,
                     onMoved: @escaping (LGTV) -> Void, onKey: @escaping @Sendable (String) -> Void,
                     consolePort: @escaping @Sendable () -> Int?,
@@ -310,7 +325,10 @@ final class LiveServices: AppServices {
             // ADB açıksa (uygulama bu Mac'ten kurulduysa) CouchSubs TV Mac'in adresiyle açılır ve bağlanana kadar arada bir
             // yeniden açılır (iPhone, Windows ve Android telefonla aynı). Eskiden Mac Android TV'ye hiç dokunmuyordu.
             guard TVHelper.executable != nil, let server = params["server"] as? String, !tv.host.isEmpty else { return IdleKeeper() }
-            return AndroidTVKeeper(host: tv.host, server: server, appConnected: appConnected, onOpenResult: onOpenResult)
+            // TV'ye ulaşılamazsa ağda yeniden aranır (LG ve Samsung'daki TVLocator gibi; iPhone ve Windows ile aynı).
+            let locator = AndroidTVLocator(tv: tv, onMoved: { moved in DispatchQueue.main.async { onMoved(moved) } },
+                                           log: { TVInstallLog.write($0) })
+            return AndroidTVKeeper(host: tv.host, server: server, appConnected: appConnected, locator: locator, onOpenResult: onOpenResult)
         case .samsung:
             SamsungAppKnowledge.installLog = { TVInstallLog.write($0) }
             let token = SamsungTokenHolder(token: key, onChange: onKey)
@@ -327,7 +345,7 @@ final class LiveServices: AppServices {
                     throw error
                 }
                 return client
-            }, search: { await SamsungDiscovery.search() }, onMoved: onMoved)
+            }, search: { await SamsungDiscovery.search() }, onMoved: onMoved, log: { TVInstallLog.write($0) })
             // Önce geliştirici bağlantısı (sdb) denenir: uzaktan kumanda bağlantısıyla açma Tizen 9.0'da (2025 Neo QLED,
             // OLED) sessizce çalışmıyor, arka plana düşen TV uygulaması geri gelmiyordu (Windows'ta #412).
             let host = tv.host
@@ -346,7 +364,7 @@ final class LiveServices: AppServices {
                 throw error
             }
             return client
-        }, search: { await LGDiscovery.search() }, onMoved: onMoved)
+        }, search: { await LGDiscovery.search() }, onMoved: onMoved, log: { TVInstallLog.write($0) })
         // Açık ve bağlı TV uygulamasına yeni bağlantıda açma komutu gitmez (#1055; iPhone, Windows ve Android ile aynı).
         return TVKeeper(connect: { try await locator.connect() }, appId: AppIdentity.tvAppId, params: params, consolePort: consolePort,
                         onOpenResult: onOpenResult, tvConnected: appConnected)
@@ -918,6 +936,8 @@ final class AppModel: ObservableObject {
     /// Okuma sürerken atlanan son kare; okuma bitince okunur (bkz. `FrameGate.leave`).
     private var skippedFrame: (frame: CGImage, capturedAt: Int)?
     private var wakeObserver: NSObjectProtocol?
+    /// Çeviri sürerken bu Mac'in ev ağı adresini izler (bkz. `senderAddressChanged`).
+    private var addressWatcher: AddressWatching?
 
     // Oyun paketleri ve ortak havuz
     /// Uygulamayla gelen ve ~/Library/Application Support/CouchSubs/packs klasöründeki paketler.
@@ -1984,7 +2004,7 @@ final class AppModel: ObservableObject {
                 Task { @MainActor in self?.installEvent(event) }
             }
             // TV'nin adresi bundan sonra sürüm denetimi için kullanılır.
-            let located = LGTV(name: tv.name, host: host, brand: .androidTV)
+            let located = LGTV(name: tv.name, host: host, brand: .androidTV, uuid: tv.uuid, mac: tv.mac)
             let addressChanged = self.tv?.host != located.host
             if addressChanged, let old = self.tv?.host, !old.isEmpty { TVInstallLog.write(TVReach.movedLine(from: old, to: host)) }
             self.tv = located
@@ -2328,7 +2348,8 @@ final class AppModel: ObservableObject {
             let server = self.server
             let made = services.makeKeeper(tv: tv, key: store.load(String.self, for: StoreKey.tvKey), params: ["server": serverAddress(for: tv), "key": server.accessKey],
                                            appConnected: { server.connectedClients > 0 }, onMoved: { [weak self] moved in
-                Task { @MainActor in self?.tvMoved(to: moved) }
+                // Bekçinin yeniden bulucusu satırı kendisi yazdı (kimlikle mi, adla mı).
+                Task { @MainActor in self?.tvMoved(to: moved, logged: true) }
             }, onKey: { [weak self] key in
                 Task { @MainActor in self?.store.save(key, for: StoreKey.tvKey) }
             }, consolePort: { server.consolePort }, onOpenResult: { _ in })
@@ -2473,6 +2494,11 @@ final class AppModel: ObservableObject {
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.systemWoke() }
         }
+        // Mac'in adresi değişince (modem yeniden başladı, başka ağ) TV'ye yeni adres hemen bildirilir.
+        addressWatcher?.stop()
+        addressWatcher = services.makeAddressWatcher { [weak self] old, new in
+            Task { @MainActor in self?.senderAddressChanged(old: old, new: new) }
+        }
         keepAwake()
         server.pairing.setSession(true)
         isRunning = true
@@ -2558,6 +2584,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Bu Mac'in ev ağı adresi değişti (modem yeniden başladı, Wi-Fi değişti): TV bekçisi yeni adresle yeniden kurulur;
+    /// LG ve Samsung'da açma komutu, Android TV'de adres komutu yeni sunucu adresini TV'ye hemen götürür. Eskiden TV eski
+    /// adrese bağlanmaya çalışıp ağı taramaya düşüyordu (iPhone, Windows ve Android ile aynı).
+    func senderAddressChanged(old: [String], new: [String]) {
+        guard isRunning else { return }
+        TVInstallLog.write(SenderAddressWatcher.line(old: old, new: new))
+        guard keeper != nil else { return }
+        keeper?.stop()
+        keeper = nil
+        startKeeper(refreshApp: false)
+        keeper?.reconnect()
+    }
+
     /// Mac uykudan uyandı: bağlantılar hemen yenilenir. Oturum yeniden denemeyi bırakmışsa `reconnectNow` bir şey yapmaz;
     /// yeni oturum açılır (kayıt ya da giriş şifresi sorununda açılmaz, düğme görünür).
     func systemWoke() {
@@ -2618,7 +2657,8 @@ final class AppModel: ObservableObject {
         let generation = keeperGeneration
         let keeper = services.makeKeeper(tv: tv, key: store.load(String.self, for: StoreKey.tvKey), params: ["server": serverAddress(for: tv), "key": server.accessKey],
                                          appConnected: { server.connectedClients > 0 }, onMoved: { [weak self] moved in
-            Task { @MainActor in self?.tvMoved(to: moved) }
+            // Bekçinin yeniden bulucusu satırı kendisi yazdı (kimlikle mi, adla mı).
+            Task { @MainActor in self?.tvMoved(to: moved, logged: true) }
         }, onKey: { [weak self] key in
             Task { @MainActor in self?.store.save(key, for: StoreKey.tvKey) }
         }, consolePort: { server.consolePort }, onOpenResult: { [weak self] problem in
@@ -2979,10 +3019,13 @@ final class AppModel: ObservableObject {
         server.clear()
     }
 
-    func tvMoved(to moved: LGTV) {
-        if let old = tv?.host, old != moved.host {
-            TVInstallLog.write(TVReach.movedLine(from: old, to: moved.host))
-            SubtitleLog.write(TVReach.movedLine(from: old, to: moved.host))
+    /// `how`: TV ağda nasıl tanındı (kimlikle, adla); biliniyorsa günlük satırında yazılır.
+    /// `logged`: satırı TV bekçisinin yeniden bulucusu (`TVLocator`, `AndroidTVLocator`) yazdı.
+    func tvMoved(to moved: LGTV, how: TVIdentity.Match? = nil, logged: Bool = false) {
+        if !logged, let old = tv?.host, old != moved.host {
+            let line = how.map { TVIdentity.movedLine(from: old, to: moved.host, how: $0) } ?? TVReach.movedLine(from: old, to: moved.host)
+            TVInstallLog.write(line)
+            SubtitleLog.write(line)
         }
         if moved.brand == .samsung { SamsungAppKnowledge.shared.carry(from: tv?.host, to: moved.host) }
         tv = moved
@@ -3022,17 +3065,22 @@ final class AppModel: ObservableObject {
         TVInstallLog.write("Kayıtlı TV adresi \(saved.host) yanıt vermiyor; TV ağda yeniden aranıyor.")
         let found = await services.discoverTVs()
         guard tv == saved else { return .here }
-        guard let moved = TVReach.relocated(saved, among: found) else {
+        if let learned = TVLocator.learned(saved, among: found) {
+            TVInstallLog.write(TVIdentity.learnedLine(learned))
+            tvMoved(to: learned)
+            return .here
+        }
+        guard let (moved, how) = TVLocator.locate(saved, among: found), moved.host != saved.host else {
             TVInstallLog.write("\(TVReach.notRespondingLine) (\(saved.host)); TV ağda bulunamadı.")
             return .silent
         }
-        adoptMovedTV(moved)
+        adoptMovedTV(moved, how: how)
         return .moved(moved)
     }
 
     /// Yeni adreste bulunan TV kaydedilir; çeviri sürüyorsa TV bekçisi yeni adresle yeniden kurulur.
-    private func adoptMovedTV(_ moved: LGTV) {
-        tvMoved(to: moved)
+    private func adoptMovedTV(_ moved: LGTV, how: TVIdentity.Match? = nil) {
+        tvMoved(to: moved, how: how)
         keeper?.stop()
         keeper = nil
         if isRunning && settings.output.showsOnTV { startKeeper(refreshApp: false) }
@@ -3078,7 +3126,7 @@ final class AppModel: ObservableObject {
             store.save(found, for: StoreKey.tv)
             return true
         }
-        let moved = found.brand == saved.brand ? LGTV(name: saved.name, host: found.host, brand: saved.brand) : found
+        let moved = found.brand == saved.brand ? saved.withHost(found.host).identified(from: found) : found
         if moved.brand != saved.brand { store.remove(StoreKey.tvAppVersion) }
         adoptMovedTV(moved)
         return true
@@ -3465,6 +3513,8 @@ final class AppModel: ObservableObject {
         }
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         wakeObserver = nil
+        addressWatcher?.stop()
+        addressWatcher = nil
         if let sleepActivity { ProcessInfo.processInfo.endActivity(sleepActivity) }
         sleepActivity = nil
         server.pairing.setSession(false)

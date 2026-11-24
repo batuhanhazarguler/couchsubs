@@ -1323,7 +1323,7 @@ final class TVAppInstallTests: XCTestCase {
         XCTAssertEqual(model.tvApp, .upToDate("0.6.1"))
         XCTAssertEqual(model.tv?.host, "192.168.1.156")
         XCTAssertEqual(services.keyHosts, ["192.168.1.153", "192.168.1.156"])
-        XCTAssertTrue(TVInstallLog.tail().contains("TV'nin adresi değişmiş: 192.168.1.153 → 192.168.1.156"), TVInstallLog.tail())
+        XCTAssertTrue(TVInstallLog.tail().contains("TV yeni adreste bulundu: 192.168.1.153 → 192.168.1.156"), TVInstallLog.tail())
     }
 
     func testSilentTVThatIsNotFoundIsNotCalledKeyServerOff() async throws {

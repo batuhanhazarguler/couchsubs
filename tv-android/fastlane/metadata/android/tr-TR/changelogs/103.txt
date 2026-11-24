@@ -1,0 +1,1 @@
+0.9.100: Telefonun ya da bilgisayarın adresi değişince (modem yeniden başladı, ağ değişti) TV uygulaması aramaya üçüncü değil ilk başarısız bağlantıdan sonra başlıyor; /24'ten büyük ağları da (en çok /22) tarıyor.

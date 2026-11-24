@@ -579,8 +579,14 @@ final class AndroidTvInstaller {
 /// aranıyor…"da kalıyordu (TestFlight, 20 Kas). Adres verilince TV doğrudan bağlanır ve adresi saklar; ADB kapalıysa
 /// (Play'den kurulan TV) sessizce vazgeçilir, tarama yolu sürer.
 final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
-    private let host: String
+    /// TV yeni adreste bulunursa değişir (`locator`; `lock` altında).
+    private var host: String
     private let port: UInt16
+    /// Açma TV'ye ulaşamazsa TV'yi ağda yeniden arar; ilk başarılı açılışta kimliği kayda yazar (yoksa nil).
+    private let locator: AndroidTVLocator?
+    /// Son kontrolün ardından yapılacak ağ işi (yeniden arama ya da kimlik okuma; `lock` altında).
+    private var followUp: FollowUp?
+    private enum FollowUp { case relocate, learn }
     private let launchParams: String?
     private let appConnected: @Sendable () -> Bool
     private let open: @Sendable (String, UInt16, String?) throws -> String
@@ -594,11 +600,13 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
 
     init(host: String, port: UInt16, server: String, appConnected: @escaping @Sendable () -> Bool,
          relaunchInterval: TimeInterval = AndroidTVOpenRule.defaultInterval, maxOpens: Int = AndroidTVOpenRule.defaultMaxOpens,
+         locator: AndroidTVLocator? = nil,
          open: @escaping @Sendable (String, UInt16, String?) throws -> String = { host, port, params in
              try AndroidTvInstaller(host: host, port: port).open(launchParams: params)
          }, log: @escaping @Sendable (String) -> Void = { InstallLog.shared.write($0) },
          onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in }) {
         self.host = host
+        self.locator = locator
         self.onOpenResult = onOpenResult
         self.port = port
         launchParams = AndroidTvInstaller.launchParams(server: server)
@@ -610,6 +618,9 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
 
     /// Bir kontrol: `AndroidTVOpenRule` izin verirse açmayı dener. Bloklar.
     func tick(now: Date = Date()) {
+        lock.lock()
+        let host = self.host
+        lock.unlock()
         guard !host.isEmpty else { return }
         let connected = appConnected()
         lock.lock()
@@ -627,9 +638,13 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
             }
             result = "açıldı: \(output)"
             onOpenResult(nil)
+            if locator != nil { lock.withLock { followUp = .learn } }
         } catch {
             result = "açılamadı: \(error)"
-            onOpenResult(Self.problem(error))
+            let problem = Self.problem(error)
+            onOpenResult(problem)
+            // TV'ye ulaşılamadı (onay sorusu değil): TV ağda yeni adreste olabilir.
+            if locator != nil, problem == .debugOff { lock.withLock { followUp = .relocate } }
         }
         // Aynı sonuç her denemede yeniden yazılmaz.
         lock.lock()
@@ -637,6 +652,28 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
         lastResult = result
         lock.unlock()
         if changed { log("Android TV (\(host):\(port)) telefonun adresiyle \(result)") }
+    }
+
+    /// Kontrolden sonra: açılamadıysa TV ağda aranır, yeni adreste bulunursa beklemeden yeniden denenir; açıldıysa
+    /// kimliği bilinmeyen kayda kimlik yazılır (Mac ve Windows bekçisiyle aynı).
+    func afterTick() async {
+        guard let locator else { return }
+        let next: FollowUp? = lock.withLock { defer { followUp = nil }; return followUp }
+        switch next {
+        case .relocate:
+            guard let moved = await locator.relocate() else { return }
+            lock.withLock {
+                host = moved
+                lastResult = nil
+                rule.reset()
+            }
+            tick()
+            await afterTick()
+        case .learn:
+            await locator.learnIdentity()
+        case nil:
+            break
+        }
     }
 
     /// Açılamamanın nedeni: TV hata ayıklama iznini onaylamadıysa (ADB eşleşmesi yok) ayrı, gerisi "ulaşılamıyor".
@@ -652,6 +689,7 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
         loop = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 self?.tick()
+                await self?.afterTick()
                 try? await Task.sleep(for: interval)
             }
         }

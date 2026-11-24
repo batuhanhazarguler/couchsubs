@@ -26,6 +26,7 @@ public partial class ShellWindow : Window
 {
     private readonly AppController controller;
     private bool showingMain;
+    private CouchSubs.Core.LgTv.SenderAddressWatcher? addressWatcher;
     private GlobalHotkeys? hotkeys;
     private ShellTab tab = ShellTab.Home;
     private MainView? home;
@@ -53,6 +54,9 @@ public partial class ShellWindow : Window
         controller.TvPairingRequested += OnTvPairing;
         // Bilgisayar uykudan uyanınca bağlantılar hemen yenilenir.
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        // Bilgisayarın adresi değişince (modem yeniden başladı, başka ağ) TV'ye yeni adres hemen bildirilir.
+        addressWatcher = new CouchSubs.Core.LgTv.SenderAddressWatcher((old, now) => Dispatcher.BeginInvoke(() => controller.SenderAddressChanged(old, now)));
+        addressWatcher.Start();
         // Kısayollar (varsayılan Num 0, 1, 2, 3, 5, 7, 8, 9 ve Ctrl+Shift+rakam; Ayarlar › Kısayollar'da değişir) yalnız
         // çeviri sürerken tutulur.
         SourceInitialized += (_, _) =>
@@ -84,6 +88,7 @@ public partial class ShellWindow : Window
             overlay?.Detach();
             hotkeys?.Dispose();
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            addressWatcher?.Dispose();
             controller.TvPairingRequested -= OnTvPairing;
             controller.Dispose();
         };

@@ -12,20 +12,41 @@ public struct LGTV: Codable, Hashable, Sendable {
     public let name: String
     public let host: String
     public let brand: TVBrand
+    /// Cihazın kalıcı kimliği (SSDP USN / cihaz tanımı UDN, Samsung `device.id`, Android TV'de Google Cast UDN), küçük harf
+    /// ve "uuid:" öneki olmadan. Modem TV'ye yeni adres verince TV bununla tanınır (ad değişse de, aynı adlı iki TV olsa
+    /// da). Eski kayıtlarda yoktur; TV ilk kez ağda bulununca öğrenilir (bkz. `TVLocator.learned`).
+    public let uuid: String?
+    /// TV'nin MAC adresi (Samsung `device.wifiMac`; biliniyorsa), "aa:bb:cc:dd:ee:ff" biçiminde.
+    public let mac: String?
 
-    public init(name: String, host: String, brand: TVBrand = .lg) {
+    public init(name: String, host: String, brand: TVBrand = .lg, uuid: String? = nil, mac: String? = nil) {
         self.name = name
         self.host = host
         self.brand = brand
+        self.uuid = TVIdentity.normalizedUUID(uuid)
+        self.mac = TVIdentity.normalizedMAC(mac)
     }
 
-    /// Eski kayıtlarda marka yoktur; hepsi LG'dir.
+    /// Eski kayıtlarda marka yoktur; hepsi LG'dir. Kimlik (uuid, mac) eski kayıtlarda yoktur.
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         name = try container.decode(String.self, forKey: .name)
         host = try container.decode(String.self, forKey: .host)
         brand = try container.decodeIfPresent(TVBrand.self, forKey: .brand) ?? .lg
+        uuid = TVIdentity.normalizedUUID(try container.decodeIfPresent(String.self, forKey: .uuid))
+        mac = TVIdentity.normalizedMAC(try container.decodeIfPresent(String.self, forKey: .mac))
     }
+
+    /// Aynı TV yeni adreste.
+    public func withHost(_ newHost: String) -> LGTV { LGTV(name: name, host: newHost, brand: brand, uuid: uuid, mac: mac) }
+
+    /// Bilinmeyen kimlik alanları `other`dan tamamlanır (ad, adres ve marka bu kaydınki kalır).
+    public func identified(from other: LGTV) -> LGTV {
+        LGTV(name: name, host: host, brand: brand, uuid: uuid ?? other.uuid, mac: mac ?? other.mac)
+    }
+
+    /// Kimliği (uuid ya da mac) var mı.
+    public var hasIdentity: Bool { uuid != nil || mac != nil }
 }
 
 /// TV'de uygulama başlatabilen ve önplandaki uygulamayı söyleyebilen her şey.

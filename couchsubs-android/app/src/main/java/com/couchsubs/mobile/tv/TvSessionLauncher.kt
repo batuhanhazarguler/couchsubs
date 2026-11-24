@@ -231,14 +231,33 @@ object TvSessionLauncher {
      * bir daha TV'ye gelmiyordu. TV'nin izin sorusu [launch]'ta yanıtlanmış olmalı (saklı anahtar yoksa bağlanılmaz). Bloklar.
      */
     fun keepLgOpen(settings: AppSettings, port: Int, key: String, consolePort: () -> Int?, log: (String) -> Unit = {},
-                   onOpenResult: (TvOpenProblem?) -> Unit = {}, connected: (() -> Boolean)? = null, active: () -> Boolean) {
+                   onOpenResult: (TvOpenProblem?) -> Unit = {}, connected: (() -> Boolean)? = null,
+                   relocate: () -> Boolean = { false }, active: () -> Boolean) {
         val tv = settings.installedTv ?: return
         if (tv.brand != TvBrand.LG || !active()) return
-        val remote = InetAddress.getByName(tv.host)
-        if (!SubtitleAccess.isLocalPeer(remote)) return
-        LgKeeper.keep(open = { serverAddress(remote, port)?.let { LgKeeper.ssapControl(settings, tv, remote, it, key) } },
+        if (!SubtitleAccess.isLocalPeer(InetAddress.getByName(tv.host))) return
+        LgKeeper.keep(open = { openLg({ settings.installedTv }, relocate) { ssapToLg(settings, it, port, key) } },
             active = active, consolePort = consolePort, log = log, onOpenResult = onOpenResult, retry = TvOpenRetry::take,
             connected = connected)
+    }
+
+    /**
+     * Kayıtlı LG'ye (her denemede kayıttan okunur) bağlanır; bağlanamazsa [relocate] TV'yi ağda arar, yeni adreste
+     * bulunursa (kayıt güncellendi) yeni adresle hemen bir kez daha denenir. Eskiden arka plandaki bekçi kayıtlı adresi
+     * aynen kullanıyor, TV yeni adres alınca çeviri bitene kadar bağlanamıyordu.
+     */
+    internal fun openLg(current: () -> InstalledTv?, relocate: () -> Boolean, connect: (InstalledTv) -> LgControl?): LgControl? {
+        val tv = current()?.takeIf { it.brand == TvBrand.LG } ?: return null
+        connect(tv)?.let { return it }
+        if (!relocate()) return null
+        val moved = current()?.takeIf { it.brand == TvBrand.LG && it.host != tv.host } ?: return null
+        return connect(moved)
+    }
+
+    private fun ssapToLg(settings: AppSettings, tv: InstalledTv, port: Int, key: String): LgControl? {
+        val remote = runCatching { InetAddress.getByName(tv.host) }.getOrNull() ?: return null
+        if (!SubtitleAccess.isLocalPeer(remote)) return null
+        return serverAddress(remote, port)?.let { LgKeeper.ssapControl(settings, tv, remote, it, key) }
     }
 
     /**
@@ -257,9 +276,10 @@ object TvSessionLauncher {
      */
     fun keepSamsungOpen(settings: AppSettings, port: Int, key: String, connected: () -> Boolean, log: (String) -> Unit = {},
                         onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: (() -> Boolean)? = null,
-                        lastResult: () -> TvOpenProblem? = { null }, installLog: (String) -> Unit = {}, active: () -> Boolean) =
+                        lastResult: () -> TvOpenProblem? = { null }, installLog: (String) -> Unit = {},
+                        relocate: () -> Boolean = { false }, active: () -> Boolean) =
         keepSamsungOpen(settings.installedTv, connected, active,
-            notOpened = { if (lastResult() == null) onOpenResult(TvOpenProblem.NOT_OPENED) }) {
+            notOpened = { if (lastResult() == null) onOpenResult(TvOpenProblem.NOT_OPENED) }, relocate = relocate) {
             // TV bir önceki komutta da açmadıysa neden satırı yeniden gönderilen komutla silinmez (her 30 sn'de yanıp sönmesin).
             val keep = lastResult() == TvOpenProblem.NOT_OPENED
             launch(settings, port, key, connected = connected, log = log, openWithSdb = openWithSdb,
@@ -272,14 +292,19 @@ object TvSessionLauncher {
      */
     internal fun keepSamsungOpen(tv: InstalledTv?, connected: () -> Boolean, active: () -> Boolean,
                                  sleep: (Long) -> Boolean = { TvOpenRetry.waitOrRetry(it) }, notOpened: () -> Unit = {},
-                                 open: () -> Unit) {
+                                 relocate: () -> Boolean = { false }, open: () -> Unit) {
         if (tv?.brand != TvBrand.SAMSUNG) return
         while (active()) {
             if (!sleep(SAMSUNG_OPEN_CHECK_MS)) {
                 if (active() && !connected()) notOpened()
                 sleep(ANDROID_RELAUNCH_MS - SAMSUNG_OPEN_CHECK_MS)
             }
-            if (active() && !connected()) open()
+            if (active() && !connected()) {
+                // TV uygulaması bağlanmadı: kayıtlı adres sessizse TV ağda aranır, yeni adreste bulunursa kayıt güncellenir ve
+                // açma komutu yeni adrese gider (open kayıttan okur). Eskiden kayıtlı eski adres aynen kullanılıyordu.
+                relocate()
+                open()
+            }
         }
     }
 

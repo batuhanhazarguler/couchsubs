@@ -1,0 +1,1 @@
+0.9.100: When the phone or computer gets a new address (router restart, network change), the TV app starts searching after the first failed connection instead of the third, and also searches networks larger than /24 (up to /22).

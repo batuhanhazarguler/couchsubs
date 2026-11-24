@@ -28,7 +28,9 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Bu telefonun TV uygulamasını kurduğu TV. [port] yalnız Android TV'de (0: 5555). */
-data class InstalledTv(val brand: TvBrand, val host: String, val port: Int = 0, val version: String? = null)
+/** [uuid]/[mac]: TV'nin kalıcı kimliği ([FoundTv]); eski kayıtlarda yoktur, TV ilk kez ağda bulununca öğrenilir. */
+data class InstalledTv(val brand: TvBrand, val host: String, val port: Int = 0, val version: String? = null,
+                       val uuid: String? = null, val mac: String? = null)
 
 sealed interface TvAppStatus {
     /** Henüz bakılmadı ya da TV'ye ulaşılamadı (geliştirici modu kapalı, TV kapalı). */

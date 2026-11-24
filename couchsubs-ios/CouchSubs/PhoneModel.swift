@@ -791,6 +791,11 @@ final class PhoneModel: ObservableObject {
         }
         server.pairing.setSession(true)
         isRunning = true
+        // Telefonun adresi değişince (modem yeniden başladı, başka Wi-Fi) TV'ye yeni adres hemen bildirilir.
+        addressWatcher?.stop()
+        addressWatcher = services.makeAddressWatcher { [weak self] old, new in
+            Task { @MainActor in self?.senderAddressChanged(old: old, new: new) }
+        }
         startedAt = Date()
         runningSince = startedAt
         recentLines = []
@@ -937,6 +942,8 @@ final class PhoneModel: ObservableObject {
         tvPairingRequest = nil
         tvPairingOpened = false
         isRunning = false
+        addressWatcher?.stop()
+        addressWatcher = nil
         onlineIssue = nil
         sessionState = .disconnected(.stopped)
         reconnectOffer.reset()
@@ -944,6 +951,22 @@ final class PhoneModel: ObservableObject {
         updateSubtitleOffTip()
         phoneHide()
         keepScreenAwake(false)
+    }
+
+    /// Çeviri sürerken telefonun ev ağı adresini izler (bkz. `senderAddressChanged`).
+    private var addressWatcher: AddressWatching?
+
+    /// Telefonun ev ağı adresi değişti (modem yeniden başladı, Wi-Fi değişti): TV bekçisi yeni adresle yeniden kurulur;
+    /// LG ve Samsung'da açma komutu, Android TV'de adres komutu yeni sunucu adresini TV'ye hemen götürür. Eskiden TV eski
+    /// adrese bağlanmaya çalışıp ağı taramaya düşüyordu (Mac, Windows ve Android ile aynı).
+    func senderAddressChanged(old: [String], new: [String]) {
+        guard isRunning else { return }
+        SubtitleLog.write(SenderAddressWatcher.line(old: old, new: new))
+        guard keeper != nil else { return }
+        keeper?.stop()
+        keeper = nil
+        startKeeper()
+        keeper?.reconnect()
     }
 
     /// Uygulama yeniden öne gelince (iOS arka planda bağlantıları keser) PS5 ve TV bağlantıları hemen yenilenir.
@@ -1154,11 +1177,16 @@ final class PhoneModel: ObservableObject {
         let found = await discover(search)
         // Arama sürerken TV değiştirildiyse ya da kaldırıldıysa sonuç uygulanmaz.
         guard tv == saved else { return .here }
-        guard let moved = TVReach.relocated(saved, among: found) else {
+        if let learned = TVLocator.learned(saved, among: found) {
+            log(TVIdentity.learnedLine(learned))
+            tvMoved(to: learned)
+            return .here
+        }
+        guard let (moved, how) = TVLocator.locate(saved, among: found), moved.host != saved.host else {
             log("\(TVReach.notRespondingLine): \(saved.host)")
             return .silent
         }
-        log(TVReach.movedLine(from: saved.host, to: moved.host))
+        log(TVIdentity.movedLine(from: saved.host, to: moved.host, how: how))
         tvMoved(to: moved)
         return .moved(moved)
     }
@@ -1179,13 +1207,14 @@ final class PhoneModel: ObservableObject {
         guard let installed = installedTVApp, installed.brand == brand, installed.host == host,
               !(await services.tvResponds(host: host, brand: brand)) else { return host }
         log("Kayıtlı TV adresi (\(host)) yanıt vermiyor; TV ağda yeniden aranıyor.")
-        let saved = LGTV(name: tv?.brand == brand ? tv?.name ?? "" : "", host: host, brand: brand)
+        let saved = LGTV(name: tv?.brand == brand ? tv?.name ?? "" : "", host: host, brand: brand,
+                         uuid: tv?.brand == brand ? tv?.uuid : nil, mac: tv?.brand == brand ? tv?.mac : nil)
         let found = await discover(search)
-        guard let moved = TVReach.relocated(saved, among: found) else {
+        guard let (moved, how) = TVLocator.locate(saved, among: found), moved.host != host else {
             log("\(TVReach.notRespondingLine): \(host)")
             return nil
         }
-        log(TVReach.movedLine(from: host, to: moved.host))
+        log(TVIdentity.movedLine(from: host, to: moved.host, how: how))
         saveInstalledTVApp(InstalledTVApp(brand: brand, host: moved.host, port: installed.port, version: installed.version))
         if brand == .lg, LGKeys.load(moved.host) == nil, let key = LGKeys.load(host) { LGKeys.save(moved.host, key: key) }
         return moved.host
@@ -1225,7 +1254,7 @@ final class PhoneModel: ObservableObject {
         }
         SubtitleLog.write(TVReach.movedLine(from: saved.host, to: host))
         if found.brand == saved.brand {
-            tvMoved(to: LGTV(name: saved.name, host: host, brand: saved.brand))
+            tvMoved(to: saved.withHost(host).identified(from: found))
         } else {
             // Başka marka TV: yeniden eşlenir (izin/jeton markaya göre).
             do { try await pair(found) } catch { return false }

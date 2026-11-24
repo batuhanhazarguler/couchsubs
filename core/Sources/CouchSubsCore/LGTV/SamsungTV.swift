@@ -76,6 +76,20 @@ enum SamsungMessages {
         return value
     }
 
+    /// 8001 yanıtındaki kimlik: `id` ya da `device.id` ("uuid:..."), MAC: `device.wifiMac`.
+    static func deviceIdentity(_ data: Data) -> (uuid: String?, mac: String?) {
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let top = (object?["id"] as? String).flatMap(TVIdentity.normalizedUUID)
+        return (deviceField(data, "id").flatMap(TVIdentity.normalizedUUID) ?? top, deviceField(data, "wifiMac").flatMap(TVIdentity.normalizedMAC))
+    }
+
+    /// 8001 yanıtından TV kaydı (ad ve kimlik); Samsung TV değilse nil.
+    static func tv(host: String, _ data: Data) -> LGTV? {
+        guard let name = deviceName(data) else { return nil }
+        let identity = deviceIdentity(data)
+        return LGTV(name: name, host: host, brand: .samsung, uuid: identity.uuid, mac: identity.mac)
+    }
+
     private static func deviceField(_ data: Data, _ name: String) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let device = object["device"] as? [String: Any], let raw = device[name] else { return nil }
@@ -589,9 +603,7 @@ public enum SamsungDiscovery {
         // yanlış cihazı listeliyor ve "TV yanıt vermedi" diyordu.
         var tvs: [LGTV] = []
         for host in Set(hosts).sorted() {
-            if let name = await name(host: host) {
-                tvs.append(LGTV(name: name, host: host, brand: .samsung))
-            }
+            if let tv = await info(host: host) { tvs.append(tv) }
         }
         if !tvs.isEmpty { return tvs }
 
@@ -606,18 +618,17 @@ public enum SamsungDiscovery {
 
     /// Elle yazılan adresteki Samsung TV (8001'de kendini tanıtırsa); yoksa nil.
     public static func tv(at host: String) async -> LGTV? {
-        guard let name = await name(host: host, session: LocalNetwork.probeSession) else { return nil }
-        return LGTV(name: name, host: host, brand: .samsung)
+        await info(host: host, session: LocalNetwork.probeSession)
     }
 
     private static func scan() async -> [LGTV] {
-        await LocalNetwork.probeAll { host in await name(host: host, session: LocalNetwork.probeSession) }
-            .map { LGTV(name: $0.value, host: $0.host, brand: .samsung) }
+        await LocalNetwork.probeAll { host in await info(host: host, session: LocalNetwork.probeSession) }.map(\.value)
     }
 
-    private static func name(host: String, session: URLSession = .shared) async -> String? {
+    /// 8001'de kendini tanıtan TV: ad ve kimlik (`id`, `wifiMac`).
+    private static func info(host: String, session: URLSession = .shared) async -> LGTV? {
         guard let url = URL(string: "http://\(host):8001/api/v2/"),
               let (data, _) = try? await session.data(from: url) else { return nil }
-        return SamsungMessages.deviceName(data)
+        return SamsungMessages.tv(host: host, data)
     }
 }

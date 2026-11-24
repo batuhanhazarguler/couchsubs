@@ -37,6 +37,16 @@ object PairedTv {
         else -> null
     }
 
+    /**
+     * Tanınan TV'ye kimliği eklenir: Samsung'da 8001 yanıtındaki `device.id`/`wifiMac`, LG'de cihaz tanımının UDN'si, Android
+     * TV'de Google Cast cihaz tanımının (8008) UDN'si.
+     */
+    fun withIdentity(tv: FoundTv, samsungJson: String?, lgXml: String?, castXml: String?): FoundTv = when (tv.brand) {
+        TvBrand.SAMSUNG -> TvIdentity.samsungIdentity(samsungJson).let { (uuid, mac) -> tv.copy(uuid = uuid, mac = mac) }
+        TvBrand.LG -> tv.copy(uuid = TvIdentity.uuidFromDescription(lgXml))
+        TvBrand.ANDROID_TV -> tv.copy(uuid = TvIdentity.uuidFromDescription(castXml))
+    }
+
     /** Samsung 8001 `/api/v2/` yanıtındaki ad (`device.name`); Samsung değilse null. */
     fun samsungName(json: String?): String? = json?.let {
         runCatching { org.json.JSONObject(it).getJSONObject("device").getString("name").replace("&quot;", "\"") }.getOrNull()
@@ -53,12 +63,16 @@ object PairedTv {
     fun identify(host: String): FoundTv? {
         val pool = Executors.newFixedThreadPool(4)
         try {
-            val samsung = pool.submit(Callable { samsungName(text("http://$host:8001/api/v2/")) })
-            val lg = pool.submit(Callable { lgName(text("http://$host:1990/")) })
+            val samsungJson = pool.submit(Callable { text("http://$host:8001/api/v2/") })
+            val lgXml = pool.submit(Callable { text("http://$host:1990/") })
+            val castXml = pool.submit(Callable { text("http://$host:8008/ssdp/device-desc.xml") })
             val greeting = pool.submit(Callable { text("http://$host:3000/")?.trim()?.lowercase() == "hello world" || isOpen(host, 3000) })
             val android = pool.submit(Callable { ANDROID_PORTS.any { isOpen(host, it) } })
             fun <T> take(task: java.util.concurrent.Future<T>, fallback: T): T = runCatching { task.get(8, TimeUnit.SECONDS) }.getOrDefault(fallback)
-            classify(host, take(samsung, null), take(lg, null), take(greeting, false), take(android, false))?.let { return it }
+            val json = take(samsungJson, null)
+            val xml = take(lgXml, null)
+            val tv = classify(host, samsungName(json), lgName(xml), take(greeting, false), take(android, false))
+            if (tv != null) return withIdentity(tv, json, xml, take(castXml, null))
         } finally {
             pool.shutdownNow()
         }

@@ -49,17 +49,13 @@ object TvReach {
     }
 
     /**
-     * Bulunanlar içinde kayıtlı TV'nin yeni adresi: aynı marka ve aynı ad tekse o, değilse markada tek TV varsa o. Kayıtlı
+     * Bulunanlar içinde kayıtlı TV'nin yeni adresi: önce kimlik (uuid/mac, [TvIdentity.locate]); kimlik yoksa aynı marka ve
+     * aynı ad tekse o, değilse markada tek TV varsa o. Kayıtlı
      * adres listedeyse ya da emin olunamazsa (birden çok tanınmayan TV) null; başka odadaki TV'ye geçilmez (Mac
      * `TVLocator.moved`).
      */
-    fun relocated(saved: FoundTv, found: List<FoundTv>): FoundTv? {
-        val same = found.filter { it.brand == saved.brand }
-        if (same.any { it.host == saved.host }) return null
-        val sameName = same.filter { it.name == saved.name }
-        if (sameName.size == 1) return sameName[0]
-        return same.singleOrNull()
-    }
+    fun relocated(saved: FoundTv, found: List<FoundTv>): FoundTv? =
+        TvIdentity.locate(saved, found)?.first?.takeIf { it.host != saved.host }
 
     /**
      * Adreste TV yanıt veriyor mu: kapılardan biri bağlantıyı kabul eder ya da hemen reddederse evet. Hepsi zaman aşımına

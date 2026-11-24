@@ -44,16 +44,29 @@ public enum LGDiscovery {
     /// bakılır; ikisi de değilse atlanır.
     static func resolve(_ hits: [SSDPHit]) async -> [LGTV] {
         var confirmed: [String: Bool] = [:]
-        for hit in hits { confirmed[hit.host] = (confirmed[hit.host] ?? false) || hit.confirmed }
+        var uuids: [String: String] = [:]
+        for hit in hits {
+            confirmed[hit.host] = (confirmed[hit.host] ?? false) || hit.confirmed
+            if let uuid = hit.uuid, hit.confirmed || uuids[hit.host] == nil { uuids[hit.host] = uuid }
+        }
         var tvs: [LGTV] = []
         for host in confirmed.keys.sorted() {
             if confirmed[host] == true {
-                tvs.append(LGTV(name: await friendlyName(host: host) ?? "LG TV", host: host))
+                // Kimlik: SSDP yanıtındaki USN; yoksa cihaz tanımındaki UDN.
+                let description = await self.description(host: host)
+                tvs.append(LGTV(name: description.flatMap(friendlyName(fromDescription:)) ?? "LG TV", host: host,
+                                uuid: uuids[host] ?? description.flatMap(TVIdentity.uuid(fromDescription:))))
                 continue
             }
             async let lg = probe(host: host)
             async let android = ManualTV.isAndroidTV(host: host)
-            if let tv = classify(host: host, probed: await lg, androidPortOpen: await android) { tvs.append(tv) }
+            guard let tv = classify(host: host, probed: await lg, androidPortOpen: await android) else { continue }
+            // Android TV: SSDP USN yalnız sorulan hedefi geri söyleyen yığından gelebilir; Google Cast UDN'si daha güvenilir.
+            if tv.brand == .androidTV {
+                tvs.append(await AndroidTVDiscovery.identify(host: host) ?? tv)
+            } else {
+                tvs.append(tv)
+            }
         }
         return tvs
     }
@@ -73,7 +86,7 @@ public enum LGDiscovery {
         async let description = text(from: "http://\(host):1990/")
         async let greeting = text(from: "http://\(host):3000/")
         if let xml = await description, isLGDescription(xml) {
-            return LGTV(name: friendlyName(fromDescription: xml) ?? "LG TV", host: host)
+            return LGTV(name: friendlyName(fromDescription: xml) ?? "LG TV", host: host, uuid: TVIdentity.uuid(fromDescription: xml))
         }
         if let reply = await greeting, isSSAPGreeting(reply) { return LGTV(name: "LG TV", host: host) }
         return nil
@@ -115,6 +128,8 @@ public enum LGDiscovery {
     struct SSDPHit: Equatable, Sendable {
         let host: String
         let confirmed: Bool
+        /// USN başlığındaki cihaz kimliği ("uuid:...::urn:..." → "..."); yoksa nil.
+        var uuid: String? = nil
     }
 
     static func hit(fromSSDPResponse response: String, searchTarget: String = searchTarget) -> SSDPHit? {
@@ -132,7 +147,7 @@ public enum LGDiscovery {
             if isLGHeader(parts[1].replacingOccurrences(of: searchTarget, with: "")) { lgHeader = true }
         }
         guard isLG, let location, let url = URL(string: location), let host = url.host else { return nil }
-        return SSDPHit(host: host, confirmed: lgHeader || url.port == 1990)
+        return SSDPHit(host: host, confirmed: lgHeader || url.port == 1990, uuid: TVIdentity.uuid(fromSSDPResponse: response))
     }
 
     /// LG webOS TV'nin SSDP başlığı mı: ikinci ekran servisi, sunucu adında "webOS" (webOS 3: "... LGE WebOS TV ...")
@@ -205,11 +220,10 @@ public enum LGDiscovery {
         return hits
     }
 
-    /// TV'nin ağdaki adını (ör. "[LG] webOS TV UK7550") cihaz tanımından okur.
-    private static func friendlyName(host: String) async -> String? {
-        // webOS cihaz tanımı 1990 numaralı portta yayınlanır; okunamazsa genel ad kullanılır.
+    /// TV'nin cihaz tanımı (ad, ör. "[LG] webOS TV UK7550", ve UDN). webOS'ta 1990 numaralı portta yayınlanır; okunamazsa nil.
+    private static func description(host: String) async -> String? {
         guard let url = URL(string: "http://\(host):1990/"),
               let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
-        return friendlyName(fromDescription: String(decoding: data, as: UTF8.self))
+        return String(decoding: data, as: UTF8.self)
     }
 }

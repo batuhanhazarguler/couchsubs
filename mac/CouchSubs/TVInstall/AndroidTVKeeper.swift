@@ -12,7 +12,10 @@ import Foundation
 /// açması gerektiğini bilmiyordu. ADB kapalıysa ya da TV bu Mac'i onaylamadıysa sessizce geçilir (onay sorusu beklenmez);
 /// nedeni ana ekranda söylenir. Yalnız sunucu adresi gider, TV yine ekrandaki kodun onayıyla (/pair) eşleşir.
 final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
-    private let host: String
+    /// TV yeni adreste bulunursa değişir (`locator`).
+    private var host: String
+    /// Açma TV'ye ulaşamazsa TV'yi ağda yeniden arar; ilk başarılı açılışta kimliği kayda yazar (yoksa nil: yalnız kayıtlı adres).
+    private let locator: AndroidTVLocator?
     private let launchParams: String?
     private let appConnected: @Sendable () -> Bool
     private let open: @Sendable (String, String?) async throws -> String
@@ -24,10 +27,11 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     private var lastResult: String?
 
     init(host: String, server: String, appConnected: @escaping @Sendable () -> Bool, relaunchInterval: Duration = .seconds(30),
-         maxOpens: Int = AndroidTVOpenRule.defaultMaxOpens,
+         maxOpens: Int = AndroidTVOpenRule.defaultMaxOpens, locator: AndroidTVLocator? = nil,
          open: @escaping @Sendable (String, String?) async throws -> String = AndroidTVKeeper.openWithHelper,
          onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in }) {
         self.host = host
+        self.locator = locator
         launchParams = Self.launchParams(server: server)
         self.appConnected = appConnected
         rule = AndroidTVOpenRule(maxOpens: maxOpens, interval: Self.seconds(relaunchInterval))
@@ -61,6 +65,7 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
 
     /// Bir kontrol: `AndroidTVOpenRule` izin verirse açmayı dener.
     func tick(now: ContinuousClock.Instant = .now) async {
+        let host = lock.withLock { self.host }
         guard !host.isEmpty else { return }
         let connected = appConnected()
         let elapsed = Self.seconds(now - origin)
@@ -68,11 +73,12 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
         guard due else { return }
         let result: String
         do {
-            let output = try await open(host, launchParams)
+            let output = try await openOrRelocate(host)
             // Uygulama TV'de çalışırken bulunduysa `am start` gönderilmedi: açılış sayılmaz.
             if output != AndroidTVApp.alreadyRunning { lock.withLock { rule.opened() } }
             result = "açıldı: \(output)"
             onOpenResult(nil)
+            await locator?.learnIdentity()
         } catch {
             result = "açılamadı: \(error)"
             onOpenResult(Self.problem(error))
@@ -82,7 +88,18 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
             defer { lastResult = result }
             return lastResult != result
         }
-        if changed { TVInstallLog.write("Android TV (\(host)) Mac'in adresiyle \(result)") }
+        if changed { TVInstallLog.write("Android TV (\(lock.withLock { self.host })) Mac'in adresiyle \(result)") }
+    }
+
+    /// Açar; TV'ye ulaşılamadıysa (onay sorusu değil) ve TV ağda yeni adreste bulunursa yeni adresle bir kez daha dener.
+    private func openOrRelocate(_ host: String) async throws -> String {
+        do {
+            return try await open(host, launchParams)
+        } catch {
+            guard Self.problem(error) == .debugOff, let locator, let moved = await locator.relocate() else { throw error }
+            lock.withLock { self.host = moved }
+            return try await open(moved, launchParams)
+        }
     }
 
     func start(interval: Duration) {

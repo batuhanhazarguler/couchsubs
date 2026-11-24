@@ -338,9 +338,33 @@ class TranslationService : Service() {
     }
 
     @Volatile private var subtitlePort = 8787
+    /** Her TV açma döngüsünün kuşağı: telefonun adresi değişince eski döngü biter, yenisi yeni adresle kurulur. */
+    private val tvLaunchGeneration = java.util.concurrent.atomic.AtomicInteger()
+    private var addressWatcher: com.couchsubs.mobile.tv.SenderAddressWatcher? = null
+
+    /**
+     * Telefonun ev ağı adresini izler (çeviri sürerken). Adres değişince (modem yeniden başladı, başka Wi-Fi) TV açma
+     * döngüsü yeni adresle yeniden kurulur: LG ve Samsung'da açma komutu, Android TV'de adres komutu yeni sunucu adresini
+     * TV'ye hemen götürür (Mac, iPhone ve Windows ile aynı). Eskiden TV eski adrese bağlanmaya çalışıp ağı taramaya düşüyordu.
+     */
+    private fun watchSenderAddress() {
+        if (addressWatcher != null) return
+        addressWatcher = com.couchsubs.mobile.tv.SenderAddressWatcher { old, new ->
+            val key = server?.accessKey ?: return@SenderAddressWatcher
+            if (destroyed) return@SenderAddressWatcher
+            val line = com.couchsubs.mobile.tv.SenderAddressWatcher.line(old, new)
+            Log.i(TAG, line)
+            com.couchsubs.mobile.tv.TvRelocation.log(this).write(line)
+            launchTv(key)
+        }.also { it.start(this) }
+    }
+
     private fun launchTv(key: String) {
         if (!settings.target.showsOnTv) return
-        val active = { !destroyed && server?.accessKey == key }
+        val generation = tvLaunchGeneration.incrementAndGet()
+        val active = { !destroyed && server?.accessKey == key && tvLaunchGeneration.get() == generation }
+        // Arka plan bekçileri TV'ye bağlanamayınca TV ağda yeniden aranır, kayıt güncellenir (bkz. TvRelocation).
+        val relocate = { com.couchsubs.mobile.tv.TvRelocation.relocateForKeeper(this) }
         val connected = { (server?.connectedClients ?: 0) > 0 }
         com.couchsubs.mobile.tv.TvOpenRetry.clear()
         // Açma denemesinin sonucu ana ekrana gider (TV uygulaması bağlı değilken nedeni söylenir).
@@ -373,11 +397,11 @@ class TranslationService : Service() {
             // LG: PS tuşu TV'yi PS5'in girişine geçirince uygulama geri getirilir (Windows/Mac/iPhone bekçisiyle aynı).
             // Açık ve bağlı uygulamaya açma komutu gitmez (#1055; Mac, iPhone ve Windows ile aynı).
             com.couchsubs.mobile.tv.TvSessionLauncher.keepLgOpen(settings, subtitlePort, key, consolePort = { server?.consolePort },
-                log = { Log.i(TAG, it) }, onOpenResult = report, connected = connected) { active() && settings.target.showsOnTv }
+                log = { Log.i(TAG, it) }, onOpenResult = report, connected = connected, relocate = relocate) { active() && settings.target.showsOnTv }
             // Samsung: TV uygulaması bağlı değilken arada bir (ya da "Otomatik açmayı dene"de hemen) yeniden açılır.
             com.couchsubs.mobile.tv.TvSessionLauncher.keepSamsungOpen(settings, subtitlePort, key, connected = connected,
                 log = { Log.i(TAG, it) }, onOpenResult = report, openWithSdb = openWithSdb,
-                lastResult = { LiveState.status.value.tvOpenProblem }, installLog = tvInstallLog::write,
+                lastResult = { LiveState.status.value.tvOpenProblem }, installLog = tvInstallLog::write, relocate = relocate,
                 active = { active() && settings.target.showsOnTv })
         } }, "CouchSubs TV launch").apply { isDaemon = true }.start()
     }
@@ -746,6 +770,7 @@ class TranslationService : Service() {
             subtitleServer.sendStyle(settings.style)
             liveServer = subtitleServer
             launchTv(subtitleServer.accessKey)
+            watchSenderAddress()
         } catch (error: Exception) {
             Log.e(TAG, "SSE server", error)
             LiveState.update { it.copy(error = getString(R.string.error_port)) }
@@ -1603,6 +1628,8 @@ class TranslationService : Service() {
 
     override fun onDestroy() {
         synchronized(lifecycle) { destroyed = true }
+        addressWatcher?.stop()
+        addressWatcher = null
         Services.onLocalPacksChanged = null
         Services.dubberIfCreated?.stop()
         Services.dubberIfCreated?.server = null

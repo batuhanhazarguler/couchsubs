@@ -51,7 +51,7 @@ final class SSAPMessagesTests: XCTestCase {
         let lgNoServer = "HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.153:1990/x.xml\r\nST: urn:lge-com:service:webos-second-screen:1\r\n\r\n"
         XCTAssertEqual(LGDiscovery.hit(fromSSDPResponse: lgNoServer)?.confirmed, true)
         let echo = "HTTP/1.1 200 OK\r\nLOCATION: http://192.168.1.133:49152/description.xml\r\nST: urn:lge-com:service:webos-second-screen:1\r\nUSN: uuid:5f9ec1b3-ed59-1900-4530-00a0ded0e7e6::urn:lge-com:service:webos-second-screen:1\r\nSERVER: Linux/4.9.125 UPnP/1.0 Portable SDK for UPnP devices/1.6.18\r\n\r\n"
-        XCTAssertEqual(LGDiscovery.hit(fromSSDPResponse: echo), .init(host: "192.168.1.133", confirmed: false))
+        XCTAssertEqual(LGDiscovery.hit(fromSSDPResponse: echo), .init(host: "192.168.1.133", confirmed: false, uuid: "5f9ec1b3-ed59-1900-4530-00a0ded0e7e6"))
         // Doğrulanmamış adres: LG yoklaması tanırsa LG, Android TV portu açıksa Android TV, hiçbiri değilse listelenmez.
         let android = LGDiscovery.classify(host: "192.168.1.133", probed: nil, androidPortOpen: true)
         XCTAssertEqual(android, LGTV(name: "Android TV", host: "192.168.1.133", brand: .androidTV))

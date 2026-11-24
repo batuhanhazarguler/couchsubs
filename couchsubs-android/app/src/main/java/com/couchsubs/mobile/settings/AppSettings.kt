@@ -814,12 +814,13 @@ class AppSettings(context: Context) : AreaStore {
         get() {
             val brand = prefs.getString("tvApp.brand", null)?.let { runCatching { enumValueOf<TvBrand>(it) }.getOrNull() } ?: return null
             val host = prefs.getString("tvApp.host", null)?.takeIf { it.isNotBlank() } ?: return null
-            return InstalledTv(brand, host, prefs.getInt("tvApp.port", 0), prefs.getString("tvApp.version", null))
+            return InstalledTv(brand, host, prefs.getInt("tvApp.port", 0), prefs.getString("tvApp.version", null),
+                prefs.getString("tvApp.uuid", null), prefs.getString("tvApp.mac", null))
         }
         set(value) = prefs.edit().apply {
-            if (value == null) listOf("tvApp.brand", "tvApp.host", "tvApp.port", "tvApp.version").forEach { remove(it) }
+            if (value == null) listOf("tvApp.brand", "tvApp.host", "tvApp.port", "tvApp.version", "tvApp.uuid", "tvApp.mac").forEach { remove(it) }
             else putString("tvApp.brand", value.brand.name).putString("tvApp.host", value.host).putInt("tvApp.port", value.port)
-                .putString("tvApp.version", value.version)
+                .putString("tvApp.version", value.version).putString("tvApp.uuid", value.uuid).putString("tvApp.mac", value.mac)
         }.apply()
 
     /** LG geliştirici modu için son başarılı uzatma zamanı (ms), TV adresine göre saklanır. */

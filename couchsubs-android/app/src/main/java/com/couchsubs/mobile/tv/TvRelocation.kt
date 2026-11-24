@@ -44,7 +44,7 @@ object TvRelocation {
     /** Kayıtlı TV (ad: kayıtlı ad, yoksa markanın varsayılanı). */
     fun savedTv(): FoundTv? {
         val tv = Services.settings.installedTv ?: return null
-        return FoundTv(Services.settings.tvName ?: defaultName(tv.brand), tv.host, tv.brand)
+        return FoundTv(Services.settings.tvName ?: defaultName(tv.brand), tv.host, tv.brand, tv.uuid, tv.mac)
     }
 
     private fun defaultName(brand: TvBrand) = when (brand) {
@@ -60,13 +60,20 @@ object TvRelocation {
     fun locateBlocking(log: InstallLog, lgKeys: LgKeys? = null, force: Boolean = false): TvReach.Location? {
         val saved = savedTv() ?: return null
         val now = clock()
+        var found = emptyList<FoundTv>()
         val location = TvReach.locate(saved, { responds(it, saved.brand) }) {
-            if (!force && now - lastSearch < SEARCH_INTERVAL_MS) emptyList<FoundTv>() else { lastSearch = now; search() }
+            if (!force && now - lastSearch < SEARCH_INTERVAL_MS) emptyList<FoundTv>() else { lastSearch = now; search().also { found = it } }
+        }
+        // Kimliği bilinmeyen eski kayıt, TV taramada kayıtlı adreste bulununca kimliğini öğrenir.
+        TvIdentity.learned(saved, found)?.let { learned ->
+            learn(learned, log)
+            silent.value = false
+            return TvReach.Location.Here
         }
         when (location) {
             TvReach.Location.Here -> silent.value = false
             is TvReach.Location.Moved -> {
-                moveTo(location.tv, log, lgKeys)
+                moveTo(location.tv, log, lgKeys, TvIdentity.locate(saved, found)?.second ?: TvIdentity.Match.NAME)
                 silent.value = false
             }
             TvReach.Location.Silent -> {
@@ -75,6 +82,23 @@ object TvRelocation {
             }
         }
         return location
+    }
+
+    /**
+     * Arka plan bekçileri (LG ve Samsung'u açık tutan döngüler) TV'ye bağlanamayınca: kayıtlı adres sessizse ağ aranır (en
+     * çok 30 sn'de bir; ilk seferde hemen), aynı TV bulunursa kayıt taşınır. TV yeni adreste bulunduysa true; bekçi yeni
+     * adresle hemen yeniden dener. Eskiden yeniden bulma yalnız eşli TV kartı ekrandayken çalışıyordu.
+     */
+    fun relocateForKeeper(context: Context): Boolean =
+        runCatching { locateBlocking(log(context), lgKeys(context)) is TvReach.Location.Moved }.getOrDefault(false)
+
+    /** Eski kayda kimlik yazılır (adres değişmez). */
+    private fun learn(learned: FoundTv, log: InstallLog) {
+        val settings = Services.settings
+        val saved = settings.installedTv ?: return
+        if (saved.host != learned.host) return
+        log.write(TvIdentity.learnedLine(learned))
+        settings.installedTv = saved.copy(uuid = learned.uuid, mac = learned.mac)
     }
 
     /** Kart yoklaması (~10 sn'de bir). */
@@ -95,7 +119,8 @@ object TvRelocation {
         val found = identify(address) ?: return@withContext false
         val saved = Services.settings.installedTv
         if (saved != null && saved.brand == found.brand) {
-            if (saved.host != found.host) moveTo(FoundTv(Services.settings.tvName ?: found.name, found.host, found.brand), log(context), lgKeys(context))
+            if (saved.host != found.host) moveTo(FoundTv(Services.settings.tvName ?: found.name, found.host, found.brand,
+                found.uuid ?: saved.uuid, found.mac ?: saved.mac), log(context), lgKeys(context))
         } else {
             Services.settings.installedTv = TvChoice.select(saved, found)
             Services.settings.tvName = found.name
@@ -108,14 +133,23 @@ object TvRelocation {
      * Kayıtlı TV'yi yeni adrese taşır: TV kaydı (sürüm ve ad korunur), LG anahtarı (adrese göre saklanır) ve Samsung'da
      * uygulamanın kurulu bilindiği adres.
      */
-    fun moveTo(found: FoundTv, log: InstallLog, lgKeys: LgKeys? = null) {
+    fun moveTo(found: FoundTv, log: InstallLog, lgKeys: LgKeys? = null, how: TvIdentity.Match? = null) {
         val settings = Services.settings
         val saved = settings.installedTv ?: return
         if (saved.host == found.host) return
-        log.write(TvReach.movedLine(saved.host, found.host))
-        settings.installedTv = saved.copy(host = found.host, port = if (saved.brand == TvBrand.ANDROID_TV) 0 else saved.port)
+        log.write(how?.let { TvIdentity.movedLine(saved.host, found.host, it) } ?: TvReach.movedLine(saved.host, found.host))
+        settings.installedTv = saved.copy(host = found.host, port = if (saved.brand == TvBrand.ANDROID_TV) 0 else saved.port,
+            uuid = TvIdentity.normalizedUuid(found.uuid) ?: saved.uuid, mac = TvIdentity.normalizedMac(found.mac) ?: saved.mac)
         if (saved.brand == TvBrand.SAMSUNG && settings.samsungAppSeenHost == saved.host) settings.samsungAppSeenHost = found.host
         if (saved.brand == TvBrand.LG && lgKeys != null) lgKeys.load(saved.host)?.let { lgKeys.save(found.host, it) }
+        // TV izni (LG client-key, Samsung jetonu) ve sertifika parmak izi adrese göre saklanır: yeni adrese taşınmazsa arka plan
+        // bekçisi yeni adreste saklı izin bulamıyor, TV'ye bağlanmıyordu.
+        val oldKey = "tv.control.${saved.brand}.${saved.host}"
+        val newKey = "tv.control.${saved.brand}.${found.host}"
+        for (suffix in listOf("", ".certificate")) {
+            val value = settings.secrets.get(oldKey + suffix) ?: continue
+            if (settings.secrets.get(newKey + suffix) == null) settings.secrets.put(newKey + suffix, value)
+        }
     }
 
     /** "Eşleşmeyi Kaldır": kayıtlı TV, adı, LG anahtarı ve Samsung kaydı silinir; altyazı hedefi yerinde kalır. */
@@ -153,14 +187,15 @@ object TvRelocation {
         val saved = settings.installedTv?.takeIf { it.brand == brand && it.host == target }
         val name = saved?.let { settings.tvName } ?: defaultName(brand)
         lastSearch = clock()
-        val found = TvReach.relocated(FoundTv(name, target, brand), search())
-        if (found == null) {
+        val hit = TvIdentity.locate(FoundTv(name, target, brand, saved?.uuid, saved?.mac), search())?.takeIf { it.first.host != target }
+        if (hit == null) {
             log.write("${TvReach.NOT_RESPONDING_LINE} ($target)")
             return Retarget.Silent
         }
-        if (saved != null) moveTo(found, log, lgKeys)
+        val (found, how) = hit
+        if (saved != null) moveTo(found, log, lgKeys, how)
         else {
-            log.write(TvReach.movedLine(target, found.host))
+            log.write(TvIdentity.movedLine(target, found.host, how))
             if (brand == TvBrand.LG && lgKeys != null) lgKeys.load(target)?.let { lgKeys.save(found.host, it) }
         }
         silent.value = false

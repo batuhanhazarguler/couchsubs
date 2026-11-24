@@ -8,9 +8,12 @@ package com.couchsubs.mobile.tv
  */
 object TvChoice {
     /** Seçilen TV; aynı TV yeniden seçildiyse bilinen ADB kapısı ve TV uygulaması sürümü korunur. */
+    /** TV'nin kimliği (uuid/mac) biliniyorsa kayda yazılır; adres değişince TV bununla bulunur. */
     fun select(current: InstalledTv?, tv: FoundTv): InstalledTv =
-        if (current != null && current.brand == tv.brand && current.host == tv.host) current
-        else InstalledTv(tv.brand, tv.host)
+        if (current != null && current.brand == tv.brand && current.host == tv.host)
+            current.copy(uuid = current.uuid ?: TvIdentity.normalizedUuid(tv.uuid), mac = current.mac ?: TvIdentity.normalizedMac(tv.mac))
+                .takeIf { it != current } ?: current
+        else InstalledTv(tv.brand, tv.host, uuid = TvIdentity.normalizedUuid(tv.uuid), mac = TvIdentity.normalizedMac(tv.mac))
 
     /** Gösterilecek liste: kayıtlı TV ağda görünmüyorsa (kapalı olabilir) yine en üstte durur. */
     fun list(found: List<FoundTv>, current: InstalledTv?, currentName: String?): List<FoundTv> {

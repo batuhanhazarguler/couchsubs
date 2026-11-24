@@ -10,7 +10,12 @@ import java.net.URL
 
 enum class TvBrand { LG, SAMSUNG, ANDROID_TV }
 
-data class FoundTv(val name: String, val host: String, val brand: TvBrand)
+/**
+ * Ağda bulunan (ya da kayıtlı) TV. [uuid]: cihazın kalıcı kimliği (SSDP USN / cihaz tanımı UDN, Samsung `device.id`,
+ * Android TV'de Google Cast UDN); [mac]: biliniyorsa MAC adresi (Samsung `wifiMac`). Modem TV'ye yeni adres verince TV
+ * bununla tanınır ([TvIdentity.locate]); eski kayıtlarda yoktur.
+ */
+data class FoundTv(val name: String, val host: String, val brand: TvBrand, val uuid: String? = null, val mac: String? = null)
 
 /**
  * Ev ağındaki TV'leri SSDP ile bulur (Windows: LgDiscovery / SamsungTv, aynı arama hedefleri). Telefon TV'yi denetlemez:
@@ -72,6 +77,7 @@ object TvDiscovery {
     /** Ağda arar (bloklar, ~[timeoutMs]); aynı adreste LG/Samsung, DIAL'dan önce gelir. */
     fun search(timeoutMs: Int = 3000): List<FoundTv> {
         val found = linkedMapOf<String, Pair<TvBrand, String?>>()
+        val usn = mutableMapOf<String, String>()
         DatagramSocket().use { socket ->
             socket.soTimeout = 300
             val group = InetAddress.getByName("239.255.255.250")
@@ -95,10 +101,18 @@ object TvDiscovery {
                 val (host, brand) = parse(text) ?: continue
                 val location = text.split("\r\n").firstOrNull { it.startsWith("LOCATION:", ignoreCase = true) }?.substringAfter(':')?.trim()
                 val existing = found[host]
-                if (existing == null || existing.first == TvBrand.ANDROID_TV) found[host] = brand to location
+                if (existing == null || existing.first == TvBrand.ANDROID_TV) {
+                    found[host] = brand to location
+                    TvIdentity.uuidFromSsdp(text)?.let { usn[host] = it }
+                }
             }
         }
-        return found.map { (host, value) -> FoundTv(friendlyName(value.second) ?: defaultName(value.first), host, value.first) }
+        return found.map { (host, value) ->
+            // Kimlik: cihaz tanımındaki UDN (Android TV'de DIAL adresi Google Cast'in tanımıdır), yoksa SSDP USN.
+            val xml = description(value.second)
+            val name = xml?.substringAfter("<friendlyName>", "")?.substringBefore("</friendlyName>")?.takeIf { it.isNotBlank() }
+            FoundTv(name ?: defaultName(value.first), host, value.first, TvIdentity.uuidFromDescription(xml) ?: usn[host])
+        }
     }
 
     private fun defaultName(brand: TvBrand) = when (brand) {
@@ -107,8 +121,8 @@ object TvDiscovery {
         TvBrand.ANDROID_TV -> "Android TV"
     }
 
-    /** Cihaz tanımındaki ad ("[LG] webOS TV UK7550"); okunamazsa null. */
-    private fun friendlyName(location: String?): String? {
+    /** Cihaz tanımı (ad: "[LG] webOS TV UK7550", kimlik: UDN); okunamazsa null. */
+    private fun description(location: String?): String? {
         location ?: return null
         return try {
             val connection = URL(location).openConnection() as HttpURLConnection
@@ -116,7 +130,7 @@ object TvDiscovery {
             connection.readTimeout = 1500
             val xml = connection.inputStream.use { String(it.readBytes(), Charsets.UTF_8) }
             connection.disconnect()
-            xml.substringAfter("<friendlyName>", "").substringBefore("</friendlyName>").takeIf { it.isNotBlank() }
+            xml
         } catch (error: Exception) {
             null
         }

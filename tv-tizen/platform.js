@@ -821,7 +821,8 @@
       function read(property, otherwise) {
         try {
           tizen.systeminfo.getPropertyValue(property, function (info) {
-            if (info && info.ipAddress) callback(info.ipAddress); else otherwise();
+            // subnetMask: app.js /24'ten büyük ağları da tarar (en çok /22).
+            if (info && info.ipAddress) callback(info.ipAddress, info.subnetMask || null); else otherwise();
           }, otherwise);
         } catch (e) {
           otherwise();

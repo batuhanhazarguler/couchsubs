@@ -30,7 +30,9 @@ public enum ManualTV {
         async let samsung = SamsungDiscovery.tv(at: host)
         async let lg = LGDiscovery.tv(at: host)
         async let android = isAndroidTV(host: host)
-        return classify(host: host, samsung: await samsung, lg: await lg, androidPortOpen: await android)
+        let result = classify(host: host, samsung: await samsung, lg: await lg, androidPortOpen: await android)
+        guard result.tv.brand == .androidTV, let identified = await AndroidTVDiscovery.identify(host: host) else { return result }
+        return Result(tv: LGTV(name: result.tv.name, host: host, brand: .androidTV, uuid: identified.uuid), recognised: true)
     }
 
     static func isAndroidTV(host: String) async -> Bool {
