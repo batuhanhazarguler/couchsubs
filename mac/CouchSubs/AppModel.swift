@@ -730,7 +730,11 @@ final class AppModel: ObservableObject {
                 || settings.localAIBaseURL != oldValue.localAIBaseURL || settings.localAIModel != oldValue.localAIModel
                 || settings.aiInstruction != oldValue.aiInstruction
             if translationChanged { Task { await refreshTranslatorStatus() } }
-            if settings.readsGamePhone != oldValue.readsGamePhone { configureGamePhone() }
+            if settings.readsGamePhone != oldValue.readsGamePhone
+                || settings.drawScreenInPlace != oldValue.drawScreenInPlace { configureGamePhone() }
+            if settings.drawScreenInPlace != oldValue.drawScreenInPlace {
+                capturedWindow?.setFastFrames(settings.drawScreenInPlace)
+            }
             if settings.readsGamePhone { showsGamePhoneHint = false }
             if settings.misreadWaitMs != oldValue.misreadWaitMs || settings.partialWaitMs != oldValue.partialWaitMs {
                 pipeline?.applyWaits(from: settings)
@@ -834,6 +838,8 @@ final class AppModel: ObservableObject {
     /// bir okur.
     private(set) var frameCount = 0
     private(set) var lastFrameAt: Date?
+    /// Son karenin geldiği an (ms, `SubtitleStabilizer.uptimeMs`): yerinde çizimde çapanın o karedeki yeri bununla bulunur.
+    private(set) var lastFrameMs = 0
     @Published var showAbout = false
     /// Uygulama menüsündeki "Sürüm Notları".
     @Published var showReleaseNotes = false
@@ -883,6 +889,14 @@ final class AppModel: ObservableObject {
     /// Ek alanları (görev, telefon, bildirim) okuyup çeviren; çeviri sürerken var.
     private var regionWatcher: RegionWatcher?
     private var gamePhoneTracker: GamePhoneTracker?
+    /// Telefona yapışık çeviri (deneysel, önce Mac): GTA 6 telefonunun çapası (`PhoneAnchorSession`). Yalnız ayar açık ve
+    /// oyun görüntüsü bu Mac'teki bir pencereden okunurken kurulur (bkz. `configureGamePhone`).
+    private(set) var phoneAnchor: PhoneAnchorSession?
+    /// Çapanın gösterilen yeri; oyun penceresinin üstündeki katman ve yayın penceresi izler (saniyede 30'a kadar değişir,
+    /// AppModel'in kendisini yayımlamaz).
+    let phoneAnchorFeed = PhoneAnchorFeed()
+    /// Görüntüyü okunan pencere (PS Remote Play, chiaki-ng ya da seçilen OBS/oyun penceresi); konsoldan okunurken nil.
+    var capturedWindow: RemotePlayWindowStream? { session as? RemotePlayWindowStream }
     /// Ekran yazılarını kendiliğinden bulan (ayar açık ve çeviri sürerken var); örnek arka planda, tek uçuşta alınır.
     private var screenTextDetector: ScreenTextDetector?
     private var screenTextBusy = false
@@ -2404,6 +2418,9 @@ final class AppModel: ObservableObject {
         attach(session)
         // Oturum başlamadan atanır: hemen gelen durum "eski oturumun" sayılıp atılmasın (bkz. `attach`).
         self.session = session
+        // Yapışık çeviri açıkken pencere saniyede 30 kare yakalanır (çapa izlemesi için; okuma yine en çok 10).
+        capturedWindow?.setFastFrames(settings.drawScreenInPlace)
+        configureGamePhone()
         session.start()
         reconnectOffer.reset(now: Date())
 
@@ -3122,9 +3139,36 @@ final class AppModel: ObservableObject {
         } else {
             gamePhoneTracker = nil
         }
+        // Telefona yapışık çeviri: yalnız oyun görüntüsü bu Mac'teki bir pencereden okunurken (çeviri oyunun üstünde,
+        // kendi yerinde çizilebilir). PS5'ten doğrudan okurken eski davranış (Sinan Bey kararı, 24 Kas: önce Mac).
+        setPhoneAnchor(gamePhoneTracker != nil && settings.drawScreenInPlace && capturedWindow != nil
+                       ? PhoneAnchorSession() : nil)
         // Altyazı hattı telefonu yalnız GTA 6'da ve telefon ayarı açıkken arar: başka oyunda ya da karanlık sahnede yanlış
         // bulunan telefon alt şeritteki altyazıyı silmesin (iPhone, Windows, Android ile aynı).
         pipeline?.findsPhone = gamePhoneTracker != nil
+    }
+
+    /// Çapayı değiştirir: okuma, pencere yakalaması ve çizim yeni çapaya bağlanır; eskisi bırakılır.
+    private func setPhoneAnchor(_ anchor: PhoneAnchorSession?) {
+        phoneAnchor?.reset(reason: "telefon okuması yeniden kuruldu")
+        phoneAnchor?.onChange = nil
+        phoneAnchor = anchor
+        regionWatcher?.phoneAnchor = anchor
+        capturedWindow?.trackAnchor = anchor
+        phoneAnchorFeed.reset()
+        guard let anchor else { return }
+        let server = self.server, feed = phoneAnchorFeed
+        anchor.onLog = { SubtitleLog.write($0) }
+        anchor.onChange = { [weak anchor] change in
+            server.sendAnchor(change)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let anchor else { return }
+                    feed.receive(change, from: anchor)
+                }
+            }
+        }
+        feed.current = anchor
     }
 
     /// Ek alanlar aynı dil, motor ve paketlerle okunur; ayrı bir okuyucu ve çevirmenle (altyazının sırasını beklemez).
@@ -3132,6 +3176,7 @@ final class AppModel: ObservableObject {
         let watcher = RegionWatcher(reader: VisionReader(language: settings.sourceLanguage), translator: makeTranslator(), server: server)
         watcher.packLookup = packLookup
         watcher.subtitleEcho = .shared
+        watcher.phoneAnchor = phoneAnchor
         // Ayarlar'daki ekran yazısı türleri (telefon, görev, yardım/eylemler, menüler, diğer).
         watcher.allows = { [weak self] kind in self?.settings.screenTextAllows(kind) ?? true }
         // "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde"; panelin yazısı altyazı boyutuyla (Windows, Android ile aynı).
@@ -3372,6 +3417,7 @@ final class AppModel: ObservableObject {
         regionWatcher = nil
         screenTextDetector?.reset()
         gamePhoneTracker = nil
+        setPhoneAnchor(nil)
         // Yeni "Başlat" eski oturumdan kalan (belki takılmış) okumayı beklemeden temiz başlar.
         frameGate.reset()
         frameCadence.reset()
@@ -3672,6 +3718,7 @@ final class AppModel: ObservableObject {
 
     private func handle(_ frame: CGImage, capturedAt: Int) async {
         lastFrame = frame
+        lastFrameMs = capturedAt
         frameCount &+= 1
         lastFrameAt = Date()
         // Çevirisi gösterilen ekran yazıları hâlâ yerinde mi: özgün yazı kalkınca çevirisi de bu karede kalkar
@@ -3695,7 +3742,10 @@ final class AppModel: ObservableObject {
         if regionWatcher == nil, !areas.isEmpty || pose != nil, let pipeline {
             regionWatcher = makeRegionWatcher(packLookup: pipeline.packLookup)
         }
-        regionWatcher?.offer(frame, areas: areas, phone: pose)
+        // Yapışık çeviri: pencere yakalaması her kareyi çapaya kendisi verir (okuma sıklığından bağımsız, saniyede 30);
+        // konsoldan okunurken kare burada verilir.
+        if let anchor = phoneAnchor, capturedWindow?.trackAnchor !== anchor { anchor.feed(frame, at: capturedAt) }
+        regionWatcher?.offer(frame, areas: areas, phone: pose, capturedAt: capturedAt)
         // Ekranda menü açık (otomatik ekran yazısı menü durumunda): menü satırları altyazıya karışmasın, altyazı okunmaz.
         let inMenu = screenTextDetector?.inMenu == true
         if inMenu != loggedMenu {

@@ -80,6 +80,35 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
     /// Seçilen pencereden kare gelmiyorsa nedeni günlüğe yazılır, siyah kareler uyarılır (bkz. `RemotePlayWindowStream+Selected`).
     var selectedCapture: SelectedCapture?
     var frameWatch: Task<Void, Never>?
+    /// "Ekranı yerinde Türkçe çiz": GTA 6 telefonunun çapası. Verilirse her yakalama karesi (okuma sıklığından bağımsız)
+    /// çapaya verilir; Türkçe çizim telefonla birlikte kıpırdar. `lock` altında.
+    private var anchor: PhoneAnchorSession?
+    /// Yerinde çizim açıkken pencere saniyede `trackingFramesPerSecond` kare yakalanır (okuma yine en çok 10). `lock` altında.
+    private var fastFrames = false
+    static let trackingFramesPerSecond: Int32 = 30
+
+    var trackAnchor: PhoneAnchorSession? {
+        get { lock.withLock { anchor } }
+        set { lock.withLock { anchor = newValue } }
+    }
+
+    /// Okunan pencerenin kimliği (yerinde çizim katmanı onun üstüne konur).
+    var windowID: CGWindowID? { lock.withLock { window?.id } }
+
+    /// Yakalama hızı: yerinde çizimde saniyede 30, yoksa 10. Yakalama sürüyorsa hemen uygulanır.
+    func setFastFrames(_ on: Bool) {
+        let (stream, window, changed) = lock.withLock { () -> (SCStream?, (id: CGWindowID, size: CGSize)?, Bool) in
+            let changed = fastFrames != on
+            fastFrames = on
+            return (self.stream, self.window, changed)
+        }
+        guard changed, let stream, let window else { return }
+        let configuration = Self.configuration(for: window.size, framesPerSecond: framesPerSecondNow)
+        Task { try? await stream.updateConfiguration(configuration) }
+    }
+
+    var framesPerSecondNow: Int32 { lock.withLock { fastFrames } ? Self.trackingFramesPerSecond : Self.framesPerSecond }
+
     /// Dakikalık kare sayımı (günlükte "pencere kareleri: N/dk"): kare aralığı bir dahaki sefere günlükte görünsün (#822).
     let frameCounts = WindowFrameCounts()
 
@@ -236,7 +265,8 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
         }
         guard let target = found else { return .noWindow }
         let filter = SCContentFilter(desktopIndependentWindow: target)
-        let stream = SCStream(filter: filter, configuration: Self.configuration(for: target.frame.size), delegate: self)
+        let stream = SCStream(filter: filter, configuration: Self.configuration(for: target.frame.size,
+                                                                                    framesPerSecond: framesPerSecondNow), delegate: self)
         do {
             try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: queue)
             try await stream.startCapture()
@@ -277,7 +307,7 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
     }
 
     /// Kare pencerenin oranında ve en çok `maximumWidth` genişliğinde (bölge oranları pencereye göre kalsın).
-    static func configuration(for size: CGSize) -> SCStreamConfiguration {
+    static func configuration(for size: CGSize, framesPerSecond: Int32 = framesPerSecond) -> SCStreamConfiguration {
         let configuration = SCStreamConfiguration()
         let scale = NSScreen.screens.map(\.backingScaleFactor).max() ?? 2
         var width = size.width * scale
@@ -328,7 +358,7 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
                 guard let size = Self.currentSize(of: window.id) else { continue }
                 guard abs(size.width - window.size.width) > 2 || abs(size.height - window.size.height) > 2 else { continue }
                 self.lock.withLock { self.window = (window.id, size) }
-                try? await stream.updateConfiguration(Self.configuration(for: size))
+                try? await stream.updateConfiguration(Self.configuration(for: size, framesPerSecond: self.framesPerSecondNow))
             }
         }
     }
@@ -369,6 +399,12 @@ final class RemotePlayWindowStream: NSObject, StreamControlling, SCStreamOutput,
            let raw = attachments.first?[.status] as? Int, let status = SCFrameStatus(rawValue: raw), status != .complete {
             frameCounts.idle()
             return
+        }
+        // Yerinde çizim: her kare (kopyalanmadan, okuma sıklığından bağımsız) telefonun çapasına; çapa yoksa hemen geçilir.
+        if let anchor = lock.withLock({ self.stream === stream ? self.anchor : nil }), anchor.isActive {
+            var image: CGImage?
+            VTCreateCGImageFromCVPixelBuffer(pixels, options: nil, imageOut: &image)
+            if let image { anchor.feed(image, at: SubtitleStabilizer.uptimeMs()) }
         }
         // Sıklık sınırı dolmadıysa kare kopyalanmaz; son kare tutulur, sınır dolunca okunur (oyun takılmasın).
         let cadence = lock.withLock { self.cadence }

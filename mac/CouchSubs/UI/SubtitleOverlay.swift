@@ -321,7 +321,8 @@ struct SubtitleOverlayView: View {
                 // altyazı yeridir (beta.63: oyunun her yerindeki yazılar altyazının üstüne yığılıyordu). Yayın penceresinde ve
                 // TV'de kendi yerinde çizilirler.
                 ForEach(model.overlayRegions.filter { $0.items == nil }) { regionBox($0) }
-                if model.overlayPhoneItems.isEmpty {
+                // Yerinde Türkçe çizimde telefon oyunun üstünde çizilir (PhoneTwinOverlay), burada gösterilmez.
+                if model.overlayPhoneItems.isEmpty || model.drawsPhoneInPlace {
                     Spacer(minLength: 0)
                 } else {
                     GamePhoneBlocks(items: model.overlayPhoneItems,

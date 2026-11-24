@@ -153,7 +153,10 @@ struct StreamWindowView: View {
             .padding(.bottom, proxy.size.height * 0.07)
             .frame(width: proxy.size.width, height: proxy.size.height)
             .background {
-                if !model.overlayPhoneItems.isEmpty { GamePhoneBlocks(items: model.overlayPhoneItems) }
+                // Yerinde Türkçe çizim: telefonun Türkçe ikizi çapayla telefonun üstünde (yayın penceresi karenin kendisidir).
+                if model.drawsPhoneInPlace {
+                    PhoneTwinLayer(feed: model.phoneAnchorFeed)
+                } else if !model.overlayPhoneItems.isEmpty { GamePhoneBlocks(items: model.overlayPhoneItems) }
                 // Aynı yazıyı çizen iki kutudan yalnız biri: "Ekranı çevir" otomatik ekran yazısının üstüne geçer (#827).
                 let screenText = ScreenTranslation.layered(model.overlayRegions.flatMap { $0.items ?? [] } + model.overlayScreenItems)
                 if !screenText.isEmpty { ScreenTextBlocks(items: screenText, avoiding: subtitleFrame) }

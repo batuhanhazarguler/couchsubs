@@ -743,6 +743,10 @@ private struct AreaSettings: View {
                 DSUnit(hint: "Side Panel: the chat is shown next to the phone, the other person on the left and you on the right. On the Bubbles: each message is translated on top of its own bubble.") {
                     DSTabs(selection: $model.settings.phoneMessagesPanel, items: [(true, "Side Panel"), (false, "On the Bubbles")])
                 }
+                // Önce yalnız Mac'te deneniyor (Sinan Bey kararı, 24 Kas); varsayılan açık.
+                DSSwitchRow(title: "Redraw the Screen in Turkish in Place (Experimental)",
+                            subtitle: "GTA 6 phone: the original text is erased and the translation is drawn in its place, right on the phone in the game window, and it moves with the phone. Works when the picture is read from a window on this Mac (Remote Play, chiaki-ng or OBS).",
+                            isOn: $model.settings.drawScreenInPlace, divider: false)
             }
             // Kısayol başlıkta değil, açıklamada (diğer kart başlıkları gibi yalnız ad).
             DSCard(scrolls: false) {

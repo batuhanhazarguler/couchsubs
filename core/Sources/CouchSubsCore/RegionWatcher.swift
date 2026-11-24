@@ -14,6 +14,10 @@ public protocol RegionSending: AnyObject {
     /// birleşik metni yollar.
     func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                     blocks: [ScreenTranslation.Item]?)
+    /// Telefona yapışık çeviri (`PhoneAnchorSession`): bloklar `anchor` kuşağının başvuru koordinatındadır; çizim her
+    /// karede `sendAnchor` dönüşümüyle taşınır. Çapayı bilmeyen gönderici blokları olduğu gibi yollar.
+    func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
+                    blocks: [ScreenTranslation.Item]?, anchor: AnchorPose?)
     func clearRegions()
 }
 
@@ -25,6 +29,11 @@ extension RegionSending {
     public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                            blocks: [ScreenTranslation.Item]?) {
         sendRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons)
+    }
+
+    public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
+                           blocks: [ScreenTranslation.Item]?, anchor: AnchorPose?) {
+        sendRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks)
     }
 }
 
@@ -158,6 +167,9 @@ public final class RegionWatcher {
     public var englishPhoneMessages = false
     /// "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde" ve panelin yazı boyu; her gönderide okunur.
     public var phonePanel: () -> PhonePanelOptions = { PhonePanelOptions() }
+    /// Telefona yapışık çeviri (deneysel, yalnız Mac): verilirse telefon okuması çapayı kurar, balon çevirileri başvuru
+    /// koordinatında gider ve her karede çapanın dönüşümüyle çizilir (`PhoneAnchorSession`). nil: eski davranış.
+    public var phoneAnchor: PhoneAnchorSession?
     private var running: Task<Void, Never>?
     private var session = 0
     /// Yalnız kararlı okumaların başarılı çevirileri saklanır.
@@ -201,15 +213,16 @@ public final class RegionWatcher {
     public var isBusy: Bool { running != nil }
 
     /// Her karede çağrılır; tur zamanı geldiyse ve önceki tur bittiyse turu arka planda başlatır, hemen döner.
-    public func offer(_ frame: CGImage, areas: [ExtraArea], phone pose: GamePhoneGeometry.Pose? = nil) {
+    public func offer(_ frame: CGImage, areas: [ExtraArea], phone pose: GamePhoneGeometry.Pose? = nil, capturedAt: Int? = nil) {
         if let pose {
             if phoneSession == nil {
                 let session = PhoneRegionSession(reader: reader, translator: translator, server: server)
                 session.onLog = { [weak self] in self?.onLog?($0) }
                 session.panel = { [weak self] in self?.phonePanel() ?? PhonePanelOptions() }
+                session.anchor = phoneAnchor
                 phoneSession = session
             }
-            phoneSession?.observe(frame, pose: pose)
+            phoneSession?.observe(frame, pose: pose, at: capturedAt ?? now())
         } else if phoneSession != nil {
             closePhone()
         }

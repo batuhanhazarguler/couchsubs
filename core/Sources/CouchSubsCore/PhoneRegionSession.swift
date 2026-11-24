@@ -10,6 +10,8 @@ final class PhoneRegionSession {
     private struct Capture: Sendable {
         let frame: CGImage
         let pose: GamePhoneGeometry.Pose
+        /// Karenin geldiği an (ms): çapanın o karedeki yeri bununla bulunur.
+        var time = 0
         var region: CropRegion { pose.bounds }
 
         func isPresent() -> Bool {
@@ -28,6 +30,12 @@ final class PhoneRegionSession {
         let signature: [UInt8]
         let pixels: GamePhonePage
         let bubbles: [Bubble]
+        /// Telefona yapışık çeviride okuma karesindeki çapa (kuşak ve yer); balon kutuları bu kuşağın başvuru
+        /// koordinatındadır. Çapasızsa nil.
+        var anchor: AnchorPose? = nil
+        /// Balonların koordinatında telefonun bölgesi (çapasızsa `region`).
+        var layout: CropRegion? = nil
+        var layoutRegion: CropRegion { layout ?? region }
     }
 
     private let reader: TextReader
@@ -73,6 +81,16 @@ final class PhoneRegionSession {
     private var steady = PhonePanelSteady()
     /// Boş okumanın art arda kaç turdur sürdüğü: `PhoneSteady.missTurns` tur (~1,35 sn) sürmeden ekran silinmez.
     private var empties = 0
+    /// "Telefonu Türkçe çiz" (deneysel, yalnız Mac; `PhoneAnchorSession`, `PhoneTwin`). Verilirse okuma çapayı kurar;
+    /// balonlar her zaman kendi yerinde ve çapanın başvuru koordinatında gönderilir, çizim her karede çapanın
+    /// dönüşümüyle telefonun üstüne taşınır, OCR yalnız telefonun yazısı değişince çalışır. Çapa kaybolunca sonraki tur
+    /// mutlaka okur (çapa yeniden kurulur). nil: eski davranış ("GTA 6 Telefon Mesajları" ayarı).
+    var anchor: PhoneAnchorSession?
+    /// Gönderilen balonların çapası (kuşak ve başvuru dörtgeni).
+    private var sentAnchor: AnchorPose?
+    /// Son okumanın çapa kuşağı; değişince ekrandaki düzen baştan kurulur (koordinat değişti).
+    private var layoutKey: Int?
+    private var bubblesAnchored: Bool { anchor != nil }
     /// Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni (`DropLog`; Windows ve Android ile aynı).
     var onLog: ((String) -> Void)?
     private let drops = DropLog()
@@ -83,8 +101,30 @@ final class PhoneRegionSession {
         self.server = server
     }
 
-    func observe(_ frame: CGImage, pose: GamePhoneGeometry.Pose) {
-        latest = Capture(frame: frame, pose: pose)
+    func observe(_ frame: CGImage, pose: GamePhoneGeometry.Pose, at time: Int = SubtitleStabilizer.uptimeMs()) {
+        latest = Capture(frame: frame, pose: pose, time: time)
+    }
+
+    /// Türkçe çizimde balonlar her zaman kendi yerinde (panel yok).
+    private var options: PhonePanelOptions {
+        var options = panel()
+        if anchor != nil { options.enabled = false }
+        return options
+    }
+
+    /// Sayfanın telefonu bu karede nerede: çapa aynı kuşakta izleniyorsa sayfanın bölgesi çapanın o karedeki yerine
+    /// taşınır (telefon kıpırdasa da aynı yazı aynı yerde karşılaştırılır, OCR yalnız yazı değişince çalışır).
+    private func followed(_ page: Page, _ capture: Capture) -> CropRegion? {
+        guard let anchor, page.layout != nil, let placed = page.anchor, let now = anchor.pose(at: capture.time),
+              now.generation == placed.generation else { return nil }
+        return now.fromReference(page.layoutRegion)
+    }
+
+    /// Çapa varken sayfa eski kuşaktan (ya da çapa kayboldu): yeniden okunmalı ki çapa yeniden kurulsun.
+    private func anchorStale(_ page: Page) -> Bool {
+        guard let anchor else { return false }
+        guard let placed = page.anchor, let now = anchor.pose else { return true }
+        return now.generation != placed.generation
     }
 
     func beginIfDue(_ time: Int) -> Bool {
@@ -101,6 +141,9 @@ final class PhoneRegionSession {
         absences = 0
         task?.cancel()
         publish([])
+        anchor?.reset()
+        sentAnchor = nil
+        layoutKey = nil
     }
 
     func visit(packLookup: ((String) -> PackMatch?)?, skipsTurkish: Bool, english: Bool) async {
@@ -114,22 +157,34 @@ final class PhoneRegionSession {
     }
 
     private func read(_ capture: Capture, signature: [UInt8]) async throws -> Page {
-        let reader = self.reader, retry = self.retry
+        let reader = self.reader, retry = self.retry, anchor = self.anchor, anchored = bubblesAnchored
         return try await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail("telefon", capture.frame)) {
             let region = capture.region
             let reading = GamePhoneText.forTranslation(try GamePhoneReader.read(capture.frame, region: region,
                                                                                 pose: capture.pose, reader: reader, retry: retry))
             let crop = RegionCropper.crop(capture.frame, to: region)
             let place = TextBox(left: region.left, top: region.top, right: region.right, bottom: region.bottom)
+            // Yapışık çeviri: çapa yoksa bu kareyle kurulur (telefonun bu karede bulunan yeriyle; izleyicinin yeri 330 ms
+            // geriden gelebilir), varsa bu karenin dönüşümü alınır. Balonlar başvuru koordinatına çevrilir.
+            let placement: AnchorPose? = anchor.flatMap { anchor in
+                let exact = GamePhoneGeometry.locate(capture.frame).map(\.bounds)
+                    .flatMap { $0.isClose(to: region, tolerance: 0.035) ? $0 : nil } ?? region
+                return anchor.place(capture.frame, region: exact, at: capture.time)
+            }
             let bubbles = ScreenTranslation.withImages(GamePhoneText.groups(reading), from: crop).map { group in
                 let style = GamePhonePalette.sample(crop, box: group.box)
                 var placed = group
                 placed.box = group.box.placed(in: place)
                 placed.lineHeight *= region.bottom - region.top
+                if anchored, let placement {
+                    placed.box = placement.toReference(placed.box)
+                    placed.lineHeight /= max(0.25, placement.scale)
+                }
                 return Bubble(group: placed, style: style)
             }
             return Page(region: region, signature: signature,
-                        pixels: GamePhonePage(frame: capture.frame, region: region, reading: reading), bubbles: bubbles)
+                        pixels: GamePhonePage(frame: capture.frame, region: region, reading: reading), bubbles: bubbles,
+                        anchor: placement, layout: placement?.toReference(region))
         }
     }
 
@@ -139,16 +194,34 @@ final class PhoneRegionSession {
         absences = 0
         frameSize = (start.frame.width, start.frame.height)
         let signature = RegionCropper.signature(of: RegionCropper.crop(start.frame, to: start.region))
-        let changed = page.map {
-            !$0.region.isClose(to: start.region, tolerance: 0.01)
-                || ReadScheduler.changed($0.signature, signature, threshold: ReadScheduler.defaultChangeThreshold)
-                || $0.pixels.changed(start.frame, region: start.region)
+        let changed = page.map { page in
+            // Yapışık çeviride telefonun yeri çapadan gelir: sayfa çapayla taşınıp karşılaştırılır, telefon yalnız
+            // kıpırdadı diye yeniden okunmaz.
+            if anchorStale(page) { return true }
+            if let follow = followed(page, start) {
+                let moved = RegionCropper.signature(of: RegionCropper.crop(start.frame, to: follow))
+                return ReadScheduler.changed(page.signature, moved, threshold: ReadScheduler.defaultChangeThreshold)
+                    || page.pixels.changed(start.frame, region: follow)
+            }
+            return !page.region.isClose(to: start.region, tolerance: 0.01)
+                || ReadScheduler.changed(page.signature, signature, threshold: ReadScheduler.defaultChangeThreshold)
+                || page.pixels.changed(start.frame, region: start.region)
         } ?? true
         var fresh = false
         if changed || emptyOnce {
             do { page = try await read(start, signature: signature) }
             catch { page = nil; note("PhoneSession", "okunamadı (\(error.localizedDescription))", ""); return }
             fresh = true
+            // Çapa yeniden kuruldu: önceki kuşağın başvuru koordinatındaki düzen ve karşılaştırmalar geçersiz.
+            if let read = page, anchor != nil, let generation = read.anchor?.generation, layoutKey != generation {
+                layoutKey = generation
+                sentAnchor = read.anchor
+                rendered = []
+                sentShown = []
+                shownPage = nil
+                lastRead = nil
+                steady.reset()
+            }
             if let read = page {
                 scrolling = lastRead.map { Self.scrolled($0, read) } ?? false
                 lastRead = read
@@ -156,7 +229,7 @@ final class PhoneRegionSession {
             }
         } else if !needsWork && !emptyOnce {
             // "GTA 6 Telefon Mesajları" ayarı değişti: aynı sayfa yeni düzende hemen gösterilir.
-            if sentOptions != panel(), let current = page, !rendered.isEmpty {
+            if sentOptions != options, let current = page, !rendered.isEmpty {
                 publish(items(current, translations: availableTranslations(current.bubbles.map(\.group), packLookup: packLookup,
                                                                           skipsTurkish: skipsTurkish)))
             }
@@ -384,7 +457,10 @@ final class PhoneRegionSession {
     }
 
     private func matches(_ page: Page, _ capture: Capture) -> Bool {
-        capture.isPresent() && page.region.isClose(to: capture.region, tolerance: 0.01)
+        if anchor != nil, let follow = followed(page, capture) {
+            return capture.isPresent() && !page.pixels.changed(capture.frame, region: follow)
+        }
+        return capture.isPresent() && page.region.isClose(to: capture.region, tolerance: 0.01)
             && !page.pixels.changed(capture.frame, region: capture.region)
     }
 
@@ -448,7 +524,7 @@ final class PhoneRegionSession {
     /// Çevirisi hazır balonlar. Panelde çevirisi aslıyla aynı mesajlar ("ok", ad) da görünür (sohbet eksik kalmasın);
     /// balonların üstünde ise atılır, özgün yazı görünür kalır.
     private func items(_ page: Page, translations: [String: String]) -> [ScreenTranslation.Item] {
-        let keepUnchanged = panel().enabled
+        let keepUnchanged = options.enabled
         return page.bubbles.compactMap { bubble in
             let group = bubble.group
             let result = group.paragraphs.compactMap { GamePhoneText.keepIdentifiers($0, translation: translations[$0]) }
@@ -466,7 +542,8 @@ final class PhoneRegionSession {
         if let region = latest?.region {
             let height = region.bottom - region.top
             // Telefon gerçekten yakınlaşıp uzaklaşınca balonların yerindeki görünüşü hemen yenilenir (Balonların Üstünde).
-            if abs(height - scale) > scale * 0.03 {
+            // Yapışık çeviride balonlar başvuru koordinatındadır; yakınlaşmayı çapanın dönüşümü taşır.
+            if sentAnchor == nil, abs(height - scale) > scale * 0.03 {
                 scale = height
             } else if !rendered.isEmpty, scrolling {
                 // Kaydırmada balonlar gerçekten yer değiştirdi: eski yerlerinde tutulmaz (`steadyPositions` atlanır);
@@ -481,7 +558,7 @@ final class PhoneRegionSession {
         // belirgin ve kalıcı yakınlaşma/kaymada yenilenir. Ekran silinince (telefon kayboldu) sonraki gönderi baştan ölçer.
         if fresh.isEmpty { steady.reset() }
         let placed = fresh.isEmpty ? nil : latest.map { steady.steadyPose($0.pose, now: now) }
-        let options = panel()
+        let options = self.options
         let sameOptions = sentOptions == options
         guard rendered != items || (!sameOptions && !items.isEmpty) else { return }
         // Aynı yazı bir iki piksel oynadıysa (OCR kutusu, yüzey örneği) yeniden gönderilmez; gerçek hareket birikince gider.
@@ -511,7 +588,7 @@ final class PhoneRegionSession {
         server.sendRegion(id: "game-phone", text: shown.filter { !ScreenPhoneCard.isBackdrop($0) }.map(\.translation)
                             .joined(separator: "\n"), box: box,
                           lineHeight: heights.isEmpty ? nil : heights[heights.count / 2], icons: nil,
-                          blocks: shown.isEmpty ? nil : shown)
+                          blocks: shown.isEmpty ? nil : shown, anchor: shown.isEmpty ? nil : sentAnchor)
     }
 
     /// Gönderilecek düzen: Yanda Panel'de telefonun mesajları yanındaki sohbet panelinde (`ScreenPhoneCard.layout`; ana

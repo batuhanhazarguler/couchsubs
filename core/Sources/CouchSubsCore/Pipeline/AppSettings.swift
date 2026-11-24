@@ -196,6 +196,11 @@ public struct UserSettings: Codable, Equatable {
     /// ayarı kullanır. Kullanıcı bildirimi (X, monitörde oynayan): balonların üstündeki çeviriler kayıyor, küçük kalıyor,
     /// kimin ne dediği belli olmuyordu. Eski `phoneChatCard` kaydı (varsayılanı kapalıydı) okunmaz; herkes panelle başlar.
     public var phoneMessagesPanel = true
+    /// "Ekranı yerinde Türkçe çiz (deneysel)": GTA 6 telefonunun yazıları zeminden silinir, Türkçesi aynı yere çizilir ve
+    /// telefonun görüntüsüne çapayla yapışık, oyun penceresinin üstünde gösterilir (`PhoneAnchorSession`, `PhoneTwin`;
+    /// docs/ekran-capasi.md). Telefon sarsılsa da kaysa da çizim onunla gider; OCR yalnız yazı değişince çalışır. Önce
+    /// yalnız Mac'te (Sinan Bey kararı, 24 Kas): Mac'te varsayılan açık, öbür platformlar bu ayarı henüz okumaz.
+    public var drawScreenInPlace = true
     /// Bilinen oyunlarda hazır ek alanlar (bkz. `GameAreaPresets`); kullanıcının kendi ek alanı varsa o kullanılır.
     /// Varsayılan kapalı (beta.63–68'de açık geliyordu: otomatik ekran yazısı kapalıyken de GTA 6'nın sol üstünde menüyü,
     /// sağda bildirimleri çeviriyordu). Kullanıcı açmadıkça altyazı alanı dışında hiçbir şey çevrilmez.
@@ -287,6 +292,7 @@ public struct UserSettings: Codable, Equatable {
         partialWaitMs = (try? values.decodeIfPresent(Int.self, forKey: .partialWaitMs)) ?? defaults.partialWaitMs
         autoReadGamePhone = try values.decodeIfPresent(Bool.self, forKey: .autoReadGamePhone) ?? defaults.autoReadGamePhone
         phoneMessagesPanel = try values.decodeIfPresent(Bool.self, forKey: .phoneMessagesPanel) ?? defaults.phoneMessagesPanel
+        drawScreenInPlace = try values.decodeIfPresent(Bool.self, forKey: .drawScreenInPlace) ?? defaults.drawScreenInPlace
         gameAreaPresets = try values.decodeIfPresent(Bool.self, forKey: .gameAreaPresets) ?? defaults.gameAreaPresets
         setTextApart = try values.decodeIfPresent(Bool.self, forKey: .setTextApart) ?? defaults.setTextApart
         autoScreenText = try values.decodeIfPresent(Bool.self, forKey: .autoScreenText) ?? defaults.autoScreenText

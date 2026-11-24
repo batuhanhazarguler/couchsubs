@@ -199,6 +199,8 @@ public final class SubtitleServer: @unchecked Sendable {
     /// `keep` bayrağıyla yenilenir. TV, yenilenmeyen alanı 15 sn sonra kendisi kaldırır (#1198; tv-webos/app.js
     /// REGION_LIFE_MS). Windows: SubtitleServer.liveRegions, Android: SubtitleServer.liveRegions.
     private var liveRegions: [String: [String: Any]] = [:]
+    /// Telefona yapışık çevirinin son `anchor` olayı (kaybolunca nil); yeni bağlanan TV'ye yinelenir. Sunucunun kuyruğunda.
+    private var liveAnchor: [String: Any]?
     private var regionTimer: DispatchSourceTimer?
     /// Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri).
     var regionRefreshInterval: TimeInterval = 5
@@ -643,6 +645,14 @@ public final class SubtitleServer: @unchecked Sendable {
     /// uygulamaları birleşik `text`'i tek kutuda gösterir (Windows ile aynı).
     public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                            blocks: [ScreenTranslation.Item]?) {
+        sendRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks, anchor: nil)
+    }
+
+    /// `anchor`: telefona yapışık çeviri (deneysel, önce Mac). Bloklar bu çapa kuşağının başvuru koordinatındadır;
+    /// `region` olayı `anchor: {gen, ref}` taşır, yer her karede `anchor` olayıyla gelir (`sendAnchor`). Alanı tanımayan
+    /// TV blokları başvuru yerinde (çapanın kurulduğu okumadaki telefonun yerinde) gösterir.
+    public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
+                           blocks: [ScreenTranslation.Item]?, anchor: AnchorPose?) {
         var (text, blocks) = Self.guarded(text: text, box: box, blocks: blocks)
         if id != "game-phone", let shown = blocks { blocks = steadied(shown) }
         if id != "game-phone" {
@@ -657,12 +667,17 @@ public final class SubtitleServer: @unchecked Sendable {
                 return
             }
         }
-        emitRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks)
+        emitRegion(id: id, text: text, box: box, lineHeight: lineHeight, icons: icons, blocks: blocks, anchor: anchor)
     }
 
     private func emitRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
-                            blocks: [ScreenTranslation.Item]?) {
+                            blocks: [ScreenTranslation.Item]?, anchor: AnchorPose? = nil) {
         var json: [String: Any] = ["id": id, "text": text]
+        if let anchor, !text.isEmpty {
+            json["anchor"] = ["gen": anchor.generation,
+                              "ref": Self.json(TextBox(left: anchor.reference.left, top: anchor.reference.top,
+                                                       right: anchor.reference.right, bottom: anchor.reference.bottom))]
+        }
         if let icons, !icons.isEmpty { json["icons"] = Self.json(icons) }
         if let blocks, !blocks.isEmpty, !text.isEmpty { json["blocks"] = blocks.map { Self.json($0, phone: id == "game-phone") } }
         if let box { json["box"] = Self.json(box) }
@@ -800,6 +815,26 @@ public final class SubtitleServer: @unchecked Sendable {
     }
 
     /// Bütün ek alan kutularını kaldırır.
+    /// Telefona yapışık çevirinin yeri (deneysel, önce Mac; docs/ekran-capasi.md "Sunucu olayı"). Çapa kıpırdadıkça
+    /// (ölü bölgeyi aşan her karede) `anchor` olayı: `{"gen": kuşak, "m": [a, b, c, d, dx, dy, g, h]}`; dönüşüm kareye
+    /// oranlı, merkezi `region` olayındaki `anchor.ref` dörtgeninin ortası. Kaybolunca `{"gen": kuşak, "lost": true}`:
+    /// o kuşağın balon çevirileri hemen gizlenir. Olayı tanımayan TV yok sayar. Son olay yeni bağlanan TV'ye bölgelerden
+    /// sonra yinelenir.
+    public func sendAnchor(_ change: PhoneAnchorSession.Change) {
+        broadcast(event: "anchor", json: Self.json(change))
+    }
+
+    static func json(_ change: PhoneAnchorSession.Change) -> [String: Any] {
+        func rounded(_ value: Double) -> Decimal { Decimal(Int((value * 1_000_000).rounded())) / 1_000_000 }
+        switch change {
+        case .moved(let pose):
+            let m = pose.motion
+            return ["gen": pose.generation, "m": [m.a, m.b, m.c, m.d, m.dx, m.dy, m.g, m.h].map(rounded)]
+        case .lost(let generation, _):
+            return ["gen": generation, "lost": true]
+        }
+    }
+
     public func clearRegions() {
         screenStyleGuard.withLock {
             regionShown = [:]
@@ -1071,6 +1106,8 @@ public final class SubtitleServer: @unchecked Sendable {
                 self.liveRegions[regionId] = (json["text"] as? String ?? "").isEmpty ? nil : json
             } else if event == "region-clear" {
                 self.liveRegions.removeAll()
+            } else if event == "anchor" {
+                self.liveAnchor = json["lost"] == nil ? json : nil
             }
             let tvs = !subtitle || self.tvEnabled
             if event == "subtitle" {
@@ -1091,7 +1128,8 @@ public final class SubtitleServer: @unchecked Sendable {
         }
     }
 
-    static let subtitleEvents: Set<String> = ["subtitle", "clear", "screen", "screen-clear", "style", "region", "region-clear"]
+    static let subtitleEvents: Set<String> = ["subtitle", "clear", "screen", "screen-clear", "style", "region", "region-clear",
+                                              "anchor"]
 
     /// Gönderim hatası alan bağlantı kopmuş sayılır ve listeden çıkarılır. `includingTVs` false ise yalnız izleyiciler
     /// (OBS) alır.
@@ -1116,6 +1154,9 @@ public final class SubtitleServer: @unchecked Sendable {
             var kept = json
             kept["keep"] = true
             frames += Self.frame(event: "region", json: kept)
+        }
+        if tv, liveRegions["game-phone"]?["anchor"] != nil, let anchor = liveAnchor {
+            frames += Self.frame(event: "anchor", json: anchor)
         }
         return frames
     }

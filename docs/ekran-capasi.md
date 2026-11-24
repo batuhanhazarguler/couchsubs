@@ -95,6 +95,42 @@ sabit), yalnız kart açılıp kapanınca ya da kayınca kaybolur. Oradaki titre
 4. **Yerinde çizim**: balonun düz zemini özgün yazının üstüne aynı renkle çizilir (#1142 sil-ve-yeniden-çiz), çeviri
    balonun renginde, sabit boyda.
 
+## Mac: "Ekranı yerinde Türkçe çiz" (deneysel, önce yalnız Mac)
+
+Sinan Bey kararı (24 Kas): önce yalnız Mac'te, telefon önce; görev kartları ve menüler ikinci aşamada. Ayar Ayarlar ›
+Alanlar › "GTA 6 phone messages" kartında **Ekranı Yerinde Türkçe Çiz (Deneysel)**, Mac'te varsayılan açık
+(`UserSettings.drawScreenInPlace`; öbür platformlar henüz okumaz, eşitlik denetiminde izinli). Yalnız oyun görüntüsü
+bu Mac'teki bir pencereden (PS Remote Play, chiaki-ng, seçilen OBS/oyun penceresi) okunurken çalışır; PS5'ten doğrudan
+okurken eski davranış.
+
+- **Çapa** (`PhoneAnchorSession`, core/PhoneAnchor.swift): telefon okuması (`PhoneRegionSession.read`) çapayı o karede,
+  telefonun o karede bulunan dörtgeniyle kurar (`place`); kuruluysa o karenin dönüşümü 90 karelik geçmişten alınır.
+  Pencere yakalaması bu ayarla saniyede 30 kare verir; her kare kopyalanmadan çapaya gider (`feed`, okuma yine en çok
+  saniyede 10). Okumadaki telefon çapanın yerinden dörtgen yüksekliğinin %25'inden uzaksa çapa yeniden kurulur.
+- **OCR yalnız yazı değişince**: sayfanın bölgesi çapanın o karedeki yerine taşınıp karşılaştırılır; telefon yalnız
+  kıpırdadı diye yeniden okunmaz. Çapa kaybolunca sonraki tur mutlaka okur (çapa yeniden kurulur).
+- **Türkçe ikiz** (`PhoneTwin`, core/PhoneTwin.swift; silme/çizme #1142'nin `TextErase`'i): telefonun ekranı başvuru
+  dörtgenine düzleştirilir, her çevrilen yazının yalnız harf noktaları silinir, Türkçe aynı yere, özgün renk ve
+  kalınlıkta çizilir. Katman yalnız yazı kutularında opaktır; simge, avatar, fotoğraf ve kutuların dışı oyunun canlı
+  görüntüsüdür. Kutu başına zemin kararı: çevre şeridinin dokusu ≤ 14 ise tam silme, değilse zemin renginde sıkı kutu
+  (günlükte "silindi, yerine çizildi" / "desenli zemin, zemin renginde kutu"). Silme ve çizim yalnız yazı değişince.
+- **Çizim** (mac/CouchSubs/UI/PhoneTwinOverlay.swift): oyun penceresinin tam üstünde tıklama geçiren saydam panel;
+  ikiz her karede `ProjectionTransform` (çapanın 3×3 izdüşüm matrisi) ile telefonun üstüne yansıtılır. Çapa kaybolunca
+  ya da kuşak değişince ikiz hemen kalkar. Yayın penceresi de aynı katmanı çizer.
+- **Günlük**: "çapa kuruldu (kuşak N; telefon …)", "çapa kayboldu (kuşak N; neden)" (dakikada en çok 12 satır), 10 sn'de
+  bir "çapa: kuşak N, … kare, uyum ort %…, kare başı ort … ms (en çok … ms)", her ikizde "telefon Türkçe çizildi (…)"
+  (dakikada en çok 6).
+
+### Sunucu olayı (TV için tasarım; Mac göndericisi uygulandı, TV henüz okumuyor)
+
+- `region` (`id: "game-phone"`) blokları çapanın **başvuru koordinatında**dır ve `anchor: {"gen": N, "ref": {left, top,
+  right, bottom}}` taşır.
+- `anchor` olayı, gösterilen dönüşüm her değiştiğinde (ölü bölgeyi aşan karede): `{"gen": N, "m": [a, b, c, d, dx, dy,
+  g, h]}`. Dönüşüm kareye oranlıdır; merkez `ref`'in ortasıdır (cx, cy): u = x − cx, v = y − cy, w = 1 + g u + h v,
+  x' = cx + (a u + b v + dx) / w, y' = cy + (c u + d v + dy) / w. CSS'te kabın `transform`'u bundan kurulan `matrix3d`.
+- Çapa kaybolunca `{"gen": N, "lost": true}`: o kuşağın balonları hemen gizlenir. Son `anchor` olayı yeni bağlanan TV'ye
+  bölgelerden sonra yinelenir. Olayı tanımayan TV blokları başvuru yerinde (çapanın kurulduğu okumadaki yerde) gösterir.
+
 Not: TV'de çeviri, oyunu TV'ye doğrudan veren konsolun görüntüsünün üstünde durur; çapa, Remote Play/yakalama gecikmesi
 (tipik 50–100 ms) kadar geriden gelir. Titreme biter, ama hızlı sarsıntıda gecikme kadar geride kalabilir; bilgisayar ve
 telefon ekranındaki yayın penceresinde (aynı kare) gecikme yoktur.
