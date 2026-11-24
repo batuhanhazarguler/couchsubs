@@ -10,15 +10,20 @@ final class PhoneRegionSessionTests: XCTestCase {
         private let lock = NSLock()
         private var lines: [TextLine] = []
         private var reads = 0
+        /// Her okumada (OCR sürerken) çağrılır: elde sallanan telefonun yeni karesi gibi.
+        private var hook: (@Sendable () -> Void)?
         var count: Int { lock.withLock { reads } }
         func set(_ lines: [TextLine]) { lock.withLock { self.lines = lines } }
+        func onRead(_ hook: (@Sendable () -> Void)?) { lock.withLock { self.hook = hook } }
         func read(_ image: CGImage) throws -> String { try readLines(image, deep: false).text }
         func read(_ image: CGImage, deep: Bool) throws -> String { try read(image) }
         func readLines(_ image: CGImage, deep: Bool) throws -> Reading {
-            lock.withLock {
+            let (reading, hook) = lock.withLock {
                 reads += 1
-                return Reading(lines: lines)
+                return (Reading(lines: lines), self.hook)
             }
+            hook?()
+            return reading
         }
     }
 
@@ -134,6 +139,42 @@ final class PhoneRegionSessionTests: XCTestCase {
         watcher.offer(b, areas: [], phone: pose)
         try await wait { !watcher.isBusy }
         XCTAssertEqual(server.sent.map(\.text), ["Kamerayı aç."])
+    }
+
+    /// GTA 6'nın telefonu elde durur, her karede birkaç piksel sallanır: okuma sürerken gelen her yeni karenin yazı
+    /// pikselleri değişir. Okuma sonraki karede yeniden okunur ve kabul edilir; o okuma sürerken bir kare daha geldi diye
+    /// atılmaz. Önceden yeniden okuma da her seferinde "doğrulanamadı" sayılıyordu: mesajlar ancak telefon tam durduğu
+    /// nadir anlarda çevriliyor, ilk çeviriden sonra yeni mesaj gelmiyordu (#1202, #1197, #1193, #1170; Windows ve Android
+    /// ile aynı).
+    func testSwayingPhoneStillTranslatesAndShowsNewMessages() async throws {
+        let reader = Reader(), translator = Translator(), server = Server()
+        var clock = 0
+        let watcher = RegionWatcher(reader: reader, translator: translator, server: server, clock: { clock })
+        watcher.phonePanel = { PhonePanelOptions(enabled: false) }
+        let still = GamePhoneTestFrame.phone()
+        let pose = try XCTUnwrap(GamePhoneGeometry.locate(still))
+        // Sallanan telefonun kareleri: yazının pikselleri her karede biraz başka yerde.
+        let frames = (0..<4).map { GamePhoneTestFrame.phone(patch: CGRect(x: 170 + 12 * $0, y: 94, width: 10, height: 12)) }
+        final class Sway: @unchecked Sendable { var next = 0 }
+        let sway = Sway()
+        reader.onRead {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    sway.next += 1
+                    watcher.offer(frames[sway.next % frames.count], areas: [], phone: pose)
+                }
+            }
+        }
+        reader.set([TextLine("Reply today.", box: first)])
+        watcher.offer(frames[0], areas: [], phone: pose)
+        try await wait { !watcher.isBusy }
+        XCTAssertEqual(server.sent.last?.items.map(\.translation), ["Bugün yanıtla."])
+
+        reader.set([TextLine("Reply today.", box: first), TextLine("Meet me tomorrow.", box: second)])
+        clock = 450
+        watcher.offer(frames[sway.next % frames.count], areas: [], phone: pose)
+        try await wait { !watcher.isBusy }
+        XCTAssertEqual(server.sent.last?.items.map(\.translation), ["Bugün yanıtla.", "Yarın buluşalım."])
     }
 
     func testClosingPhoneWhileTranslationIsPendingLeavesManualRegionAlone() async throws {

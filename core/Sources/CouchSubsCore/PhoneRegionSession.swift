@@ -464,11 +464,16 @@ final class PhoneRegionSession {
             && !page.pixels.changed(capture.frame, region: capture.region)
     }
 
+    /// Okuma sürerken gelen son kareyi yeniden okur; telefon o karede yerindeyse okuma kabul edilir. Bu okuma sürerken bir
+    /// kare daha gelmesi okumayı geçersiz kılmaz: GTA 6'nın telefonu elde durur, her karede birkaç piksel sallanır, yazı
+    /// pikselleri (`GamePhonePage`) ardışık iki karede hiç aynı kalmıyordu (gerçek kayıtta 100 ms arayla %2, 300 ms arayla
+    /// hiç). Önceden yeniden okuma da "doğrulanamadı" sayılıyor, mesajlar yalnız telefonun tam durduğu nadir anlarda
+    /// çevriliyor, ilk çeviriden sonra yeni mesaj gelmiyordu (#1202, #1197, #1193, #1170). Sayfa gerçekten değiştiyse
+    /// sonraki tur zaten yeniden okur (Windows ve Android ile aynı).
     private func reread(_ capture: Capture) async -> Page? {
         guard capture.isPresent(), !Task.isCancelled else { return nil }
         let signature = RegionCropper.signature(of: RegionCropper.crop(capture.frame, to: capture.region))
-        guard let fresh = try? await read(capture, signature: signature), let last = latest, !Task.isCancelled,
-              last.frame === capture.frame || matches(fresh, last) else { return nil }
+        guard let fresh = try? await read(capture, signature: signature), latest != nil, !Task.isCancelled else { return nil }
         page = fresh
         return fresh
     }

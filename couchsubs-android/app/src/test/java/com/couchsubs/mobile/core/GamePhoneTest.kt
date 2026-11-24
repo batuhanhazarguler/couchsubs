@@ -315,8 +315,11 @@ class PhoneRegionSessionTest {
         /** Sonraki okuma hata verir (okunamayan kare). */
         @Volatile var failNext = false
         val count = java.util.concurrent.atomic.AtomicInteger()
+        /** Her okumada (OCR sürerken) çağrılır: elde sallanan telefonun yeni karesi gibi. */
+        @Volatile var onRead: (() -> Unit)? = null
         fun read(): Reading {
             count.incrementAndGet()
+            onRead?.invoke()
             if (failNext) {
                 failNext = false
                 throw IllegalStateException("okunamadı")
@@ -457,6 +460,36 @@ class PhoneRegionSessionTest {
         watcher.offer()
         wait { !watcher.isBusy }
         assertEquals(listOf("Kamerayı aç."), server.sent.map { it.text })
+    }
+
+    /**
+     * GTA 6'nın telefonu elde durur, her karede birkaç piksel sallanır: okuma sürerken gelen her yeni karenin yazı
+     * pikselleri değişir. Okuma son karede yeniden okunur ve kabul edilir; o okuma sürerken bir kare daha geldi diye
+     * atılmaz. Önceden mesajlar ancak telefon tam durduğu nadir anlarda çevriliyordu (#1202, #1197, #1193, #1170; Mac/iPhone
+     * ve Windows ile aynı).
+     */
+    @Test
+    fun swayingPhoneStillTranslatesAndShowsNewMessages() {
+        val reader = Reader()
+        val translator = Translator()
+        val server = Server()
+        val watcher = watcher(reader, translator, server)
+        val pose = GamePhoneGeometry.locate(TestPhoneImage.phone())!!
+        val frames = (0 until 4).map { TestPhoneImage.phone(patch = intArrayOf(170 + 12 * it, 94, 10, 12)) }
+        val sway = java.util.concurrent.atomic.AtomicInteger()
+        reader.onRead = { watcher.observePhone(PhoneCapture(frames[sway.incrementAndGet() % frames.size], pose)) }
+        reader.lines = listOf(TextLine("Reply today.", first))
+        watcher.observePhone(PhoneCapture(frames[0], pose))
+        watcher.offer()
+        wait { !watcher.isBusy }
+        assertEquals(listOf("Bugün yanıtla."), server.sent.lastOrNull()?.items?.map { it.translation })
+
+        reader.lines = listOf(TextLine("Reply today.", first), TextLine("Meet me tomorrow.", second))
+        clock = 450
+        watcher.observePhone(PhoneCapture(frames[sway.get() % frames.size], pose))
+        watcher.offer()
+        wait { !watcher.isBusy }
+        assertEquals(listOf("Bugün yanıtla.", "Yarın buluşalım."), server.sent.lastOrNull()?.items?.map { it.translation })
     }
 
     @Test

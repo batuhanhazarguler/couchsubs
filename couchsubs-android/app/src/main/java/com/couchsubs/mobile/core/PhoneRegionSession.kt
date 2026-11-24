@@ -389,6 +389,13 @@ internal class PhoneRegionSession(
     private fun matches(page: Page, capture: PhoneCapture): Boolean =
         page.region.isClose(capture.region, 0.01) && !page.pixels.changed(capture.image, capture.region)
 
+    /**
+     * Okuma sürerken gelen son kareyi yeniden okur ve kabul eder. Bu okuma sürerken bir kare daha gelmesi okumayı geçersiz
+     * kılmaz: GTA 6'nın telefonu elde durur, her karede birkaç piksel sallanır, yazı pikselleri ([GamePhonePage]) ardışık
+     * iki karede hiç aynı kalmıyordu (gerçek kayıtta 100 ms arayla %2, 300 ms arayla hiç). Önceden yeniden okuma da
+     * "doğrulanamadı" sayılıyor, üç turda çeviri siliniyor, mesajlar yalnız telefonun tam durduğu nadir anlarda çevriliyordu
+     * (#1202, #1197, #1193, #1170). Sayfa gerçekten değiştiyse sonraki tur zaten yeniden okur (Mac/iPhone ve Windows ile aynı).
+     */
     private fun reread(capture: PhoneCapture): Page? {
         if (closed) return null
         val fresh = try {
@@ -396,8 +403,7 @@ internal class PhoneRegionSession(
         } catch (error: Exception) {
             return null
         }
-        val last = latest ?: return null
-        if (closed || !(last.image === capture.image || matches(fresh, last))) return null
+        if (closed || latest == null) return null
         page = fresh
         return fresh
     }
