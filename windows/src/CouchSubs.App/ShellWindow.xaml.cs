@@ -257,21 +257,46 @@ public partial class ShellWindow : Window
         }
     }
 
+    /// <summary>Reklam şeridi en son görünür istendi mi (sönme animasyonu sürerken geri istenirse yeniden belirsin).</summary>
+    private bool adsShown = true;
+
     /// <summary>
     /// Sayfaların cam çubuklar kadar içeriden başlayıp bitmesi (shell.inset): üstte çubuk yüksekliği, altta reklam şeridi.
     /// Sayfalar bu boşluğu kaydırılan içeriğin içine koyar; böylece içerik çubukların arkasından kayar. Kurulumda sıfır.
     /// </summary>
     private void ApplyInsets()
     {
-        var ads = showingMain && AdCatalog.Banners.Count > 0;
-        Ads.Visibility = BottomGlass.Visibility = ads ? Visibility.Visible : Visibility.Collapsed;
         var top = showingMain ? Palette.Size["header"] : 0;
-        var bottom = ads ? Palette.Size["adBand"] + Sp.V("xs") + Sp.V("m") : 0;
-        Root.Resources["shell.inset"] = new Thickness(0, top, 0, bottom);
-        // Çeviri sürerken şerit yumuşakça söner, yeri (cam çubuk ve alt boşluk) aynı kalır: düzen zıplamaz.
+        // Çeviri sürerken ve deneme modunda şerit, cam çubuğu ve alt boşluğuyla birlikte kalkar: boş koyu şerit kalmaz,
+        // içerik pencerenin altına kadar uzanır. Şerit geri gelince yer açılır ve şerit aşağıdan kayarak belirir.
         var band = AdBandPolicy.Visible(showingMain, AdCatalog.Banners.Count > 0, controller.IsRunning, controller.DemoMode);
+        var bottom = band ? Palette.Size["adBand"] + Sp.V("xs") + Sp.V("m") : 0;
+        Root.Resources["shell.inset"] = new Thickness(0, top, 0, bottom);
         Ads.IsHitTestVisible = band;
-        Ads.BeginAnimation(OpacityProperty, Motion.To(band ? 1 : 0, Motion.Page, exit: !band));
+        if (band)
+        {
+            var appearing = !adsShown;
+            adsShown = true;
+            Ads.Visibility = BottomGlass.Visibility = Visibility.Visible;
+            if (appearing)
+            {
+                Motion.EnterFrom(Ads, 16, Motion.Page);
+                Motion.EnterFrom(BottomGlass, 16, Motion.Page);
+            }
+        }
+        else if (adsShown)
+        {
+            adsShown = false;
+            var fade = Motion.To(0, Motion.Page, exit: true);
+            fade.Completed += (_, _) =>
+            {
+                // Sönme sürerken şerit geri istendiyse (çeviri hemen durdu) gizleme.
+                if (adsShown) return;
+                Ads.Visibility = BottomGlass.Visibility = Visibility.Collapsed;
+            };
+            Ads.BeginAnimation(OpacityProperty, fade);
+            BottomGlass.BeginAnimation(OpacityProperty, Motion.To(0, Motion.Page, exit: true));
+        }
         Ambient.Animated = !showingMain || tab == ShellTab.Home;
     }
 

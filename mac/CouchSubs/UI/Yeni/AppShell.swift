@@ -32,6 +32,11 @@ struct AppShell: View {
     /// Alt cam çubuk: reklam bandı ve çevresindeki boşluk (reklam yoksa çubuk da yok).
     static var bottomBar: CGFloat { AdCatalog.band.isEmpty ? 0 : DS.size("adBand") + DS.space("xs") + DS.space("m") }
 
+    /// Reklam bandı şu an görünür mü: çeviri sürerken ve deneme modunda gizli (AdCatalog.bandVisible).
+    private var bandShown: Bool {
+        Self.bottomBar > 0 && AdCatalog.bandVisible(appPage: true, hasAds: true, translating: model.isRunning, demo: model.demoMode)
+    }
+
     var body: some View {
         // Sayfa pencerenin tamamını kaplar; üst ve alt çubuk camdır, içerik ikisinin de arkasından kayar (iOS gibi).
         Group {
@@ -43,7 +48,9 @@ struct AppShell: View {
         }
         .transition(.opacity)
         .id(tab.wrappedValue)
-        .environment(\.dsChromeInsets, EdgeInsets(top: Self.topBar, leading: 0, bottom: Self.bottomBar, trailing: 0))
+        // Bant gizliyken alt boşluk da kalkar: içerik pencerenin altına kadar uzanır, bant gelince yumuşakça yer açılır.
+        .environment(\.dsChromeInsets, EdgeInsets(top: Self.topBar, leading: 0, bottom: bandShown ? Self.bottomBar : 0, trailing: 0))
+        .animation(DS.animation(.page, reduced: reduceMotion), value: bandShown)
         .frame(maxWidth: DS.size("contentMax"))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay(alignment: .top) {
@@ -55,22 +62,20 @@ struct AppShell: View {
             .background(DSGlassBar(edge: .top))
         }
         .overlay(alignment: .bottom) {
-            if Self.bottomBar > 0 {
-                // Çeviri sürerken şerit yumuşakça söner; cam çubuk ve yeri kalır, düzen zıplamaz.
-                let band = AdCatalog.bandVisible(appPage: true, hasAds: true, translating: model.isRunning, demo: model.demoMode)
+            // Çeviri sürerken bant cam çubuğuyla birlikte görünüm ağacından çıkar (boş şerit kalmaz); durunca aşağıdan
+            // kayarak geri gelir.
+            if bandShown {
                 DSAdBand()
-                    .opacity(band ? 1 : 0)
-                    .allowsHitTesting(band)
-                    .accessibilityHidden(!band)
-                    .animation(DS.animation(.page, reduced: reduceMotion), value: band)
                     .padding(.horizontal, DS.space("l"))
                     .padding(.top, DS.space("xs"))
                     .padding(.bottom, DS.space("m"))
                     .frame(maxWidth: DS.size("contentMax"))
                     .frame(maxWidth: .infinity)
                     .background(DSGlassBar(edge: .bottom))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(DS.animation(.page, reduced: reduceMotion), value: bandShown)
         .ignoresSafeArea(.container, edges: .top)
         .background(DSFullSizeWindow())
         // Ortam ışığı: amber, şeftali ve gök mavisi lekeler çok yavaş süzülür (Core Animation) — yalnız Ana Ekran'da;
