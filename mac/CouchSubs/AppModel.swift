@@ -3473,7 +3473,7 @@ final class AppModel: ObservableObject {
             case .restored(let ms):
                 SubtitleLog.write("hızlı düzeyin süresi doldu (\(ms / 1000) sn); okuma yeniden isabetli düzeyde")
             case .backgroundYielded(let stall, let dropped, let rescued):
-                SubtitleLog.write("altyazı arka plan okumasını bekledi (takılma sayılmadı): \(stall.logText); sıradaki \(dropped) arka plan okuması düşürüldü\(rescued ? ", altyazı bu tur yedekten okunuyor" : "")")
+                SubtitleLog.write("altyazı arka plan okumasını bekledi (takılma sayılmadı): \(stall.logText); sıradaki \(dropped) arka plan okuması düşürüldü; \(rescued ? "altyazı bu tur yedekten okunuyor" : "altyazı sırada öne geçti")")
             case .abandonedFinished(let still):
                 SubtitleLog.write("bırakılan takılı okuma sonunda bitti (bitmeyen bırakılmış okuma: \(still))")
             }
