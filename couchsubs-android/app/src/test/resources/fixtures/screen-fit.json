@@ -13,9 +13,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.475,
+      0.6916,
       0.5,
-      0.8633,
+      0.8584,
       0.55
      ]
     },
@@ -29,9 +29,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.525,
+      0.7416,
       0.6,
-      0.8633,
+      0.8584,
       0.65
      ]
     },
@@ -45,9 +45,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.495,
+      0.7116,
       0.7,
-      0.8633,
+      0.8584,
       0.75
      ]
     }
@@ -226,9 +226,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.075,
+      0.2916,
       0.05,
-      0.415,
+      0.3884,
       0.1
      ]
     },
@@ -242,9 +242,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.415,
+      0.4416,
       0.05,
-      0.54,
+      0.5084,
       0.1
      ]
     },
@@ -258,9 +258,9 @@
      ],
      "line": 0.05,
      "room": [
-      0.54,
+      0.5716,
       0.05,
-      0.925,
+      0.7084,
       0.1
      ]
     }
@@ -385,9 +385,9 @@
      ],
      "line": 0.05,
      "room": [
-      0,
+      0.1916,
       0.4,
-      0.3773,
+      0.3616,
       0.45
      ]
     }
@@ -449,92 +449,365 @@
      0.44
     ]
    ]
+  },
+  {
+   "expect": [
+    {
+     "align": "left",
+     "box": [
+      0.3,
+      0.5,
+      0.4346,
+      0.55
+     ],
+     "line": 0.05,
+     "room": [
+      0.2916,
+      0.5,
+      0.4352,
+      0.55
+     ]
+    },
+    {
+     "align": "left",
+     "box": [
+      0.6407,
+      0.7,
+      0.78,
+      0.75
+     ],
+     "line": 0.05,
+     "room": [
+      0.6383,
+      0.7,
+      0.7884,
+      0.75
+     ]
+    }
+   ],
+   "id": "yazıya yakın tuş simgesi kutunun içinde (LOADOUT (L1), (△) INTERACT)",
+   "items": [
+    {
+     "box": [
+      0.3,
+      0.5,
+      0.48,
+      0.55
+     ],
+     "line": 0.05,
+     "name": "LOADOUT"
+    },
+    {
+     "box": [
+      0.6,
+      0.7,
+      0.78,
+      0.75
+     ],
+     "line": 0.05,
+     "name": "INTERACT"
+    }
+   ],
+   "rects": [
+    [
+     0.3,
+     0.51,
+     0.32,
+     0.54
+    ],
+    [
+     0.323,
+     0.51,
+     0.343,
+     0.54
+    ],
+    [
+     0.346,
+     0.51,
+     0.366,
+     0.54
+    ],
+    [
+     0.369,
+     0.51,
+     0.389,
+     0.54
+    ],
+    [
+     0.392,
+     0.51,
+     0.412,
+     0.54
+    ],
+    [
+     0.415,
+     0.51,
+     0.435,
+     0.54
+    ],
+    [
+     0.442,
+     0.495,
+     0.475,
+     0.555
+    ],
+    [
+     0.6,
+     0.695,
+     0.633,
+     0.755
+    ],
+    [
+     0.64,
+     0.71,
+     0.66,
+     0.74
+    ],
+    [
+     0.663,
+     0.71,
+     0.683,
+     0.74
+    ],
+    [
+     0.686,
+     0.71,
+     0.706,
+     0.74
+    ],
+    [
+     0.709,
+     0.71,
+     0.729,
+     0.74
+    ],
+    [
+     0.732,
+     0.71,
+     0.752,
+     0.74
+    ],
+    [
+     0.755,
+     0.71,
+     0.775,
+     0.74
+    ]
+   ]
   }
  ],
  "height": 360,
  "ink": "#E0E0E0",
  "lines": [
   {
-   "align": "right",
    "expect": {
-    "left": 83,
     "lines": [
      "HEDEF BELİRLE"
     ],
-    "squeeze": 0.9,
-    "width": 117
+    "scale": 0.8547,
+    "squeeze": 0.9
    },
-   "id": "sığmayan sağa yaslı etiket sola genişler, en çok %10 sıkışır",
-   "left": 100,
-   "room": [
-    20,
-    200
-   ],
+   "id": "iki sözcüklük etiket yana genişlemez: %10 sıkışır, sonra yazı küçülür",
    "rows": 1,
    "text": "HEDEF BELİRLE",
    "width": 100
   },
   {
-   "align": "left",
    "expect": {
-    "left": 0,
     "lines": [
      "bir iki üç dört",
      "beş altı yedi sekiz"
     ],
-    "squeeze": 0.85,
-    "width": 120
+    "scale": 0.6316,
+    "squeeze": 1
    },
-   "id": "iki satırlık açıklama, alan yok: sıkıştırma en çok %15 (hafif)",
-   "left": 0,
-   "room": null,
+   "id": "iki satırlık açıklama sığmıyor: sıkışmaz, yazı küçülür, iki satırda kalır",
    "rows": 2,
    "text": "bir iki üç dört beş altı yedi sekiz",
    "width": 120
   },
   {
-   "align": "center",
    "expect": {
-    "left": 300,
     "lines": [
      "ÖZET"
     ],
-    "squeeze": 1,
-    "width": 60
+    "scale": 1,
+    "squeeze": 1
    },
    "id": "sığan sekme",
-   "left": 300,
-   "room": [
-    280,
-    380
-   ],
    "rows": 1,
    "text": "ÖZET",
    "width": 60
   },
   {
-   "align": "center",
    "expect": {
-    "left": 0,
     "lines": [
      "sen bunu bilmiyorsun ama ben biliyorum"
     ],
-    "squeeze": 0.9,
-    "width": 342
+    "scale": 0.5263,
+    "squeeze": 1
    },
-   "id": "uzun tek satır, alan var: genişler, sıkıştırma en çok %10",
-   "left": 50,
-   "room": [
-    0,
-    640
-   ],
+   "id": "uzun tek satırlık cümle sıkışmaz: %50'ye kadar küçülür, yana genişlemez",
    "rows": 1,
    "text": "sen bunu bilmiyorsun ama ben biliyorum",
    "width": 200
+  },
+  {
+   "expect": {
+    "lines": [
+     "KARŞILAŞTIRILAMAYACAK"
+    ],
+    "scale": 0.5291,
+    "squeeze": 0.9
+   },
+   "id": "sığmayan tek sözcük: %10 sıkışır, %50'ye kadar küçülür",
+   "rows": 1,
+   "text": "KARŞILAŞTIRILAMAYACAK",
+   "width": 100
+  },
+  {
+   "expect": {
+    "lines": [
+     "ŞARJÖR",
+     "KAPAT"
+    ],
+    "scale": 1,
+    "squeeze": 1
+   },
+   "id": "sığan iki satır",
+   "rows": 2,
+   "text": "ŞARJÖR\nKAPAT",
+   "width": 80
+  },
+  {
+   "expect": {
+    "lines": [
+     "bir iki üç dört beş",
+     "altı yedi sekiz",
+     "dokuz on"
+    ],
+    "scale": 0.6316,
+    "squeeze": 1
+   },
+   "id": "uzun açıklama: en çok %60'a küçülür, sonra satır eklenir, kutu aşağı uzar",
+   "rows": 2,
+   "text": "bir iki üç dört beş altı yedi sekiz dokuz on",
+   "width": 120
+  },
+  {
+   "expect": {
+    "lines": [
+     "KARŞILAŞTIRILAMAYACAKLARDANMIŞSINIZ"
+    ],
+    "scale": 0.5,
+    "squeeze": 0.9
+   },
+   "id": "%50'de de sığmayan tek sözcük: son çare (yalnız %10 sıkışır)",
+   "rows": 1,
+   "text": "KARŞILAŞTIRILAMAYACAKLARDANMIŞSINIZ",
+   "width": 100
+  },
+  {
+   "expect": {
+    "lines": [
+     "İŞARETLEMEK",
+     "GÖRÜNÜMLERİ"
+    ],
+    "scale": 1,
+    "squeeze": 0.9091
+   },
+   "id": "iki sözcüklük etiket %50'de sığmıyor: satır kırılır, yazı yeniden büyür",
+   "rows": 1,
+   "text": "İŞARETLEMEK GÖRÜNÜMLERİ",
+   "width": 100
+  },
+  {
+   "expect": {
+    "lines": [
+     "bunu şimdi yapmalıyız"
+    ],
+    "scale": 0.9524,
+    "squeeze": 1
+   },
+   "id": "üç sözcüklük cümle yatayda sıkışmaz, yazı küçülür",
+   "rows": 1,
+   "text": "bunu şimdi yapmalıyız",
+   "width": 200
+  },
+  {
+   "expect": {
+    "lines": [
+     "bu",
+     "kapıyı",
+     "aç"
+    ],
+    "scale": 1.2,
+    "squeeze": 1
+   },
+   "floor": 1.2,
+   "id": "kısa özgün satır: yazı alt sınırda (özgünden büyük), satır kırılır, kutu aşağı büyür",
+   "rows": 1,
+   "text": "bu kapıyı aç",
+   "width": 100
   }
  ],
- "linesNote": "ScreenFit.lines (çizicilerin ortak satır yerleşimi): ölçü her harf 10 piksel; left/width/room piksel.",
+ "linesNote": "ScreenFit.lines (çizicilerin ortak satır yerleşimi): ölçü her harf 10 piksel; width piksel; floor: yazı boyunun en küçük ölçeği (yoksa 0). Çeviri yana hiç genişlemez: yalnız en çok iki sözcüklük etiket en çok %10 yatayda sıkışır, sonra yazı küçülür (tek satırlık etiket en az 0,5, çok satırlı yazı en az 0,6; floor'un altına inmez), sonra satır kırılır. pads: kenar payı (piksel) kenar payı alanının (room) dışına çıkmaz, alan yoksa 0.",
  "note": "ScreenFit ortak deneme dosyası (Mac ScreenFitTests.swift, Windows ScreenFitTests.cs, Android ScreenFitTest.kt): width x height düz zeminli kare (background); yazı harfleri ve simgeler ink renginde dikdörtgenler (rects, kareye oranla [sol, üst, sağ, alt]; piksel x, sol*width'ten sağ*width'e kadar yuvarlanarak). Her öğe özgün stilli (zemin = background, yazı = ink, kalın, BÜYÜK HARF, sola yaslı, tek satır). expect: yerleşimden (ScreenFit) sonra hiza, satır yüksekliği, kutu ve alan (room), en çok tolerance farkla.",
+ "pads": [
+  {
+   "expect": [
+    10,
+    10
+   ],
+   "id": "simgeye yakın: kenar payı simgeden önce biter",
+   "left": 100,
+   "pad": 15,
+   "room": [
+    90,
+    230
+   ],
+   "width": 120
+  },
+  {
+   "expect": [
+    0,
+    0
+   ],
+   "id": "alan yok: kenar payı yok",
+   "left": 100,
+   "pad": 15,
+   "room": null,
+   "width": 120
+  },
+  {
+   "expect": [
+    0,
+    0
+   ],
+   "id": "alan kutunun kendisi",
+   "left": 100,
+   "pad": 15,
+   "room": [
+    100,
+    220
+   ],
+   "width": 120
+  },
+  {
+   "expect": [
+    15,
+    15
+   ],
+   "id": "geniş alan: tam kenar payı",
+   "left": 100,
+   "pad": 15,
+   "room": [
+    50,
+    300
+   ],
+   "width": 120
+  }
+ ],
  "tolerance": 0.003,
  "width": 640
 }

@@ -1122,9 +1122,9 @@
   var STYLED_MIN_SCALE = 0.8;
   var STYLED_LABEL_MIN_SCALE = 0.6;
   // GTA 6 telefonunun mesajı kendi balonunun üstünde ("bubble"): Türkçe balona sığana kadar satır kırılır ve yazı en çok
-  // %35 küçülür; okunabilirlik sınırı 1080p'de 18 piksel. Yine sığmazsa balon aşağı doğru uzar (yazı kesilmez).
-  var BUBBLE_MIN_SCALE = 0.65;
-  var BUBBLE_MIN_FONT = 18;
+  // %25 küçülür; okunabilirlik sınırı 1080p'de 22 piksel (önceden %35 ve 18 pikseldi, yazı çok küçük kalıyordu). Yine sığmazsa balon aşağı doğru uzar (yazı kesilmez).
+  var BUBBLE_MIN_SCALE = 0.75;
+  var BUBBLE_MIN_FONT = 22;
   var CONDENSED_FONT = '"Roboto Condensed", "Arial Narrow", "Helvetica Neue Condensed", "LG Smart UI Condensed", sans-serif';
 
   // Öğeye özgün yazının görünüşü uygulandı mı.
@@ -1366,12 +1366,16 @@
         styled = applyLook(el, item);
       }
       fillText(el, item.text, item.icons);
-      var left = Math.max(0, box.left - pad);
+      // Yandaki kenar payı bilgisayarın verdiği alanda kalır (room): tuş simgesinin üstüne binmez (#1203).
+      var room = !phone && validBox(item.room);
+      var padLeft = room ? Math.min(pad, Math.max(0, box.left - room.left)) : pad;
+      var padRight = room ? Math.min(pad, Math.max(0, room.right - box.right)) : pad;
+      var left = Math.max(0, box.left - padLeft);
       var top = Math.max(0, box.top - pad);
       var boxHeight = (box.bottom - box.top + 2 * pad) * height;
       el.style.left = (left * 100) + '%';
       el.style.top = (top * 100) + '%';
-      var itemWidth = Math.max(minWidth, (Math.min(1, box.right + pad) - left) * width);
+      var itemWidth = Math.max(room ? 1 : minWidth, (Math.min(1, box.right + padRight) - left) * width);
       if (regionId) itemWidth = Math.min(itemWidth, (1 - left) * width);
       el.style.width = itemWidth + 'px';
       // Bir piksel pay, tarayıcının kesirli koordinat/scrollHeight yuvarlamasını karşılar.
@@ -1449,125 +1453,105 @@
     }
   }
 
-  // Özgün görünüşlü çeviri ("Ekranı çevir", otomatik ekran yazısı) özgün yazının birebir yerinde ve boyunda (TV uygulaması
-  // 0.9.85): yazı boyu özgün satır yüksekliğinden gelir ve hiç küçülmez; yazının alanı özgün yazının kutusudur, kenar payı
-  // onun dışındadır. Türkçe uzunsa önce yazı yalnız yatayda %20'ye kadar sıkıştırılır (harf yüksekliği aynı kalır), sığmazsa
-  // kutu bilgisayarın verdiği alana (room: simgelere, fotoğrafa ve komşu yazıya kadar) hizasının tersine doğru genişler, yine
-  // sığmazsa sıkıştırma %30'a iner; o da yetmezse son çare olarak etiket yana, paragraf aşağı uzar. Kenar payı alanın dışına
-  // taşmaz: simgeyi örtmez.
-  // Önceden sığmayan sekme %60'a kadar küçülüyor (şerit iki ayrı boyda), kenar payı ve genişleme tuş simgesinin üstüne
-  // biniyordu (#859, #860). Satır aralığı özgün satırlarınki (rows): iki satırlık açıklama iki satırda kalır.
-  // Yatay sıkıştırma yalnız tek satırlık kısa etikette (menü sekmesi, düğme) ve en çok %10 (TV uygulaması 0.9.92). Çok
-  // satırlı ya da uzun yazı (görev açıklaması, oyunun konuşma altyazısı) hiç sıkıştırılmaz: satır kırılır, yazı boyu aynı
-  // kalır, kutu aşağı uzar. Önceden paragraf da %30'a kadar sıkışıyor, altyazının harfleri yatayda ezik görünüyordu (X, beta.90).
+  // Özgün görünüşlü çeviri ("Ekranı çevir", otomatik ekran yazısı) özgün yazının birebir yerinde (TV uygulaması 0.9.98;
+  // ScreenFit.lines ile aynı sıra): yazının alanı özgün yazının kutusudur ve yana hiç genişlemez. Türkçe uzunsa sırasıyla:
+  // yalnız en çok iki sözcüklük tek satırlık etikette (menü sekmesi, düğme) yazı yatayda en çok %10 sıkışır; yazı boyu
+  // küçülür (tek satırlık etiket %50'ye, çok satırlı yazı %60'a kadar); satır kırılır ve kutu aşağı uzar.
+  // Yazı boyunun alt sınırı konuşma altyazısı boyunun %60'ı (ekranla ölçeklenir): kısa özgün satırın boyuna kilitlenmez,
+  // gerekirse özgünden büyük çizilir, kutu aşağı büyür. Önceden kısa cümleler de %15'e kadar sıkışıyor, özgün satır
+  // yüksekliğine kilitleniyordu: "dar ve basık" görünüyordu.
+  // Kenar payı yalnız bilgisayarın verdiği alanda (room: yandaki simgeden, fotoğraftan ve komşu yazıdan önce biter); alan
+  // yoksa yanda kenar payı yok. Önceden kutu simgeye kadar yana genişliyor, son çarede ekranın kenarına kadar uzuyordu: tuş
+  // simgesinin (△ ○ ✕ □, R2, L1) ve menü simgesinin üstüne biniyor, hangi tuşa basılacağı görünmüyordu (#1203).
   var FIT_FIRST_SQUEEZE = 0.9;
-  var FIT_MIN_SQUEEZE = 0.85;
   var FIT_SQUEEZE_STEP = 0.05;
+  var FIT_MIN_SCALE = 0.6;
+  var FIT_LAST_SCALE = 0.5;
+  var FIT_SCALE_STEP = 0.05;
+  var FIT_FLOOR_SHARE = 0.6;
 
   function fitStyled(el, item, box, width, height, pad, line) {
     var label = item.text.indexOf('\n') < 0 && !(item.rows > 1);
     var x0 = box.left * width, x1 = box.right * width, y0 = box.top * height, y1 = box.bottom * height;
     var room = validBox(item.room);
-    // Alanı göndermeyen bilgisayarda: kısa etiket (en çok iki sözcük) her yana kendi genişliği kadar, uzun yazı yalnız
-    // kenar payı kadar.
     var words = item.text.split(/\s+/).length;
-    var spare = label && words <= 2 ? x1 - x0 : pad * width;
-    var r0 = room ? Math.min(x0, room.left * width) : Math.max(0, x0 - spare);
-    var r1 = room ? Math.max(x1, room.right * width) : Math.min(width, x1 + spare);
+    var squeezable = label && words <= 2;
     var padX = pad * width, padY = pad * height;
+    var pl = room ? Math.min(padX, Math.max(0, x0 - room.left * width)) : 0;
+    var pr = room ? Math.min(padX, Math.max(0, room.right * width - x1)) : 0;
     var rows = label ? 1 : (item.rows > 1 ? item.rows : Math.max(1, Math.round((y1 - y0) / Math.max(1, line))));
     var size = Math.max(10, Math.min(96 * height / 1080, Math.round(line * 0.95)));
-    var align = item.style && item.style.align;
-    if (align !== 'center' && align !== 'right') align = 'left';
+    var subtitle = typeof fontBase === 'number' && fontBase > 0 ? fontBase : 46;
+    // Alt sınır yalnız cümlede (en az üç sözcük ya da çok satırlı yazı); kısa etiket simgeye taşmasın diye küçülebilir.
+    var floor = squeezable ? 0 : FIT_FLOOR_SHARE * subtitle * height / 1080 / size;
     var inner = document.createElement('span');
     while (el.firstChild) inner.appendChild(el.firstChild);
     el.appendChild(inner);
-    var pitch = Math.max(1, (y1 - y0) / rows) + 'px';
+    var pitch = Math.max(1, (y1 - y0) / rows);
     inner.style.display = 'block';
     inner.style.whiteSpace = label ? 'nowrap' : (item.paragraphs === true ? 'pre-line' : 'normal');
     el.style.whiteSpace = label ? 'nowrap' : '';
-    inner.style.lineHeight = pitch;
-    el.style.fontSize = size + 'px';
-    el.style.lineHeight = pitch;
     el.style.top = (y0 - padY) + 'px';
     el.style.minHeight = '';
     // Sıkıştırılan yazının kutusu sağ kenarı yerinde kalarak sola doğru genişletilir ve sağ kenarından ölçeklenir: görünen
     // yeri yazının alanıdır, sığmayan yarı sola taşar (kaydırma payına girmez; eski Chromium dönüşümü saymıyordu).
     inner.style.transformOrigin = '100% 50%';
     inner.style.webkitTransformOrigin = '100% 50%';
-    var a = x0, b = x1, squeeze = 1;
+    var squeeze = 1, scale = Math.max(1, floor);
     function place() {
-      var pl = Math.min(padX, Math.max(0, a - r0)), pr = Math.min(padX, Math.max(0, r1 - b));
-      el.style.left = (a - pl) + 'px';
-      el.style.width = (b - a + pl + pr) + 'px';
+      var font = Math.max(8, size * scale);
+      // Tek satırlık etiket özgün satırın ortasında; küçülen ya da satıra inen yazının satır aralığı yazı boyundan (kutu
+      // alttaki satırın üstüne az uzasın); alt sınırla büyüyen yazının satırı da büyür (basık görünmesin).
+      var gap = scale > 1 ? Math.max(pitch, font * 1.15) : label ? pitch : scale < 1 ? Math.min(pitch, font * 1.05) : pitch;
+      el.style.fontSize = font + 'px';
+      el.style.lineHeight = gap + 'px';
+      inner.style.lineHeight = gap + 'px';
+      el.style.left = (x0 - pl) + 'px';
+      el.style.width = (x1 - x0 + pl + pr) + 'px';
       el.style.padding = padY + 'px ' + pr + 'px ' + padY + 'px ' + pl + 'px';
       // Yükseklik en az özgün kutununki; kesirli piksel yuvarlaması yazıyı kutudan taşırmasın diye sabit değil.
       el.style.minHeight = (y1 - y0 + 2 * padY) + 'px';
-      inner.style.width = ((b - a) / squeeze) + 'px';
-      var scale = squeeze === 1 ? '' : 'scaleX(' + squeeze + ')';
-      inner.style.transform = scale;
-      inner.style.webkitTransform = scale;
-      inner.style.marginLeft = ((b - a) - (b - a) / squeeze) + 'px';
+      inner.style.width = ((x1 - x0) / squeeze) + 'px';
+      var transform = squeeze === 1 ? '' : 'scaleX(' + squeeze + ')';
+      inner.style.transform = transform;
+      inner.style.webkitTransform = transform;
+      inner.style.marginLeft = ((x1 - x0) - (x1 - x0) / squeeze) + 'px';
     }
-    function fits() {
-      return label ? inner.scrollWidth <= (b - a) / squeeze + 1 : inner.scrollHeight <= (y1 - y0) + 1;
-    }
-    // Genişleme: önce hizanın tersine (sola yaslı sağa, sağa yaslı sola, ortalı iki yana), alan bitince öbür yana.
-    function widen(extra) {
-      var left = 0, right = 0;
-      if (align === 'left') right = extra;
-      else if (align === 'right') left = extra;
-      else { left = extra / 2; right = extra / 2; }
-      var freeLeft = Math.max(0, a - r0), freeRight = Math.max(0, r1 - b);
-      var overRight = Math.max(0, right - freeRight), overLeft = Math.max(0, left - freeLeft);
-      right = Math.min(freeRight, right + overLeft);
-      left = Math.min(freeLeft, left + overRight);
-      a -= left;
-      b += right;
-    }
-    place();
-    // Önce yalnız yatay sıkıştırma (GTA 6 gibi oyunların yazısı zaten dar), sonra alanın içinde genişleme, en son daha
-    // çok sıkıştırma: çeviri olabildiğince özgün yazının kendi kutusunda kalır.
+    // Yatayda taşıyor mu (tek satır ya da satıra sığmayan sözcük).
+    function wide() { return inner.scrollWidth > (x1 - x0) / squeeze + 1; }
+    function fits() { return !wide() && (label || inner.scrollHeight <= (y1 - y0) + 1); }
     function squeezeTo(least) {
-      while (!fits() && squeeze > least + 1e-6) {
+      while (wide() && squeeze > least + 1e-6) {
         squeeze = Math.max(least, Math.round((squeeze - FIT_SQUEEZE_STEP) * 100) / 100);
         place();
       }
     }
-    squeezeTo(FIT_FIRST_SQUEEZE);
-    if (!fits()) {
-      if (label) {
-        widen(inner.scrollWidth * squeeze - (b - a) + 1);
+    function shrinkTo(least, until, below) {
+      if (!below) least = Math.max(least, floor);
+      while (!until() && scale > least + 1e-6) {
+        scale = Math.max(least, Math.round((scale - FIT_SCALE_STEP) * 100) / 100);
         place();
-      } else {
-        var step = Math.max(4, (x1 - x0) * 0.1);
-        // Paragraf yalnız hizasının tersine genişler: satırların başladığı kenar özgün yazınınkiyle aynı kalır.
-        while (!fits() && (align === 'right' ? a > r0 + 0.5 : align === 'left' ? b < r1 - 0.5 : a > r0 + 0.5 && b < r1 - 0.5)) {
-          if (align === 'left') b = Math.min(r1, b + step);
-          else if (align === 'right') a = Math.max(r0, a - step);
-          else { a = Math.max(r0, a - step / 2); b = Math.min(r1, b + step / 2); }
-          place();
-        }
       }
     }
-    squeezeTo(FIT_MIN_SQUEEZE);
+    place();
+    // 1) Yalnız en çok iki sözcüklük etiket (menü sekmesi, düğme) yatayda en çok %10 sıkışır.
+    if (squeezable) squeezeTo(FIT_FIRST_SQUEEZE);
+    // 2) Yazı küçülür (alt sınırın altına inmeden).
+    shrinkTo(label ? FIT_LAST_SCALE : FIT_MIN_SCALE, fits);
     if (fits()) return;
-    // Son çare (yazı kesilmez, küçülmez): kısa etiket (en çok iki sözcük) ekran içinde yana, uzun yazı aşağı uzar.
-    if (label && words > 2) {
+    // 3) Satır kırılır, kutu aşağı uzar (yana değil).
+    if (label && words > 1) {
       label = false;
       inner.style.whiteSpace = 'normal';
       el.style.whiteSpace = '';
-      // Satıra inen yazı sıkıştırılmaz.
       squeeze = 1;
       place();
     }
-    if (label) {
-      r0 = 0;
-      r1 = width;
-      widen(inner.scrollWidth * squeeze - (b - a) + 1);
-      place();
-    }
-    // Uzun yazıda kutunun yüksekliği sabit değil (en az özgün kutununki): yazı sığana kadar aşağı uzar.
+    // 4) Satıra sığmayan tek sözcük: yazı (alt sınırın da altına) küçülür; etiketse en çok %10 sıkışır. Yana taşmamak alt
+    // sınırdan önce gelir.
+    shrinkTo(FIT_LAST_SCALE, function () { return !wide(); }, true);
+    if (squeezable) squeezeTo(FIT_FIRST_SQUEEZE);
+    // Paragrafta kutunun yüksekliği sabit değil (en az özgün kutununki): yazı sığana kadar aşağı uzar.
   }
 
   function showScreen(items, duration) {

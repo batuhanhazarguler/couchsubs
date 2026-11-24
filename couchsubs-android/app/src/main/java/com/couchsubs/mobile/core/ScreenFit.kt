@@ -7,27 +7,41 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * "Ekranı çevir" öğelerinin yerleşimi: çeviri özgün yazının birebir yerinde ve boyunda çizilsin, simgeleri örtmesin
+ * "Ekranı çevir" öğelerinin yerleşimi: çeviri özgün yazının birebir yerinde çizilsin, simgeleri hiç örtmesin
  * (Mac: CouchSubsCore/ScreenFit.swift, Windows: ScreenFit.cs; aynı kurallar). TV ve öbür çiziciler bunlara göre çizer:
- * - [ScreenTranslation.Item.room]: kutunun genişleyebileceği yatay alan. Özgün yazının iki yanında, zeminden belirgin
- *   ayrılan ilk noktaya (kumanda simgesi, menü simgesi, fotoğraf, başka yazı) kadar, araya satır yüksekliğinin çeyreği
- *   boşluk bırakılarak; aynı satırdaki komşu öğeyle arası ortadan bölünür. Kutu bu alanın dışına hiç taşmaz.
- * - Kutu yalnız yazının noktalarını kapsar: ucundaki ayrı duran küçük leke simgedir, kutunun dışında kalır.
+ * - Çeviri yatayda özgün yazının kutusundan hiç taşmaz: önce en çok %10 yatay sıkıştırma, sonra yazı küçülür, sonra satır
+ *   kırılır ve kutu aşağı uzar ([lines]). Önceden kutu simgeye kadar yana genişliyor, tuş simgesinin üstüne biniyordu (#1203).
+ * - [ScreenTranslation.Item.room]: kenar payının gidebileceği yatay alan. Özgün yazının iki yanında en çok [EDGE_LINES]
+ *   satır yüksekliği; zeminden belirgin ayrılan ilk noktadan (kumanda simgesi, menü simgesi, fotoğraf, başka yazı) satır
+ *   yüksekliğinin çeyreği önce biter; aynı satırdaki komşu öğeyle arası ortadan bölünür. Zemin rengi bilinmiyorsa kutudur.
+ * - Kutu yalnız yazının noktalarını kapsar: yazı tanıma kutusunun ucundaki simge ([iconEdges]) kutunun dışında kalır.
  * - Hiza: alt alta dizilmiş kısa etiketlerin sağ kenarları aynıysa hepsi sağa yaslı, sol kenarları aynıysa sola; aynı
  *   satırda en az üç etiket varsa (menü şeridinin sekmeleri) ortalı.
  * - Eş öğeler (aynı satırdaki sekmeler, alt alta menü satırları) aynı yazı boyunda (#859).
  */
 object ScreenFit {
     const val GAP_LINES = 0.25
-    const val GROW_LINES = 8.0
+    /** Kenar payı kutunun her yanında en çok bu kadar satır yüksekliği; yazının kendisi kutunun dışına çıkmaz. */
+    const val EDGE_LINES = 0.3
     const val SAME_LINE = 0.15
-    const val INK_DISTANCE = 56
+    /** Düşük: kumanda düğmesinin koyu halkası zemine yakındır; yanlış bulunan nokta yalnız kenar payını daraltır. */
+    const val INK_DISTANCE = 32
+    const val ICON_GAP_LINES = 0.1
+    const val ICON_TALLER = 1.1
+    const val ICON_TALLER_ALONE = 1.5
+    const val ICON_INK = 30
 
     /** Öğeler yerleşim bilgileriyle; kare yoksa olduğu gibi. [color]: (x, y) rengi 0xRRGGBB; yoksa parlaklık kullanılır. */
     fun fitted(items: List<ScreenTranslation.Item>, frame: GrayFrame?, color: ((Int, Int) -> Int)? = null): List<ScreenTranslation.Item> {
         if (frame == null || frame.width <= 0 || frame.height <= 0 || !frame.isValid) return items
         val aspect = frame.width.toDouble() / frame.height
-        val laid = uniform(aligned(tightened(items, frame, aspect), aspect), aspect)
+        val tight = tightened(items, frame, aspect) { box, lineX, words ->
+            iconEdges(box, lineX, words, frame.width, frame.height) { x, y ->
+                if (color != null) color(x, y).let { (299 * ((it shr 16) and 255) + 587 * ((it shr 8) and 255) + 114 * (it and 255)) / 1000 }
+                else frame.at(x, y)
+            }
+        }
+        val laid = uniform(aligned(tight, aspect), aspect)
         return withRoom(laid, aspect, { x, y ->
             if (color != null) color(x, y) else frame.at(x, y).let { (it shl 16) or (it shl 8) or it }
         }, frame.width, frame.height)
@@ -41,19 +55,115 @@ object ScreenFit {
     private fun rowOverlap(a: TextBox, b: TextBox): Double =
         max(0.0, min(a.bottom, b.bottom) - max(a.top, b.top)) / max(1e-9, min(height(a), height(b)))
 
-    internal fun tightened(items: List<ScreenTranslation.Item>, frame: GrayFrame, aspect: Double): List<ScreenTranslation.Item> =
+    internal fun tightened(
+        items: List<ScreenTranslation.Item>, frame: GrayFrame, aspect: Double,
+        icons: ((TextBox, Double, List<String>) -> Pair<Double?, Double?>)? = null,
+    ): List<ScreenTranslation.Item> =
         items.map { item ->
             if (!takesPart(item) || !item.icons.isNullOrEmpty()) return@map item
             val box = item.box
             val lineX = item.lineHeight / aspect
-            val spans = ScreenTranslation.inkSpans(frame, box, 0.6 * lineX)
-            if (spans.size < 2) return@map item
+            // Kutunun en az yarısı kalmalı; kalmıyorsa o kesim yanlıştır (koyu dokulu zemin), yapılmaz.
+            fun keeps(l: Double, r: Double) = r - l >= 0.5 * (box.right - box.left)
             var left = box.left
             var right = box.right
-            if (spans.last().second - spans.last().first <= 1.5 * lineX) right = spans[spans.size - 2].second
-            if (spans[0].second - spans[0].first <= 1.5 * lineX && (spans.size >= 3 || right == box.right)) left = spans[1].first
-            if (right - left < 0.5 * (box.right - box.left)) item else item.copy(box = TextBox(left, box.top, right, box.bottom))
+            val spans = ScreenTranslation.inkSpans(frame, box, 0.6 * lineX)
+            if (spans.size >= 2) {
+                var l = box.left
+                var r = box.right
+                if (spans.last().second - spans.last().first <= 1.5 * lineX) r = spans[spans.size - 2].second
+                if (spans[0].second - spans[0].first <= 1.5 * lineX && (spans.size >= 3 || r == box.right)) l = spans[1].first
+                if (keeps(l, r)) { left = l; right = r }
+            }
+            if (item.rows <= 1 && icons != null) {
+                val edges = icons(box, lineX, item.source.split(Regex("\\s+")).filter { it.isNotEmpty() })
+                val l = max(left, edges.first ?: left)
+                val r = min(right, edges.second ?: right)
+                if (keeps(l, r)) { left = l; right = r }
+            }
+            if (left == box.left && right == box.right) item else item.copy(box = TextBox(left, box.top, right, box.bottom))
         }
+
+    /**
+     * Yazı tanıma kutusunun ucundaki kumanda/menü simgesi (Mac: ScreenFit.iconEdges, aynı örnekleme): kutunun yatay alanı,
+     * üstünden ve altından yarım kutu yüksekliği fazlasıyla taranır; zeminden (ortanca parlaklık) [ICON_INK]'ten çok ayrılan
+     * noktalar [ICON_GAP_LINES]'tan geniş boşluklarla parçalara bölünür. Uçtaki parça aşağı yukarı kare (en/boy 0,6-1,8) ve
+     * öbür parçaların en uzunundan uzunsa simgedir: okunan yazı o parçayı açıklamıyorsa [ICON_TALLER] kat (uçtaki sözcük
+     * okunmuş simge ya da küçük harfsiz kısa etikette parça sayısı sözcüklerden çok), açıklıyorsa [ICON_TALLER_ALONE] kat ve
+     * hem üste hem alta taşarak. Dönen: (yazının başladığı yer, bittiği yer), simge yoksa null.
+     */
+    fun iconEdges(
+        box: TextBox, lineX: Double, words: List<String>?, frameWidth: Int, frameHeight: Int, luma: (Int, Int) -> Int,
+    ): Pair<Double?, Double?> {
+        val fw = frameWidth.toDouble()
+        val fh = frameHeight.toDouble()
+        val half = 0.5 * (box.bottom - box.top)
+        val top = max(0.0, box.top - half)
+        val bottom = min(1.0, box.bottom + half)
+        val left = max(0.0, box.left)
+        val right = min(1.0, box.right)
+        val width = (right - left) * fw
+        val height = (bottom - top) * fh
+        if (width < 8 || height < 6 || frameWidth <= 0 || frameHeight <= 0) return null to null
+        val columns = Math.round(width).toInt().coerceIn(8, 800)
+        val rows = 24
+        val cells = IntArray(columns * rows)
+        for (y in 0 until rows) {
+            val py = min(frameHeight - 1, (top * fh + (y + 0.5) * height / rows).toInt())
+            for (x in 0 until columns) {
+                val px = min(frameWidth - 1, (left * fw + (x + 0.5) * width / columns).toInt())
+                cells[y * columns + x] = luma(px, py)
+            }
+        }
+        val median = cells.sorted()[cells.size / 2]
+        val ink = BooleanArray(cells.size) { abs(cells[it] - median) > ICON_INK }
+        val step = (right - left) / columns
+        val blank = max(1, kotlin.math.ceil(ICON_GAP_LINES * lineX / max(1e-9, step)).toInt())
+        // Parça: [ilk sütun, son sütun, en üst satır, en alt satır].
+        val spans = mutableListOf<IntArray>()
+        var open: IntArray? = null
+        var run = 0
+        for (x in 0 until columns) {
+            var first = -1
+            var last = -1
+            for (y in 0 until rows) {
+                if (!ink[y * columns + x]) continue
+                if (first < 0) first = y
+                last = y
+            }
+            if (first >= 0) {
+                val span = open
+                if (span == null) open = intArrayOf(x, x, first, last)
+                else { span[1] = x; span[2] = min(span[2], first); span[3] = max(span[3], last) }
+                run = 0
+            } else if (open != null && ++run > blank) {
+                spans.add(open)
+                open = null
+                run = 0
+            }
+        }
+        open?.let { spans.add(it) }
+        if (spans.size < 2) return null to null
+        val cellWidth = width / columns
+        val cellHeight = height / rows
+        val extra = words != null && spans.size > words.size && words.size <= 5 && words.joinToString("").none { it.isLowerCase() }
+        fun isIcon(span: IntArray, others: List<IntArray>, edge: String?): Boolean {
+            val reference = others.maxOfOrNull { it[3] - it[2] + 1 } ?: 0
+            val tall = span[3] - span[2] + 1
+            val wide = span[1] - span[0] + 1
+            val shape = wide * cellWidth / (tall * cellHeight)
+            if (reference <= 0 || shape < 0.6 || shape > 1.8) return false
+            if (extra || (edge != null && ButtonIcons.isIconToken(edge))) return tall >= ICON_TALLER * reference
+            val above = others.minOf { it[2] }
+            val below = others.maxOf { it[3] }
+            return tall >= ICON_TALLER_ALONE * reference && span[2] < above && span[3] > below
+        }
+        val start = if (isIcon(spans[0], spans.drop(1), words?.firstOrNull())) left + spans[1][0] * step else null
+        val end = if (isIcon(spans.last(), spans.dropLast(1), words?.lastOrNull())) left + (spans[spans.size - 2][1] + 1) * step else null
+        // İki parçalı kutuda ikisi birden simge olamaz.
+        if (start != null && end != null && spans.size < 3) return null to null
+        return start to end
+    }
 
     internal fun aligned(items: List<ScreenTranslation.Item>, aspect: Double): List<ScreenTranslation.Item> {
         val labels = items.indices.filter { takesPart(items[it]) && items[it].rows <= 1 }
@@ -112,7 +222,7 @@ object ScreenFit {
     private fun hexRgb(hex: String): Int? =
         if (hex.length == 7 && hex[0] == '#') hex.substring(1).toIntOrNull(16) else null
 
-    /** Her öğenin genişleyebileceği yatay alan. [color]: karenin noktası, 0xRRGGBB. */
+    /** Her öğenin kenar payının gidebileceği yatay alan. [color]: karenin noktası, 0xRRGGBB. */
     internal fun withRoom(
         items: List<ScreenTranslation.Item>, aspect: Double, color: (Int, Int) -> Int, frameWidth: Int, frameHeight: Int,
     ): List<ScreenTranslation.Item> = items.mapIndexed { i, item ->
@@ -120,14 +230,16 @@ object ScreenFit {
         val box = item.box
         val lineX = item.lineHeight / aspect
         val gap = GAP_LINES * lineX
-        var left = max(0.0, box.left - GROW_LINES * lineX)
-        var right = min(1.0, box.right + GROW_LINES * lineX)
+        val background = item.surface?.background?.let(::hexRgb)
+        // Zemin bilinmiyorsa yandaki simge aranamaz: kenar payı da kutunun içinde kalır.
+        val edgeX = if (background != null) EDGE_LINES * lineX else 0.0
+        var left = max(0.0, box.left - edgeX)
+        var right = min(1.0, box.right + edgeX)
         for ((j, other) in items.withIndex()) {
             if (j == i || rowOverlap(box, other.box) < 0.3) continue
             if (other.box.left >= box.right - 1e-9) right = min(right, (box.right + other.box.left) / 2)
             if (other.box.right <= box.left + 1e-9) left = max(left, (other.box.right + box.left) / 2)
         }
-        val background = item.surface?.background?.let(::hexRgb)
         if (background != null) {
             val y0 = ((box.top + 0.2 * height(box)) * frameHeight).roundToInt()
             val y1 = ((box.bottom - 0.2 * height(box)) * frameHeight).roundToInt()
@@ -168,63 +280,85 @@ object ScreenFit {
                 return null
             }
             val edge = 2.0 / frameWidth
-            scan(box.right + edge, right)?.let { right = min(right, it - gap) }
-            scan(box.left - edge, left)?.let { left = max(left, it + gap) }
+            // Simgeyle arada gap kalsın diye tarama kenar payından gap kadar öteye gider.
+            scan(box.right + edge, min(1.0, right + gap))?.let { right = min(right, it - gap) }
+            scan(box.left - edge, max(0.0, left - gap))?.let { left = max(left, it + gap) }
         }
         item.copy(room = TextBox(min(box.left, left), box.top, max(box.right, right), box.bottom))
     }
 
     // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Windows ile aynı) ---
 
-    /** Bir çevirinin çizimi: satırları, yalnız yatay ölçeği (en az [MIN_SQUEEZE]) ve yazının alanının yeri (piksel). */
-    data class Lines(val lines: List<String>, val squeeze: Double, val left: Double, val width: Double)
+    /** Bir çevirinin çizimi: satırları, yalnız yatay ölçeği ve yazı boyunun ölçeği. Alan her zaman özgün kutudur. */
+    data class Lines(val lines: List<String>, val squeeze: Double, val scale: Double)
 
+    /** Yatay sıkıştırma yalnız en çok iki sözcüklük tek satırlık etikette ve en çok %10. */
     const val FIRST_SQUEEZE = 0.9
-    const val MIN_SQUEEZE = 0.85
+    /** Sığmayan çok satırlı yazı önce bu orana kadar küçülür, sonra satır eklenir. */
+    const val MIN_SCALE = 0.6
+    /** Sığmayan tek satırlık etiket ve tek sözcük en çok bu orana kadar küçülür (etiket sonra satıra iner). */
+    const val LAST_SCALE = 0.5
+    /** Ekran yazısının en küçük boyu, konuşma altyazısının (öntanımlı, 1080 satırlık ekranda) bu kadarı. */
+    const val FLOOR_SHARE = 0.6
+    const val SUBTITLE_FONT = 46.0
+
+    /** Ekran yazısı alt sınırının özgün yazı boyuna oranı ([lines]'ın `floor`'u). */
+    fun floor(fontSize: Double, screenHeight: Double): Double =
+        if (fontSize > 0) FLOOR_SHARE * SUBTITLE_FONT * screenHeight / 1080 / fontSize else 0.0
 
     /**
-     * Çeviriyi özgün yazının alanına yerleştirir; yazı boyu hiç değişmez. [measure]: yazının çizicinin kendi yazı tipiyle,
-     * sabit boyda genişliği (piksel). [room]: genişleyebileceği alan (sol, sağ; piksel), yoksa kutunun kendisi. [rows]:
-     * özgün satır sayısı; tek satırlık uzun yazı son çare olarak gerektiği kadar satıra iner.
+     * Çeviriyi özgün yazının alanına (genişliği [width], piksel) yerleştirir; alan yana hiç genişlemez (Mac: ScreenFit.lines,
+     * aynı sıra). Sığmazsa: en çok iki sözcüklük etikette en çok %10 yatay sıkıştırma, yazının küçülmesi (tek satırlık
+     * etiket [LAST_SCALE]'e, çok satırlı yazı [MIN_SCALE]'e kadar, alt sınırın altına inmeden), satır kırma (kutu aşağı
+     * uzar), tek sözcükte [LAST_SCALE]'e kadar.
      */
-    fun lines(text: String, left: Double, width: Double, room: Pair<Double, Double>?, rows: Int, align: String,
-              measure: (String) -> Double): Lines {
+    fun lines(text: String, width: Double, rows: Int, floorScale: Double = 0.0, measure: (String) -> Double): Lines {
         val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
         var lines = text.split("\n")
         val count = max(rows, lines.size)
-        if (lines.size == 1 && (count > 1 || (words.size > 2 && measure(text) > width / MIN_SQUEEZE))) {
-            val cap = if (count > 1) count else Int.MAX_VALUE
-            val target = max(width / FIRST_SQUEEZE, measure(text) / max(1, count))
-            val made = mutableListOf<String>()
-            var current = ""
-            for (word in words) {
-                val next = if (current.isEmpty()) word else "$current $word"
-                if (current.isNotEmpty() && measure(next) > target && made.size < cap - 1) {
-                    made.add(current)
-                    current = word
-                } else current = next
+        val squeezable = count <= 1 && words.size <= 2
+        // Alt sınır yalnız cümlede (en az üç sözcük ya da çok satırlı yazı): kısa etiket simgeye taşmasın diye küçülebilir.
+        val floor = if (squeezable) 0.0 else floorScale
+        val limit = if (squeezable) width / FIRST_SQUEEZE else width
+        if (lines.size == 1 && count > 1) lines = wrapped(words, max(limit, measure(text) / count), count, measure)
+        var widest = lines.maxOfOrNull(measure) ?: 0.0
+        val start = max(1.0, floor)
+        var scale = start
+        if (widest * start > limit) {
+            val least = max(floor, if (count > 1) MIN_SCALE else LAST_SCALE)
+            if (widest * least > limit && words.size >= 2) {
+                lines = lines.flatMap { line ->
+                    wrapped(line.split(Regex("\\s+")).filter { it.isNotEmpty() }, limit / least, Int.MAX_VALUE, measure)
+                }
+                widest = lines.maxOfOrNull(measure) ?: 0.0
             }
-            if (current.isNotEmpty()) made.add(current)
-            lines = made
+            // Satıra sığmayan tek sözcük alt sınırın da altına küçülür: yana taşmamak önce gelir.
+            scale = max(LAST_SCALE, min(start, limit / max(1e-9, widest)))
         }
-        val widest = lines.maxOfOrNull(measure) ?: 0.0
-        var a = left
-        var b = left + width
-        val r0 = min(left, room?.first ?: left)
-        val r1 = max(left + width, room?.second ?: (left + width))
-        var squeeze = if (widest > 0) min(1.0, (b - a) / widest) else 1.0
-        if (squeeze < FIRST_SQUEEZE) {
-            val extra = widest * FIRST_SQUEEZE - (b - a)
-            var l = when (align) { "right" -> extra; "center" -> extra / 2; else -> 0.0 }
-            var r = extra - l
-            val freeL = a - r0
-            val freeR = r1 - b
-            if (r > freeR) { l += r - freeR; r = freeR }
-            if (l > freeL) { r = min(freeR, r + l - freeL); l = freeL }
-            a -= l
-            b += r
-            squeeze = max(MIN_SQUEEZE, min(1.0, (b - a) / widest))
-        }
-        return Lines(lines, squeeze, a, b - a)
+        val squeeze = if (squeezable && widest > 0) max(FIRST_SQUEEZE, min(1.0, width / (widest * scale))) else 1.0
+        return Lines(lines, squeeze, scale)
     }
+
+    /** Sözcükler satırlara: her satır [limit]'e kadar dolar, en çok [cap] satır (sonuncusu kalanı alır). */
+    private fun wrapped(words: List<String>, limit: Double, cap: Int, measure: (String) -> Double): List<String> {
+        val made = mutableListOf<String>()
+        var current = ""
+        for (word in words) {
+            val next = if (current.isEmpty()) word else "$current $word"
+            if (current.isNotEmpty() && measure(next) > limit && made.size < cap - 1) {
+                made.add(current)
+                current = word
+            } else current = next
+        }
+        if (current.isNotEmpty() || made.isEmpty()) made.add(current)
+        return made
+    }
+
+    /**
+     * Kutunun sol ve sağ kenar payı (piksel): en çok [pad], kenar payı alanının ([room]: sol, sağ) dışına çıkmadan. Alan
+     * bilinmiyorsa kenar payı yoktur: yandaki simgenin yeri bilinmez.
+     */
+    fun pads(left: Double, width: Double, room: Pair<Double, Double>?, pad: Double): Pair<Double, Double> =
+        if (room == null) 0.0 to 0.0
+        else min(pad, max(0.0, left - room.first)) to min(pad, max(0.0, room.second - (left + width)))
 }

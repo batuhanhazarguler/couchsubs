@@ -212,7 +212,7 @@ object ButtonIcons {
     }
 
     /** Tek harf/simge (küçük "a" ve "I" dışında: sözcüktürler) ya da düğme adı; çevresindeki parantez ve noktalama sayılmaz. */
-    private fun isIconToken(text: String): Boolean {
+    internal fun isIconToken(text: String): Boolean {
         val core = text.trim { it in BRACKETS }.trimEnd { it in PUNCTUATION }.trim { it in BRACKETS }
         if (core.uppercase() in names) return true
         if (core.length != 1) return false

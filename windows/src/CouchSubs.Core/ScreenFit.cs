@@ -3,13 +3,18 @@
 namespace CouchSubs.Core;
 
 /// <summary>
-/// "Ekranı çevir" öğelerinin yerleşimi: çeviri özgün yazının birebir yerinde ve boyunda çizilsin, simgeleri örtmesin
+/// "Ekranı çevir" öğelerinin yerleşimi: çeviri özgün yazının birebir yerinde çizilsin, simgeleri hiç örtmesin
 /// (Mac: CouchSubsCore/ScreenFit.swift, Android: ScreenFit.kt; aynı kurallar). TV ve öbür çiziciler bunlara göre çizer:
 /// <list type="bullet">
-/// <item><see cref="ScreenTranslation.Item.Room"/>: kutunun genişleyebileceği yatay alan. Özgün yazının iki yanında, zeminden
-/// belirgin ayrılan ilk noktaya (kumanda simgesi, menü simgesi, fotoğraf, başka yazı) kadar, araya satır yüksekliğinin çeyreği
-/// boşluk bırakılarak; aynı satırdaki komşu öğeyle arası ortadan bölünür. Kutu bu alanın dışına hiç taşmaz.</item>
-/// <item>Kutu yalnız yazının noktalarını kapsar: ucundaki ayrı duran küçük leke simgedir, kutunun dışında kalır.</item>
+/// <item>Çeviri yatayda özgün yazının kutusundan hiç taşmaz: önce en çok %10 yatay sıkıştırma, sonra yazı küçülür, sonra satır
+/// kırılır ve kutu aşağı uzar (<see cref="Layout"/>). Önceden kutu simgeye kadar yana genişliyor, tuş simgesinin üstüne
+/// biniyordu (#1203).</item>
+/// <item><see cref="ScreenTranslation.Item.Room"/>: kenar payının gidebileceği yatay alan. Özgün yazının iki yanında en çok
+/// <see cref="EdgeLines"/> satır yüksekliği; zeminden belirgin ayrılan ilk noktadan (kumanda simgesi, menü simgesi, fotoğraf,
+/// başka yazı) satır yüksekliğinin çeyreği önce biter; aynı satırdaki komşu öğeyle arası ortadan bölünür. Zemin rengi
+/// bilinmiyorsa kutunun kendisidir.</item>
+/// <item>Kutu yalnız yazının noktalarını kapsar: yazı tanıma kutusunun ucundaki simge (<see cref="IconEdges"/>) kutunun
+/// dışında kalır.</item>
 /// <item>Hiza: alt alta dizilmiş kısa etiketlerin sağ kenarları aynıysa hepsi sağa yaslı, sol kenarları aynıysa sola; aynı
 /// satırda en az üç etiket varsa (menü şeridinin sekmeleri) ortalı.</item>
 /// <item>Eş öğeler (aynı satırdaki sekmeler, alt alta menü satırları) aynı yazı boyunda (#859).</item>
@@ -18,16 +23,28 @@ namespace CouchSubs.Core;
 public static class ScreenFit
 {
     public const double GapLines = 0.25;
-    public const double GrowLines = 8.0;
+    /// <summary>Kenar payı kutunun her yanında en çok bu kadar satır yüksekliği; yazının kendisi kutunun dışına çıkmaz.</summary>
+    public const double EdgeLines = 0.3;
     public const double SameLine = 0.15;
-    public const int InkDistance = 56;
+    /// <summary>Düşük: kumanda düğmesinin koyu halkası zemine yakındır; yanlış bulunan nokta yalnız kenar payını daraltır.</summary>
+    public const int InkDistance = 32;
+    public const double IconGapLines = 0.1;
+    public const double IconTaller = 1.1;
+    public const double IconTallerAlone = 1.5;
+    public const int IconInk = 30;
 
     /// <summary>Öğeler yerleşim bilgileriyle; kare yoksa olduğu gibi.</summary>
     public static IReadOnlyList<ScreenTranslation.Item> Fitted(IReadOnlyList<ScreenTranslation.Item> items, Frame? frame)
     {
         if (frame is null || frame.Width <= 0 || frame.Height <= 0 || !frame.IsConsistent) return items;
         var aspect = (double)frame.Width / frame.Height;
-        var laid = Uniform(Aligned(Tightened(items, frame, aspect), aspect), aspect);
+        int Luma(int x, int y)
+        {
+            var p = (y * frame.Stride) + (x * 4);
+            return ((299 * frame.Pixels[p + 2]) + (587 * frame.Pixels[p + 1]) + (114 * frame.Pixels[p])) / 1000;
+        }
+        var tight = Tightened(items, frame, aspect, (box, lineX, words) => IconEdges(box, lineX, words, frame.Width, frame.Height, Luma));
+        var laid = Uniform(Aligned(tight, aspect), aspect);
         return WithRoom(laid, aspect, (x, y) =>
         {
             var p = (y * frame.Stride) + (x * 4);
@@ -43,7 +60,8 @@ public static class ScreenFit
     private static double RowOverlap(TextBox a, TextBox b) =>
         Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top)) / Math.Max(1e-9, Math.Min(Height(a), Height(b)));
 
-    internal static List<ScreenTranslation.Item> Tightened(IReadOnlyList<ScreenTranslation.Item> items, Frame frame, double aspect)
+    internal static List<ScreenTranslation.Item> Tightened(IReadOnlyList<ScreenTranslation.Item> items, Frame frame, double aspect,
+        Func<TextBox, double, IReadOnlyList<string>, (double? Left, double? Right)>? icons = null)
     {
         var result = items.ToList();
         for (var i = 0; i < items.Count; i++)
@@ -52,15 +70,109 @@ public static class ScreenFit
             if (!TakesPart(item) || item.Icons is { Count: > 0 }) continue;
             var box = item.Box;
             var lineX = item.LineHeight / aspect;
-            var spans = ScreenTranslation.InkSpans(frame, box, 0.6 * lineX);
-            if (spans.Count < 2) continue;
+            // Kutunun en az yarısı kalmalı; kalmıyorsa o kesim yanlıştır (koyu dokulu zemin), yapılmaz.
+            bool Keeps(double l, double r) => r - l >= 0.5 * (box.Right - box.Left);
             double left = box.Left, right = box.Right;
-            if (spans[^1].Right - spans[^1].Left <= 1.5 * lineX) right = spans[^2].Right;
-            if (spans[0].Right - spans[0].Left <= 1.5 * lineX && (spans.Count >= 3 || right == box.Right)) left = spans[1].Left;
-            if (right - left < 0.5 * (box.Right - box.Left)) continue;
+            var spans = ScreenTranslation.InkSpans(frame, box, 0.6 * lineX);
+            if (spans.Count >= 2)
+            {
+                double l = box.Left, r = box.Right;
+                if (spans[^1].Right - spans[^1].Left <= 1.5 * lineX) r = spans[^2].Right;
+                if (spans[0].Right - spans[0].Left <= 1.5 * lineX && (spans.Count >= 3 || r == box.Right)) l = spans[1].Left;
+                if (Keeps(l, r)) { left = l; right = r; }
+            }
+            if (item.Rows <= 1 && icons is not null)
+            {
+                var edges = icons(box, lineX, item.Source.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+                double l = Math.Max(left, edges.Left ?? left), r = Math.Min(right, edges.Right ?? right);
+                if (Keeps(l, r)) { left = l; right = r; }
+            }
+            if (left == box.Left && right == box.Right) continue;
             result[i] = item with { Box = new TextBox(left, box.Top, right, box.Bottom) };
         }
         return result;
+    }
+
+    /// <summary>
+    /// Yazı tanıma kutusunun ucundaki kumanda/menü simgesi (Mac: ScreenFit.iconEdges, aynı örnekleme): kutunun yatay alanı,
+    /// üstünden ve altından yarım kutu yüksekliği fazlasıyla taranır; zeminden (ortanca parlaklık) <see cref="IconInk"/>'ten çok
+    /// ayrılan noktalar <see cref="IconGapLines"/>'tan geniş boşluklarla parçalara bölünür. Uçtaki parça aşağı yukarı kare
+    /// (en/boy 0,6-1,8) ve öbür parçaların en uzunundan uzunsa simgedir: okunan yazı o parçayı açıklamıyorsa
+    /// <see cref="IconTaller"/> kat (uçtaki sözcük okunmuş simge ya da küçük harfsiz kısa etikette parça sayısı sözcüklerden
+    /// çok), açıklıyorsa <see cref="IconTallerAlone"/> kat ve hem üste hem alta taşarak. Dönen: yazının başladığı/bittiği yer.
+    /// </summary>
+    public static (double? Left, double? Right) IconEdges(TextBox box, double lineX, IReadOnlyList<string>? words, int frameWidth,
+        int frameHeight, Func<int, int, int> luma)
+    {
+        double fw = frameWidth, fh = frameHeight;
+        var half = 0.5 * (box.Bottom - box.Top);
+        double top = Math.Max(0, box.Top - half), bottom = Math.Min(1, box.Bottom + half);
+        double left = Math.Max(0, box.Left), right = Math.Min(1, box.Right);
+        double width = (right - left) * fw, height = (bottom - top) * fh;
+        if (width < 8 || height < 6 || frameWidth <= 0 || frameHeight <= 0) return (null, null);
+        var columns = Math.Max(8, Math.Min(800, (int)Math.Round(width, MidpointRounding.AwayFromZero)));
+        const int rows = 24;
+        var cells = new int[columns * rows];
+        for (var y = 0; y < rows; y++)
+        {
+            var py = Math.Min(frameHeight - 1, (int)((top * fh) + ((y + 0.5) * height / rows)));
+            for (var x = 0; x < columns; x++)
+            {
+                var px = Math.Min(frameWidth - 1, (int)((left * fw) + ((x + 0.5) * width / columns)));
+                cells[(y * columns) + x] = luma(px, py);
+            }
+        }
+        var median = cells.Order().ElementAt(cells.Length / 2);
+        var ink = cells.Select(v => Math.Abs(v - median) > IconInk).ToArray();
+        var step = (right - left) / columns;
+        var blank = Math.Max(1, (int)Math.Ceiling(IconGapLines * lineX / Math.Max(1e-9, step)));
+        // Parça: [ilk sütun, son sütun, en üst satır, en alt satır].
+        var spans = new List<int[]>();
+        int[]? open = null;
+        var run = 0;
+        for (var x = 0; x < columns; x++)
+        {
+            int first = -1, last = -1;
+            for (var y = 0; y < rows; y++)
+            {
+                if (!ink[(y * columns) + x]) continue;
+                if (first < 0) first = y;
+                last = y;
+            }
+            if (first >= 0)
+            {
+                if (open is null) open = [x, x, first, last];
+                else { open[1] = x; open[2] = Math.Min(open[2], first); open[3] = Math.Max(open[3], last); }
+                run = 0;
+            }
+            else if (open is not null && ++run > blank)
+            {
+                spans.Add(open);
+                open = null;
+                run = 0;
+            }
+        }
+        if (open is not null) spans.Add(open);
+        if (spans.Count < 2) return (null, null);
+        double cellWidth = width / columns, cellHeight = height / rows;
+        var extra = words is not null && spans.Count > words.Count && words.Count <= 5 && !string.Concat(words).Any(char.IsLower);
+        bool IsIcon(int[] span, IEnumerable<int[]> others, string? edge)
+        {
+            var rest = others.ToList();
+            var reference = rest.Count == 0 ? 0 : rest.Max(o => o[3] - o[2] + 1);
+            int tall = span[3] - span[2] + 1, wide = span[1] - span[0] + 1;
+            var shape = wide * cellWidth / (tall * cellHeight);
+            if (reference <= 0 || shape < 0.6 || shape > 1.8) return false;
+            if (extra || (edge is not null && ButtonIcons.IsIconToken(edge))) return tall >= IconTaller * reference;
+            var above = rest.Min(o => o[2]);
+            var below = rest.Max(o => o[3]);
+            return tall >= IconTallerAlone * reference && span[2] < above && span[3] > below;
+        }
+        double? start = IsIcon(spans[0], spans.Skip(1), words?.FirstOrDefault()) ? left + (spans[1][0] * step) : null;
+        double? end = IsIcon(spans[^1], spans.Take(spans.Count - 1), words?.LastOrDefault()) ? left + ((spans[^2][1] + 1) * step) : null;
+        // İki parçalı kutuda ikisi birden simge olamaz.
+        if (start is not null && end is not null && spans.Count < 3) return (null, null);
+        return (start, end);
     }
 
     internal static List<ScreenTranslation.Item> Aligned(IReadOnlyList<ScreenTranslation.Item> items, double aspect)
@@ -110,7 +222,7 @@ public static class ScreenFit
         return result;
     }
 
-    /// <summary>Her öğenin genişleyebileceği yatay alan. <paramref name="color"/>: karenin noktası (kırmızı, yeşil, mavi).</summary>
+    /// <summary>Her öğenin kenar payının gidebileceği yatay alan. <paramref name="color"/>: karenin noktası (kırmızı, yeşil, mavi).</summary>
     internal static List<ScreenTranslation.Item> WithRoom(IReadOnlyList<ScreenTranslation.Item> items, double aspect,
         Func<int, int, (int R, int G, int B)> color, int frameWidth, int frameHeight)
     {
@@ -122,7 +234,10 @@ public static class ScreenFit
             var box = item.Box;
             var lineX = item.LineHeight / aspect;
             var gap = GapLines * lineX;
-            double left = Math.Max(0, box.Left - (GrowLines * lineX)), right = Math.Min(1, box.Right + (GrowLines * lineX));
+            var hasGround = item.Style is { } known && DesignTokens.Rgb(known.Background) is not null;
+            // Zemin bilinmiyorsa yandaki simge aranamaz: kenar payı da kutunun içinde kalır.
+            var edgeX = hasGround ? EdgeLines * lineX : 0;
+            double left = Math.Max(0, box.Left - edgeX), right = Math.Min(1, box.Right + edgeX);
             for (var j = 0; j < items.Count; j++)
             {
                 var other = items[j].Box;
@@ -161,8 +276,9 @@ public static class ScreenFit
                     return null;
                 }
                 var edge = 2.0 / frameWidth;
-                if (Scan(box.Right + edge, right) is { } inkRight) right = Math.Min(right, inkRight - gap);
-                if (Scan(box.Left - edge, left) is { } inkLeft) left = Math.Max(left, inkLeft + gap);
+                // Simgeyle arada gap kalsın diye tarama kenar payından gap kadar öteye gider.
+                if (Scan(box.Right + edge, Math.Min(1, right + gap)) is { } inkRight) right = Math.Min(right, inkRight - gap);
+                if (Scan(box.Left - edge, Math.Max(0, left - gap)) is { } inkLeft) left = Math.Max(left, inkLeft + gap);
             }
             result[i] = item with { Room = new TextBox(Math.Min(box.Left, left), box.Top, Math.Max(box.Right, right), box.Bottom) };
         }
@@ -171,55 +287,78 @@ public static class ScreenFit
 
     // --- Çizicilerin ortak satır yerleşimi (TV fitStyled ile aynı sıra; Mac/iPhone ve Android ile aynı) ---
 
-    /// <summary>Bir çevirinin çizimi: satırları, yalnız yatay ölçeği ve yazının alanının yeri (piksel).</summary>
-    public sealed record Lines(IReadOnlyList<string> Rows, double Squeeze, double Left, double Width);
+    /// <summary>Bir çevirinin çizimi: satırları, yalnız yatay ölçeği ve yazı boyunun ölçeği. Alan her zaman özgün kutudur.</summary>
+    public sealed record Lines(IReadOnlyList<string> Rows, double Squeeze, double Scale);
 
+    /// <summary>Yatay sıkıştırma yalnız en çok iki sözcüklük tek satırlık etikette ve en çok %10.</summary>
     public const double FirstSqueeze = 0.9;
-    public const double MinSqueeze = 0.85;
+    /// <summary>Sığmayan çok satırlı yazı önce bu orana kadar küçülür, sonra satır eklenir.</summary>
+    public const double MinScale = 0.6;
+    /// <summary>Sığmayan tek satırlık etiket ve tek sözcük en çok bu orana kadar küçülür (etiket sonra satıra iner).</summary>
+    public const double LastScale = 0.5;
+    /// <summary>Ekran yazısının en küçük boyu, konuşma altyazısının (öntanımlı, 1080 satırlık ekranda) bu kadarı.</summary>
+    public const double FloorShare = 0.6;
+    public const double SubtitleFont = 46.0;
+
+    /// <summary>Ekran yazısı alt sınırının özgün yazı boyuna oranı (<see cref="Layout"/>'un <c>floor</c>'u).</summary>
+    public static double Floor(double fontSize, double screenHeight) =>
+        fontSize > 0 ? FloorShare * SubtitleFont * screenHeight / 1080 / fontSize : 0;
 
     /// <summary>
-    /// Çeviriyi özgün yazının alanına yerleştirir; yazı boyu hiç değişmez. <paramref name="measure"/>: yazının çizicinin
-    /// kendi yazı tipiyle, sabit boyda genişliği (piksel). <paramref name="room"/>: genişleyebileceği alan (piksel), yoksa
-    /// kutunun kendisi. <paramref name="rows"/>: özgün satır sayısı; tek satırlık uzun yazı son çare olarak satıra iner.
+    /// Çeviriyi özgün yazının alanına (genişliği <paramref name="width"/>, piksel) yerleştirir; alan yana hiç genişlemez
+    /// (Mac: ScreenFit.lines, aynı sıra). Sığmazsa: en çok iki sözcüklük etikette en çok %10 yatay sıkıştırma, yazının
+    /// küçülmesi (tek satırlık etiket <see cref="LastScale"/>'e, çok satırlı yazı <see cref="MinScale"/>'e kadar, alt sınırın
+    /// altına inmeden), satır kırma (kutu aşağı uzar), tek sözcükte <see cref="LastScale"/>'e kadar.
     /// </summary>
-    public static Lines Layout(string text, double left, double width, (double Left, double Right)? room, int rows, string align,
-                               Func<string, double> measure)
+    public static Lines Layout(string text, double width, int rows, Func<string, double> measure, double floor = 0)
     {
         var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         IReadOnlyList<string> lines = text.Split('\n');
         var count = Math.Max(rows, lines.Count);
-        if (lines.Count == 1 && (count > 1 || (words.Length > 2 && measure(text) > width / MinSqueeze)))
-        {
-            var cap = count > 1 ? count : int.MaxValue;
-            var target = Math.Max(width / FirstSqueeze, measure(text) / Math.Max(1, count));
-            var made = new List<string>();
-            var current = "";
-            foreach (var word in words)
-            {
-                var next = current.Length == 0 ? word : current + " " + word;
-                if (current.Length > 0 && measure(next) > target && made.Count < cap - 1) { made.Add(current); current = word; }
-                else current = next;
-            }
-            if (current.Length > 0) made.Add(current);
-            lines = made;
-        }
+        var squeezable = count <= 1 && words.Length <= 2;
+        // Alt sınır yalnız cümlede (en az üç sözcük ya da çok satırlı yazı): kısa etiket simgeye taşmasın diye küçülebilir.
+        if (squeezable) floor = 0;
+        var limit = squeezable ? width / FirstSqueeze : width;
+        if (lines.Count == 1 && count > 1)
+            lines = Wrapped(words, Math.Max(limit, measure(text) / count), count, measure);
         var widest = lines.Count == 0 ? 0 : lines.Max(measure);
-        double a = left, b = left + width;
-        var r0 = Math.Min(left, room?.Left ?? left);
-        var r1 = Math.Max(left + width, room?.Right ?? left + width);
-        var squeeze = widest > 0 ? Math.Min(1, (b - a) / widest) : 1;
-        if (squeeze < FirstSqueeze)
+        var start = Math.Max(1, floor);
+        var scale = start;
+        if (widest * start > limit)
         {
-            var extra = (widest * FirstSqueeze) - (b - a);
-            var l = align == "right" ? extra : align == "center" ? extra / 2 : 0;
-            var r = extra - l;
-            double freeL = a - r0, freeR = r1 - b;
-            if (r > freeR) { l += r - freeR; r = freeR; }
-            if (l > freeL) { r = Math.Min(freeR, r + l - freeL); l = freeL; }
-            a -= l;
-            b += r;
-            squeeze = Math.Max(MinSqueeze, Math.Min(1, (b - a) / widest));
+            var least = Math.Max(floor, count > 1 ? MinScale : LastScale);
+            if (widest * least > limit && words.Length >= 2)
+            {
+                lines = lines.SelectMany(line => Wrapped(line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries),
+                    limit / least, int.MaxValue, measure)).ToList();
+                widest = lines.Max(measure);
+            }
+            // Satıra sığmayan tek sözcük alt sınırın da altına küçülür: yana taşmamak önce gelir.
+            scale = Math.Max(LastScale, Math.Min(start, limit / Math.Max(1e-9, widest)));
         }
-        return new Lines(lines, squeeze, a, b - a);
+        var squeeze = squeezable && widest > 0 ? Math.Max(FirstSqueeze, Math.Min(1, width / (widest * scale))) : 1;
+        return new Lines(lines, squeeze, scale);
     }
+
+    /// <summary>Sözcükler satırlara: her satır <paramref name="limit"/>'e kadar dolar, en çok <paramref name="cap"/> satır.</summary>
+    private static List<string> Wrapped(IReadOnlyList<string> words, double limit, int cap, Func<string, double> measure)
+    {
+        var made = new List<string>();
+        var current = "";
+        foreach (var word in words)
+        {
+            var next = current.Length == 0 ? word : current + " " + word;
+            if (current.Length > 0 && measure(next) > limit && made.Count < cap - 1) { made.Add(current); current = word; }
+            else current = next;
+        }
+        if (current.Length > 0 || made.Count == 0) made.Add(current);
+        return made;
+    }
+
+    /// <summary>
+    /// Kutunun sol ve sağ kenar payı (piksel): en çok <paramref name="pad"/>, kenar payı alanının dışına çıkmadan. Alan
+    /// bilinmiyorsa kenar payı yoktur: yandaki simgenin yeri bilinmez.
+    /// </summary>
+    public static (double Left, double Right) Pads(double left, double width, (double Left, double Right)? room, double pad) =>
+        room is not { } r ? (0, 0) : (Math.Min(pad, Math.Max(0, left - r.Left)), Math.Min(pad, Math.Max(0, r.Right - (left + width))));
 }

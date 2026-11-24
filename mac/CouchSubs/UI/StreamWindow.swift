@@ -327,7 +327,7 @@ enum StyledScreenText {
 }
 
 /// Ekran yazısı blokları oyun karesindeki kendi yerlerinde (yayın penceresi 16:9 karenin kendisidir), TV ile aynı
-/// yerleşimle (`ScreenFit.lines`): yazı boyu sabit, sığmayan yazı yatayda sıkışır ya da simgeye kadar genişler.
+/// yerleşimle (`ScreenFit.lines`): sığmayan yazı küçülür, satır kırılıp aşağı uzar; yana hiç genişlemez.
 struct ScreenTextBlocks: View {
     let items: [ScreenTranslation.Item]
     /// Altyazı satırlarının yeri (pencere koordinatında); ekran yazısı kutusu onunla çakışmaz.
@@ -363,21 +363,24 @@ struct ScreenTextBlocks: View {
         .allowsHitTesting(false)
     }
 
-    /// Bir blok, TV ile aynı yerleşimle (`ScreenFit.lines`): yazı boyu satır yüksekliğinin 0,95'i ve hiç küçülmez; yazının
-    /// alanı özgün kutu, Türkçe uzunsa önce yalnız yatayda sıkıştırılır, sonra bilgisayarın verdiği alana (`room`: simgelere
-    /// ve komşu yazıya kadar) hizanın tersine genişler; özgün yazı kaç satırsa çeviri o kadar satırdadır. Önceden yazı
-    /// %20-%40 küçülüyor, kısa etiket simgeye doğru uzayabiliyordu.
+    /// Bir blok, TV ile aynı yerleşimle (`ScreenFit.lines`): yazı boyu satır yüksekliğinin 0,95'i; yazının alanı özgün kutu
+    /// ve yana hiç genişlemez. Türkçe uzunsa önce yalnız yatayda sıkıştırılır, sonra yazı küçülür, sonra satır kırılıp kutu
+    /// aşağı uzar. Kenar payı yalnız bilgisayarın verdiği alanda (`room`): yandaki tuş simgesinin üstüne binmez (#1203).
     @ViewBuilder
     private func block(_ item: ScreenTranslation.Item, size: CGSize) -> some View {
         let line = max(1, item.lineHeight * size.height)
-        let fontSize = line * 0.95
+        let baseSize = line * 0.95
         let pad = line * 0.15
         let boxHeight = max(0, item.box.bottom - item.box.top) * size.height
         let bold = item.look?.bold == true
-        let fit = ScreenFit.lines(item.translation, left: item.box.left * size.width,
-                                  width: max(1, item.box.right - item.box.left) * size.width,
-                                  room: item.room.map { ($0.left * size.width, $0.right * size.width) }, rows: item.rows,
-                                  align: item.look?.align ?? .left) { ScreenFit.textWidth($0, size: fontSize, bold: bold) }
+        let left = item.box.left * size.width, width = max(1, item.box.right - item.box.left) * size.width
+        let fit = ScreenFit.lines(item.translation, width: width, rows: item.rows,
+                                  floor: ScreenFit.floor(fontSize: baseSize, screenHeight: size.height)) {
+            ScreenFit.textWidth($0, size: baseSize, bold: bold)
+        }
+        let fontSize = baseSize * fit.scale
+        let side = ScreenFit.pads(left: left, width: width,
+                                  room: item.room.map { ($0.left * size.width, $0.right * size.width) }, pad: pad)
         let pitch = max(boxHeight / CGFloat(max(1, fit.lines.count)), fontSize * 1.05)
         let alignment = StyledScreenText.frameAlignment(item)
         let anchor: UnitPoint = switch item.look?.align {
@@ -385,22 +388,25 @@ struct ScreenTextBlocks: View {
         case .right: .trailing
         default: .leading
         }
-        let top = Self.top(CGRect(x: fit.left - pad, y: item.box.top * size.height - pad, width: fit.width + 2 * pad,
-                                  height: boxHeight + 2 * pad), avoiding: avoiding, height: size.height)
+        let top = Self.top(CGRect(x: left - side.left, y: item.box.top * size.height - pad,
+                                  width: width + side.left + side.right, height: boxHeight + 2 * pad),
+                           avoiding: avoiding, height: size.height)
         VStack(alignment: alignment.horizontal, spacing: 0) {
             ForEach(Array(fit.lines.enumerated()), id: \.offset) { _, text in
                 StyledScreenText.label(item, text: text, size: fontSize)
                     .lineLimit(1)
                     .fixedSize()
                     .scaleEffect(x: fit.squeeze, y: 1, anchor: anchor)
-                    .frame(width: fit.width, height: pitch, alignment: alignment)
+                    .frame(width: width, height: pitch, alignment: alignment)
             }
         }
-        .frame(width: fit.width, alignment: alignment)
+        .frame(width: width, alignment: alignment)
         .frame(minHeight: boxHeight, alignment: .center)
-        .padding(pad)
+        .padding(.vertical, pad)
+        .padding(.leading, side.left)
+        .padding(.trailing, side.right)
         .background(StyledScreenText.background(item))
-        .offset(x: fit.left - pad, y: top)
+        .offset(x: left - side.left, y: top)
     }
 }
 

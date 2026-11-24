@@ -10,9 +10,9 @@ namespace CouchSubs.App.Views;
 
 /// <summary>
 /// Ekran yazısı blokları oyun karesindeki kendi yerlerinde (yayın penceresi 16:9 karenin kendisidir), TV ve Mac ile aynı
-/// yerleşimle (<see cref="ScreenFit.Layout"/>; Mac StreamWindow ScreenTextBlocks): yazı boyu satır yüksekliğinin 0,95'i ve hiç
-/// küçülmez; Türkçe uzunsa önce yalnız yatayda sıkışır, sonra bilgisayarın verdiği alana (<c>Room</c>: simgelere ve komşu yazıya
-/// kadar) hizanın tersine genişler; özgün yazı kaç satırsa çeviri o kadar satırdadır. Altyazıyla çakışan kutu yalnız gerektiği
+/// yerleşimle (<see cref="ScreenFit.Layout"/>; Mac StreamWindow ScreenTextBlocks): yazı boyu satır yüksekliğinin 0,95'i; kutu
+/// özgün yazının genişliğinde kalır, yana hiç genişlemez. Türkçe uzunsa önce yatayda biraz sıkışır, sonra küçülür, sonra satır
+/// kırılıp kutu aşağı uzar; kenar payı yalnız bilgisayarın verdiği alanda (<c>Room</c>), yandaki tuş simgesine binmez. Altyazıyla çakışan kutu yalnız gerektiği
 /// kadar yukarı ya da aşağı kayar. Önceden Windows'ta bu çeviriler pencerenin üstünde alt alta, hizalı bir liste olarak
 /// çiziliyordu.
 /// </summary>
@@ -70,7 +70,7 @@ internal sealed class ScreenTextCanvas : Canvas
             var look = item.Look!;
             var surface = item.Style ?? TextStyleSampler.Neutral;
             var line = Math.Max(1, item.LineHeight * height);
-            var fontSize = line * 0.95;
+            var baseSize = line * 0.95;
             var pad = line * 0.15;
             var boxHeight = Math.Max(0, item.Box.Bottom - item.Box.Top) * height;
             var family = look.Condensed ? Condensed : Normal;
@@ -78,13 +78,16 @@ internal sealed class ScreenTextCanvas : Canvas
             var typeface = new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal);
             var translation = look.Upper ? item.Translation.ToUpper(Turkish) : item.Translation;
             double Measure(string text) =>
-                new FormattedText(text, Turkish, FlowDirection.LeftToRight, typeface, fontSize, Brushes.White, dpi).WidthIncludingTrailingWhitespace;
-            var fit = ScreenFit.Layout(translation, item.Box.Left * width, Math.Max(1, item.Box.Right - item.Box.Left) * width,
-                                       item.Room is { } room ? (room.Left * width, room.Right * width) : null, item.Rows, look.Align, Measure);
+                new FormattedText(text, Turkish, FlowDirection.LeftToRight, typeface, baseSize, Brushes.White, dpi).WidthIncludingTrailingWhitespace;
+            double left = item.Box.Left * width, boxWidth = Math.Max(1, item.Box.Right - item.Box.Left) * width;
+            var fit = ScreenFit.Layout(translation, boxWidth, item.Rows, Measure, ScreenFit.Floor(baseSize, height));
+            var fontSize = baseSize * fit.Scale;
+            // Kenar payı yalnız bilgisayarın verdiği alanda: yandaki tuş simgesinin üstüne binmez (#1203).
+            var side = ScreenFit.Pads(left, boxWidth, item.Room is { } room ? (room.Left * width, room.Right * width) : null, pad);
             var pitch = Math.Max(boxHeight / Math.Max(1, fit.Rows.Count), fontSize * 1.05);
             var alignment = look.Align switch { "center" => HorizontalAlignment.Center, "right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Left };
             var origin = look.Align switch { "center" => 0.5, "right" => 1.0, _ => 0.0 };
-            var stack = new StackPanel { Width = fit.Width, MinHeight = boxHeight, VerticalAlignment = VerticalAlignment.Center };
+            var stack = new StackPanel { Width = boxWidth, MinHeight = boxHeight, VerticalAlignment = VerticalAlignment.Center };
             foreach (var text in fit.Rows)
             {
                 stack.Children.Add(new TextBlock
@@ -105,11 +108,11 @@ internal sealed class ScreenTextCanvas : Canvas
             {
                 Background = new SolidColorBrush(Parse(surface.Background, Colors.Black)),
                 CornerRadius = new CornerRadius(look.Flat ? 0 : pad),
-                Padding = new Thickness(pad),
+                Padding = new Thickness(side.Left, pad, side.Right, pad),
                 Child = stack,
             };
-            var rect = new Rect(fit.Left - pad, (item.Box.Top * height) - pad, fit.Width + (2 * pad), boxHeight + (2 * pad));
-            SetLeft(block, fit.Left - pad);
+            var rect = new Rect(left - side.Left, (item.Box.Top * height) - pad, boxWidth + side.Left + side.Right, boxHeight + (2 * pad));
+            SetLeft(block, left - side.Left);
             SetTop(block, Top(rect, avoiding, height));
             Children.Add(block);
         }

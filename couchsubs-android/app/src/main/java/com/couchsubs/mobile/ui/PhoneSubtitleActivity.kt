@@ -275,8 +275,9 @@ class PhoneSubtitleActivity : ComponentActivity() {
 /**
  * Otomatik ekran yazısının ve "Ekranı çevir"in bir bloğu, özgün yazının yerinde ve stilinde: zemin rengi (her zeminde tam
  * opak; özgün yazı arasından görünmez, #827), yazı rengi, kalınlık, dar aile, hizalama. Yerleşim TV, Mac ve iPhone ile aynı
- * ([ScreenFit.lines]): yazı boyu özgün satır yüksekliğinden ve küçülmez; Türkçe uzunsa yatayda sıkışır, bilgisayarın
- * verdiği alana (simgelere kadar) genişler, özgün satır sayısında kalır. Önceden yazı %40'a kadar küçülüyordu.
+ * ([ScreenFit.lines]): yazı boyu özgün satır yüksekliğinden; kutu özgün yazının genişliğinde kalır, yana hiç genişlemez.
+ * Türkçe uzunsa yatayda biraz sıkışır, sonra küçülür, sonra satır kırılıp kutu aşağı uzar: yandaki tuş simgesi görünür
+ * kalır (#1203).
  */
 @androidx.compose.runtime.Composable
 private fun StyledBlock(
@@ -291,23 +292,26 @@ private fun StyledBlock(
     val density = androidx.compose.ui.platform.LocalDensity.current
     val widthPx = with(density) { width.toPx() }.toDouble()
     val heightPx = with(density) { height.toPx() }.toDouble()
-    val fontPx = (heightPx * item.lineHeight * 0.95).coerceAtLeast(8.0)
+    val basePx = (heightPx * item.lineHeight * 0.95).coerceAtLeast(8.0)
     val bold = look?.bold == true
     val paint = android.graphics.Paint().apply {
-        textSize = fontPx.toFloat()
+        textSize = basePx.toFloat()
         typeface = android.graphics.Typeface.create(
             if (look?.condensed == true) "sans-serif-condensed" else "sans-serif",
             if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
     }
-    val fit = com.couchsubs.mobile.core.ScreenFit.lines(item.translation, box.left * widthPx, (box.right - box.left) * widthPx,
-        item.room?.let { it.left * widthPx to it.right * widthPx }, item.rows, look?.align ?: "left") { paint.measureText(it).toDouble() }
+    val leftPx = box.left * widthPx
+    val boxWidthPx = (box.right - box.left) * widthPx
+    val fit = com.couchsubs.mobile.core.ScreenFit.lines(item.translation, boxWidthPx, item.rows,
+        com.couchsubs.mobile.core.ScreenFit.floor(basePx, heightPx)) { paint.measureText(it).toDouble() }
+    val fontPx = basePx * fit.scale
     val boxHeightPx = (box.bottom - box.top) * heightPx
     val pitchPx = maxOf(boxHeightPx / maxOf(1, fit.lines.size), fontPx * 1.05)
     val toDp = { px: Double -> with(density) { px.toFloat().toDp() } }
     Column(
         modifier = Modifier
-            .offset(x = toDp(fit.left), y = height * box.top.toFloat())
-            .width(toDp(fit.width))
+            .offset(x = toDp(leftPx), y = height * box.top.toFloat())
+            .width(toDp(boxWidthPx))
             .then(if (fill) Modifier.height(height * (box.bottom - box.top).toFloat()) else Modifier)
             .background(color(surface.background)),
     ) {
@@ -323,7 +327,7 @@ private fun StyledBlock(
                 modifier = Modifier
                     // Satır sıkıştırılmadan önceki genişliğinde, yazının alanına ortalı; ortasından yatayda ölçeklenince alanın
                     // tamamını kaplar (hiza satırın içinde korunur).
-                    .requiredWidth(toDp(fit.width / fit.squeeze))
+                    .requiredWidth(toDp(boxWidthPx / fit.squeeze))
                     .graphicsLayer { scaleX = fit.squeeze.toFloat() })
         }
     }

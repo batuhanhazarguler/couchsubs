@@ -250,16 +250,27 @@ final class ScreenFitTests: XCTestCase {
         let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/screen-fit.json")
         let fixture = try JSONSerialization.jsonObject(with: Data(contentsOf: source)) as! [String: Any]
         for vector in fixture["lines"] as! [[String: Any]] {
-            let room = (vector["room"] as? [Double]).map { ($0[0], $0[1]) }
-            let align = TextLook.Align(rawValue: vector["align"] as! String)!
-            let got = ScreenFit.lines(vector["text"] as! String, left: vector["left"] as! Double, width: vector["width"] as! Double,
-                                      room: room, rows: vector["rows"] as! Int, align: align) { Double($0.count) * 10 }
+            let floor = vector["floor"] as? Double ?? 0
+            let got = ScreenFit.lines(vector["text"] as! String, width: vector["width"] as! Double,
+                                      rows: vector["rows"] as! Int, floor: floor) { Double($0.count) * 10 }
             let want = vector["expect"] as! [String: Any]
             let name = vector["id"] as! String
             XCTAssertEqual(got.lines, want["lines"] as! [String], name)
             XCTAssertEqual(got.squeeze, want["squeeze"] as! Double, accuracy: 0.001, name)
-            XCTAssertEqual(got.left, want["left"] as! Double, accuracy: 0.01, name)
-            XCTAssertEqual(got.width, want["width"] as! Double, accuracy: 0.01, name)
+            XCTAssertEqual(got.scale, want["scale"] as! Double, accuracy: 0.001, name)
+            // Yatayda hiç taşmaz: en geniş satır, ölçeği ve sıkıştırmasıyla, kutuya sığar (tek sözcük son çarede hariç).
+            let widest = got.lines.map { Double($0.count) * 10 }.max() ?? 0
+            if got.scale > max(ScreenFit.lastScale, floor) + 1e-9 {
+                XCTAssertLessThanOrEqual(widest * got.scale * got.squeeze, vector["width"] as! Double + 0.01, name)
+            }
+        }
+        for vector in fixture["pads"] as! [[String: Any]] {
+            let room = (vector["room"] as? [Double]).map { ($0[0], $0[1]) }
+            let got = ScreenFit.pads(left: vector["left"] as! Double, width: vector["width"] as! Double, room: room,
+                                     pad: vector["pad"] as! Double)
+            let want = vector["expect"] as! [Double]
+            XCTAssertEqual(got.left, want[0], accuracy: 0.01, vector["id"] as! String)
+            XCTAssertEqual(got.right, want[1], accuracy: 0.01, vector["id"] as! String)
         }
     }
 }

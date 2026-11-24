@@ -416,8 +416,10 @@ class Reading(lines: List<TextLine>) {
 object ButtonPrompts {
     private val buttons = setOf(
         "r1", "r2", "r3", "l1", "l2", "l3", "options", "touchpad",
-        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "⨂",
+        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "δ", "⨂",
     )
+    /** Yalnız ayraçtan oluşan sözcük okunmuş simgedir: □ "[]", ○ "()". */
+    private val bracketIcons = mapOf("[]" to "□", "()" to "○")
     /** Simge yazı tanımada harfe dönüşebilir; yalnız ipucu kalıbında düğme sayılır. */
     private val lookalikes = setOf("X", "O")
     private val verbs = setOf("press", "hold", "tap", "push", "use", "mash", "release")
@@ -427,7 +429,7 @@ object ButtonPrompts {
     private fun isButton(token: String) = token.lowercase() in buttons
 
     fun isPrompt(line: String): Boolean {
-        val tokens = line.split(separators).map { it.trim { c -> c in BRACKETS } }.filter { it.isNotEmpty() }
+        val tokens = line.split(separators).map { bracketIcons[it] ?: it.trim { c -> c in BRACKETS } }.filter { it.isNotEmpty() }
         if (tokens.isEmpty()) return false
         val first = tokens[0]
         val words = tokens.count { !isButton(it) && it.any { c -> c.isLetter() } }
@@ -435,6 +437,10 @@ object ButtonPrompts {
         if (isButton(tokens.last()) && words <= 4 && !SubtitleStabilizer.endsSentence(line)) return true
         if (first in lookalikes && tokens.size in 2..4 && tokens[1][0].isUpperCase() && !SubtitleStabilizer.endsSentence(line))
             return true
+        // "A Turn Off": △ "A" diye okunur (#1203). Artikel "A" ile karışmasın diye ardındaki bütün sözcükler büyük harfle
+        // başlamalı ("A little help" konuşmadır); BÜYÜK HARFLİ satır ("A LIBERTY CITY MEMOIR" kitap adı) ipucu değildir.
+        if (first == "A" && tokens.size in 2..4 && !SubtitleStabilizer.endsSentence(line) &&
+            tokens.drop(1).all { it[0].isUpperCase() } && line.any { it.isLowerCase() }) return true
         if (first.lowercase() in verbs && tokens.size in 2..10 && (isButton(tokens[1]) || tokens[1] in lookalikes)) return true
         return isIconPrompt(tokens, line)
     }

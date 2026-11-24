@@ -452,17 +452,19 @@ public enum ButtonPrompts {
     /// Her zaman kumanda düğmesi olan simgeler ve adlar (yazı tanıma bazen köşeli parantezle okur).
     private static let buttons: Set<String> = [
         "R1", "R2", "R3", "L1", "L2", "L3", "OPTIONS", "TOUCHPAD",
-        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "⨂",
+        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "Δ", "⨂",
     ]
     /// Simge yazı tanımada harfe dönüşebilir; yalnız ipucu kalıbında düğme sayılır.
     private static let lookalikes: Set<String> = ["X", "O"]
     private static let verbs: Set<String> = ["press", "hold", "tap", "push", "use", "mash", "release"]
     private static let brackets = CharacterSet(charactersIn: "()[]{}<>「」")
+    /// Yalnız ayraçtan oluşan sözcük okunmuş simgedir: □ "[]", ○ "()".
+    private static let bracketIcons: [String: String] = ["[]": "□", "()": "○"]
 
     public static func isPrompt(_ line: String) -> Bool {
         let tokens = line
             .components(separatedBy: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "+/")))
-            .map { $0.trimmingCharacters(in: brackets) }
+            .map { bracketIcons[$0] ?? $0.trimmingCharacters(in: brackets) }
             .filter { !$0.isEmpty }
         guard let first = tokens.first else { return false }
 
@@ -476,6 +478,12 @@ public enum ButtonPrompts {
         // "X Interact", "O Back": ardından kısa, büyük harfle başlayan, noktalamasız bir eylem gelir.
         if lookalikes.contains(first), tokens.count >= 2, tokens.count <= 4,
            tokens[1].first?.isUppercase == true, !SubtitleStabilizer.endsSentence(line) {
+            return true
+        }
+        // "A Turn Off": △ "A" diye okunur (#1203). Artikel "A" ile karışmasın diye ardındaki bütün sözcükler büyük harfle
+        // başlamalı ("A little help" konuşmadır); BÜYÜK HARFLİ satır ("A LIBERTY CITY MEMOIR" kitap adı) ipucu değildir.
+        if first == "A", tokens.count >= 2, tokens.count <= 4, !SubtitleStabilizer.endsSentence(line),
+           tokens.dropFirst().allSatisfy({ $0.first?.isUppercase == true }), line.contains(where: \.isLowercase) {
             return true
         }
         // "Press ✕ to jump", "Hold R2 to aim"

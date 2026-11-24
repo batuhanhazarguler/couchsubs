@@ -739,20 +739,23 @@ struct SubtitleScreen: View {
     private var scale: Double { Double(model.settings.style.fontSize) / Double(SubtitleStyle().fontSize) * liveScale }
 
     /// "#RRGGBB" → renk; geçersizse nil.
-    /// Özgün stilli ekran yazısı TV ve Mac ile aynı yerleşimle (`ScreenFit.lines`): yazı boyu satır yüksekliğinin 0,95'i ve
-    /// küçülmez; Türkçe uzunsa yatayda sıkışır, bilgisayarın verdiği alana (simgelere kadar) genişler, özgün satır sayısında
-    /// kalır. Önceden yazı en çok 28 noktayla sınırlanıyor, kutu özgün genişliğin dışına taşabiliyordu.
+    /// Özgün stilli ekran yazısı TV ve Mac ile aynı yerleşimle (`ScreenFit.lines`): yazı boyu satır yüksekliğinin 0,95'i;
+    /// kutu özgün yazının genişliğinde kalır, yana hiç genişlemez. Türkçe uzunsa yatayda biraz sıkışır, sonra küçülür, sonra
+    /// satır kırılıp kutu aşağı uzar: yandaki tuş simgesi görünür kalır (#1203).
     @ViewBuilder
     static func fittedBlock(_ item: ScreenTranslation.Item, size: CGSize) -> some View {
         let line = max(1, item.lineHeight * size.height)
-        let fontSize = line * 0.95
+        let baseSize = line * 0.95
         let boxHeight = max(0, item.box.bottom - item.box.top) * size.height
         let bold = item.look?.bold == true
-        let fit = ScreenFit.lines(item.translation, left: item.box.left * size.width,
-                                  width: max(1, item.box.right - item.box.left) * size.width,
-                                  room: item.room.map { ($0.left * size.width, $0.right * size.width) }, rows: item.rows,
-                                  align: item.look?.align ?? .left) { ScreenFit.textWidth($0, size: fontSize, bold: bold) }
+        let left = item.box.left * size.width, width = max(1, item.box.right - item.box.left) * size.width
+        let fit = ScreenFit.lines(item.translation, width: width, rows: item.rows,
+                                  floor: ScreenFit.floor(fontSize: baseSize, screenHeight: size.height)) {
+            ScreenFit.textWidth($0, size: baseSize, bold: bold)
+        }
+        let fontSize = baseSize * fit.scale
         let pitch = max(boxHeight / CGFloat(max(1, fit.lines.count)), fontSize * 1.05)
+        let height = max(boxHeight, pitch * CGFloat(fit.lines.count))
         let alignment: Alignment = switch item.look?.align {
         case .center: .center
         case .right: .trailing
@@ -771,13 +774,13 @@ struct SubtitleScreen: View {
                     .lineLimit(1)
                     .fixedSize()
                     .scaleEffect(x: fit.squeeze, y: 1, anchor: anchor)
-                    .frame(width: fit.width, height: pitch, alignment: alignment)
+                    .frame(width: width, height: pitch, alignment: alignment)
             }
         }
-        .frame(width: fit.width, alignment: alignment)
+        .frame(width: width, alignment: alignment)
         .frame(minHeight: boxHeight)
         .background(screenColor(item.style?.background) ?? .black)
-        .position(x: fit.left + fit.width / 2, y: (item.box.top + item.box.bottom) / 2 * size.height)
+        .position(x: left + width / 2, y: item.box.top * size.height + height / 2)
     }
 
     private static func screenColor(_ hex: String?) -> Color? {

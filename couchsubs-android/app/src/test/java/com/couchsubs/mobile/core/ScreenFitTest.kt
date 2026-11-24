@@ -8,6 +8,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
@@ -101,22 +102,34 @@ class ScreenFitTest {
         assertTrue(final.any { it.translation == "ADA HAYALLERİ" })
     }
 
-    /** Çizicilerin ortak satır yerleşimi (fixtures/screen-fit.json → lines; Mac ve Windows aynı vakalar). */
+    /** Çizicilerin ortak satır yerleşimi (fixtures/screen-fit.json → lines, pads; Mac ve Windows aynı vakalar). */
     @Test
     fun sharedLineVectors() {
         val list = fixture.getJSONArray("lines")
         for (k in 0 until list.length()) {
             val vector = list.getJSONObject(k)
-            val room = vector.optJSONArray("room")?.let { it.getDouble(0) to it.getDouble(1) }
-            val got = ScreenFit.lines(vector.getString("text"), vector.getDouble("left"), vector.getDouble("width"), room,
-                vector.getInt("rows"), vector.getString("align")) { it.length * 10.0 }
+            val width = vector.getDouble("width")
+            val floor = vector.optDouble("floor", 0.0)
+            val got = ScreenFit.lines(vector.getString("text"), width, vector.getInt("rows"), floor) { it.length * 10.0 }
             val want = vector.getJSONObject("expect")
             val name = vector.getString("id")
             val lines = want.getJSONArray("lines")
             assertEquals(name, (0 until lines.length()).map { lines.getString(it) }, got.lines)
             assertEquals(name, want.getDouble("squeeze"), got.squeeze, 0.001)
-            assertEquals(name, want.getDouble("left"), got.left, 0.01)
-            assertEquals(name, want.getDouble("width"), got.width, 0.01)
+            assertEquals(name, want.getDouble("scale"), got.scale, 0.001)
+            // Yatayda hiç taşmaz (tek sözcük son çarede hariç).
+            val widest = got.lines.maxOf { it.length * 10.0 }
+            if (got.scale > max(ScreenFit.LAST_SCALE, floor) + 1e-9) assertTrue(name, widest * got.scale * got.squeeze <= width + 0.01)
+        }
+        val pads = fixture.getJSONArray("pads")
+        for (k in 0 until pads.length()) {
+            val vector = pads.getJSONObject(k)
+            val room = vector.optJSONArray("room")?.let { it.getDouble(0) to it.getDouble(1) }
+            val got = ScreenFit.pads(vector.getDouble("left"), vector.getDouble("width"), room, vector.getDouble("pad"))
+            val want = vector.getJSONArray("expect")
+            val name = vector.getString("id")
+            assertEquals(name, want.getDouble(0), got.first, 0.01)
+            assertEquals(name, want.getDouble(1), got.second, 0.01)
         }
     }
 }

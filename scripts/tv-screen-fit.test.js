@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // "Ekranı çevir" TV çiziminin yerleşim ölçütü, gerçek GTA 6 menü/görev karelerinden (testdata/frames/ocr/screen-fit-items.json;
 // core ScreenFitTests SCREEN_FIT_OUT ile yazar). Gerçek Chromium yerleşimiyle her çeviri kutusu ölçülür:
-//  - konum sapması: çizilen kutunun üst/alt kenarı ve hizasındaki yatay kenarı özgün yazının kutusundan en çok satır
+//  - konum sapması: çizilen kutunun üst kenarı (alt kenar aşağı büyüyebilir, yukarı kaçmaz) ve hizasındaki yatay kenarı özgün yazının kutusundan en çok satır
 //    yüksekliğinin %10'u kadar uzak (kutunun kendi kenar payı hariç);
-//  - yazı boyu: çizilen yazı boyu / özgün satırın yazı boyu 1,0 (±%5); küçültme yok;
+//  - yazı boyu: çizilen yazı boyu / özgün satırın yazı boyu 0,5–1,05 (sığmayan çeviri önce küçülür, sonra satır kırılır);
+//    cümle konuşma altyazısının %60'ından küçük değil (kısa özgün satırda özgünden büyük), yalnız ≤2 sözcüklük etiket sıkışır;
+//  - yana taşmaz: kutu (kenar payıyla) özgün yazının kutusu ve bilgisayarın verdiği kenar payı alanı (room) içinde (#1203);
 //  - kumanda simgesi ve görev fotoğrafı (frames.json → screen.clear) hiç örtülmez;
 //  - kutular birbirine binmez, yazı kendi kutusundan taşmaz (eski Chromium dönüşümü kaydırma payına saymıyordu).
 // Ölçüler 1080p, 720p ve 4K ekranlarda aynı olmalı.
@@ -24,6 +26,16 @@ const browser = [process.env.COUCHSUBS_TEST_BROWSER, process.env.CHROME_BIN,
   '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser',
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(p => p && fs.existsSync(p));
 const frames = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'testdata', 'frames', 'ocr', 'screen-fit-items.json'), 'utf8'));
+// Yapay kare: kısa özgün satırdaki kısa cümle ve iki sözcüklük etiket; sağlarında tuş simgesi (clear).
+const surface = { background: '#485572', flat: true, foreground: '#E0E0E0' };
+const look = { align: 'left', bold: true, condensed: false, upper: false };
+frames.push({ id: 'sentetik-kisa-cumle', width: 1920, height: 1080, clear: [[0.3, 0.5, 0.32, 0.525], [0.3, 0.6, 0.32, 0.625]],
+  items: [
+    { text: 'Bu kapıyı şimdi açmalıyız', box: { left: 0.2, top: 0.5, right: 0.295, bottom: 0.52 }, line: 0.02,
+      room: { left: 0.198, top: 0.5, right: 0.297, bottom: 0.52 }, style: look, surface: surface },
+    { text: 'ŞARJÖRÜ DEĞİŞTİR', box: { left: 0.24, top: 0.6, right: 0.295, bottom: 0.62 }, line: 0.02,
+      room: { left: 0.238, top: 0.6, right: 0.297, bottom: 0.62 }, style: look, surface: surface },
+  ] });
 
 function render(width, height, zoom, shot) {
   const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
@@ -106,30 +118,39 @@ const intersects = (a, b) => Math.min(a.right, b.right) > Math.max(a.left, b.lef
 function measure(rendered) {
   return rendered.map((frame, f) => {
     const source = frames[f];
-    const out = { id: frame.id, shift: 0, minRatio: Infinity, maxRatio: 0, covered: [], overlaps: 0, spill: frame.drawn.filter(el => el.scroll).map(el => el.text + " " + el.dims.join("/")) };
+    const out = { id: frame.id, shift: 0, minRatio: Infinity, maxRatio: 0, covered: [], overlaps: 0, wide: [], spill: frame.drawn.filter(el => el.scroll).map(el => el.text + " " + el.dims.join("/")) };
     frame.drawn.forEach((el, i) => {
       const item = source.items[i];
       const box = item.box, line = item.line;
       const nominal = Math.round(line * frame.H * 0.95);
       const ratio = el.font / nominal;
       out.minRatio = Math.min(out.minRatio, ratio);
-      out.maxRatio = Math.max(out.maxRatio, ratio);
+      // Alt sınırla (konuşma altyazısının %60'ı) büyüyen kısa özgün satırın yazısı özgünden büyük olabilir.
+      out.maxRatio = Math.max(out.maxRatio, el.font <= 0.6 * 46 * frame.H / 1080 + 0.5 ? Math.min(ratio, 1) : ratio);
       const align = (item.style && item.style.align) || 'left';
       // Konum sapması: yazının alanının üst/alt kenarı ve hizasındaki yatay kenarı (ortalıysa ortası), satır yüksekliğine
       // oranla (yatay fark ekranın en-boy oranıyla satır birimine çevrilir).
       const t = el.area, aspect = 16 / 9;
-      const edges = [Math.abs(t.top - box.top), Math.abs(t.bottom - box.bottom)];
+      // Alt kenar yalnız yukarı kaçmamalı: sığmayan çeviri satır kırıp aşağı büyüyebilir (yana değil).
+      const edges = [Math.abs(t.top - box.top), Math.max(0, box.bottom - t.bottom)];
       if (align === 'left') edges.push(Math.abs(t.left - box.left) * aspect);
       else if (align === 'right') edges.push(Math.abs(t.right - box.right) * aspect);
       // Ortalı yazı daha az sıkışıp alanın izin verdiği yana genişleyebilir: özgün kutu çizilen alanın içinde kalmalı.
       else edges.push(Math.max(0, t.left - box.left, box.right - t.right) * aspect);
       out.minSqueeze = Math.min(out.minSqueeze === undefined ? 1 : out.minSqueeze, el.squeeze);
+      // Yatay sıkıştırma yalnız en çok iki sözcüklük etikette; cümle sıkışmaz ("dar ve basık" görünmesin).
+      if (el.squeeze < 1 - 1e-3 && item.text.split(/\s+/).length > 2) (out.narrow = out.narrow || []).push(el.text);
+      // Cümlenin yazı boyu alt sınırın (konuşma altyazısının %60'ı) altına inmez.
+      if (item.text.split(/\s+/).length > 2 && el.font < 0.6 * 46 * frame.H / 1080 - 0.5) (out.small = out.small || []).push(el.text + ' ' + el.font);
       out.shift = Math.max(out.shift, Math.max(...edges) / line);
       if (process.env.SCREEN_FIT_ITEMS) {
         const f3 = v => v.toFixed(3);
         console.log(`  ${frame.id} «${el.text}» yazı ${el.font}/${nominal} kutu ${[box.left, box.top, box.right, box.bottom].map(f3)}`
           + ` çizilen ${[el.left, el.top, el.right, el.bottom].map(f3)} sapma ${(Math.max(...edges) / line).toFixed(2)}`);
       }
+      // Yana taşma: kenar payıyla kutu, özgün kutu ile kenar payı alanının birleşiminde kalır (bir piksel pay).
+      const room = item.room || box, px = 1 / 1920;
+      if (el.left < Math.min(box.left, room.left) - px || el.right > Math.max(box.right, room.right) + px) out.wide.push(el.text);
       const pieces = el.parts.length ? el.parts : [el];
       for (const zone of source.clear) {
         const z = { left: zone[0], top: zone[1], right: zone[2], bottom: zone[3] };
@@ -159,9 +180,12 @@ test('ekranı çevir: çeviri özgün yazının yerinde, boyunda; simge örtmez,
       if (process.env.SCREEN_FIT_REPORT) console.log(width + 'x' + height, JSON.stringify(m));
       const at = `${width}x${height} ${m.id}`;
       if (m.shift > 0.10) failures.push(`${at}: konum sapması ${m.shift.toFixed(2)} satır`);
-      if (m.minRatio < 0.95 || m.maxRatio > 1.05) failures.push(`${at}: yazı boyu oranı ${m.minRatio.toFixed(2)}–${m.maxRatio.toFixed(2)}`);
-      // Yatay sıkıştırma yalnız hafif (en çok %15); önceden %30'a iniyor, harfler ezik görünüyordu (X, beta.90).
-      if (m.minSqueeze < 0.85 - 1e-3) failures.push(`${at}: yatay sıkıştırma ${m.minSqueeze.toFixed(2)}`);
+      if (m.minRatio < 0.5 - 1e-3 || m.maxRatio > 1.05) failures.push(`${at}: yazı boyu oranı ${m.minRatio.toFixed(2)}–${m.maxRatio.toFixed(2)}`);
+      if (m.wide.length) failures.push(`${at}: yana taşan kutu: ${m.wide.join(', ')}`);
+      // Yatay sıkıştırma yalnız hafif (en çok %10) ve yalnız kısa etikette; önceden %30'a iniyor, harfler ezik görünüyordu.
+      if (m.minSqueeze < 0.9 - 1e-3) failures.push(`${at}: yatay sıkıştırma ${m.minSqueeze.toFixed(2)}`);
+      if (m.narrow) failures.push(`${at}: sıkışan cümle: ${m.narrow.join(', ')}`);
+      if (m.small) failures.push(`${at}: alt sınırın altındaki cümle: ${m.small.join(', ')}`);
       if (m.covered.length) failures.push(`${at}: simge/fotoğraf örtülüyor: ${m.covered.join(', ')}`);
       if (m.overlaps) failures.push(`${at}: ${m.overlaps} kutu üst üste`);
       if (m.spill.length) failures.push(`${at}: kutusundan taşan yazı: ${m.spill.join(', ')}`);

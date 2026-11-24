@@ -475,8 +475,11 @@ public static class ButtonPrompts
     private static readonly HashSet<string> Buttons = new(StringComparer.OrdinalIgnoreCase)
     {
         "R1", "R2", "R3", "L1", "L2", "L3", "OPTIONS", "TOUCHPAD",
-        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "⨂",
+        "✕", "×", "⨯", "✖", "○", "◯", "●", "□", "▢", "◻", "■", "△", "▲", "Δ", "⨂",
     };
+
+    /// <summary>Yalnız ayraçtan oluşan sözcük okunmuş simgedir: □ "[]", ○ "()".</summary>
+    private static readonly Dictionary<string, string> BracketIcons = new(StringComparer.Ordinal) { ["[]"] = "□", ["()"] = "○" };
 
     /// <summary>Simge yazı tanımada harfe dönüşebilir; yalnız ipucu kalıbında düğme sayılır.</summary>
     private static readonly HashSet<string> Lookalikes = new(StringComparer.Ordinal) { "X", "O" };
@@ -492,7 +495,7 @@ public static class ButtonPrompts
     public static bool IsPrompt(string line)
     {
         var tokens = line.Split(Separators, StringSplitOptions.RemoveEmptyEntries)
-            .Select(token => token.Trim(Brackets))
+            .Select(token => BracketIcons.TryGetValue(token, out var icon) ? icon : token.Trim(Brackets))
             .Where(token => token.Length > 0)
             .ToList();
         if (tokens.Count == 0) return false;
@@ -506,6 +509,11 @@ public static class ButtonPrompts
         // "X Interact", "O Back": ardından kısa, büyük harfle başlayan, noktalamasız bir eylem gelir.
         if (Lookalikes.Contains(first) && tokens.Count is >= 2 and <= 4 && char.IsUpper(tokens[1][0]) &&
             !SubtitleStabilizer.EndsSentence(line))
+            return true;
+        // "A Turn Off": △ "A" diye okunur (#1203). Artikel "A" ile karışmasın diye ardındaki bütün sözcükler büyük harfle
+        // başlamalı ("A little help" konuşmadır); BÜYÜK HARFLİ satır ("A LIBERTY CITY MEMOIR" kitap adı) ipucu değildir.
+        if (first == "A" && tokens.Count is >= 2 and <= 4 && !SubtitleStabilizer.EndsSentence(line) &&
+            tokens.Skip(1).All(token => char.IsUpper(token[0])) && line.Any(char.IsLower))
             return true;
         // "Press ✕ to jump", "Hold R2 to aim"
         if (Verbs.Contains(first) && tokens.Count is >= 2 and <= 10 &&

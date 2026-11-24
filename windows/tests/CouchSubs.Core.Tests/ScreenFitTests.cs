@@ -135,17 +135,29 @@ public class ScreenFitTests
         using var document = JsonDocument.Parse(File.ReadAllText(PackFixtures.Path("screen-fit.json")));
         foreach (var vector in document.RootElement.GetProperty("lines").EnumerateArray())
         {
-            (double, double)? room = vector.GetProperty("room").ValueKind == JsonValueKind.Array
-                ? (vector.GetProperty("room")[0].GetDouble(), vector.GetProperty("room")[1].GetDouble()) : null;
-            var got = ScreenFit.Layout(vector.GetProperty("text").GetString()!, vector.GetProperty("left").GetDouble(),
-                vector.GetProperty("width").GetDouble(), room, vector.GetProperty("rows").GetInt32(), vector.GetProperty("align").GetString()!,
-                text => text.Length * 10.0);
+            var width = vector.GetProperty("width").GetDouble();
+            var floor = vector.TryGetProperty("floor", out var given) ? given.GetDouble() : 0;
+            var got = ScreenFit.Layout(vector.GetProperty("text").GetString()!, width, vector.GetProperty("rows").GetInt32(),
+                text => text.Length * 10.0, floor);
             var want = vector.GetProperty("expect");
             var name = vector.GetProperty("id").GetString();
             Assert.Equal(want.GetProperty("lines").EnumerateArray().Select(line => line.GetString()!).ToList(), got.Rows);
             Assert.True(Math.Abs(want.GetProperty("squeeze").GetDouble() - got.Squeeze) <= 0.001, $"{name}: {got.Squeeze}");
-            Assert.True(Math.Abs(want.GetProperty("left").GetDouble() - got.Left) <= 0.01, $"{name}: {got.Left}");
-            Assert.True(Math.Abs(want.GetProperty("width").GetDouble() - got.Width) <= 0.01, $"{name}: {got.Width}");
+            Assert.True(Math.Abs(want.GetProperty("scale").GetDouble() - got.Scale) <= 0.001, $"{name}: {got.Scale}");
+            // Yatayda hiç taşmaz (tek sözcük son çarede hariç).
+            var widest = got.Rows.Max(row => row.Length * 10.0);
+            if (got.Scale > Math.Max(ScreenFit.LastScale, floor) + 1e-9) Assert.True(widest * got.Scale * got.Squeeze <= width + 0.01, name);
+        }
+        foreach (var vector in document.RootElement.GetProperty("pads").EnumerateArray())
+        {
+            (double, double)? room = vector.GetProperty("room").ValueKind == JsonValueKind.Array
+                ? (vector.GetProperty("room")[0].GetDouble(), vector.GetProperty("room")[1].GetDouble()) : null;
+            var got = ScreenFit.Pads(vector.GetProperty("left").GetDouble(), vector.GetProperty("width").GetDouble(), room,
+                vector.GetProperty("pad").GetDouble());
+            var want = vector.GetProperty("expect");
+            var name = vector.GetProperty("id").GetString();
+            Assert.True(Math.Abs(want[0].GetDouble() - got.Left) <= 0.01, $"{name}: {got.Left}");
+            Assert.True(Math.Abs(want[1].GetDouble() - got.Right) <= 0.01, $"{name}: {got.Right}");
         }
     }
 }
