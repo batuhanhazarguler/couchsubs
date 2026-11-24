@@ -4,12 +4,19 @@ import Foundation
 
 /// Konuşan adını renklendir: "Mattia: …" satırında yalnız ad ("Mattia:") o konuşanın sabit renginde görünür, cümle
 /// kullanıcının seçtiği yazı renginde kalır. Renk addan hesaplanır (büyük/küçük harf fark etmez), aynı konuşan her
-/// cihazda ve her oturumda aynı renktir. Palet koyu altyazı zemininde okunaklı on renktir. TV'ye `subtitle` olayının
-/// `speakerNames` alanıyla gider (0.9.79'dan eski TV uygulamaları eski `speakers` alanıyla bütün satırı boyuyordu).
-/// Windows (SpeakerColors.cs), Android (SpeakerColors.kt) ve TV uygulaması aynı paleti ve aynı hesabı kullanır.
+/// cihazda ve her oturumda aynı renktir. TV'ye `subtitle` olayının `speakerNames` alanıyla gider (0.9.79'dan eski TV
+/// uygulamaları eski `speakers` alanıyla bütün satırı boyuyordu). Windows (SpeakerColors.cs), Android (SpeakerColors.kt)
+/// ve TV uygulaması aynı paleti ve aynı hesabı kullanır.
 public enum SpeakerColors {
-    public static let palette = ["#FFD54F", "#4FC3F7", "#81C784", "#FF8A65", "#CE93D8",
-                                 "#F06292", "#4DD0E1", "#AED581", "#FFB74D", "#90CAF9"]
+    /// Koyu altyazı zemininde okunaklı (kontrast en az 6,5:1) on renk, OKLCH ton çemberinde 36 derece arayla: kırmızı,
+    /// turuncu, sarı, açık yeşil, yeşil, turkuaz, mavi, lavanta, mor, pembe. Kullanıcı bildirimi (X): eski paletin on
+    /// renginden üçü mavi, ikisi pembe/mordu ve hepsi soluktu; adlar hep pembe/mavi tonlarda çıkıyor, karakterler ayırt
+    /// edilmiyordu (ortak vektör: docs/speaker-colors-vectors.json).
+    public static let palette = ["#FD736D", "#FEA757", "#FEDD3C", "#9BE759", "#1EE4B2",
+                                 "#2AD5E5", "#49B5FA", "#8F9BFB", "#D482FF", "#F76AB7"]
+    /// `palette` renklerinin OKLCH tonu (derece); renkleri ayırırken kullanılır (`SpeakerColorBook`). Tamsayı tablo:
+    /// platformlar tonu renkten hesaplamaz, kayan nokta farkı çıkmaz.
+    public static let hues = [25, 61, 97, 133, 169, 205, 241, 277, 313, 349]
 
     /// Konuşanın rengi ("#RRGGBB"): küçük harfli adın UTF-16 birimleri üzerinde FNV-1a (32 bit).
     public static func color(for name: String) -> String {

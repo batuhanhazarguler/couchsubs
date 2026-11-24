@@ -171,7 +171,7 @@ public class SubtitleServerTests
         var lines = await ReadLines(reader, "event: clear");
         Assert.Contains(lines, l => l.Contains("Kapat.") && !l.Contains("speaker"));
         Assert.Contains(lines, l => l.Contains("Lucia: Hayır.")
-            && !l.Contains("\"speakers\"") && l.Contains("\"speakerNames\":[{\"color\":\"#90CAF9\",\"name\":\"Mattia\"},{\"color\":\"#F06292\",\"name\":\"Lucia\"}]"));
+            && !l.Contains("\"speakers\"") && l.Contains("\"speakerNames\":[{\"color\":\"#F76AB7\",\"name\":\"Mattia\"},{\"color\":\"#2AD5E5\",\"name\":\"Lucia\"}]"));
         Assert.Contains(lines, l => l.Contains("Adsız satır.") && !l.Contains("speaker"));
     }
 

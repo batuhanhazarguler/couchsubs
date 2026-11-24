@@ -12,11 +12,22 @@ namespace CouchSubs.Core;
 /// </summary>
 public static class SpeakerColors
 {
-    /// <summary>Koyu zeminde okunaklı, birbirinden ayrılan renkler (beyaz yok: renksiz satır beyazdır).</summary>
+    /// <summary>
+    /// Koyu altyazı zemininde okunaklı (kontrast en az 6,5:1) on renk, OKLCH ton çemberinde 36 derece arayla: kırmızı,
+    /// turuncu, sarı, açık yeşil, yeşil, turkuaz, mavi, lavanta, mor, pembe (beyaz yok: renksiz satır beyazdır).
+    /// Kullanıcı bildirimi (X): eski paletin on renginden üçü mavi, ikisi pembe/mordu ve hepsi soluktu; adlar hep
+    /// pembe/mavi tonlarda çıkıyor, karakterler ayırt edilmiyordu (ortak vektör: docs/speaker-colors-vectors.json).
+    /// </summary>
     public static readonly IReadOnlyList<string> Palette =
     [
-        "#FFD54F", "#4FC3F7", "#81C784", "#FF8A65", "#CE93D8", "#F06292", "#4DD0E1", "#AED581", "#FFB74D", "#90CAF9",
+        "#FD736D", "#FEA757", "#FEDD3C", "#9BE759", "#1EE4B2", "#2AD5E5", "#49B5FA", "#8F9BFB", "#D482FF", "#F76AB7",
     ];
+
+    /// <summary>
+    /// <see cref="Palette"/> renklerinin OKLCH tonu (derece); renkleri ayırırken kullanılır (<see cref="SpeakerColorBook"/>).
+    /// Tamsayı tablo: platformlar tonu renkten hesaplamaz, kayan nokta farkı çıkmaz.
+    /// </summary>
+    public static readonly IReadOnlyList<int> Hues = [25, 61, 97, 133, 169, 205, 241, 277, 313, 349];
 
     /// <summary>Adın rengi ("#RRGGBB").</summary>
     public static string Color(string name) => Palette[(int)(Hash(name.Trim().ToLowerInvariant()) % (uint)Palette.Count)];

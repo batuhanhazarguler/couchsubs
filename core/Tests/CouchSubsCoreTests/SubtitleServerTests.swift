@@ -144,8 +144,8 @@ final class SubtitleServerTests: XCTestCase {
         XCTAssertTrue(data[1].contains("\"speakerNames\":[{"))
         // Eski alan gitmez: 0.9.79'dan eski TV uygulamaları onunla bütün satırı boyuyordu.
         XCTAssertFalse(data[1].contains("\"speakers\""))
-        XCTAssertTrue(data[1].contains("\"name\":\"Mattia\"") && data[1].contains("#90CAF9"))
-        XCTAssertTrue(data[1].contains("\"name\":\"Lucia\"") && data[1].contains("#F06292"))
+        XCTAssertTrue(data[1].contains("\"name\":\"Mattia\"") && data[1].contains("#F76AB7"))
+        XCTAssertTrue(data[1].contains("\"name\":\"Lucia\"") && data[1].contains("#2AD5E5"))
         XCTAssertFalse(data[2].contains("speaker"))
     }
 
