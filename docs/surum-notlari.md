@@ -6,10 +6,15 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
-- **GTA 6 telefonu:** Oyun içi telefonun otomatik çevirisi artık varsayılan açık; daha önce kapalı kalmışsa bir kez açılıyor. Telefonda mesajları kaydırınca çeviri yenileniyor, ek alan çevirisi tek karelik ıskada silinmiyor (Windows, Mac, iPhone, Android).
-- **Kalan ekran yazısı çevirisi:** Menü, tabela ve yardım kutusu yazısı oyundan kalkınca çevirisi de TV'den ve ekrandan kalkıyor, oyunun önünde asılı kalmıyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.96).
-- **Eski TV uygulaması:** TV'deki uygulama eskiyse telefonda güncelleme önerisi çeviri ekranında da çıkıyor ve tek dokunuşla kuruluyor; TV'deki panelde "TV uygulaması eski" uyarısı görünüyor (iPhone, Android; TV uygulaması 0.9.95).
-- **Altyazı günlüğü:** Bir satır gösterilmeyip düşürülünce ya da bekletilince nedeni altyazı günlüğüne yazılıyor; sorun bildiriminde nedeni bulmayı kolaylaştırıyor.
+- **Koyu zemin OLED'de tam siyah:** Koyu zemin seçiliyken bütün altyazı kutuları (önceki satırlar dahil) tam opak saf siyah çiziliyor; LG OLED gibi TV'lerde karanlık sahnede gri kutu görünmüyor (LG, Samsung, Android TV; TV uygulaması 0.9.97).
+- **Mac'te "yazı okuma yanıt vermiyor" uyarısı:** Arka planda süren telefon ya da ekran yazısı okuması altyazıyı bekletince bu uyarı artık yanlışlıkla çıkmıyor; çeviriler bozulmuyor, düzelmesi için uygulamayı yeniden başlatmak gerekmiyor (Mac, iPhone).
+- **Konuşan adı ve renkleri:** Oyunun cümleden ayrı satırda okunan konuşan adı ("Lucia:" gibi) artık her replikte cümlenin başında gösteriliyor. Ad renkleri koyu zeminde okunaklı on ayrı tona yayıldı; karakterler birbirinden kolayca ayrılıyor (Windows, Mac, iPhone, Android).
+- **TV'de ses yok:** TV uygulaması açıkken oyunun sesi gelmeyen TV'ler için bilgi panelinde ses durumu gösteriliyor; kurulum rehberine "Altyazı var ama oyunun sesi yok" bölümü eklendi (LG, Android TV; TV uygulaması 0.9.98).
+- **Küfür:** Çevirilerde küfürler artık yumuşatılmıyor, İngilizcedeki sertliğiyle Türkçeye aktarılıyor.
+- **Çevrimdışı kuyruk:** Sunucuya ulaşılamazken biriken altyazı satırları kaydedilemezse kayıt yeniden deneniyor; uygulama kapanınca satırlar kaybolmuyor (Windows, Mac).
+- **Deneysel: Ekranı Yerinde Türkçe Çiz (Mac):** GTA 6 telefonundaki yazıyı yerinde Türkçe çizer. Varsayılan kapalı; Ayarlar › Alanlar'dan açılır.
+
+**beta.93'te gelenler:** GTA 6 telefonu çevirisinin varsayılan açık gelmesi, oyundan kalkan ekran yazısı çevirisinin TV'de kalmaması (TV uygulaması 0.9.96), eski TV uygulaması için çeviri ekranında güncelleme önerisi (TV uygulaması 0.9.95), altyazı günlüğü.
 
 **beta.92'de gelenler:** Karakter Adı "Tüm Satır" (TV uygulaması 0.9.93), kare sayacı olmayan LG'lerde kararma (TV uygulaması 0.9.94), telefonda "Çevirileri kaldır", Windows hata pencereleri.
 
