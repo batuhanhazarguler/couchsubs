@@ -82,6 +82,25 @@ public enum ScreenFit {
                            upper: item.look!.upper, align: item.look!.align)
     }
 
+    /// Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
+    /// cümle sonu noktalamasıyla biter ("Ne?", "Yoldan çık."). Oyunun altyazısı ekran yazısı olarak da okunabiliyor (menü
+    /// durumunda altyazı alanı dışlanmaz); kısa replik etiket sayılıp özgün yazının dar ailesiyle çiziliyor, TV'de "dar ve
+    /// basık" görünüyordu. Konuşma satırı hiçbir zaman dar aile almaz (`ScreenStyleLock.steady`). Menü sekmesi, düğme ve
+    /// başlık böyle bitmez; çok satırlı görev/bilgi metni özgün görünüşünde kalır. TV (app.js isDialogue), Windows
+    /// (ScreenFit.IsDialogue) ve Android (ScreenFit.isDialogue) aynı kuralı uygular.
+    public static func isDialogue(_ text: String, rows: Int = 1) -> Bool {
+        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty else { return false }
+        if SpeakerPrefix.split(line) != nil { return true }
+        guard rows <= 1, !line.contains("\n"), line.contains(where: \.isLowercase) else { return false }
+        let end = line.reversed().drop { "\"'”’»)]".contains($0) }.first
+        return end.map { ".!?…".contains($0) } ?? false
+    }
+
+    static func isDialogue(_ item: ScreenTranslation.Item) -> Bool {
+        isDialogue(item.translation, rows: item.paragraphs ? max(2, item.rows) : item.rows)
+    }
+
     /// Yerleşime giren öğe: özgün stilli, telefon kartının ya da balonun parçası değil.
     public static func takesPart(_ item: ScreenTranslation.Item) -> Bool {
         item.look != nil && !ScreenTranslation.isCardPart(item) && !item.bubble

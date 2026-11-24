@@ -66,6 +66,25 @@ object ScreenFit {
         TextPainter.Target(item.box, item.lineHeight, if (item.paragraphs) max(2, item.rows) else item.rows,
             item.surface!!.background, item.surface.foreground, item.look!!.upper, item.look.align)
 
+    /**
+     * Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
+     * cümle sonu noktalamasıyla biter ("Ne?", "Yoldan çık."). Oyunun altyazısı ekran yazısı olarak da okunabiliyor; kısa
+     * replik etiket sayılıp özgün yazının dar ailesiyle çiziliyor, TV'de "dar ve basık" görünüyordu. Konuşma satırı hiçbir
+     * zaman dar aile almaz ([ScreenStyleLock.steady]). Mac/iPhone: ScreenFit.isDialogue, Windows: ScreenFit.IsDialogue,
+     * TV: app.js isDialogue.
+     */
+    fun isDialogue(text: String, rows: Int = 1): Boolean {
+        val line = text.trim()
+        if (line.isEmpty()) return false
+        if (SpeakerPrefix.split(line) != null) return true
+        if (rows > 1 || line.contains('\n') || line.none { it.isLowerCase() }) return false
+        val end = line.trimEnd('"', '\'', '”', '’', '»', ')', ']')
+        return end.isNotEmpty() && end.last() in ".!?…"
+    }
+
+    internal fun isDialogue(item: ScreenTranslation.Item): Boolean =
+        isDialogue(item.translation, if (item.paragraphs) max(2, item.rows) else item.rows)
+
     internal fun takesPart(item: ScreenTranslation.Item): Boolean =
         item.look != null && !ScreenTranslation.isCardPart(item) && !item.bubble
 

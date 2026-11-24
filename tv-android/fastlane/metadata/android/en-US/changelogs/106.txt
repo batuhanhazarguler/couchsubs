@@ -1,0 +1,1 @@
+0.9.103: Short dialogue subtitles no longer look narrow and squashed: subtitles are never drawn with a condensed font or squeezed horizontally. On Android TV the condensed font of screen text no longer leaks into subtitles.

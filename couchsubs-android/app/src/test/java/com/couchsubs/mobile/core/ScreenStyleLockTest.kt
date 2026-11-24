@@ -55,6 +55,26 @@ class ScreenStyleLockTest {
         }
     }
 
+    /** Kısa konuşma satırı ("Ne?", "Lucia: Evet.") dar aile almaz; menü etiketi ve çok satırlı görev metni dar kalır (#1255). */
+    @Test
+    fun dialogueNeverCondensed() {
+        val lock = ScreenStyleLock()
+        val items = listOf("Ne?", "Yoldan çık.", "Lucia: Evet, hadi gidelim.", "HARİTA", "Ayarlar", "Gizli belgeleri bul.").mapIndexed { i, text ->
+            ScreenTranslation.Item(
+                source = "EN $i", translation = text, box = TextBox(0.4, 0.8 - i * 0.05, 0.6, 0.83 - i * 0.05), lineHeight = 0.03,
+                surface = TextSurface("#101010", "#FFFFFF"), look = TextLook(true, true, "center", text == text.uppercase()),
+                rows = if (i == 5) 2 else 1,
+            )
+        }
+        val condensed = lock.steady(items, 0).map { it.look!!.condensed }
+        assertEquals(listOf(false, false, false, true, true, true), condensed)
+        assertEquals(true, ScreenFit.isDialogue("Ne?"))
+        assertEquals(true, ScreenFit.isDialogue("“Gel buraya!”"))
+        assertEquals(false, ScreenFit.isDialogue("ÇIK!"))
+        assertEquals(false, ScreenFit.isDialogue("Haritayı aç"))
+        assertEquals(false, ScreenFit.isDialogue("Gizli belgeleri bul.", rows = 2))
+    }
+
     /** Ölçüt: ±%10 titreyen menüde aynı öğenin boyu/stili kareler arasında hiç değişmez. */
     @Test
     fun jitteringMenuNeverChangesLook() {

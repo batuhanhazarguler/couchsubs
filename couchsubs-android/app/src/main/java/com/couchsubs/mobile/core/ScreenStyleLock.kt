@@ -124,6 +124,11 @@ class ScreenStyleLock {
             }
             kinds[role] = kind
         }
+        // Konuşma satırı kilitli boyun dar ailesini almaz (ScreenFit.isDialogue; #1255).
+        for (i in result.indices) {
+            val look = result[i].look ?: continue
+            if (look.condensed && ScreenFit.isDialogue(result[i])) result[i] = result[i].copy(look = look.copy(condensed = false))
+        }
         return result
     }
 

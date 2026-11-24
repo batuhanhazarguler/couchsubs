@@ -48,6 +48,28 @@ final class ScreenStyleLockTests: XCTestCase {
         }
     }
 
+    /// Kısa konuşma satırı ("Ne?", "Lucia: Evet.") dar aile almaz; menü etiketi ve çok satırlı görev metni dar kalır (#1255).
+    func testDialogueNeverCondensed() {
+        let texts = ["Ne?", "Yoldan çık.", "Lucia: Evet, hadi gidelim.", "HARİTA", "Ayarlar", "Gizli belgeleri bul."]
+        let items = texts.enumerated().map { i, text -> ScreenTranslation.Item in
+            let top = 0.8 - Double(i) * 0.05
+            var item = ScreenTranslation.Item(source: "EN \(i)", translation: text,
+                                              box: TextBox(left: 0.4, top: top, right: 0.6, bottom: top + 0.03), lineHeight: 0.03)
+            item.style = PhoneTextStyle(background: "#101010", foreground: "#FFFFFF")
+            item.look = TextLook(bold: true, condensed: true, align: .center, upper: text == text.uppercased(), flat: true)
+            item.rows = i == 5 ? 2 : 1
+            return item
+        }
+        var lock = ScreenStyleLock()
+        let condensed = lock.steady(items, now: 0).map { $0.look!.condensed }
+        XCTAssertEqual(condensed, [false, false, false, true, true, true])
+        XCTAssertTrue(ScreenFit.isDialogue("Ne?"))
+        XCTAssertTrue(ScreenFit.isDialogue("“Gel buraya!”"))
+        XCTAssertFalse(ScreenFit.isDialogue("ÇIK!"))
+        XCTAssertFalse(ScreenFit.isDialogue("Haritayı aç"))
+        XCTAssertFalse(ScreenFit.isDialogue("Gizli belgeleri bul.", rows: 2))
+    }
+
     /// Ölçüt: aynı öğe türünde kareler arası boy/stil değişimi 0. Satır yükseklikleri ±%10 titreyen, kalınlığı ve
     /// renkleri oynayan 120 karelik menü dizisinde her öğe hep ilk çizildiği gibi görünür.
     private struct Seeded: RandomNumberGenerator {

@@ -73,6 +73,26 @@ public static class ScreenFit
         new(item.Box, item.LineHeight, item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, item.Style!.Background,
             item.Style.Foreground, item.Look!.Upper, item.Look.Align);
 
+    /// <summary>
+    /// Konuşma satırı (#1224, #1255, #1259): konuşan adıyla başlar ("Lucia: Evet.") ya da küçük harf taşıyan tek satır olup
+    /// cümle sonu noktalamasıyla biter ("Ne?", "Yoldan çık."). Oyunun altyazısı ekran yazısı olarak da okunabiliyor; kısa
+    /// replik etiket sayılıp özgün yazının dar ailesiyle çiziliyor, TV'de "dar ve basık" görünüyordu. Konuşma satırı hiçbir
+    /// zaman dar aile almaz (<see cref="ScreenStyleLock.Steady"/>). Mac/iPhone: ScreenFit.isDialogue, Android:
+    /// ScreenFit.isDialogue, TV: app.js isDialogue.
+    /// </summary>
+    public static bool IsDialogue(string text, int rows = 1)
+    {
+        var line = text.Trim();
+        if (line.Length == 0) return false;
+        if (SpeakerPrefix.Parse(line) is not null) return true;
+        if (rows > 1 || line.Contains('\n') || !line.Any(char.IsLower)) return false;
+        var end = line.TrimEnd('"', '\'', '”', '’', '»', ')', ']');
+        return end.Length > 0 && ".!?…".Contains(end[^1]);
+    }
+
+    internal static bool IsDialogue(ScreenTranslation.Item item) =>
+        IsDialogue(item.Translation, item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows);
+
     internal static bool TakesPart(ScreenTranslation.Item item) =>
         item.Look is not null && !ScreenTranslation.IsCardPart(item) && !item.Bubble;
 

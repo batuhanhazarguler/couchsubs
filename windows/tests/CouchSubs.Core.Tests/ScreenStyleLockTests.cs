@@ -61,6 +61,27 @@ public class ScreenStyleLockTests
         }
     }
 
+    /// <summary>Kısa konuşma satırı ("Ne?", "Lucia: Evet.") dar aile almaz; menü etiketi ve çok satırlı görev metni dar kalır (#1255).</summary>
+    [Fact]
+    public void DialogueNeverCondensed()
+    {
+        var texts = new[] { "Ne?", "Yoldan çık.", "Lucia: Evet, hadi gidelim.", "HARİTA", "Ayarlar", "Gizli belgeleri bul." };
+        var items = texts.Select((text, i) =>
+            new ScreenTranslation.Item("EN " + i, text, new TextBox(0.4, 0.8 - (i * 0.05), 0.6, 0.83 - (i * 0.05)), 0.03)
+            {
+                Style = new PhoneTextStyle("#101010", "#FFFFFF"),
+                Look = new TextLook(true, true, "center", text == text.ToUpperInvariant(), true),
+                Rows = i == 5 ? 2 : 1,
+            }).ToList();
+        var condensed = new ScreenStyleLock().Steady(items, 0).Select(item => item.Look!.Condensed).ToArray();
+        Assert.Equal(new[] { false, false, false, true, true, true }, condensed);
+        Assert.True(ScreenFit.IsDialogue("Ne?"));
+        Assert.True(ScreenFit.IsDialogue("“Gel buraya!”"));
+        Assert.False(ScreenFit.IsDialogue("ÇIK!"));
+        Assert.False(ScreenFit.IsDialogue("Haritayı aç"));
+        Assert.False(ScreenFit.IsDialogue("Gizli belgeleri bul.", rows: 2));
+    }
+
     /// <summary>Ölçüt: ±%10 titreyen menüde aynı öğenin boyu/stili kareler arasında hiç değişmez.</summary>
     [Fact]
     public void JitteringMenuNeverChangesLook()

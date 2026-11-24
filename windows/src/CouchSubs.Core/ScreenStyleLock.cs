@@ -106,6 +106,10 @@ public sealed class ScreenStyleLock
             }
             kinds[role] = kind;
         }
+        // Konuşma satırı kilitli boyun dar ailesini almaz (ScreenFit.IsDialogue; #1255).
+        for (var i = 0; i < result.Count; i++)
+            if (result[i].Look is { Condensed: true } look && ScreenFit.IsDialogue(result[i]))
+                result[i] = result[i] with { Look = look with { Condensed = false } };
         return result;
     }
 

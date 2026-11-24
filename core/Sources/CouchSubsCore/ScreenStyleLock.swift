@@ -108,6 +108,10 @@ public struct ScreenStyleLock: Sendable {
             }
             kinds[role] = kind
         }
+        // Konuşma satırı kilitli boyun dar ailesini almaz (`ScreenFit.isDialogue`; #1255).
+        for i in result.indices where result[i].look?.condensed == true && ScreenFit.isDialogue(result[i]) {
+            result[i].look?.condensed = false
+        }
         return result
     }
 

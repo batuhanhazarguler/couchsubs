@@ -1,0 +1,1 @@
+0.9.103: Kısa konuşma altyazıları artık dar ve basık görünmüyor: altyazı hiçbir zaman dar yazı tipiyle ya da yatayda sıkıştırılarak çizilmiyor. Android TV'de ekran yazısının dar yazı tipi altyazıya geçmiyor.

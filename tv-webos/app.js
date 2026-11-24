@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.102';
+  var APP_VERSION = '0.9.103';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -902,6 +902,9 @@
     el.textContent = wrapped.text;
     paintSpeakers(el, wrapped.text, el.speakers);
     el.style.whiteSpace = 'pre-line';
+    // Konuşma altyazısı her zaman sayfanın olağan yazı tipinde ve genişliğinde (style.css; #1255).
+    el.style.fontFamily = '';
+    el.style.fontStretch = '';
     var size = Math.round(baseSize * wrapped.scale);
     el.style.fontSize = size + 'px';
     if (paragraphs) return fitBox(el);
@@ -1127,6 +1130,30 @@
   var BUBBLE_MIN_FONT = 22;
   var CONDENSED_FONT = '"Roboto Condensed", "Arial Narrow", "Helvetica Neue Condensed", "LG Smart UI Condensed", sans-serif';
 
+  // Konuşma satırı dar yazı tipi almaz ve yatayda sıkışmaz (TV uygulaması 0.9.103; #1224, #1255, #1259). Oyunun altyazısı
+  // ekran yazısı olarak da okunabiliyor (menü durumunda altyazı alanı dışlanmaz): "Ne?", "Yoldan çık." gibi kısa replik
+  // etiket sayılıp dar aileyle ve %10 sıkışarak çiziliyordu. Konuşma satırı: konuşan adıyla başlar ("Lucia: Evet.") ya da
+  // küçük harf taşıyan tek satır olup cümle sonu noktalamasıyla biter. Menü sekmesi, düğme ve başlık böyle bitmez; çok
+  // satırlı görev/bilgi metni özgün görünüşünde kalır. Bilgisayardaki kural: ScreenFit.isDialogue (Mac, iPhone),
+  // ScreenFit.IsDialogue (Windows), ScreenFit.isDialogue (Android).
+  var SPEAKER_PREFIX = /^[A-ZÇĞİÖŞÜ][^:：\n]{0,30}[:：]\s+\S/;
+  var SPOKEN_END = /[.!?…]["'”’»)\]]*$/;
+  function isDialogue(text, rows) {
+    var line = String(text || '').replace(/^\s+|\s+$/g, '');
+    if (!line) return false;
+    if (SPEAKER_PREFIX.test(line)) return true;
+    return !(rows > 1) && line.indexOf('\n') < 0 && SPOKEN_END.test(line) && line !== line.toUpperCase();
+  }
+
+  // Android TV'de dar aile hiç istenmez: sayfanın WebView'ı Roboto'yu sistemin değişken yazı tipinden alır; dar genişlikle
+  // bir kez çizilen Roboto aynı sayfadaki konuşma altyazısına da dar geçiyordu (TCL ve Beko Android TV, Katman; altyazı
+  // kutusu İngilizceden dar, harfler yatayda üst üste). Ekran yazısı orada olağan genişlikte çizilir; yerleşim yazıyı
+  // ölçtüğü için sığmayan çeviri yine küçülür ya da satır kırılır.
+  function condensedLook(item) {
+    return !!(item && item.style && item.style.condensed === true) && !window.AndroidTV &&
+      !isDialogue(item.text, item.paragraphs === true ? 2 : item.rows);
+  }
+
   // Öğeye özgün yazının görünüşü uygulandı mı.
   function applyLook(el, item) {
     var surface = item.surface;
@@ -1138,7 +1165,7 @@
     if (style && typeof style === 'object') {
       if (style.bold === true) el.style.fontWeight = '700';
       else if (style.bold === false) el.style.fontWeight = '400';
-      if (style.condensed === true) {
+      if (condensedLook(item)) {
         el.style.fontFamily = CONDENSED_FONT;
         el.style.fontStretch = 'condensed';
       }
@@ -1497,7 +1524,8 @@
     var x0 = box.left * width, x1 = box.right * width, y0 = box.top * height, y1 = box.bottom * height;
     var room = validBox(item.room);
     var words = item.text.split(/\s+/).length;
-    var squeezable = label && words <= 2;
+    // Konuşma satırı ("Ne?", "Yoldan çık.") etiket gibi sıkışmaz (#1255).
+    var squeezable = label && words <= 2 && !isDialogue(item.text, 1);
     var padX = pad * width, padY = pad * height;
     var pl = room ? Math.min(padX, Math.max(0, x0 - room.left * width)) : 0;
     var pr = room ? Math.min(padX, Math.max(0, room.right * width - x1)) : 0;
@@ -1737,7 +1765,7 @@
   }
 
   function exactFamily(item) {
-    return item.style && item.style.condensed === true ? CONDENSED_FONT : '';
+    return condensedLook(item) ? CONDENSED_FONT : '';
   }
 
   // Birebir öğeleri çizer: host'a eklenen kutular (sırayla).
