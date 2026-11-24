@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.96';
+  var APP_VERSION = '0.9.97';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -700,7 +700,8 @@
       }
       var span = document.createElement('span');
       span.className = 'speaker';
-      span.style.color = segments[i].color;
+      span.baseColor = segments[i].color;
+      span.style.color = dimmedColor(el.id, segments[i].color);
       span.textContent = colored;
       el.appendChild(span);
       if (rest) el.appendChild(document.createTextNode(rest));
@@ -2057,6 +2058,47 @@
   // Bilgisayardaki "Yazı rengi" seçimi; bilinmeyen değer gelirse renk değişmez.
   var TEXT_COLORS = { white: '#FFFFFF', yellow: '#FFE135' };
 
+  // Zemin "Koyu" (%100) mü ve rengi ne. Koyu zeminde önceki satırların kutusu da tam opaktır; soluklaştırma yalnız
+  // yazıya uygulanır (aşağıda dimmedColor). Eskiden kutunun kendisi %75/%60 saydamlaşıyor (style.css, #subtitle-prev
+  // opacity) ve zemin ayrıca %83'e iniyordu: OLED'de karanlık sahnede önceki satırlar gri kutu gibi görünüyordu.
+  var solidBackground = false;
+  var backgroundRgb = [0, 0, 0];
+  var textColorValue = '#FFFFFF';
+  // Önceki satırların soluklukları (style.css'teki #subtitle-prev / #subtitle-prev2 opaklığıyla aynı).
+  var PREVIOUS_DIM = { 'subtitle-prev-text': 0.75, 'subtitle-prev2-text': 0.6 };
+
+  // Siyah seçeneği (#101014) ve eski varsayılan (#0c0e12) TV'de saf siyah (#000) çizilir. OLED'de piksel kapanır;
+  // 16/16/20 gibi "neredeyse siyah" ise karanlık sahnede ve HDR'de oyunun gerçek siyahının üstünde gri kalkıyordu.
+  // Lacivert, koyu gri gibi renkli seçenekler olduğu gibi kalır.
+  function tvBackgroundRgb(rgb) {
+    return Math.max(rgb[0], rgb[1], rgb[2]) <= 24 ? [0, 0, 0] : rgb;
+  }
+
+  // Koyu zeminde önceki satırın yazı rengi: kutu opak kaldığı için soluklaştırma, rengin zemine doğru karıştırılmasıyla
+  // yapılır (opak zeminde opaklıkla aynı sonuç). Koyu değilse ya da renk "#RRGGBB" değilse renk olduğu gibi kalır;
+  // o zaman soluklaştırmayı style.css'teki opaklık yapar.
+  function dimmedColor(id, color) {
+    var factor = PREVIOUS_DIM[id];
+    var rgb = hexRgb(color);
+    if (!solidBackground || !factor || !rgb) return color;
+    var mixed = [];
+    for (var i = 0; i < 3; i++) mixed.push(Math.round(backgroundRgb[i] + (rgb[i] - backgroundRgb[i]) * factor));
+    return 'rgb(' + mixed.join(', ') + ')';
+  }
+
+  // Önceki satırların yazı ve konuşan adı renklerini güncel zemine göre yeniden boyar (ayar değişince).
+  function paintPreviousColors() {
+    for (var id in PREVIOUS_DIM) {
+      if (!PREVIOUS_DIM.hasOwnProperty(id)) continue;
+      var el = $(id);
+      el.style.color = dimmedColor(id, textColorValue);
+      var spans = el.getElementsByTagName('span');
+      for (var i = 0; i < spans.length; i++) {
+        if (spans[i].baseColor) spans[i].style.color = dimmedColor(id, spans[i].baseColor);
+      }
+    }
+  }
+
   // "#RRGGBB" → [r, g, b]; geçersizse null.
   function hexRgb(hex) {
     if (typeof hex !== 'string' || !/^#[0-9A-Fa-f]{6}$/.test(hex)) return null;
@@ -2080,15 +2122,20 @@
       var alpha = Math.max(0, Math.min(100, style.background)) / 100;
       // Zemin saydamsa yazıya sert kontur eklenir (style.css, body.thin-bg).
       setBodyClass('thin-bg', alpha < 0.5);
-      // Saf siyah değil, hafif mavimsi siyah (#0c0e12): oyun görüntüsünün üstünde daha yumuşak durur. Yeni arayüz
-      // zemin rengini gönderir (style.backgroundColor, "#RRGGBB"); göndermeyen bilgisayarda eski renk.
-      var rgb = hexRgb(style.backgroundColor) || [12, 14, 18];
+      // Yeni arayüz zemin rengini gönderir (style.backgroundColor, "#RRGGBB"); göndermeyen bilgisayarda siyah.
+      // Siyah seçeneği saf siyah çizilir (tvBackgroundRgb).
+      var rgb = tvBackgroundRgb(hexRgb(style.backgroundColor) || [0, 0, 0]);
       var base = rgb[0] + ', ' + rgb[1] + ', ' + rgb[2];
-      textBackground = 'rgba(' + base + ', ' + alpha + ')';
-      coverBackground = style.background >= 100 ? 'rgb(' + base + ')' : textBackground;
+      backgroundRgb = rgb;
+      // "Koyu" (%100): bütün kutular (önceki satırlar ve örtü dahil) tam opak; yarı saydam katman kalmaz.
+      solidBackground = style.background >= 100;
+      setBodyClass('solid-bg', solidBackground);
+      textBackground = solidBackground ? 'rgb(' + base + ')' : 'rgba(' + base + ', ' + alpha + ')';
+      coverBackground = textBackground;
+      var previousBackground = solidBackground ? textBackground : 'rgba(' + base + ', ' + (alpha * 0.83).toFixed(2) + ')';
       $('subtitle-text').style.background = textBackground;
-      $('subtitle-prev-text').style.background = 'rgba(' + base + ', ' + (alpha * 0.83).toFixed(2) + ')';
-      $('subtitle-prev2-text').style.background = 'rgba(' + base + ', ' + (alpha * 0.83).toFixed(2) + ')';
+      $('subtitle-prev-text').style.background = previousBackground;
+      $('subtitle-prev2-text').style.background = previousBackground;
     }
     speakerNameOnly = style.nameOnly === true;
     speakerWholeLine = style.wholeLine === true;
@@ -2105,10 +2152,10 @@
     // Yeni arayüzün yazı rengi (style.textHex) eski beyaz/sarı seçiminin önüne geçer.
     var textColor = hexRgb(style.textHex) ? style.textHex : TEXT_COLORS[style.textColor];
     if (textColor) {
+      textColorValue = textColor;
       $('subtitle-text').style.color = textColor;
-      $('subtitle-prev-text').style.color = textColor;
-      $('subtitle-prev2-text').style.color = textColor;
     }
+    paintPreviousColors();
     // Ekrandaki yazı yeni ayarlarla yeniden bölünür: yazı boyu, kalınlık, yerleşim ve bant bölmeyi değiştirir.
     var shown = rawText('subtitle-text');
     if ($('subtitle-text').rawText !== undefined && shown) setLineText('subtitle-text', shown, !!shownParagraphs, fontBase, $('subtitle-text').speakers);
