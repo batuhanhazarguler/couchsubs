@@ -1345,11 +1345,11 @@ public partial class SettingsView : UserControl
         Theme.Motion.AnimationsEnabled = on;
     }
 
-    /// <summary>Deneysel ayarlar kapanır (ekran yazısı ve GTA 6 telefonu).</summary>
+    /// <summary>Deneysel ayarlar varsayılana döner: ekran yazısı kapalı, GTA 6 telefonu açık.</summary>
     private void OnExperimentalDefaults(object sender, RoutedEventArgs e)
     {
         AutoScreenText.IsChecked = false;
-        AutoReadGamePhone.IsChecked = false;
+        AutoReadGamePhone.IsChecked = new UserSettings().AutoReadGamePhone;
     }
 
     /// <summary>TV durumu noktası: bağlı yeşil, yeniden bağlanıyor amber, bekliyor gri.</summary>

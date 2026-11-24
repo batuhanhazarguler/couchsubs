@@ -87,6 +87,29 @@ enum PhoneSteady {
         return result
     }
 
+    /// Kaydırma sayılmak için eşleşen balonların her biri en az satır yüksekliğinin bu katı kadar kaymalı.
+    static let scrollShare = 0.5
+
+    /// Telefonda sohbet kaydırıldı mı: önceki okumayla eşleşen balonların (aynı mesaj, `sameReading`) hepsi dikeyde aynı
+    /// yöne, satır yüksekliğinin `scrollShare`'inden fazla kaydı. Kaydırmada bekletme (`holdTurns`) ve konum sabitleme
+    /// (`steadyPositions`, `stableBlocks`) atlanır, görünen yeni balonlar tek istekte çevrilir (#1202, #1170, X: "kaydırınca
+    /// yenilenmiyor"). Üstler ve `lineHeight` telefon bölgesine oranlıdır (telefonun kendisi kıpırdasa da ölçü değişmez).
+    /// Her güncel balon, öncekilerden henüz eşlenmemiş ilk aynı mesajla eşlenir. Windows ve Android aynı kuralı uygular.
+    static func scrolled(previous: [(text: String, top: Double)], current: [(text: String, top: Double)],
+                         lineHeight: Double) -> Bool {
+        guard lineHeight > 0 else { return false }
+        var used = Set<Int>()
+        var shifts: [Double] = []
+        for bubble in current {
+            guard let index = previous.indices.first(where: { !used.contains($0) && sameReading(previous[$0].text, bubble.text) })
+            else { continue }
+            used.insert(index)
+            shifts.append(bubble.top - previous[index].top)
+        }
+        guard !shifts.isEmpty, shifts.allSatisfy({ abs($0) > scrollShare * lineHeight }) else { return false }
+        return shifts.allSatisfy { $0 > 0 } || shifts.allSatisfy { $0 < 0 }
+    }
+
     /// İki yazı rengi zeminin aynı yanında mı (ikisi de zeminden koyu ya da ikisi de açık; algılanan parlaklıkla).
     static func sameInk(_ a: String, _ b: String, on background: String) -> Bool {
         func brightness(_ hex: String) -> Int? {

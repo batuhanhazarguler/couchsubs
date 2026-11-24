@@ -286,6 +286,8 @@ class SubtitlePipeline(
     @Volatile var skipsTurkish = true
     /** Hiçbir pakette bulunmayan kararlı satır (ortak havuz için). */
     @Volatile var onPackMissed: ((String) -> Unit)? = null
+    /** Altyazı alanında okunan blok sahne yazısı sayılıp atıldı (nedeni; [GamePhoneHint], Mac/iPhone ve Windows ile aynı). */
+    @Volatile var onSceneTextDropped: ((String) -> Unit)? = null
     /** Yeni çeviri gösterilince. */
     @Volatile var onPairShown: ((ShownPair) -> Unit)? = null
     /** Her çeviri denemesinden sonra (başarılıysa null). */
@@ -362,6 +364,7 @@ class SubtitlePipeline(
                 darkInk = if (darkInkStyle.isGameStyle) null else darkInk) { block, reason ->
                 if (reason == InkTone.REASON) darkBlocks += block
                 logSceneText(block.text, reason)
+                onSceneTextDropped?.invoke(reason)
             }.also {
                 for (block in darkBlocks) {
                     if (darkInkStyle.observe(block, area)) onLog?.invoke(

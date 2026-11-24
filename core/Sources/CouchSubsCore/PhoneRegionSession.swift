@@ -48,6 +48,11 @@ final class PhoneRegionSession {
     private let retry = GamePhoneRetry()
     /// Son tam yayımlanan okuma: tek turluk OCR atlamasını gerçek değişiklikten ayırmak için.
     private var shownPage: Page?
+    /// Bir önceki taze okuma (bekletme ya da ıska `page`'i silse de kalır): kaydırmayı ayırt etmek için.
+    private var lastRead: Page?
+    /// Bu turdaki okuma bir kaydırma (`PhoneSteady.scrolled`): bekletme ve konum sabitleme atlanır, yeni balonların
+    /// hepsi tek istekte çevrilir.
+    private var scrolling = false
     /// Bu okuma kaç turdur bekletiliyor (en çok `PhoneSteady.holdTurns`); sonra okuma her durumda ilerler.
     private var holds = 0
     /// Telefonun art arda bulunamadığı tur sayısı (`missed`).
@@ -91,6 +96,8 @@ final class PhoneRegionSession {
     func close() {
         latest = nil
         shownPage = nil
+        lastRead = nil
+        scrolling = false
         absences = 0
         task?.cancel()
         publish([])
@@ -127,6 +134,7 @@ final class PhoneRegionSession {
     }
 
     private func update(packLookup: ((String) -> PackMatch?)?, skipsTurkish: Bool, english: Bool) async {
+        scrolling = false
         guard let start = latest, start.isPresent() else { missed(); return }
         absences = 0
         frameSize = (start.frame.width, start.frame.height)
@@ -141,6 +149,11 @@ final class PhoneRegionSession {
             do { page = try await read(start, signature: signature) }
             catch { page = nil; note("PhoneSession", "okunamadı (\(error.localizedDescription))", ""); return }
             fresh = true
+            if let read = page {
+                scrolling = lastRead.map { Self.scrolled($0, read) } ?? false
+                lastRead = read
+                if scrolling { note("PhoneSteady", "kaydırma algılandı, bekletme ve konum sabitleme atlandı", Self.text(read)) }
+            }
         } else if !needsWork && !emptyOnce {
             // "GTA 6 Telefon Mesajları" ayarı değişti: aynı sayfa yeni düzende hemen gösterilir.
             if sentOptions != panel(), let current = page, !rendered.isEmpty {
@@ -159,7 +172,7 @@ final class PhoneRegionSession {
         // Yerinde duran iki komşu arasından düşen balon ya da uzun mesajdaki yan yana birkaç bozuk harf tek okumada
         // ekrandan silinmesin, yeniden çevrilmesin: okuma bir tur bekletilir, sonraki tur mutlaka yeniden okur. Aynı
         // görünen gerçek değişiklik o turda ilerler (Windows ile aynı).
-        if fresh, holds < PhoneSteady.holdTurns, let shown = shownPage, !rendered.isEmpty,
+        if fresh, !scrolling, holds < PhoneSteady.holdTurns, let shown = shownPage, !rendered.isEmpty,
            Self.missingInteriorBubble(shown, current)
             || (Self.sameLayout(shown, current, frameSize) && GamePhoneText.hasAdjacentOcrEdits(Self.text(shown), Self.text(current))) {
             if holds == 0 {
@@ -206,7 +219,9 @@ final class PhoneRegionSession {
             shownPage = current
             return
         }
-        if !translator.translatesTogether {
+        // Kaydırmada görünen yeni balonların hepsi tek istekte çevrilir (ücretsiz motorda da): turda tek balon, kaydırılan
+        // sohbetin çevirisini turlarca geciktiriyordu (#1170).
+        if !translator.translatesTogether, !scrolling {
             followPage(current)
             for offset in groups.indices {
                 let index = (nextBubble + offset) % groups.count
@@ -262,6 +277,18 @@ final class PhoneRegionSession {
     /// Mesajın düşürülme ya da bekletilme nedeni (`DropLog`: aynı neden + metin yinelenmez, dakikada sınırlı).
     private func note(_ component: String, _ reason: String, _ text: String) {
         drops.note(component, reason, IconText.plain(text), log: onLog)
+    }
+
+    /// İki okuma arasında sohbet kaydırıldı mı (`PhoneSteady.scrolled`; üstler telefon bölgesine oranlı).
+    private static func scrolled(_ previous: Page, _ current: Page) -> Bool {
+        func tops(_ page: Page) -> [(text: String, top: Double)] {
+            let height = max(1e-6, page.region.bottom - page.region.top)
+            return page.bubbles.map { ($0.group.paragraphs.joined(separator: "\n"), ($0.group.box.top - page.region.top) / height) }
+        }
+        let heights = current.bubbles.map(\.group.lineHeight).sorted()
+        guard !heights.isEmpty else { return false }
+        let line = heights[heights.count / 2] / max(1e-6, current.region.bottom - current.region.top)
+        return PhoneSteady.scrolled(previous: tops(previous), current: tops(current), lineHeight: line)
     }
 
     private static func text(_ page: Page) -> String {
@@ -441,6 +468,10 @@ final class PhoneRegionSession {
             // Telefon gerçekten yakınlaşıp uzaklaşınca balonların yerindeki görünüşü hemen yenilenir (Balonların Üstünde).
             if abs(height - scale) > scale * 0.03 {
                 scale = height
+            } else if !rendered.isEmpty, scrolling {
+                // Kaydırmada balonlar gerçekten yer değiştirdi: eski yerlerinde tutulmaz (`steadyPositions` atlanır);
+                // aynı balonun boyu, satır yüksekliği ve rengi korunur (Windows ve Android ile aynı).
+                items = Self.stableBlocks(items, previous: rendered)
             } else if !rendered.isEmpty {
                 items = PhoneSteady.steadyPositions(Self.stableBlocks(items, previous: rendered), previous: rendered,
                                                     aspect: Double(frameSize.width) / Double(max(1, frameSize.height)))

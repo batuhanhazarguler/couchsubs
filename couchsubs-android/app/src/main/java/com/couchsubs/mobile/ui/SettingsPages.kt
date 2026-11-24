@@ -438,10 +438,10 @@ private fun AdvancedPage() {
         WaitSlider(stringResource(R.string.set_partial), stringResource(R.string.set_partial_note), partialWait) { partialWait = it; settings.partialWaitMs = it }
         // Varsayılana Dön: deneysel ayarların hepsi (Mac ile aynı küme).
         SecondaryButton(stringResource(R.string.set_restore)) {
-            autoScreenText = false; gamePhone = false; setTextApart = true; fastReading = false
+            autoScreenText = false; gamePhone = true; setTextApart = true; fastReading = false
             misreadWait = SubtitlePipeline.PACK_WAIT_MS; partialWait = SubtitlePipeline.CLEAN_WAIT_MS
             kindPhone = true; kindMission = true; kindHelp = true; kindMenus = false; kindOther = false
-            settings.autoScreenText = false; settings.autoReadGamePhone = false; settings.setTextApart = true; settings.fastSubtitleDetection = false
+            settings.autoScreenText = false; settings.autoReadGamePhone = true; settings.setTextApart = true; settings.fastSubtitleDetection = false
             settings.misreadWaitMs = misreadWait; settings.partialWaitMs = partialWait
             settings.screenTextPhone = true; settings.screenTextMission = true; settings.screenTextHelp = true
             settings.screenTextMenus = false; settings.screenTextOther = false

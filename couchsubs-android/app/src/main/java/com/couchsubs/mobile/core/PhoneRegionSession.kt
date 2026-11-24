@@ -129,6 +129,10 @@ internal class PhoneRegionSession(
     private var shownPage: Page? = null
     /** Son okuma kaç turdur bekletiliyor (en çok [PhoneSteady.HOLD_TURNS]); sonra okuma her durumda ilerler. */
     private var holds = 0
+    /** Bir önceki taze okuma (bekletilse de): kaydırmayı ([PhoneSteady.scrolled]) ölçmek için. */
+    private var lastRead: Page? = null
+    /** Son taze okuma bir öncekine göre kaydırma: bekletme, konum sabitleme ve turda tek balon çevirisi atlanır. */
+    private var scrolling = false
     /** Altyazı günlüğü: mesaj çevrilmediğinde ya da bekletildiğinde nedeni ([DropLog]; Mac/iPhone ve Windows ile aynı). */
     @Volatile var onLog: ((String) -> Unit)? = null
     private val drops = DropLog()
@@ -188,6 +192,8 @@ internal class PhoneRegionSession(
     }
 
     private fun update(packLookup: ((String) -> PackMatch?)?, skipsTurkish: Boolean, english: Boolean) {
+        // Kaydırma yalnız bu turun taze okumasında ölçülür; görüntü değişmeyen turda önceki turdan kalmaz.
+        scrolling = false
         val start = latest ?: run { clearMissing(); return }
         val signature = start.image.signature(start.region)
         val changed = page?.let {
@@ -203,10 +209,15 @@ internal class PhoneRegionSession(
                 note("PhoneSession", "okunamadı (${error.message})", "")
                 return
             }
+            // Sohbet kaydırıldıysa (eşleşen balonların hepsi aynı yöne kaydı) bekletilmez, yeni balonlar hemen çevrilir.
+            val before = lastRead
+            lastRead = fresh
+            scrolling = before != null && scrolled(before, fresh)
+            if (scrolling) note("PhoneSteady", "kaydırma algılandı, bekletme ve konum sabitleme atlandı", text(fresh))
             // Yerinde duran iki komşu arasından düşen balon ya da uzun mesajdaki birkaç bozuk harf tek okumada ekrandan
             // silinmez, çeviri yenilenmez: sonraki tur mutlaka yeniden okur; aynı görünen gerçek değişiklik o turda ilerler.
             val previous = shownPage
-            if (holds < PhoneSteady.HOLD_TURNS && previous != null && previous.region.isClose(fresh.region, 0.01) &&
+            if (!scrolling && holds < PhoneSteady.HOLD_TURNS && previous != null && previous.region.isClose(fresh.region, 0.01) &&
                 (missingInteriorBubble(previous, fresh) ||
                     (sameLayout(previous, fresh, start.image) && GamePhoneText.hasAdjacentOcrEdits(text(previous), text(fresh))))) {
                 if (holds == 0) {
@@ -269,7 +280,8 @@ internal class PhoneRegionSession(
             needsWork = false
             return
         }
-        if (!translator.translatesTogether) {
+        // Ücretsiz motorda turda tek balon çevrilir; kaydırmada görünen yeni balonların hepsi tek istekte gider.
+        if (!translator.translatesTogether && !scrolling) {
             followPage(current)
             for (offset in groups.indices) {
                 val index = (nextBubble + offset) % groups.size
@@ -318,6 +330,19 @@ internal class PhoneRegionSession(
         publish(items(current, available))
         needsWork = current.bubbles.any { bubble -> bubble.group.paragraphs.any { available[it] == null } }
         if (!needsWork) shownPage = current
+    }
+
+    /** İki okuma arasında sohbet kaydı mı ([PhoneSteady.scrolled]; üstler ve satır yüksekliği telefon bölgesine oranlı). */
+    private fun scrolled(before: Page, after: Page): Boolean {
+        fun placed(page: Page): List<PhoneSteady.Placed> {
+            val height = page.region.bottom - page.region.top
+            if (height <= 0) return emptyList()
+            return page.bubbles.map { PhoneSteady.Placed(it.group.paragraphs.joinToString("\n"), (it.group.box.top - page.region.top) / height) }
+        }
+        val height = after.region.bottom - after.region.top
+        val lines = after.bubbles.map { it.group.lineHeight }.sorted()
+        if (height <= 0 || lines.isEmpty()) return false
+        return PhoneSteady.scrolled(placed(before), placed(after), lines[lines.size / 2] / height)
     }
 
     private fun text(page: Page): String = page.bubbles.flatMap { it.group.paragraphs }.joinToString(" ")
@@ -394,6 +419,8 @@ internal class PhoneRegionSession(
         absences = 0
         page = null
         shownPage = null
+        lastRead = null
+        scrolling = false
         holds = 0
         recheck = false
         emptyOnce = false
@@ -462,7 +489,13 @@ internal class PhoneRegionSession(
         if (fresh.isEmpty()) panelSteady.reset()
         val placed = if (fresh.isEmpty()) null else capture?.pose?.let { panelSteady.steadyPose(it, now) }
         val aspect = capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9)
-        val items = if (sent.isEmpty()) fresh else PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
+        // Kaydırmada balonlar yeni yerlerine hemen geçer (konum sabitleme atlanır); boy, satır yüksekliği ve renk
+        // kararlılığı ([steady]) sürer.
+        val items = when {
+            sent.isEmpty() -> fresh
+            scrolling -> steady(fresh, sent)
+            else -> PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
+        }
         sent = items
         val options = panel()
         if (rendered == items && (sentOptions == options || items.isEmpty())) return

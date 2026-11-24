@@ -205,6 +205,13 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
     public event Action<string>? PackMissed;
 
     /// <summary>
+    /// Altyazı yolu bir bloğu sahne yazısı sayıp attı (nedeni: <see cref="SceneText.Reason"/>). GTA 6 telefonu kapalıyken
+    /// telefon listesi böyle atılıyorsa kullanıcıya ipucu gösterilir (<see cref="GamePhoneHint"/>). Okuma iş parçacığında
+    /// çağrılır.
+    /// </summary>
+    public event Action<string>? OnSceneTextDropped;
+
+    /// <summary>
     /// Görev satırının bölgesi değişti (null: görev kalktı). Görev altyazıya girmez; bölgesi "auto-mission" ek alanı olarak
     /// kendi yerinde ve özgün stilinde gösterilir (bkz. <see cref="MissionLine"/>). Okuma iş parçacığında çağrılır.
     /// </summary>
@@ -456,6 +463,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                                          {
                                              if (reason == InkTone.Reason) darkBlocks.Add(block);
                                              LogSceneText(block.Text, reason);
+                                             OnSceneTextDropped?.Invoke(reason);
                                          },
                                          block => edge.Add(block.PlacedIn(area)),
                                          line => stickyRows.UnchangedMs(line, readAt),

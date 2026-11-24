@@ -97,6 +97,32 @@ object PhoneSteady {
         return result
     }
 
+    /** Kaydırma sayılmak için eşleşen balonların her biri en az satır yüksekliğinin bu katı kadar kaymalı. */
+    const val SCROLL_SHARE = 0.5
+
+    /** Kaydırma ölçüsünde bir balon: yazısı ve telefon bölgesine oranlı üst kenarı. */
+    data class Placed(val text: String, val top: Double)
+
+    /**
+     * Telefonda sohbet kaydırıldı mı: önceki okumayla eşleşen balonların (aynı mesaj, [sameReading]) hepsi dikeyde aynı
+     * yöne, satır yüksekliğinin [SCROLL_SHARE]'inden fazla kaydı. Kaydırmada bekletme ([HOLD_TURNS]) ve konum sabitleme
+     * ([steadyPositions], stableBlocks) atlanır, görünen yeni balonlar tek istekte çevrilir (#1202, #1170, X: "kaydırınca
+     * yenilenmiyor"). Üstler ve [lineHeight] telefon bölgesine oranlıdır. Her güncel balon, öncekilerden henüz eşlenmemiş
+     * ilk aynı mesajla eşlenir. Mac/iPhone ve Windows aynı kuralı uygular.
+     */
+    fun scrolled(previous: List<Placed>, current: List<Placed>, lineHeight: Double): Boolean {
+        if (lineHeight <= 0) return false
+        val used = HashSet<Int>()
+        val shifts = ArrayList<Double>()
+        for (bubble in current) {
+            val index = previous.indices.firstOrNull { it !in used && sameReading(previous[it].text, bubble.text) } ?: continue
+            used += index
+            shifts += bubble.top - previous[index].top
+        }
+        if (shifts.isEmpty() || shifts.any { abs(it) <= SCROLL_SHARE * lineHeight }) return false
+        return shifts.all { it > 0 } || shifts.all { it < 0 }
+    }
+
     /** İki yazı rengi zeminin aynı yanında mı (ikisi de zeminden koyu ya da ikisi de açık; algılanan parlaklıkla). */
     fun sameInk(a: String, b: String, background: String): Boolean {
         fun brightness(hex: String): Int? {

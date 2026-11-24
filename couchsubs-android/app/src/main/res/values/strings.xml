@@ -248,6 +248,8 @@
     <string name="psn_why">Neden ikinci hesap?</string>
     <string name="psn_why_body">Remote Play aynı hesapla bağlanınca oynadığın oturumu ve kolunu devralır. İkinci hesap yalnız görüntüyü alır; sen kendi hesabınla, kendi kolunla oynamaya devam edersin. Hesap ücretsizdir, PS Plus gerekmez.</string>
     <string name="subtitle_off_tip">Oyunun kendi altyazısını açın: CouchSubs sesi değil, ekrandaki İngilizce altyazıyı okur.</string>
+    <string name="game_phone_hint">Telefon çevirisi kapalı, açmak ister misiniz?</string>
+    <string name="game_phone_hint_turn_on">Aç</string>
     <string name="psn_main_account_steps">Bağlantı kopmadan oynamak için: 1. PS5\'te önce ANA hesabınla oyuna gir. 2. Sonra çeviriyi başlat. 3. Oyun sırasında kullanıcı değiştirme; kolu açınca ANA hesabını seç. CouchSubs\'ın giriş yaptığı ikinci hesapla oynama, yoksa kol kendiliğinden kapanır ya da oyunda çalışmaz.</string>
     <string name="psn_main_account">Oynarken kolu açınca PS5\'te ANA hesabınızı seçin. CouchSubs\'ın giriş yaptığı ikinci hesapla oynamayın, yoksa kol kendiliğinden kapanır ya da oyunda çalışmaz.</string>
     <string name="pair_found">%1$s bulundu</string>

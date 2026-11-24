@@ -49,6 +49,8 @@ data class LiveStatus(
     val framesSince: Long? = null,
     /** Görüntü bir dakikadır geliyor ama tek satır gösterilmedi: "oyunun kendi altyazısını açın" (bkz. SubtitleOffTip). */
     val subtitleOffTip: Boolean = false,
+    /** GTA 6 telefonu ayarı kapalıyken telefon listesi altyazı yolunda atıldı: "Telefon çevirisi kapalı, açmak ister misiniz?". */
+    val gamePhoneHint: Boolean = false,
     /** Okumanın başladığı an (duvar saati, ms); süre göstergesi için. */
     val startedAt: Long = 0,
     /** Seçili çeviri motorunun görünen adı ("DeepL", "Ücretsiz"). */

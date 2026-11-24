@@ -16193,7 +16193,9 @@
     "Pack Installed": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Pack Installed"}}, "tr": {"stringUnit": {"state": "translated", "value": "Paket Kuruldu"}}}},
     "Playing": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Playing"}}, "tr": {"stringUnit": {"state": "translated", "value": "Oynanıyor"}}}},
     "Suggestions": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Suggestions"}}, "tr": {"stringUnit": {"state": "translated", "value": "Öneriler"}}}},
-    "Signing In…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Signing In…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yapılıyor…"}}}}
+    "Signing In…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Signing In…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yapılıyor…"}}}},
+    "The phone translation is off. Turn it on?": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The phone translation is off. Turn it on?"}}, "tr": {"stringUnit": {"state": "translated", "value": "Telefon çevirisi kapalı, açmak ister misiniz?"}}}},
+    "Turn On": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Turn On"}}, "tr": {"stringUnit": {"state": "translated", "value": "Aç"}}}}
   },
   "version": "1.0"
 }

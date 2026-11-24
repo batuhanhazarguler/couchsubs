@@ -53,6 +53,11 @@ public final class RegionWatcher {
     /// gerçekten değişmiş sayılır ve gösterilir (görevin tek sözcüğü değişebilir: "Go to the barn" → "Go to the bank").
     static let holdLimit = 4
 
+    /// Hazır alanın arayüz kutusu (`UiPanel.hasText`) art arda bu kadar tur bulunamazsa gösterilen çeviri silinir. Tek
+    /// karelik ıska çeviriyi siliyordu; iz değişmediği için de panel aynı yazıyla geri gelince çeviri bir daha gelmiyordu
+    /// (#1202, GTA 6 telefonu; Windows ve Android ile aynı).
+    static let panelMissTurns = 3
+
     /// Çevirisi saklanan en çok yazı sayısı (oyun görev yazısını arada silip yeniden gösteriyor).
     private static let translationLimit = 64
 
@@ -84,6 +89,8 @@ public final class RegionWatcher {
         var renderedLayout: [Block]?
         /// Gönderilen bloklar ve her birinin `Candidate.blocks` içindeki sırası.
         var renderedBlocks: [(group: Int, item: ScreenTranslation.Item)]?
+        /// Hazır alanda arayüz kutusunun art arda bulunamadığı tur sayısı (`panelMissTurns`).
+        var panelMisses = 0
     }
 
     /// Alanda ayrı duran bir yazı grubu: `Candidate.paragraphs` içinde `start`'tan başlayan `count` parça, karedeki yeri
@@ -261,7 +268,16 @@ public final class RegionWatcher {
             return
         }
         if GameAreaPresets.isPreset(area.id), !UiPanel.hasText(crop) {
-            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz, gösterilen kutu kalkar.
+            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz. İz unutulur: sonraki
+            // tur görüntü değişmese de yeniden bakar, panel aynı yazıyla dönünce yeniden okunur.
+            state.signature = nil
+            state.panelMisses += 1
+            if !state.shown.isEmpty, state.panelMisses < Self.panelMissTurns {
+                // Tek karelik ıska: gösterilen çeviri `panelMissTurns` tur dolmadan kalkmaz.
+                states[area.id] = state
+                return
+            }
+            // Gösterilen kutu kalkar.
             state.candidate = nil
             state.lastRead = nil
             let wasShown = !state.shown.isEmpty
@@ -282,6 +298,7 @@ public final class RegionWatcher {
             }
             return
         }
+        state.panelMisses = 0
         let started = now()
         let reader = self.reader
         let reading = try? await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail(area.auto ? "ekran yazısı" : "ek alan", crop)) {

@@ -200,6 +200,9 @@ public final class SubtitlePipeline {
     public var skipsTurkish = true
     /// Hiçbir pakette bulunmayan kararlı satır (ortak havuz için).
     public var onPackMiss: ((String) -> Void)?
+    /// Altyazı alanındaki blok sahne yazısı sayılıp atıldı (`SceneText.reason`); telefon çevirisi kapalıyken telefon
+    /// listesi için ipucu (`GamePhoneHint`). Kararları değiştirmez.
+    public var onSceneTextDropped: ((String) -> Void)?
     /// Son gösterilen çevirinin nereden geldiği: "paket" ya da "motor" (günlük ve sayım için).
     public private(set) var lastOrigin: String?
     /// Bu hatta paketten gelen satır sayısı.
@@ -363,6 +366,7 @@ public final class SubtitlePipeline {
             sceneTexts += block.lines.map(\.text)
             if reason == InkTone.reason { darkBlocks.append(block) }
             self?.logSceneText(block.text, reason)
+            self?.onSceneTextDropped?(reason)
         }, notices: { edge.append($0.placed(in: place)) },
            age: { sticky.unchangedMs($0, at: readAt) }, stale: { staleTexts += $0.lines.map(\.text) })
         for block in darkBlocks where darkInkStyle.observe(block, in: place) {

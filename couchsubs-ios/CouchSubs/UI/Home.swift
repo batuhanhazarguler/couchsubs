@@ -337,6 +337,14 @@ struct RunningScreen: View {
                     MobileNote(text: String(localized: "Automatic on-screen text translation is experimental; you can turn it on in Settings."),
                                tone: Mobile.Palette.secondary)
                 }
+                // Telefon çevirisi kapalıyken GTA 6'nın telefon listesi altyazı yolunda atıldı (#1202): oturumda bir kez.
+                if model.showsGamePhoneHint {
+                    MobileNote(text: String(localized: "The phone translation is off. Turn it on?"), tone: Mobile.Palette.secondary)
+                    HStack(spacing: Mobile.Space.gap) {
+                        Button("Turn On") { model.enableGamePhone() }.buttonStyle(.mobileSecondary)
+                        Button("No") { model.dismissGamePhoneHint() }.buttonStyle(.mobileSecondary)
+                    }
+                }
                 if model.showsSubtitleOffTip {
                     MobileNote(text: String(localized: "Turn on the game's own subtitles: CouchSubs reads the English subtitles on screen, not the audio."),
                                tone: Mobile.Palette.secondary)

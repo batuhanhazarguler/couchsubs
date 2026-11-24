@@ -163,8 +163,10 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         };
         // beta.63'te varsayılan açık gelen otomatik ekran yazısı bir kez kapatılır; açık olanlara bir kez söylenir.
         (settings, ShowsAutoScreenTextNotice) = AutoScreenTextMigration.Apply(settings);
-        // Otomatik ekran yazısı kapalıyken hazır alanlar ve GTA 6 telefonu da bir kez kapatılır (altyazı dışında çeviri yok).
+        // Otomatik ekran yazısı kapalıyken hazır alanlar bir kez kapatılır (altyazı dışında çeviri yok).
         settings = ScreenTextExtrasMigration.Apply(settings);
+        // Eski göçün kapattığı GTA 6 telefonu bir kez açılır (#1202).
+        settings = GamePhoneMigration.Apply(settings);
         // Uygulama oturum sürerken kapandıysa oyunun profili açık kalmış olabilir: açılışta genel alanlar geri gelir.
         if (settings.ActiveAreaProfile is not null || settings.GeneralAreas is not null) settings = settings.WithGeneralAreas();
         services.Translation.SelectCpuThreads(settings.CpuTranslationThreads);
@@ -831,6 +833,13 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public bool ShowsAutoScreenTextNotice { get => showsAutoScreenTextNotice; private set => Set(ref showsAutoScreenTextNotice, value); }
     private bool showsAutoScreenTextNotice;
+    /// <summary>
+    /// GTA 6 telefonu kapalıyken telefon listesi altyazı yolunda atıldı: "Telefon çevirisi kapalı, açmak ister misiniz?"
+    /// (oturum başına bir kez, <see cref="GamePhoneHint"/>). Telefon açılınca kalkar.
+    /// </summary>
+    public bool ShowsGamePhoneHint { get => showsGamePhoneHint; private set => Set(ref showsGamePhoneHint, value); }
+    private bool showsGamePhoneHint;
+    private readonly GamePhoneHint gamePhoneHint = new();
     private bool showsSubtitleOffTip;
     /// <summary>Görüntünün bu bağlantıda ilk geldiği an (bağlantı koparsa sıfırlanır).</summary>
     private DateTime? framesSince;
@@ -900,6 +909,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             if ((old.MisreadWaitMs != value.MisreadWaitMs || old.PartialWaitMs != value.PartialWaitMs) && pipeline is not null) ApplyWaits(pipeline);
             if (old.SharePool != value.SharePool) services.Pool?.SetEnabled(value.SharePool);
             if (old.AutoScreenText != value.AutoScreenText) ShowsAutoScreenTextNotice = false;
+            if (value.ReadsGamePhone) ShowsGamePhoneHint = false;
             if (old.UsageData != value.UsageData) services.Usage?.SetEnabled(value.UsageData);
             if (old.UsageNoticeSeen != value.UsageNoticeSeen) Changed(nameof(ShowsUsageNotice));
             if (old.TranslationDevice != value.TranslationDevice)
@@ -2560,11 +2570,14 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             framesSince = null;
             sawLineThisRun = false;
             ShowsSubtitleOffTip = false;
+            ShowsGamePhoneHint = false;
+            lock (gamePhoneHint) gamePhoneHint.Reset();
             MakePipeline();
             if (settings.Dubbing.Enabled && DubbingInstalled) MakeDubber()?.Prepare();
             SubtitleLog.Write($"oturum başladı: {settings.SourceLanguage}→{settings.TargetLanguage}, "
                 + $"motor: {(OnlineTranslationActive ? settings.OnlineEngine.ToString() : "ücretsiz")}, seçilen motor: {settings.Engine}, paketler: {(settings.GamePacks ? "açık" : "kapalı")}, "
-                + $"görüntü: {(demoMode ? "deneme modu" : readsCapture ? IsXbox ? "seçilen pencere (Xbox, bağlanılmaz)" : "seçilen pencere" : IsXbox ? "Xbox" : readsWindow ? "Remote Play penceresi" : "PS5")}");
+                + $"görüntü: {(demoMode ? "deneme modu" : readsCapture ? IsXbox ? "seçilen pencere (Xbox, bağlanılmaz)" : "seçilen pencere" : IsXbox ? "Xbox" : readsWindow ? "Remote Play penceresi" : "PS5")}"
+                + $", {SessionSummary.ScreenText(settings)}");
 
             IStreamSession stream;
             if (demoMode)
@@ -3681,6 +3694,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         built.Log = SubtitleLog.Write;
         built.PackName = () => services.GamePacks?.SearchScope;
         built.MissionChanged += OnMissionChanged;
+        built.OnSceneTextDropped += OnSceneTextDropped;
         built.NoticesChanged += OnNoticesChanged;
         ConnectPacks(built);
         ApplyWaits(built);
@@ -3738,6 +3752,29 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// stilinde görünür. Görev kalkınca alan çıkar (RegionWatcher kutusunu kaldırır). Otomatik ekran yazısı kapalıysa
     /// görev yine altyazıya girmez ama ayrıca gösterilmez.
     /// </summary>
+    /// <summary>
+    /// Altyazı yolu sahne yazısı attı: GTA 6 telefonu kapalıyken bu bir telefon listesiyse oturumda bir kez "Telefon
+    /// çevirisi kapalı, açmak ister misiniz?" ipucu (<see cref="GamePhoneHint"/>, #1202). Okuma iş parçacığında çağrılır.
+    /// </summary>
+    private void OnSceneTextDropped(string reason)
+    {
+        bool offer;
+        lock (gamePhoneHint) offer = gamePhoneHint.Observe(reason, settings.ReadsGamePhone, gameSense.Current?.Name);
+        if (!offer) return;
+        SubtitleLog.Write("telefon çevirisi kapalı: telefon listesi altyazı yolunda atıldı, açma ipucu gösterildi");
+        post(() => ShowsGamePhoneHint = !settings.ReadsGamePhone);
+    }
+
+    /// <summary>İpucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.</summary>
+    public void EnableGamePhone()
+    {
+        ShowsGamePhoneHint = false;
+        Settings = Settings with { AutoReadGamePhone = true };
+    }
+
+    /// <summary>İpucundaki "Hayır": bu oturumda yeniden gösterilmez.</summary>
+    public void DismissGamePhoneHint() => ShowsGamePhoneHint = false;
+
     private void OnMissionChanged(CropRegion? region)
     {
         var request = false;

@@ -439,6 +439,8 @@ class TranslationService : Service() {
     @Volatile private var subtitlePhone: com.couchsubs.mobile.core.ScreenPhoneCard.Handset? = null
     private var subtitlePhoneAt = Long.MIN_VALUE / 2
     @Volatile private var playsGta6 = false
+    /** "Telefon çevirisi kapalı, açmak ister misiniz?" ipucu (oturumda bir kez; [com.couchsubs.mobile.core.GamePhoneHint]). */
+    private val gamePhoneHint = com.couchsubs.mobile.core.GamePhoneHint()
     @Volatile private var phoneTracking = false
     @Volatile private var phoneOpen = false
 
@@ -627,6 +629,9 @@ class TranslationService : Service() {
         settings.lastHealth = null
         settings.translating = true
         Backend.breadcrumb("çeviri: başlıyor (${settings.target.name}, ${settings.engine.name}, paketler ${settings.packsEnabled})")
+        // Oturum başı ayar özeti: telefon okuyucusunun açık mı kapalı mı olduğu günlükte görünsün (#1202).
+        Log.i(TAG, "oturum başladı: " + com.couchsubs.mobile.settings.SessionLogSummary.of(settings.autoScreenText, settings.readsGamePhone))
+        gamePhoneHint.reset()
         // Çevrimiçi motor satırı ücretsiz çeviriye bıraktığında nedeni günlüğe gider (Mac/Windows ile aynı).
         com.couchsubs.mobile.translation.SentenceTranslator.fallbackLog = Backend::breadcrumb
         startedAt = System.currentTimeMillis()
@@ -788,6 +793,13 @@ class TranslationService : Service() {
             noticeAreas = emptyList()
             onNoticesChanged = { areas -> noticeAreas = areas }
             onPackMissed = { text -> linePool.offer(text) }
+            // Telefon ayarı kapalıyken GTA 6 telefonunun listesi altyazı yolunda sahne yazısı sayılırsa oturumda bir kez ipucu.
+            onSceneTextDropped = { reason ->
+                if (gamePhoneHint.observe(reason, settings.readsGamePhone, playedGame)) {
+                    Log.i(TAG, "telefon çevirisi kapalı: telefon listesi altyazı sayılmadı ($reason), ipucu gösterildi")
+                    LiveState.update { it.copy(gamePhoneHint = true) }
+                }
+            }
             // Altyazı alanında okunup sahne yazısı sayılan bloklar nedeniyle günlüğe (GitHub #822).
             onLog = { Log.i(TAG, it) }
             onPairShown = { pair ->

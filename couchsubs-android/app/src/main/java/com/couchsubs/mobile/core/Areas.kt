@@ -310,6 +310,12 @@ class RegionWatcher(
          * gerçekten değişmiş sayılır ve gösterilir (görevin tek sözcüğü değişebilir: "Go to the barn" → "Go to the bank").
          */
         internal const val HOLD_LIMIT = 4
+        /**
+         * Hazır alanda arayüz kutusu ([UiPanel.hasText]) art arda bu kadar turda bulunamazsa çeviri silinir (Mac/iPhone
+         * panelMissTurns, Windows PanelMissTurns). Tek karelik ıska çeviriyi siliyordu; metin aynı kaldığı için bir daha
+         * gelmiyordu (#1202).
+         */
+        const val PANEL_MISS_TURNS = 3
 
         /** Çevirisi saklanan en çok yazı sayısı (oyun görev yazısını arada silip yeniden gösteriyor). */
         private const val TRANSLATION_LIMIT = 64
@@ -651,6 +657,8 @@ class RegionWatcher(
         /** Bekletilen okumanın yazısı (günlük için). */
         var heldText: String? = null
         var holds = 0
+        /** Hazır alanda arayüz kutusunun art arda bulunamadığı tur sayısı ([PANEL_MISS_TURNS]). */
+        var panelMisses = 0
         var renderedKey: String? = null
         var renderedText: String? = null
         var renderedIcons: List<IconPlacement>? = null
@@ -835,7 +843,12 @@ class RegionWatcher(
         }
         val frame = crop.frame
         if (GameAreaPresets.isPreset(area.id) && frame != null && !UiPanel.hasText(frame)) {
-            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz, gösterilen kutu kalkar.
+            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz. İz unutulur: kare
+            // değişmese de sonraki tur kutuyu yeniden arar; panel aynı yazıyla geri gelince yeniden okunup gösterilir.
+            state.signature = null
+            state.panelMisses++
+            // Tek karelik ıska çeviriyi silmez: kutu [PANEL_MISS_TURNS] tur art arda yoksa gösterilen kutu kalkar.
+            if (state.shown.isNotEmpty() && state.panelMisses < PANEL_MISS_TURNS) return
             state.candidate = null
             state.lastRead = null
             state.held = null
@@ -856,6 +869,7 @@ class RegionWatcher(
             }
             return
         }
+        state.panelMisses = 0
         val reading = try {
             read(crop)
         } catch (error: Exception) {

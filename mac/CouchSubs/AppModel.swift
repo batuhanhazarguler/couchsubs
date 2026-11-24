@@ -731,6 +731,7 @@ final class AppModel: ObservableObject {
                 || settings.aiInstruction != oldValue.aiInstruction
             if translationChanged { Task { await refreshTranslatorStatus() } }
             if settings.readsGamePhone != oldValue.readsGamePhone { configureGamePhone() }
+            if settings.readsGamePhone { showsGamePhoneHint = false }
             if settings.misreadWaitMs != oldValue.misreadWaitMs || settings.partialWaitMs != oldValue.partialWaitMs {
                 pipeline?.applyWaits(from: settings)
             }
@@ -792,6 +793,10 @@ final class AppModel: ObservableObject {
     /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "deneysel; Ayarlar'dan
     /// açabilirsiniz" bilgisi görünür. Kullanıcı ayarı değiştirince kalkar.
     @Published private(set) var showsAutoScreenTextNotice = false
+    /// Telefon çevirisi kapalıyken GTA 6'nın telefon listesi altyazı yolunda sahne yazısı sayılıp atıldı: oturumda bir kez
+    /// "Telefon çevirisi kapalı, açmak ister misiniz?" (`GamePhoneHint`, #1202).
+    @Published private(set) var showsGamePhoneHint = false
+    private var gamePhoneHint = GamePhoneHint()
     private var subtitleOffTip = SubtitleOffTip()
     /// Bu ve önceki oturumlarda çevrilen son 200 altyazı (history.json); kaçırılan satır ana pencereden ve "Geçmiş"ten
     /// yeniden okunur.
@@ -1014,6 +1019,8 @@ final class AppModel: ObservableObject {
         let autoScreenTextNotice = curated.migratingAutoScreenText()
         // Otomatik ekran yazısı kapalıyken hazır alanlar ve GTA 6 telefonu da bir kez kapatılır (altyazı dışında çeviri yok).
         curated.migratingScreenTextExtras()
+        // GTA 6 telefonu eski göçle kapalı kaldıysa bir kez açılır (#1202; iPhone, Windows, Android ile aynı).
+        curated.migratingGamePhone()
         // Önceki sürümden gelen kurulumda eski ⌥⌘T ve ⌥⌘L ikinci tuş olarak kalır (bir kez; kayıtla birlikte yazılır).
         if LegacyMacHotkeys.isLegacy(saved) { curated.hotkeys = LegacyMacHotkeys.apply(curated.hotkeys) }
         settings = curated
@@ -1736,6 +1743,14 @@ final class AppModel: ObservableObject {
     /// Ana ekrandaki TV uygulaması kartını kapatır ("Tamam").
     func dismissTVAppUpdate() { tvAppUpdating = false }
 
+    /// Telefon ipucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.
+    func enableGamePhone() {
+        settings.autoReadGamePhone = true
+        showsGamePhoneHint = false
+    }
+
+    func dismissGamePhoneHint() { showsGamePhoneHint = false }
+
     // MARK: - TV uygulamasını kurma
 
     /// Geliştirici modu açık TV'de uygulamayı eksikse kurar, eskiyse günceller.
@@ -2353,6 +2368,8 @@ final class AppModel: ObservableObject {
         lastMetrics = nil
         subtitleOffTip.reset()
         updateSubtitleOffTip()
+        gamePhoneHint.reset()
+        showsGamePhoneHint = false
         if settings.dubbing.enabled, dubbingReady { makeDubber().prepare() }
         SubtitleLog.write("oturum başladı: CouchSubs \(AppIdentity.version), \(settings.sourceLanguage)→\(settings.targetLanguage), "
             + "motor: \(onlineTranslationActive ? settings.onlineEngine.rawValue : "ücretsiz"), "
@@ -3077,6 +3094,12 @@ final class AppModel: ObservableObject {
         pipeline.onReadResult = { [weak self] error in self?.noteRead(error) }
         pipeline.onSpeech = { [weak self] lines in self?.speak(lines) }
         pipeline.onLog = { SubtitleLog.write($0) }
+        pipeline.onSceneTextDropped = { [weak self] reason in
+            guard let self, self.gamePhoneHint.observe(reason: reason, readsPhone: self.settings.readsGamePhone,
+                                                       game: self.gameChoice.game?.name) else { return }
+            SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, telefon listesi altyazı yolunda atıldı (\(reason))")
+            self.showsGamePhoneHint = true
+        }
         watchReadQueue()
         onlineIssue = nil
         pipeline.warmUp()

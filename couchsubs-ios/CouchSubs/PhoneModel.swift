@@ -74,6 +74,7 @@ final class PhoneModel: ObservableObject {
                 || settings.aiInstruction != oldValue.aiInstruction || settings.geminiPaidTier != oldValue.geminiPaidTier
             if translationChanged { Task { await refreshTranslatorStatus() } }
             if settings.readsGamePhone != oldValue.readsGamePhone { configureGamePhone() }
+            if settings.readsGamePhone { showsGamePhoneHint = false }
             if settings.dubbing != oldValue.dubbing { dubbingSettingsChanged() }
             // Xbox sesi çeviri sürerken hemen değişir; Xbox'a yeni oturum açılmaz (#871).
             if settings.xboxAudioOnDevice != oldValue.xboxAudioOnDevice { session?.setPlayAudio(settings.xboxAudioOnDevice) }
@@ -159,6 +160,10 @@ final class PhoneModel: ObservableObject {
     /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "deneysel; Ayarlar'dan
     /// açabilirsiniz" bilgisi görünür. Kullanıcı ayarı değiştirince kalkar.
     @Published private(set) var showsAutoScreenTextNotice = false
+    /// Telefon çevirisi kapalıyken GTA 6'nın telefon listesi altyazı yolunda sahne yazısı sayılıp atıldı: oturumda bir kez
+    /// "Telefon çevirisi kapalı, açmak ister misiniz?" (`GamePhoneHint`, #1202; Mac ile aynı).
+    @Published private(set) var showsGamePhoneHint = false
+    private var gamePhoneHint = GamePhoneHint()
     private var subtitleOffTip = SubtitleOffTip()
     /// Bu oturumdaki satır sayısı ve paketten gelenler ("Hazır çeviriden 47 / 50").
     @Published private(set) var sessionLines = 0
@@ -341,6 +346,8 @@ final class PhoneModel: ObservableObject {
         let autoScreenTextNotice = curated.migratingAutoScreenText()
         // Otomatik ekran yazısı kapalıyken hazır alanlar ve GTA 6 telefonu da bir kez kapatılır (altyazı dışında çeviri yok).
         curated.migratingScreenTextExtras()
+        // GTA 6 telefonu eski göçle kapalı kaldıysa bir kez açılır (#1202; Mac, Windows, Android ile aynı).
+        curated.migratingGamePhone()
         settings = curated
         showsAutoScreenTextNotice = autoScreenTextNotice
         if loaded?.autoScreenTextReset != true || loaded?.screenTextExtrasReset != true, let data = try? JSONEncoder().encode(curated) {
@@ -773,6 +780,8 @@ final class PhoneModel: ObservableObject {
         recentLines = []
         subtitleOffTip.reset()
         updateSubtitleOffTip()
+        gamePhoneHint.reset()
+        showsGamePhoneHint = false
         lastMetrics = nil
         sessionLines = 0
         sessionPackLines = 0
@@ -1352,6 +1361,12 @@ final class PhoneModel: ObservableObject {
         // altyazi.log'a yazılır. Eskiden iPhone'da bağlı değildi: paylaşılan günlükte yalnız ek alan satırları vardı,
         // altyazının neden çevrilmediği görülemiyordu (1.0.6, 2026-11-22).
         pipeline.onLog = { SubtitleLog.write($0) }
+        pipeline.onSceneTextDropped = { [weak self] reason in
+            guard let self, self.gamePhoneHint.observe(reason: reason, readsPhone: self.settings.readsGamePhone,
+                                                       game: self.gameChoice.game?.name) else { return }
+            SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, telefon listesi altyazı yolunda atıldı (\(reason))")
+            self.showsGamePhoneHint = true
+        }
         pipeline.onReadResult = { [weak self] error in
             // Takılıyken her kare beklemeden `stuck` alır; takılma uzadıysa okuma bırakılır, altyazı yeni kuyrukta sürer.
             if case ReadQueueError.stuck? = error { self?.abandonStalledRead(olderThanMs: Self.abandonStallAfterMs) }
@@ -1399,6 +1414,14 @@ final class PhoneModel: ObservableObject {
         SubtitleLog.write("okuma \(ms) ms'dir takılı; takılan okuma bırakıldı, okuma yeni kuyrukta hızlı düzeyde sürüyor")
         if readingStuck { readingStuck = false }
     }
+
+    /// Telefon ipucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.
+    func enableGamePhone() {
+        settings.autoReadGamePhone = true
+        showsGamePhoneHint = false
+    }
+
+    func dismissGamePhoneHint() { showsGamePhoneHint = false }
 
     /// Oyun telefonu yalnız ayar açıkken ve oynanan oyun GTA 6 iken izlenir (Mac'teki `configureGamePhone` ile aynı).
     private func configureGamePhone() {

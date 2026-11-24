@@ -74,6 +74,12 @@ public sealed partial class RegionWatcher
     /// </summary>
     internal const int HoldLimit = 4;
 
+    /// <summary>
+    /// Hazır alanda arayüz kutusu (<see cref="UiPanel.HasText"/>) art arda bu kadar tur bulunamazsa çeviri kalkar; tek
+    /// karelik ıska çeviriyi silmez (#1202; Mac/iPhone ve Android aynı eşik).
+    /// </summary>
+    internal const int PanelMissTurns = 3;
+
     /// <summary>Çevirisi saklanan en çok yazı sayısı (oyun görev yazısını arada silip yeniden gösteriyor).</summary>
     private const int RenderedLimit = 64;
 
@@ -98,6 +104,8 @@ public sealed partial class RegionWatcher
         public TextBox[] Lines = [];
         public long LastFullCheck;
         public string? LastRead;
+        /// <summary>Hazır alanda arayüz kutusunun art arda bulunamadığı tur sayısı (<see cref="PanelMissTurns"/>).</summary>
+        public int PanelMisses;
         public Candidate? Candidate;
         public string Shown = "";
         /// <summary>Gösterilen yazının <see cref="Candidate.Text"/>'i.</summary>
@@ -125,6 +133,10 @@ public sealed partial class RegionWatcher
         private Queue<string>? phoneKeys;
         public int NextPhoneBlock;
         public (string Prefix, double X, double Y)[] PhoneOrderAnchors = [];
+        /// <summary>Son taze telefon okumasının balonları (yazı, telefona oranlı üst kenar): kaydırmayı tanımak için.</summary>
+        public (string Text, double Top)[]? PhoneLastBubbles;
+        /// <summary>Son taze okumada telefon kaydırılıyordu (<see cref="PhoneSteady.Scrolled"/>): bekletme ve konum sabitleme yok.</summary>
+        public bool PhoneScrolling;
 
         public void RememberPhoneTranslation(string source, string translation)
         {
@@ -380,9 +392,16 @@ public sealed partial class RegionWatcher
         }
         if (area.RequiresPanel && !UiPanel.HasText(crop))
         {
-            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz, gösterilen kutu kalkar.
+            // Hazır alanda arayüz kutusu yok (PS5 ana ekranı, başka oyun, oyun dünyası): OCR çalışmaz. İz unutulur: sonraki
+            // tur görüntü değişmese de yeniden bakar, panel aynı yazıyla geri gelince yeniden okunup gösterilir (önceden
+            // iz aynı kaldığı için çeviri bir daha gelmiyordu, #1202). Gösterilen kutu tek karelik ıskada silinmez;
+            // ancak PanelMissTurns tur art arda kutu yoksa kalkar.
+            state.Signature = null;
+            state.LastReadCrop = null;
             state.Candidate = null;
             (state.Held, state.Holds) = (null, 0);
+            if (++state.PanelMisses < PanelMissTurns && state.Shown.Length > 0) return;
+            state.LastRead = null;
             if (state.Shown.Length > 0)
             {
                 state.Shown = state.ShownText = "";
@@ -397,6 +416,7 @@ public sealed partial class RegionWatcher
             }
             return;
         }
+        state.PanelMisses = 0;
         var candidate = ReadCandidate(frame, crop, signature, area, state, started);
         if (candidate is null) return;
         if (state.LastRead == candidate.Key)
@@ -921,8 +941,11 @@ public sealed partial class RegionWatcher
                 if (blocks is not { Count: > 0 }) state.PhonePanelSteady.Reset();
                 var placed = blocks is { Count: > 0 } && area.PhonePose is { } seen
                     ? state.PhonePanelSteady.SteadyPose(seen, time) : ((GamePhoneGeometry.Pose Pose, bool Resized)?)null;
+                // Kaydırılırken konum sabitlenmez (SteadyPositions atlanır): balonlar yeni yerine hemen geçer; görünüşleri
+                // (boy, renk) StablePhoneBlocks ile korunur.
                 if (blocks is not null && state.SentPhoneBlocks is { } previous)
-                    blocks = PhoneSteady.SteadyPositions(StablePhoneBlocks(blocks, previous), previous, state.PhoneAspect);
+                    blocks = state.PhoneScrolling ? StablePhoneBlocks(blocks, previous)
+                        : PhoneSteady.SteadyPositions(StablePhoneBlocks(blocks, previous), previous, state.PhoneAspect);
                 state.SentPhoneBlocks = blocks;
                 var options = PhonePanel();
                 if (blocks is { Count: > 0 })

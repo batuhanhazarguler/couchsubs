@@ -405,6 +405,21 @@ private fun RunningScreen(status: LiveStatus, topBar: @Composable () -> Unit, on
         if (status.subtitleOffTip) {
             NoteTile(stringResource(R.string.subtitle_off_tip), Tokens.Color.secondary)
         }
+        // Telefon çevirisi kapalıyken GTA 6 telefonunun listesi altyazı sayılmadı (#1202): oturumda bir kez sorulur.
+        if (status.gamePhoneHint && !status.demo) {
+            Tile(Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.game_phone_hint), style = Tokens.Type.body, color = Tokens.Color.text)
+                Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.inline)) {
+                    SecondaryButton(stringResource(R.string.game_phone_hint_turn_on)) {
+                        Services.settings.autoReadGamePhone = true
+                        com.couchsubs.mobile.service.LiveState.update { it.copy(gamePhoneHint = false) }
+                    }
+                    GhostButton(stringResource(R.string.area_profile_no), color = Tokens.Color.secondary) {
+                        com.couchsubs.mobile.service.LiveState.update { it.copy(gamePhoneHint = false) }
+                    }
+                }
+            }
+        }
         if (!status.demo) GameSection(status)
         // Yeni satır gelince kartın amber halkası kısa sürede söner (hareket azaltılmışken yok).
         val flash = remember { Animatable(0f) }
