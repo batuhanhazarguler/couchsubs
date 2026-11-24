@@ -314,7 +314,7 @@ private struct BasicsSettings: View {
         } right: {
             DSCard(scrolls: false) {
                 DSCardHeader("Subtitle appearance")
-                SubtitlePreviewBox(lines: [SubtitleSample.lines[0]], height: 180).frame(maxWidth: .infinity)
+                SubtitlePreviewBox(lines: [SubtitleSample.lines[0]])
                 Text("Text size, background, text and character name colors. The settings apply the same on the TV, phone and computer screen.")
                     .dsMuted(.system(size: 14))
                 Spacer(minLength: 0)
@@ -337,7 +337,6 @@ private struct BasicsSettings: View {
 struct SubtitlePreviewBox: View {
     @EnvironmentObject private var model: AppModel
     let lines: [(who: String, text: String)]
-    var height: CGFloat?
 
     var body: some View {
         let style = model.settings.style
@@ -362,8 +361,11 @@ struct SubtitlePreviewBox: View {
             }
             .clipShape(shape)
             .overlay(shape.strokeBorder(Color.white.opacity(0.06)))
-            .frame(height: height)
-            .aspectRatio(height == nil ? 16 / 9 : nil, contentMode: .fit)
+            // Kart genişliğini doldur, 16:9 kal. Oran hiçbir zaman nil olmamalı: nil oran Perde sahnesinin
+            // ideal boyutundan (≈ birkaç pt genişlik) hesaplanıyor ve kutu ince dikey bir şeride dönüşüyordu.
+            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(maxWidth: .infinity)
+            .fixedSize(horizontal: false, vertical: true)
             .animation(DS.animation(.medium, reduced: !model.settings.transitionAnimations), value: style)
     }
 
@@ -792,6 +794,19 @@ private struct OutputSettings: View {
     @State private var address = ""
     @State private var confirmRemove = false
     @State private var checking = false
+    /// Kartta basılıp süren eylem (düğme bitene kadar yükleniyor görünür, tekrar basılamaz).
+    @State private var busy: TVCardAction?
+    /// Biten işin kısa süre görünen sonucu ("Bağlandı", "Güncellendi: 0.9.98") ya da açık hata metni.
+    @State private var outcome: TVCardOutcome?
+    /// Önceki durumlar: sonuç ancak bir geçişte (bağlandı, kurulum bitti) gösterilir.
+    @State private var lastClients = 0
+    @State private var wasInstalling = false
+
+    private enum TVCardAction { case test, open }
+    private struct TVCardOutcome: Equatable {
+        let text: String
+        let failed: Bool
+    }
 
     var body: some View {
         TwoColumns {
@@ -837,6 +852,24 @@ private struct OutputSettings: View {
                  status: model.hasTV ? "Linked" : nil, statusTone: model.tvClients > 0 ? .ok : .muted,
                  selected: model.tvClients > 0)
         Text(tvState).dsMuted()
+        // Süren iş (kendiliğinden başlayan TV uygulaması güncellemesi dahil): hangi adımda olunduğu.
+        if let phase = tvPhase {
+            HStack(spacing: DS.space("xs")) {
+                ProgressView().controlSize(.small)
+                Text(phase.title).font(.dsSmall).foregroundStyle(Color.dsMuted)
+            }
+            if let step = phase.step {
+                Text(tvStepLine(current: step)).font(.dsSmall).foregroundStyle(Color.dsFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        if let outcome {
+            if outcome.failed {
+                DSNoticeBox(tone: .error, text: LocalizedStringKey(outcome.text)) { EmptyView() }
+            } else {
+                DSSuccessBadge(text: LocalizedStringKey(outcome.text))
+            }
+        }
         // "TV'yi Eşleştir" ve "Deneme Altyazısı Gönder" önce TV'ye ulaşılıyor mu bakar (adresi değiştiyse TV yeni adreste
         // bulunur); ulaşılamazsa açık hata, "TV'yi Yeniden Ara" ve "IP Adresi Gir". Önceden düğmeye basınca hiçbir şey olmuyordu.
         if let host = model.tvUnreachableHost {
@@ -864,29 +897,40 @@ private struct OutputSettings: View {
                     .font(.dsSmall).foregroundStyle(Color.dsLiveText).fixedSize(horizontal: false, vertical: true)
             }
         }
+        // Düğmeler TV'nin durumuna göre: TV yoksa "TV'yi Bağla", seçili ama eşli değilse "TV'yi Eşleştir", eşli ama TV
+        // uygulaması bağlı değilse "TV'de CouchSubs'ı Aç", bağlıyken eşleştirme düğmesi yok (önceden eşli ve bağlı TV'de de
+        // "TV'yi Eşleştir" duruyordu).
         HStack(spacing: DS.space("xs")) {
             if sent {
                 DSSuccessBadge(text: "Sent")
             } else {
-                Button("Send Test Subtitle") {
-                    run {
+                Button(busy == .test ? "Sending…" : "Send Test Subtitle") {
+                    act(.test) {
                         guard await model.ensureTVReachable() else { return }
                         model.sendTestSubtitle()
                         sent = true
                     }
                 }
-                .buttonStyle(.dsSecondary)
+                .buttonStyle(DSButtonStyle(kind: .secondary, busy: busy == .test))
             }
-            Button(model.hasTV ? "Pair the TV" : "Connect TV") {
-                if model.hasTV {
-                    run { if await model.ensureTVReachable() { await model.openTVPairing() } }
-                } else {
-                    model.step = .tv
+            if model.tv == nil {
+                Button("Connect TV") { model.step = .tv }.buttonStyle(.dsSecondary)
+            } else if !model.hasTV {
+                Button("Pair the TV") { model.step = .tv }.buttonStyle(.dsSecondary)
+            } else if model.tvClients == 0 {
+                Button(busy == .open ? "Opening on the TV…" : "Open CouchSubs on the TV") {
+                    act(.open) {
+                        let connected = await model.openTVAppOnTV()
+                        // TV'ye ulaşılamadıysa kartta zaten açık hata ve çözümler var.
+                        if !connected, model.tvUnreachableHost == nil {
+                            show(TVCardOutcome(text: String(localized: "The TV app did not connect. Make sure the TV is on and on the same network, then try again."), failed: true))
+                        }
+                    }
                 }
+                .buttonStyle(DSButtonStyle(kind: .secondary, busy: busy == .open))
             }
-            .buttonStyle(.dsSecondary)
         }
-        .disabled(checking)
+        .disabled(checking || model.tvApp == .working)
         .task(id: sent) {
             guard sent else { return }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -899,12 +943,40 @@ private struct OutputSettings: View {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
             }
         }
-        // Eşli TV her zaman değiştirilebilir ve kaldırılabilir (önceden eşli TV hiçbir yerden kaldırılamıyordu).
+        // Biten işin sonucu kısa süre görünür.
+        .onAppear {
+            lastClients = model.tvClients
+            wasInstalling = model.tvApp == .working
+        }
+        .onChange(of: model.tvClients) { count in
+            if lastClients == 0, count > 0 { show(TVCardOutcome(text: String(localized: "Connected"), failed: false)) }
+            lastClients = count
+        }
+        .onChange(of: model.tvApp) { state in
+            defer { wasInstalling = state == .working }
+            guard wasInstalling else { return }
+            switch state {
+            case .upToDate(let version):
+                show(TVCardOutcome(text: String(format: String(localized: "Updated: %@"), version), failed: false))
+            case .failed:
+                show(TVCardOutcome(text: String(localized: "The TV app could not be installed. The details are in the TV app card below."), failed: true))
+            default: break
+            }
+        }
+        .task(id: outcome) {
+            guard let shown = outcome, !shown.failed else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if outcome == shown { outcome = nil }
+        }
+        // Eşli TV her zaman değiştirilebilir; eşleşme yalnız eşliyken kaldırılabilir.
         if model.tv != nil {
             HStack(spacing: DS.space("xs")) {
                 Button("Change the TV") { model.step = .tv }.buttonStyle(.dsSecondary)
-                Button("Remove Pairing") { confirmRemove = true }.buttonStyle(.dsSecondary)
+                if model.hasTV {
+                    Button("Remove Pairing") { confirmRemove = true }.buttonStyle(.dsSecondary)
+                }
             }
+            .disabled(busy != nil)
             .confirmationDialog("Remove Pairing?", isPresented: $confirmRemove) {
                 Button("Remove Pairing", role: .destructive) { model.removeTVPairing() }
             } message: {
@@ -914,6 +986,45 @@ private struct OutputSettings: View {
         if model.settings.style.placement == .fixed {
             Text("In fixed position you can also move subtitles with the ▲ and ▼ buttons on the TV remote.").dsMuted()
         }
+    }
+
+    /// Kart eylemi: düğme iş bitene kadar yükleniyor durumunda kalır, öteki düğmelere basılamaz.
+    private func act(_ action: TVCardAction, _ work: @escaping @MainActor () async -> Void) {
+        guard busy == nil else { return }
+        busy = action
+        outcome = nil
+        run {
+            await work()
+            busy = nil
+        }
+    }
+
+    private func show(_ result: TVCardOutcome) {
+        withAnimation(DS.animation(.medium, reduced: !model.settings.transitionAnimations)) { outcome = result }
+    }
+
+    /// TV kartında süren iş: başlık ve (kurulum/açma akışındaysa) üç adımdan hangisinde olunduğu.
+    private var tvPhase: (title: LocalizedStringKey, step: Int?)? {
+        if model.tvApp == .working {
+            return (model.tvAppOutdated != nil ? "Updating the TV app…" : "Installing the TV app…", 1)
+        }
+        if model.openingTVAppForTest { return ("Opening on the TV…", 2) }
+        if model.tvPairingRequest != nil { return ("Pairing… Approve the request in the window that opens.", nil) }
+        if checking, busy != nil { return ("Connecting to the TV…", 0) }
+        return nil
+    }
+
+    /// "TV'ye bağlanılıyor → Uygulama kuruluyor → Açılıyor"; şu anki adım vurgulu.
+    private func tvStepLine(current: Int) -> AttributedString {
+        let steps = [String(localized: "Connecting to the TV"), String(localized: "Installing the app"), String(localized: "Opening")]
+        var line = AttributedString()
+        for (index, step) in steps.enumerated() {
+            if index > 0 { line += AttributedString(" → ") }
+            var part = AttributedString(step)
+            if index == current { part.swiftUI.foregroundColor = Color.dsAmber }
+            line += part
+        }
+        return line
     }
 
     private func run(_ action: @escaping @MainActor () async -> Void) {

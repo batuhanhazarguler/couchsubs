@@ -597,6 +597,11 @@ private struct OutputsPage: View {
     @State private var typedAddress = ""
     @State private var addressRejected = false
     @State private var applyingAddress = false
+    /// "TV'de CouchSubs'ı Aç" sürüyor (düğme yükleniyor görünür, tekrar basılamaz).
+    @State private var openingApp = false
+    /// Biten işin kısa süre görünen sonucu ("Bağlandı") ya da açık hata metni.
+    @State private var outcome: (text: String, failed: Bool)?
+    @State private var lastClients = 0
 
     var body: some View {
         Tile(spacing: Mobile.Space.gap) {
@@ -657,12 +662,36 @@ private struct OutputsPage: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             sent = false
         }
+        .onAppear { lastClients = model.tvClients }
+        .onChange(of: model.tvClients) { count in
+            if lastClients == 0, count > 0 { outcome = (String(localized: "Connected"), false) }
+            lastClients = count
+        }
+        .task(id: outcome?.text) {
+            guard let shown = outcome, !shown.failed else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if outcome?.text == shown.text { outcome = nil }
+        }
         // Eşli TV yanıt vermiyorsa kart kendiliğinden yeniden arar (~10 sn'de bir yoklama, ağ araması en çok 30 sn'de bir).
         .task(id: model.tv?.host) {
             while !Task.isCancelled {
                 await model.checkTVReachable()
                 try? await Task.sleep(for: .seconds(10))
             }
+        }
+        if model.tvPairingRequest != nil {
+            HStack(spacing: Mobile.Space.inline) {
+                ProgressView().controlSize(.small)
+                Text("Pairing… Approve the request in the window that opens.").dsMuted()
+            }
+        } else if openingApp {
+            HStack(spacing: Mobile.Space.inline) {
+                ProgressView().controlSize(.small)
+                Text("Opening on the TV…").dsMuted()
+            }
+        }
+        if let outcome {
+            if outcome.failed { MobileNote(text: outcome.text) } else { DSSuccessBadge(text: LocalizedStringKey(outcome.text)) }
         }
         if let host = model.tvUnreachableHost, model.tvClients == 0 { unreachableBox(host) }
         if model.hasTV {
@@ -744,10 +773,27 @@ private struct OutputsPage: View {
             }
             .buttonStyle(DSButtonStyle(kind: .secondary))
         }
-        Button(model.hasTV ? "Pair the TV" : "Connect TV") {
-            if model.hasTV { Task { await model.openTVPairing() } } else { path.append(.target) }
+        // TV yoksa "TV'yi Bağla", eşli ama TV uygulaması bağlı değilse "TV'de CouchSubs'ı Aç", bağlıyken eşleştirme düğmesi
+        // yok (önceden eşli ve bağlı TV'de de "TV'yi Eşleştir" duruyordu; Mac ve Windows ile aynı).
+        if !model.hasTV {
+            Button(model.tv == nil ? "Connect TV" : "Pair the TV") { path.append(.target) }
+                .buttonStyle(DSButtonStyle(kind: .secondary))
+        } else if model.tvClients == 0 {
+            Button(openingApp ? "Opening on the TV…" : "Open CouchSubs on the TV") {
+                openingApp = true
+                outcome = nil
+                Task {
+                    let connected = await model.openTVAppOnTV()
+                    openingApp = false
+                    // TV'ye ulaşılamadıysa kartta zaten açık hata ve çözümler var.
+                    if !connected, model.tvUnreachableHost == nil {
+                        outcome = (String(localized: "The TV app did not connect. Make sure the TV is on and on the same network, then try again."), true)
+                    }
+                }
+            }
+            .buttonStyle(DSButtonStyle(kind: .secondary, busy: openingApp))
+            .disabled(openingApp)
         }
-        .buttonStyle(DSButtonStyle(kind: .secondary))
     }
 
     private var outputHint: LocalizedStringKey {

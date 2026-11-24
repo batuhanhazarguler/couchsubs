@@ -674,6 +674,9 @@ private fun OutputsPage(onTarget: () -> Unit, onTvInstall: () -> Unit) {
             var sent by remember { mutableStateOf(false) }
             var testNote by remember { mutableStateOf<String?>(null) }
             var pairingOpened by remember { mutableStateOf(false) }
+            var openingApp by remember { mutableStateOf(false) }
+            var openFailed by remember { mutableStateOf(false) }
+            var justConnected by remember { mutableStateOf(false) }
             // "TV'yi Eşleştir" / "Deneme Altyazısı Gönder" eşli TV'ye ulaşamadı: kart açık hata gösterir.
             var unreachableHost by remember { mutableStateOf<String?>(null) }
             val cardScope = rememberCoroutineScope()
@@ -700,10 +703,37 @@ private fun OutputsPage(onTarget: () -> Unit, onTvInstall: () -> Unit) {
                     else null
                     sent = testNote == null
                 } }
-                SecondaryButton(stringResource(if (hasTv) R.string.set_pair_the_tv else R.string.set_connect_tv), Modifier.weight(1f)) {
-                    if (hasTv) whenReachable { pairingOpened = TranslationService.openPairing(context) } else onTarget()
-                }
+                // TV yoksa "TV'yi Bağla", eşli ama TV uygulaması bağlı değilse "TV'de CouchSubs'ı Aç" (eşleşme onayı açılır,
+                // bağlanana dek düğme yükleniyor), bağlıyken eşleştirme düğmesi yok (önceden eşli ve bağlı TV'de de "TV'yi
+                // Eşleştir" duruyordu; Mac, Windows ve iPhone ile aynı).
+                if (!hasTv) SecondaryButton(stringResource(R.string.set_connect_tv), Modifier.weight(1f), onClick = onTarget)
+                else if (live.connectedTvs == 0) SecondaryButton(
+                    stringResource(if (openingApp) R.string.set_opening_on_tv else R.string.set_open_on_tv), Modifier.weight(1f),
+                    enabled = !openingApp, busy = openingApp,
+                ) { whenReachable {
+                    openFailed = false
+                    pairingOpened = TranslationService.openPairing(context)
+                    openingApp = pairingOpened
+                    if (!pairingOpened) openFailed = true
+                } }
             }
+            // Açma beklenirken TV bağlanırsa "Bağlandı" kısa süre görünür; süre dolarsa açık hata.
+            LaunchedEffect(openingApp, live.connectedTvs) {
+                if (!openingApp) return@LaunchedEffect
+                if (live.connectedTvs > 0) {
+                    openingApp = false
+                    justConnected = true
+                    kotlinx.coroutines.delay(4000)
+                    justConnected = false
+                    return@LaunchedEffect
+                }
+                kotlinx.coroutines.delay(30_000)
+                openingApp = false
+                openFailed = true
+            }
+            if (openingApp) Text(stringResource(R.string.set_pairing_waiting), style = Tokens.Type.caption, color = Tokens.Color.secondary)
+            if (justConnected) StatusLabel(stringResource(R.string.set_connected))
+            AnimatedNote(if (openFailed && live.connectedTvs == 0) stringResource(R.string.set_tv_open_failed) else null)
             PairedTvActions(pairedTv, connected = live.connectedTvs > 0, unreachableHost = unreachableHost,
                 onChanged = { unreachableHost = null; tvRevision++ }, onChangeTv = onTarget)
             AnimatedNote(testNote, Tokens.Color.secondary)

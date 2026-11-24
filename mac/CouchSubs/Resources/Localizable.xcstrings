@@ -16197,7 +16197,17 @@
     "Suggestions": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Suggestions"}}, "tr": {"stringUnit": {"state": "translated", "value": "Öneriler"}}}},
     "Signing In…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Signing In…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Giriş Yapılıyor…"}}}},
     "The phone translation is off. Turn it on?": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The phone translation is off. Turn it on?"}}, "tr": {"stringUnit": {"state": "translated", "value": "Telefon çevirisi kapalı, açmak ister misiniz?"}}}},
-    "Turn On": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Turn On"}}, "tr": {"stringUnit": {"state": "translated", "value": "Aç"}}}}
+    "Turn On": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Turn On"}}, "tr": {"stringUnit": {"state": "translated", "value": "Aç"}}}},
+    "Sending…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sending…"}}, "tr": {"stringUnit": {"state": "translated", "value": "Gönderiliyor…"}}}},
+    "Open CouchSubs on the TV": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Open CouchSubs on the TV"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'de CouchSubs'ı Aç"}}}},
+    "Opening on the TV…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Opening on the TV…"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'de açılıyor…"}}}},
+    "The TV app did not connect. Make sure the TV is on and on the same network, then try again.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The TV app did not connect. Make sure the TV is on and on the same network, then try again."}}, "tr": {"stringUnit": {"state": "translated", "value": "TV uygulaması bağlanmadı. TV'nin açık ve aynı ağda olduğundan emin olup yeniden deneyin."}}}},
+    "Updated: %@": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Updated: %@"}}, "tr": {"stringUnit": {"state": "translated", "value": "Güncellendi: %@"}}}},
+    "The TV app could not be installed. The details are in the TV app card below.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The TV app could not be installed. The details are in the TV app card below."}}, "tr": {"stringUnit": {"state": "translated", "value": "TV uygulaması kurulamadı. Ayrıntılar aşağıdaki TV uygulaması kartında."}}}},
+    "Updating the TV app…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Updating the TV app…"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV uygulaması güncelleniyor…"}}}},
+    "Pairing… Approve the request in the window that opens.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Pairing… Approve the request in the window that opens."}}, "tr": {"stringUnit": {"state": "translated", "value": "Eşleştiriliyor… Açılan pencerede isteği onaylayın."}}}},
+    "Connecting to the TV": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Connecting to the TV"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'ye bağlanılıyor"}}}},
+    "Installing the app": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Installing the app"}}, "tr": {"stringUnit": {"state": "translated", "value": "Uygulama kuruluyor"}}}}
   },
   "version": "1.0"
 }

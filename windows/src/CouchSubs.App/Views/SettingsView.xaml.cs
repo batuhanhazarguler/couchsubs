@@ -93,6 +93,11 @@ public partial class SettingsView : UserControl
         Loaded += (_, _) => { tvReachWatch.Start(); _ = controller.CheckTvReachableAsync(); };
         Unloaded += (_, _) => tvReachWatch.Stop();
         ShowTvUnreachable();
+        tvOutcomeTimer.Tick += (_, _) => ShowTvOutcome(null, false);
+        Unloaded += (_, _) => tvOutcomeTimer.Stop();
+        lastTvClients = controller.TvClients;
+        wasInstallingTvApp = controller.TvApp.Kind == TvAppKind.Working;
+        ShowTvActions();
         Engine.SelectedItem = Engine.Items.Cast<ComboBoxItem>().First(item => (string)item.Tag == settings.Engine.ToString());
         TranslationDeviceChoice.SelectedItem = TranslationDeviceChoice.Items.Cast<ComboBoxItem>()
             .First(item => (string)item.Tag == settings.TranslationDevice.ToString());
@@ -383,6 +388,13 @@ public partial class SettingsView : UserControl
             Dispatcher.BeginInvoke(ShowTvStatus);
         if (e.PropertyName is nameof(AppController.TvUnreachableProblem) or nameof(AppController.Tv))
             Dispatcher.BeginInvoke(ShowTvUnreachable);
+        if (e.PropertyName is nameof(AppController.TvClients) or nameof(AppController.Tv) or nameof(AppController.HasTv)
+            or nameof(AppController.TvApp) or nameof(AppController.TvAppOutdated) or nameof(AppController.OpeningTvAppForTest))
+            Dispatcher.BeginInvoke(() =>
+            {
+                TrackTvOutcome();
+                ShowTvActions();
+            });
         if (e.PropertyName is nameof(AppController.Ps5AddressProblem)) Dispatcher.BeginInvoke(ShowPs5AddressProblem);
         if (e.PropertyName is nameof(AppController.Console)) Dispatcher.BeginInvoke(ShowConsole);
         // Menü arkasındaki renk geçişi çeviri sürerken durur (işlemci oyuna kalsın).
@@ -551,10 +563,106 @@ public partial class SettingsView : UserControl
             controller.DeleteAreaProfile();
     }
 
-    private async void OnOpenTvPairing(object sender, RoutedEventArgs e)
+    /// <summary>TV eşli değil: TV adımı açılır (TV seçilir ve eşleşir).</summary>
+    private void OnPairTv(object sender, RoutedEventArgs e)
     {
-        try { await controller.OpenTvPairingAsync(); }
-        catch (Exception error) { MessageBox.Show(Host, error.Message, "CouchSubs"); }
+        controller.ChangeTv();
+        Leave();
+    }
+
+    /// <summary>"TV'de CouchSubs'ı Aç": düğme iş bitene kadar "TV'de açılıyor…" der ve basılamaz; sonuç kısa süre görünür.</summary>
+    private async void OnOpenTvApp(object sender, RoutedEventArgs e)
+    {
+        if (tvOpening) return;
+        tvOpening = true;
+        ShowTvOutcome(null, false);
+        ShowTvActions();
+        try
+        {
+            var connected = await controller.OpenTvAppOnTvAsync();
+            // TV'ye ulaşılamadıysa kartta zaten açık hata ve çözümler var.
+            if (!connected && !controller.HasTvUnreachableProblem)
+                ShowTvOutcome(Localizer.Current["The TV app did not connect. Make sure the TV is on and on the same network, then try again."], true);
+        }
+        catch (Exception error) { ShowTvOutcome(error.Message, true); }
+        finally
+        {
+            tvOpening = false;
+            ShowTvActions();
+        }
+    }
+
+    private bool tvOpening;
+    private int lastTvClients;
+    private bool wasInstallingTvApp;
+    private readonly System.Windows.Threading.DispatcherTimer tvOutcomeTimer = new() { Interval = TimeSpan.FromSeconds(4) };
+
+    /// <summary>TV kartının düğmeleri ve süren işin adımı (Mac TV kartıyla aynı kurallar).</summary>
+    private void ShowTvActions()
+    {
+        var text = Localizer.Current;
+        var installing = controller.TvApp.Kind == TvAppKind.Working;
+        PairTvButton.Visibility = controller.HasTv ? Visibility.Collapsed : Visibility.Visible;
+        PairTvButton.Content = text[controller.Tv is null ? "Connect TV" : "Pair the TV"];
+        OpenTvAppButton.Visibility = controller.HasTv && controller.TvClients == 0 ? Visibility.Visible : Visibility.Collapsed;
+        OpenTvAppButton.Content = text[tvOpening ? "Opening on the TV…" : "Open CouchSubs on the TV"];
+        PerdeProps.SetBusy(OpenTvAppButton, tvOpening);
+        OpenTvAppButton.IsEnabled = !tvOpening && !installing;
+        TestTvButton.IsEnabled = !tvOpening && !installing;
+
+        string? phase = null;
+        var step = -1;
+        if (installing)
+        {
+            phase = controller.TvAppOutdated is not null ? "Updating the TV app…" : "Installing the TV app…";
+            step = 1;
+        }
+        else if (controller.OpeningTvAppForTest) { phase = "Opening on the TV…"; step = 2; }
+        else if (tvOpening) { phase = "Connecting to the TV…"; step = 0; }
+        TvProgressPanel.Visibility = phase is null ? Visibility.Collapsed : Visibility.Visible;
+        TvProgressText.Text = phase is null ? "" : text[phase];
+        TvStepLine.Visibility = step < 0 ? Visibility.Collapsed : Visibility.Visible;
+        TvStepLine.Inlines.Clear();
+        if (step < 0) return;
+        string[] steps = ["Connecting to the TV", "Installing the app", "Opening"];
+        for (var index = 0; index < steps.Length; index++)
+        {
+            if (index > 0) TvStepLine.Inlines.Add(new System.Windows.Documents.Run(" → "));
+            var part = new System.Windows.Documents.Run(text[steps[index]]);
+            if (index == step)
+            {
+                part.FontWeight = FontWeights.SemiBold;
+                part.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "accentBrush");
+            }
+            TvStepLine.Inlines.Add(part);
+        }
+    }
+
+    /// <summary>Biten işin sonucu: başarı 4 sn görünür, hata kalır (yeni eylemde silinir).</summary>
+    private void ShowTvOutcome(string? message, bool failed)
+    {
+        tvOutcomeTimer.Stop();
+        TvOutcomeOk.Visibility = message is not null && !failed ? Visibility.Visible : Visibility.Collapsed;
+        TvOutcomeOk.Text = !failed ? message ?? "" : "";
+        TvOutcomeError.Visibility = message is not null && failed ? Visibility.Visible : Visibility.Collapsed;
+        TvOutcomeError.Text = failed ? message ?? "" : "";
+        if (message is not null && !failed) tvOutcomeTimer.Start();
+    }
+
+    /// <summary>Bağlantı ve kurulum geçişlerinde sonuç gösterilir ("Bağlandı", "Güncellendi: 0.9.98" ya da hata).</summary>
+    private void TrackTvOutcome()
+    {
+        var text = Localizer.Current;
+        if (lastTvClients == 0 && controller.TvClients > 0) ShowTvOutcome(text["Connected"], false);
+        lastTvClients = controller.TvClients;
+        var installing = controller.TvApp.Kind == TvAppKind.Working;
+        if (wasInstallingTvApp && !installing)
+        {
+            if (controller.TvApp is { Kind: TvAppKind.UpToDate, Version: { } version }) ShowTvOutcome(text.Format("Updated: %@", version), false);
+            else if (controller.TvApp.Kind == TvAppKind.Failed)
+                ShowTvOutcome(text["The TV app could not be installed. The details are in the TV app card below."], true);
+        }
+        wasInstallingTvApp = installing;
     }
 
     private void OnRenewAccessKey(object sender, RoutedEventArgs e) => controller.RotateSubtitleKey();

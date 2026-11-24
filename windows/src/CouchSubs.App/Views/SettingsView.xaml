@@ -586,10 +586,22 @@
                                         <Ellipse x:Name="TvStatusDot" Width="8" Height="8" VerticalAlignment="Center" Margin="{t:Sp '0,0,xs,0'}" />
                                         <TextBlock Text="{Binding TvStatusText}" Style="{StaticResource HintText}" VerticalAlignment="Center" />
                                     </StackPanel>
+                                    <!-- Süren iş (kendiliğinden başlayan TV uygulaması güncellemesi dahil) ve hangi adımda olunduğu;
+                                         biten işin kısa süre görünen sonucu ya da açık hata (Mac ile aynı). -->
+                                    <StackPanel x:Name="TvProgressPanel" Orientation="Horizontal" Margin="{t:Sp '0,xs,0,0'}" Visibility="Collapsed">
+                                        <c:BarsLoader VerticalAlignment="Center" Margin="{t:Sp '0,0,xs,0'}" />
+                                        <TextBlock x:Name="TvProgressText" Style="{StaticResource HintText}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock x:Name="TvStepLine" Style="{StaticResource HintText}" TextWrapping="Wrap" Visibility="Collapsed" />
+                                    <TextBlock x:Name="TvOutcomeOk" Foreground="{DynamicResource successBrush}" Margin="{t:Sp '0,xs,0,0'}" Visibility="Collapsed" />
+                                    <c:Callout x:Name="TvOutcomeError" Tone="Attention" Margin="{t:Sp '0,xs,0,0'}" Visibility="Collapsed" />
                                 </StackPanel>
+                                <!-- Düğmeler TV'nin durumuna göre: eşli değilse "TV'yi Eşleştir", eşli ama TV uygulaması bağlı değilse
+                                     "TV'de CouchSubs'ı Aç", bağlıyken eşleştirme düğmesi yok (önceden eşli ve bağlı TV'de de duruyordu). -->
                                 <WrapPanel>
-                                    <Button Content="{t:T 'Send Test Subtitle'}" Margin="{t:Sp '0,0,xs,xs'}" Click="OnTest" />
-                                    <Button Content="{t:T 'Pair TV'}" Margin="{t:Sp '0,0,xs,xs'}" Click="OnOpenTvPairing" />
+                                    <Button x:Name="TestTvButton" Content="{t:T 'Send Test Subtitle'}" Margin="{t:Sp '0,0,xs,xs'}" Click="OnTest" />
+                                    <Button x:Name="PairTvButton" Content="{t:T 'Pair the TV'}" Margin="{t:Sp '0,0,xs,xs'}" Click="OnPairTv" />
+                                    <Button x:Name="OpenTvAppButton" Content="{t:T 'Open CouchSubs on the TV'}" Margin="{t:Sp '0,0,xs,xs'}" Click="OnOpenTvApp" />
                                     <Button Content="{t:T 'Renew access key'}" Margin="{t:Sp '0,0,0,xs'}" Click="OnRenewAccessKey" />
                                 </WrapPanel>
                                 <!-- Eşli TV her zaman değiştirilebilir ve kaldırılabilir (Mac/iPhone/Android ile aynı); önceden eşli TV'nin

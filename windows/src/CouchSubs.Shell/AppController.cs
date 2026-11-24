@@ -2101,6 +2101,27 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         SendTestSubtitle();
     }
 
+    /// <summary>
+    /// Ayarlar › TV kartındaki "TV'de CouchSubs'ı Aç": TV eşli ama uygulama bağlı değilken eşleştirmeyi yeniden istemek
+    /// yerine TV'de uygulama açılır; iki dakikalık eşleştirme onayı da açılır (TV kod gösterirse bu bilgisayarda sorulur).
+    /// TV uygulaması bağlandıysa true (Mac, iPhone ve Android ile aynı).
+    /// </summary>
+    public async Task<bool> OpenTvAppOnTvAsync()
+    {
+        if (!HasTv || tv is not { } target) return false;
+        if (!await EnsureTvReachableAsync()) return false;
+        await StartServerAsync();
+        server.Pairing.Open();
+        SubtitleLog.Write($"TV'de CouchSubs açılıyor (eşleştirme 2 dk açık); port={ServerPort}");
+        if (server.ConnectedClients == 0)
+        {
+            // Android TV uygulaması bilgisayarı kendisi bulur; eşleştirme onayı da gerekebilir.
+            if (target.Brand == TvBrand.AndroidTv) await WaitForTvForTestAsync(TestPairWait);
+            else await OpenTvAppForTestAsync(target);
+        }
+        return server.ConnectedClients > 0;
+    }
+
     /// <summary>"TV'de test et"te TV uygulamasının açılıp bağlanması için en çok bu kadar beklenir.</summary>
     public TimeSpan TestTvWait { get; set; } = TimeSpan.FromSeconds(20);
 

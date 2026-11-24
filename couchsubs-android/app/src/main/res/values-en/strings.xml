@@ -843,6 +843,10 @@
     <string name="set_linked">Linked</string>
     <string name="set_sent">Sent</string>
     <string name="set_pair_the_tv">Pair the TV</string>
+    <string name="set_open_on_tv">Open CouchSubs on the TV</string>
+    <string name="set_opening_on_tv">Opening on the TV…</string>
+    <string name="set_pairing_waiting">It connects when CouchSubs opens on the TV. If the TV shows a code, approve it in the window that opens on this phone.</string>
+    <string name="set_tv_open_failed">The TV app did not connect. Make sure the TV is on and on the same network, then try again.</string>
     <string name="set_connect_tv">Connect TV</string>
     <string name="set_bold">Bold text</string>
     <string name="set_hdmi">TV input (HDMI)</string>

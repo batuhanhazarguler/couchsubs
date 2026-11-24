@@ -524,6 +524,21 @@ final class PhoneModel: ObservableObject {
         syncTVPairing()
     }
 
+    /// Ayarlar › TV kartındaki "TV'de CouchSubs'ı Aç": TV eşli ama uygulama bağlı değilken eşleştirmeyi yeniden istemek
+    /// yerine iki dakikalık onay açılır, çeviri sürüyorsa bekçi TV uygulamasını hemen açar ve bağlanması beklenir
+    /// (Mac ve Windows ile aynı). TV uygulaması bağlandıysa true.
+    func openTVAppOnTV() async -> Bool {
+        guard hasTV else { return false }
+        await openTVPairing()
+        guard tvUnreachableHost == nil else { return false }
+        if server.connectedClients == 0, isRunning { retryTVOpen() }
+        let deadline = ContinuousClock.now + testPairWait
+        while server.connectedClients == 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return server.connectedClients > 0
+    }
+
     func rotateSubtitleKey() {
         let key = SubtitleAccess.createKey()
         store.save(key, for: StoreKey.subtitleAccessKey)

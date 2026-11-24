@@ -2260,21 +2260,39 @@ final class AppModel: ObservableObject {
         // TV uygulaması bağlı değilse deneme altyazısı kimseye gitmiyordu: bekçi yalnız çeviri sürerken çalışır, TV
         // uygulaması kapalıysa ya da bilgisayarı arıyorsa "TV'de test et"e TV'de hiçbir şey çıkmıyordu (Samsung 65S95F).
         // Önce TV uygulaması açılır (Samsung'da geliştirici bağlantısıyla) ve bağlanması beklenir.
-        if settings.output.showsOnTV, hasTV, let tv, tv.brand != .androidTV, server.connectedClients == 0 {
-            await openTVAppForTest(tv)
-        } else if settings.output.showsOnTV, hasTV, let tv, tv.brand == .androidTV, server.connectedClients == 0 {
-            // Android TV uygulaması bilgisayarı kendisi bulur; eşleştirme onayı da gerekebilir. Yazı TV bağlanınca gitsin.
-            openingTVAppForTest = true
-            let deadline = ContinuousClock.now + testPairWait
-            while server.connectedClients == 0, ContinuousClock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(250))
-            }
-            openingTVAppForTest = false
+        if settings.output.showsOnTV, hasTV, let tv, server.connectedClients == 0 {
+            await waitForTVApp(tv)
         }
         // Beklemeden sonra da TV bağlı değilse deneme yazısı TV'ye gitmez: TV'deki 6 haneli kodun nereye yazılacağı
         // aranıyordu (kod yazılmaz, bu bilgisayarda açılan pencerede onaylanır). Ana ekran bunu söyler.
         testTVNotConnected = settings.output.showsOnTV && hasTV && server.connectedClients == 0
         sendTestSubtitle()
+    }
+
+    /// TV uygulamasını açar (Android TV'de uygulama bilgisayarı kendisi bulur, eşleştirme onayı da gerekebilir) ve
+    /// bağlanmasını bekler. Bekleme süresince `openingTVAppForTest` açıktır (düğme ve TV kartı "TV'de açılıyor…" der).
+    private func waitForTVApp(_ tv: LGTV) async {
+        if tv.brand != .androidTV {
+            await openTVAppForTest(tv)
+            return
+        }
+        openingTVAppForTest = true
+        let deadline = ContinuousClock.now + testPairWait
+        while server.connectedClients == 0, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        openingTVAppForTest = false
+    }
+
+    /// Ayarlar › TV kartındaki "TV'de CouchSubs'ı Aç": TV eşli ama uygulama bağlı değilken eşleştirmeyi yeniden istemek
+    /// yerine TV'de uygulama açılır; iki dakikalık eşleştirme onayı da açılır (TV kod gösterirse bu Mac'te sorulur).
+    /// TV uygulaması bağlandıysa true.
+    func openTVAppOnTV() async -> Bool {
+        guard hasTV, let tv else { return false }
+        guard await ensureTVReachable() else { return false }
+        await openTVPairing()
+        if server.connectedClients == 0 { await waitForTVApp(tv) }
+        return server.connectedClients > 0
     }
 
     /// Son "TV'de test et"te TV uygulaması bağlanmadı (ana ekran eşleştirme yönergesini gösterir; TV bağlanınca kalkar).
