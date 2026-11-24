@@ -1005,7 +1005,10 @@ public final class StreamSession: @unchecked Sendable {
         emit(.disconnected(classified))
         guard isCurrent(current) else { return }
         let delay = policy.nextDelay(inUse: reason == .inUse)
-        RemotePlayLog.write("PS5 oturumu: \(delay) sn sonra yeniden denenecek")
+        // Kopmanın nedeni ve kaçıncı sessiz deneme olduğu tek satırda (Windows ve Android'de aynı biçim).
+        RemotePlayLog.write("PS5 oturumu: kopma nedeni \(classified.logName); sessiz yeniden bağlanma (ağ \(retryLimit.networkFailures)/"
+            + "\(ReconnectLimit.maxNetworkRetries), PS5 kapattı \(retryLimit.consoleClosed)/\(ReconnectLimit.maxConsoleClosedRetries)): "
+            + "\(delay) sn sonra yeniden denenecek")
         queue.asyncAfter(deadline: .now() + .seconds(delay)) { [weak self] in self?.connect(current) }
     }
 

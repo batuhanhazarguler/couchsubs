@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Ev yayını oturumunun durum makinesi ve veri kanalı iletileri (Android: XboxSessionMachine.kt, XboxChannels.kt).
 // Kurallar Windows'taki XboxStreamSession ile aynı; iletiler xbox-xcloud-player 0.2.11'inkilerle birebir (MIT, unknownskl).
-// Hata ya da kopmada bir kez, 5 sn sonra baştan denenir; o da olmazsa durulur ("Yeniden bağlan" hemen görünür). Eskiden
+// Görüntü gelmeden biten bağlantıda bir kez, 5 sn sonra baştan denenir; o da olmazsa durulur ("Yeniden bağlan" hemen görünür). Eskiden
 // 5, 15, 45 sn aralarla üç deneme vardı; her biri Xbox'ta "uzaktan yürütme başlatıldı / durduruldu" bildirimi çıkarıyor,
 // kullanıcı bunu bitmeyen bir döngü olarak görüyordu (Play, Android beta.85). Konsol `Failed` ya da `errorDetails` dönerse
 // hiç denenmez; yalnız görüntü gelmiş bir yayın koptuktan sonraki ilk ret bir kez, `reconnectGraceMs` sonra denenir.
 // Yayın `healthyStreamMs` ayakta kaldıysa deneme sayısı sıfırlanır.
+// Görüntü gelmiş (oynanan) bir yayın beklenmedik koparsa sessiz yeniden bağlanma `dropRetryDelaysMs` kadar (5, 15, 30 sn;
+// en çok üç) denenir. Tek deneme yetmiyordu: kısa bir Wi-Fi takılmasında ilk deneme Xbox eski oturumu bırakmadan
+// düşünce yayın duruyor, kullanıcı birkaç dakikada bir "Yeniden bağlan"a basmak zorunda kalıyordu (App Store, Play,
+// X; GitHub #1185, #1190). Görüntü hiç gelmemiş bağlantılarda kural eskisi gibi (bir deneme).
 
 import Foundation
 
@@ -34,6 +38,10 @@ public struct XboxSessionMachine {
     public let maxPolls: Int
     public let pollIntervalMs: Int
     public let retryDelaysMs: [Int]
+    /// Görüntü gelmiş yayın koptuktan sonraki sessiz yeniden bağlanma aralıkları (Windows `XboxRetryPlan.DropDelaysMs`,
+    /// Android `dropRetryDelaysMs` ile aynı).
+    public let dropRetryDelaysMs: [Int]
+    public static let defaultDropRetryDelaysMs = [5000, 15_000, 30_000]
     public let healthyStreamMs: Int
     private let clock: () -> Double
     public private(set) var phase: Phase = .idle
@@ -50,11 +58,13 @@ public struct XboxSessionMachine {
     /// Kopmadan sonra Xbox yeni oturumu reddederse (eski oturum Xbox'ta henüz kapanmadı) beklenen süre.
     public static let reconnectGraceMs = 15_000
 
-    public init(maxPolls: Int = 90, pollIntervalMs: Int = 1000, retryDelaysMs: [Int] = [5000], healthyStreamMs: Int = 60_000,
+    public init(maxPolls: Int = 90, pollIntervalMs: Int = 1000, retryDelaysMs: [Int] = [5000],
+         dropRetryDelaysMs: [Int] = XboxSessionMachine.defaultDropRetryDelaysMs, healthyStreamMs: Int = 60_000,
          clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime * 1000 }) {
         self.maxPolls = maxPolls
         self.pollIntervalMs = pollIntervalMs
         self.retryDelaysMs = retryDelaysMs
+        self.dropRetryDelaysMs = dropRetryDelaysMs.isEmpty ? retryDelaysMs : dropRetryDelaysMs
         self.healthyStreamMs = healthyStreamMs
         self.clock = clock
     }
@@ -127,16 +137,25 @@ public struct XboxSessionMachine {
         // Görüntü gelmiş yayın koptuktan hemen sonra Xbox eski oturumu bırakmadan yenisini reddedebiliyor ("bir kez
         // kopunca Xbox yeniden başlatılmadan bağlanmıyor"): bu ret bir kez, eski oturum kapansın diye uzun beklenip denenir.
         let grace = refused && hadPicture && !graceUsed
-        // Kopma dizisinde en çok `retryDelaysMs` kadar (bir) yeniden bağlanma; kopmadan sonraki ret için tanınan tek
-        // deneme bu sınırın dışındadır (reddedilen oturumda Xbox yayın açmaz).
-        let retry = ((!refused && failures <= retryDelaysMs.count) || grace) && !Self.fatal.contains(kind)
+        // Kopma dizisinde görüntü gelmiş yayından sonra en çok `dropRetryDelaysMs` kadar (üç), görüntü hiç gelmediyse
+        // `retryDelaysMs` kadar (bir) yeniden bağlanma; kopmadan sonraki ret için tanınan tek deneme bu sınırın dışındadır
+        // (reddedilen oturumda Xbox yayın açmaz).
+        let delays = retryLimit
+        let retry = ((!refused && failures <= delays.count) || grace) && !Self.fatal.contains(kind)
             && noPictureConnections < Self.maxNoPictureAttempts
         if retry && grace { graceUsed = true }
         phase = .failed(kind, message: message, willRetry: retry, attempt: retry ? failures : 0)
         guard retry else { return .retry(delayMs: nil) }
-        let backoff = retryDelaysMs[min(failures, retryDelaysMs.count) - 1]
+        let backoff = delays[min(failures, delays.count) - 1]
         return .retry(delayMs: grace ? max(Self.reconnectGraceMs, backoff) : backoff)
     }
+
+    /// Bu kopma dizisindeki yeniden bağlanma aralıkları: görüntü gelmiş yayından sonra `dropRetryDelaysMs`, yoksa
+    /// `retryDelaysMs`.
+    private var retryLimit: [Int] { hadPicture ? dropRetryDelaysMs : retryDelaysMs }
+
+    /// Sessiz yeniden bağlanmanın en çok deneme sayısı (günlükte "deneme 2/3").
+    public var maxRetries: Int { retryLimit.count }
 
     /// `errorDetails` gerçek bir hata mı (boş nesne ya da tüm alanları null olan nesne sayılmaz).
     public static func hasErrorDetails(_ details: String?) -> Bool {

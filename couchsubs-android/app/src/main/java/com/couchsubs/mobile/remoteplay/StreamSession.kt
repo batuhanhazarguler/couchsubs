@@ -938,7 +938,14 @@ class StreamSession(
         }
         emit(classified)
         if (!isCurrent(current)) return
-        queue.schedule({ connect(current) }, policy.nextDelaySeconds(inUse = state.kind == DisconnectKind.IN_USE).toLong(), TimeUnit.SECONDS)
+        val delay = policy.nextDelaySeconds(inUse = state.kind == DisconnectKind.IN_USE)
+        // Kopmanın nedeni ve kaçıncı sessiz deneme olduğu tek satırda (Mac/iPhone ve Windows'ta aynı biçim).
+        val text = "PS5 oturumu: kopma nedeni ${classified.kind}; sessiz yeniden bağlanma (ağ ${retryLimit.networkFailures}/" +
+            "${ReconnectLimit.MAX_NETWORK_RETRIES}, PS5 kapattı ${retryLimit.consoleClosed}/${ReconnectLimit.MAX_CONSOLE_CLOSED_RETRIES}): " +
+            "$delay sn sonra yeniden denenecek"
+        Log.i(TAG, text)
+        Backend.breadcrumb(text)
+        queue.schedule({ connect(current) }, delay.toLong(), TimeUnit.SECONDS)
     }
 
     private fun emit(state: SessionState) {

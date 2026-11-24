@@ -4,7 +4,7 @@
 // kalan ya da kare göndermeyi bırakan yayında ana ekran "bağlı" diyor, altyazı donuyor ve bir daha gelmiyordu (X'te
 // kullanıcı bildirimi, iPhone + Xbox Series S). Kare [WARN_AFTER_MS] gelmezse (ICE DISCONNECTED iken 1 sn) uyarı
 // gösterilir; [STALL_AFTER_MS] gelmezse ya da ICE FAILED olursa oturum kapatılıp XboxSessionMachine'in aralıklarıyla
-// (bir kez, 5 sn sonra) yeniden kurulur. İlk kareden sonraki [STARTUP_GRACE_MS] içinde yalnız ICE FAILED oturumu
+// (sessizce en çok üç kez: 5, 15, 30 sn sonra) yeniden kurulur. İlk kareden sonraki [STARTUP_GRACE_MS] içinde yalnız ICE FAILED oturumu
 // kapatır: yayının başında Xbox görüntüyü birkaç saniye bekletebiliyor (yükleme, "uzaktan yürütme başlatıldı"
 // bildirimi); eskiden bu boşlukta oturum kapatılıp yeniden açılıyor, Xbox'ta başladı/durdu döngüsü oluyordu (Play,
 // Android beta.85). CouchSubsCore XboxPictureWatch (iPhone, Mac) ve Windows'taki CouchSubs.Shell/XboxPictureWatch ile birebir.

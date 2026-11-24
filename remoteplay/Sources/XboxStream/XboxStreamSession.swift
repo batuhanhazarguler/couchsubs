@@ -273,9 +273,9 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
             log("Xbox görüntü göndermedi: bağlantı kuruldu ama tek kare gelmedi. Xbox'ta Ayarlar › Cihazlar ve bağlantılar › "
                 + "Uzak özellikler açık mı, Xbox kablolu mu? Tanı satırlarında video bayt 0 ise Xbox hiç görüntü kodlamıyor")
         }
-        let phase = locked { machine.phase }
+        let (phase, maxRetries) = locked { (machine.phase, machine.maxRetries) }
         if case let .failed(_, _, true, attempt) = phase, attempt > 0 {
-            log("yeniden deneme \(attempt): \((retryDelayMs ?? 0) / 1000) sn sonra")
+            log(XboxEndCause.retryLine(attempt: attempt, of: maxRetries, delayMs: retryDelayMs ?? 0))
         } else if case .failed = phase, !XboxSessionMachine.fatal.contains(kind) {
             // Denemeler bitti ya da konsol yayını reddetti: yayın durur, yeniden denenmez.
             log("yeniden denenmiyor, yayın durdu")

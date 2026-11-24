@@ -343,24 +343,38 @@ final class XboxSessionMachineTests: XCTestCase {
         XCTAssertEqual(m.status("Provisioning", errorDetails: #"{"code":"Conflict","message":"x"}"#), .retry(delayMs: nil))
     }
 
-    /// Gerçek kopmada en çok bir kez, geri çekilerek (5 sn) yeniden bağlanılır; o da kopunca durulur. Eskiden 5, 15, 45 sn
-    /// aralarla üç deneme vardı, her biri Xbox'ta "uzaktan yürütme başlatıldı / durduruldu" bildirimi çıkarıyordu (Play,
-    /// Android beta.85). Android'deki realDropReconnectsAtMostOnceWithBackoff ile aynı.
-    func testRealDropReconnectsAtMostOnceWithBackoff() {
+    /// Oynanan (görüntü gelmiş) yayın koparsa kullanıcıya sormadan en çok üç kez, geri çekilerek (5, 15, 30 sn) yeniden
+    /// bağlanılır; üçü de kısa sürede koparsa durulur. Eskiden tek deneme vardı: ilk deneme tutmayınca kullanıcı birkaç
+    /// dakikada bir "Yeniden bağlan"a basmak zorunda kalıyordu (#1185, #1190). Görüntü hiç gelmediyse yine tek deneme.
+    /// Android'deki realDropReconnectsSilentlyUpToThreeTimes ve Windows'taki aynı adlı testle aynı.
+    func testRealDropReconnectsSilentlyUpToThreeTimes() {
         let now = FakeClock()
         var m = XboxSessionMachine(clock: { now.value })
         _ = m.start(); _ = m.played(); _ = m.status("Provisioned", errorDetails: nil); _ = m.streaming()
         now.value += 120_000
+        XCTAssertEqual(m.maxRetries, 3)
         XCTAssertEqual(m.fail(.network, "kopma"), .retry(delayMs: 5000))
         XCTAssertEqual(m.phase, .failed(.network, message: "kopma", willRetry: true, attempt: 1))
-        // Yeniden bağlanma da kısa sürede koptu: ikinci deneme yok.
+        // Yeniden bağlanmalar da kısa sürede koptu: 15 ve 30 sn sonra yine denenir, dördüncü kopmada durulur.
+        for (attempt, delay) in [(2, 15_000), (3, 30_000)] {
+            _ = m.start(); _ = m.played(); _ = m.status("Provisioned", errorDetails: nil); _ = m.streaming()
+            now.value += 10_000
+            XCTAssertEqual(m.fail(.serverClosed, "Xbox görüntü kanalını kapattı"), .retry(delayMs: delay))
+            XCTAssertEqual(m.phase, .failed(.serverClosed, message: "Xbox görüntü kanalını kapattı", willRetry: true, attempt: attempt))
+        }
         _ = m.start(); _ = m.played(); _ = m.status("Provisioned", errorDetails: nil); _ = m.streaming()
         now.value += 10_000
         XCTAssertEqual(m.fail(.serverClosed, "Xbox görüntü kanalını kapattı"), .retry(delayMs: nil))
-        // Bağlanırken hata (görüntü hiç gelmedi): yine en çok bir deneme.
+        // Bağlanırken hata (görüntü hiç gelmedi): eskisi gibi en çok bir deneme.
         var fresh = XboxSessionMachine()
+        XCTAssertEqual(fresh.maxRetries, 1)
         XCTAssertEqual(fresh.fail(.network, "kopma"), .retry(delayMs: 5000))
         XCTAssertEqual(fresh.fail(.network, "kopma"), .retry(delayMs: nil))
+    }
+
+    func testRetryLine() {
+        XCTAssertEqual(XboxEndCause.retryLine(attempt: 2, of: 3, delayMs: 15_000), "sessiz yeniden bağlanma 2/3: 15 sn sonra")
+        XCTAssertEqual(XboxEndCause.retryLine(attempt: 4, of: 3, delayMs: 15_000), "sessiz yeniden bağlanma ek deneme: 15 sn sonra")
     }
 
     func testHealthyStreamResetsRetries() {
@@ -370,10 +384,10 @@ final class XboxSessionMachineTests: XCTestCase {
         _ = m.start(); _ = m.played(); _ = m.status("Provisioned", errorDetails: nil); _ = m.streaming()
         now.value += 60_000
         XCTAssertEqual(m.fail(.network, "kopma"), .retry(delayMs: 5000))
-        // Kısa süren yayın sayacı sıfırlamaz.
+        // Kısa süren yayın sayacı sıfırlamaz: ikinci deneme daha uzun bekler.
         _ = m.start(); _ = m.played(); _ = m.status("Provisioned", errorDetails: nil); _ = m.streaming()
         now.value += 1_000
-        XCTAssertEqual(m.fail(.network, "kopma"), .retry(delayMs: nil))
+        XCTAssertEqual(m.fail(.network, "kopma"), .retry(delayMs: 15_000))
     }
 
     /// Görüntü akarken başarısız canlı tutma (404 dahil) yayını kapatmaz; görüntü durmuşsa eskisi gibi kapatır.

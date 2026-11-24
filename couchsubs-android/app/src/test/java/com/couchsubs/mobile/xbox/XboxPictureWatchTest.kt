@@ -119,7 +119,7 @@ class XboxPictureWatchTest {
      * başında görüntü birkaç saniye bekliyor, canlı tutma 404 dönüyor: ilk 30 sn'de (ve görüntü akarken sonrasında da)
      * oturum kapatılmıyor, yeniden açılmıyor. Sonra gerçek kopma: en çok bir kez, 5 sn sonra yeniden bağlanılıyor.
      */
-    @Test fun fakeXboxSessionDoesNotLoopAndReconnectsAtMostOnce() {
+    @Test fun fakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes() {
         val session = FakeXboxSession()
         session.connect()
         session.frames(1000L..3000L)
@@ -136,17 +136,25 @@ class XboxPictureWatchTest {
         assertEquals(1, session.ends.size)
         assertEquals(listOf(5000L), session.retries)
         assertEquals(2, session.plays)
-        // Yeniden bağlanma da kısa sürede kopuyor: ikinci deneme yok, yayın durur ("Yeniden bağlan" düğmesi).
-        session.frames(96_000L..100_000L)
-        session.iceLost(100_500)
-        for (at in 96_000L..160_000L step 1000) session.tick(at)
-        assertEquals(listOf(5000L, null), session.retries)
-        assertEquals(2, session.plays)
+        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 ve 30 sn sonra yine denenir, sonra yayın
+        // durur ("Yeniden bağlan" düğmesi). Döngü sınırlı: dört kopmada üç yeniden bağlanma. (Bu kısımda canlı tutma yanıt
+        // veriyor; görüntü bekçisi, yayın başındaki 30 sn'lik tanıma süresinden sonra kapatır.)
+        session.keepaliveFails = null
+        var start = 96_000L
+        repeat(3) {
+            session.frames(start..(start + 4000))
+            session.iceLost(start + 4500)
+            for (at in start..(start + 35_000) step 1000) session.tick(at)
+            start = session.clock + 1000
+        }
+        assertEquals(listOf(5000L, 15_000L, 30_000L, null), session.retries)
+        assertEquals(4, session.plays)
     }
 
     /** XboxStreamSession'ın bekçi döngüsünün ağsız kopyası (oturum makinesi, görüntü bekçisi, canlı tutma). */
     private class FakeXboxSession {
         private var now = 0L
+        val clock: Long get() = now
         private val machine = XboxSessionMachine(clock = { now })
         private var watch = XboxPictureWatch()
         private var keepalive = XboxKeepalive()

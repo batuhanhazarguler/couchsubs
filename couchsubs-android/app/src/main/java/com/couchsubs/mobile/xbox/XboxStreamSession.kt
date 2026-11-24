@@ -272,7 +272,7 @@ class XboxStreamSession(
         val failed = machine.phase as? XboxSessionMachine.Phase.Failed
         when {
             failed == null || failed.willRetry -> {
-                failed?.let { log("yeniden deneme ${it.attempt}: ${(retryDelayMs ?: 0L) / 1000} sn sonra") }
+                failed?.let { log(XboxEndCause.retryLine(it.attempt, machine.maxRetries, retryDelayMs ?: 0L)) }
                 onState(SessionState.Disconnected(DisconnectKind.OTHER, describe(kind)))
             }
             // Giriş gerekiyor: kullanıcının yapacağı iş hizmetin metninde.

@@ -110,9 +110,9 @@ final class XboxPictureWatchTests: XCTestCase {
     /// Sahte Xbox oturumu (bekçiler XboxStreamSession'daki gibi saniyede bir; canlı tutma 30 sn'de bir). Play'deki bildirim
     /// (Android beta.85): "uzaktan yürütme başlatıldı, hemen ardından durdu, tekrar başladı/durdu". Yayın başında görüntü
     /// birkaç saniye bekliyor, canlı tutma 404 dönüyor: ilk 30 sn'de (ve görüntü akarken sonrasında da) oturum kapatılmıyor,
-    /// yeniden açılmıyor. Sonra gerçek kopma: en çok bir kez, 5 sn sonra yeniden bağlanılıyor. Android'deki
-    /// fakeXboxSessionDoesNotLoopAndReconnectsAtMostOnce ve Windows'taki aynı adlı testle aynı senaryo.
-    func testFakeXboxSessionDoesNotLoopAndReconnectsAtMostOnce() {
+    /// yeniden açılmıyor. Sonra gerçek kopma: sessizce en çok üç kez (5, 15, 30 sn) yeniden bağlanılıyor. Android'deki
+    /// fakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes ve Windows'taki aynı adlı testle aynı senaryo.
+    func testFakeXboxSessionDoesNotLoopAndReconnectsAtMostThreeTimes() {
         let session = FakeXboxSession()
         session.connect()
         session.frames(1000...3000)
@@ -129,18 +129,26 @@ final class XboxPictureWatchTests: XCTestCase {
         XCTAssertEqual(session.ends.count, 1)
         XCTAssertEqual(session.retries, [5000])
         XCTAssertEqual(session.plays, 2)
-        // Yeniden bağlanma da kısa sürede kopuyor: ikinci deneme yok, yayın durur ("Yeniden bağlan" düğmesi).
-        session.frames(96_000...100_000)
-        session.iceLost(100_500)
-        for at in stride(from: 96_000, through: 160_000, by: 1000) { session.tick(at) }
-        XCTAssertEqual(session.retries, [5000, nil])
-        XCTAssertEqual(session.plays, 2)
+        // Yeniden bağlanmalar da kısa sürede kopuyor: kullanıcıya sormadan 15 ve 30 sn sonra yine denenir, sonra yayın
+        // durur ("Yeniden bağlan" düğmesi). Döngü sınırlı: dört kopmada üç yeniden bağlanma.
+        // (Bu kısımda canlı tutma yanıt veriyor; görüntü bekçisi, yayın başındaki 30 sn'lik tanıma süresinden sonra kapatır.)
+        session.keepaliveFails = nil
+        var start = 96_000
+        for _ in 0..<3 {
+            session.frames(start...(start + 4000))
+            session.iceLost(start + 4500)
+            for at in stride(from: start, through: start + 35_000, by: 1000) { session.tick(at) }
+            start = session.clock + 1000
+        }
+        XCTAssertEqual(session.retries, [5000, 15_000, 30_000, nil])
+        XCTAssertEqual(session.plays, 4)
     }
 }
 
 /// XboxStreamSession'ın bekçi döngüsünün ağsız kopyası (oturum makinesi, görüntü bekçisi, canlı tutma).
 private final class FakeXboxSession {
     private var now = 0
+    var clock: Int { now }
     private lazy var machine = XboxSessionMachine(clock: { [unowned self] in Double(self.now) })
     private var watch = XboxPictureWatch()
     private var keepalive = XboxKeepalive()

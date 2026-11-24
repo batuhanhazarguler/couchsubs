@@ -7,17 +7,22 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Ev yayını oturumunun durum makinesi (ağdan bağımsız; birim testli). Windows'taki XboxStreamSession.RunAsync ile aynı
  * kurallar: `/state` saniyede bir, en çok 90 kez sorulur; `ReadyToConnect` görülünce aktarım jetonu gönderilir,
- * `Provisioned` olunca WebRTC el sıkışması başlar. Hata ya da kopmada bir kez, 5 sn sonra baştan denenir; o da olmazsa
+ * `Provisioned` olunca WebRTC el sıkışması başlar. Görüntü gelmeden biten bağlantıda bir kez, 5 sn sonra baştan denenir; o da olmazsa
  * durulur ve "Yeniden bağlan" düğmesi hemen görünür. Eskiden 5, 15, 45 sn aralarla üç kez deneniyordu: her deneme Xbox'ta
  * "uzaktan yürütme başlatıldı / durduruldu" bildirimi çıkarıyor, kullanıcı bunu bitmeyen bir döngü olarak görüyordu
  * (Play, Android beta.85). Konsol `Failed` ya da `errorDetails` dönerse, yeniden giriş gerekirse (ör. yenileme jetonu geçersiz)
  * hiç denenmez; yalnız görüntü gelmiş bir yayın koptuktan sonraki ilk ret bir kez, [RECONNECT_GRACE_MS] sonra denenir.
- * Yayın [healthyStreamMs] ayakta kaldıysa deneme sayısı sıfırlanır.
+ * Yayın [healthyStreamMs] ayakta kaldıysa deneme sayısı sıfırlanır. Görüntü gelmiş (oynanan) bir yayın beklenmedik koparsa
+ * kullanıcıya sormadan [dropRetryDelaysMs] kadar (5, 15, 30 sn; en çok üç) yeniden bağlanılır: tek deneme yetmiyordu, kısa
+ * bir Wi-Fi takılmasında ilk deneme Xbox eski oturumu bırakmadan düşünce yayın duruyor, kullanıcı birkaç dakikada bir
+ * "Yeniden bağlan"a basmak zorunda kalıyordu (App Store, Play, X; GitHub #1185, #1190).
  */
 class XboxSessionMachine(
     val maxPolls: Int = 90,
     val pollIntervalMs: Long = 1000,
     val retryDelaysMs: List<Long> = listOf(5000),
+    /** Görüntü gelmiş yayın koptuktan sonraki sessiz yeniden bağlanma aralıkları (iPhone/Mac ve Windows ile aynı). */
+    val dropRetryDelaysMs: List<Long> = DROP_RETRY_DELAYS_MS,
     val healthyStreamMs: Long = 60_000,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -139,15 +144,23 @@ class XboxSessionMachine(
         // Görüntü gelmiş yayın koptuktan hemen sonra Xbox eski oturumu bırakmadan yenisini reddedebiliyor ("bir kez
         // kopunca Xbox yeniden başlatılmadan bağlanmıyor"): bu ret bir kez, eski oturum kapansın diye uzun beklenip denenir.
         val grace = refused && hadPicture && !graceUsed
-        // Kopma dizisinde en çok [retryDelaysMs] kadar (bir) yeniden bağlanma; kopmadan sonraki ret için tanınan tek
-        // deneme bu sınırın dışındadır (reddedilen oturumda Xbox yayın açmaz).
-        val retry = ((!refused && failures <= retryDelaysMs.size) || grace) && kind !in FATAL && noPictureConnections < MAX_NO_PICTURE_ATTEMPTS
+        // Kopma dizisinde görüntü gelmiş yayından sonra en çok [dropRetryDelaysMs] kadar (üç), görüntü hiç gelmediyse
+        // [retryDelaysMs] kadar (bir) yeniden bağlanma; kopmadan sonraki ret için tanınan tek deneme bu sınırın dışındadır
+        // (reddedilen oturumda Xbox yayın açmaz).
+        val delays = delays()
+        val retry = ((!refused && failures <= delays.size) || grace) && kind !in FATAL && noPictureConnections < MAX_NO_PICTURE_ATTEMPTS
         if (retry && grace) graceUsed = true
         phase = Phase.Failed(kind, message, retry, if (retry) failures else 0)
         if (!retry) return Action.Retry(null)
-        val backoff = retryDelaysMs[minOf(failures, retryDelaysMs.size) - 1]
+        val backoff = delays[minOf(failures, delays.size) - 1]
         return Action.Retry(if (grace) maxOf(RECONNECT_GRACE_MS, backoff) else backoff)
     }
+
+    /** Bu kopma dizisindeki yeniden bağlanma aralıkları: görüntü gelmiş yayından sonra [dropRetryDelaysMs], yoksa [retryDelaysMs]. */
+    private fun delays(): List<Long> = if (hadPicture && dropRetryDelaysMs.isNotEmpty()) dropRetryDelaysMs else retryDelaysMs
+
+    /** Sessiz yeniden bağlanmanın en çok deneme sayısı (günlükte "deneme 2/3"). */
+    val maxRetries: Int get() = delays().size
 
     fun stop() {
         phase = Phase.Stopped
@@ -159,6 +172,9 @@ class XboxSessionMachine(
 
         /** Xbox'tan hiç görüntü gelmeyen bu kadar ardışık bağlantıdan sonra yeniden denenmez. */
         const val MAX_NO_PICTURE_ATTEMPTS = 2
+
+        /** Görüntü gelmiş yayın koptuktan sonraki sessiz yeniden bağlanma aralıkları: 5, 15, 30 sn. */
+        val DROP_RETRY_DELAYS_MS = listOf(5000L, 15_000L, 30_000L)
 
         /** Kopmadan sonra Xbox yeni oturumu reddederse (eski oturum Xbox'ta henüz kapanmadı) beklenen süre. */
         const val RECONNECT_GRACE_MS = 15_000L

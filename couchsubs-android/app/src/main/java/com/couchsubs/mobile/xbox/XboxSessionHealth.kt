@@ -56,6 +56,13 @@ enum class XboxEndCause(val text: String) {
         /** Günlük satırı, ör. `kapanma nedeni: ağ (Xbox ICE bağlantısı koptu (failed))`. */
         fun line(kind: XboxError, detail: String?): String =
             "kapanma nedeni: ${of(kind).text} (${XboxSessionMachine.shortReason(detail, "?")})"
+
+        /**
+         * Sessiz yeniden bağlanma satırı, ör. `sessiz yeniden bağlanma 2/3: 15 sn sonra` (iPhone/Mac ve Windows'ta aynı
+         * biçim). Deneme sınırı aşıldıysa (kopmadan sonraki ret için tanınan ek deneme) "ek deneme" yazılır.
+         */
+        fun retryLine(attempt: Int, max: Int, delayMs: Long): String =
+            "sessiz yeniden bağlanma ${if (attempt <= max) "$attempt/$max" else "ek deneme"}: ${delayMs / 1000} sn sonra"
     }
 }
 

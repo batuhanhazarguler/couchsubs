@@ -61,6 +61,13 @@ public enum XboxEndCause: String, Sendable {
     public static func line(_ kind: XboxErrorKind, _ detail: String?) -> String {
         "kapanma nedeni: \(of(kind).rawValue) (\(XboxStop.shorten(detail)))"
     }
+
+    /// Sessiz yeniden bağlanma satırı, ör. `sessiz yeniden bağlanma 2/3: 15 sn sonra` (Windows ve Android'de aynı biçim).
+    /// `attempt` deneme sınırını aşabilir (kopmadan sonraki ret için tanınan ek deneme); o zaman "ek deneme" yazılır.
+    public static func retryLine(attempt: Int, of max: Int, delayMs: Int) -> String {
+        let count = attempt <= max ? "\(attempt)/\(max)" : "ek deneme"
+        return "sessiz yeniden bağlanma \(count): \(delayMs / 1000) sn sonra"
+    }
 }
 
 /// Oturum kapatma (DELETE) denemeleri. Kopma anında ağ da takılıyor olabilir; tek başarısız istek eski oturumu Xbox'ta
@@ -246,7 +253,7 @@ public enum XboxPictureVerdict: Equatable, Sendable {
 /// kalınca bitiyordu: ICE `disconnected`da takılı kalan ya da kare göndermeyi bırakan yayında ana ekran "bağlı"
 /// diyor, altyazı donuyor ve bir daha gelmiyordu (X'te kullanıcı bildirimi, iPhone + Xbox Series S). Kare
 /// `warnAfterMs` gelmezse (ICE `disconnected` iken 1 sn) uyarı gösterilir; `stallAfterMs` gelmezse ya da ICE
-/// `failed` olursa oturum kapatılıp `XboxSessionMachine`le (bir kez, 5 sn sonra) yeniden kurulur. İlk kareden sonraki
+/// `failed` olursa oturum kapatılıp `XboxSessionMachine`le (sessizce en çok üç kez: 5, 15, 30 sn sonra) yeniden kurulur. İlk kareden sonraki
 /// `startupGraceMs` içinde yalnız ICE `failed` oturumu kapatır: yayının başında Xbox görüntüyü birkaç saniye
 /// bekletebiliyor (yükleme, "uzaktan yürütme başlatıldı" bildirimi); eskiden bu boşlukta oturum kapatılıp yeniden
 /// açılıyor, Xbox'ta başladı/durdu döngüsü oluyordu (Play, Android beta.85). Windows'taki
