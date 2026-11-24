@@ -492,6 +492,34 @@ test('webOS HDMI #643: ses adımları varsayılanda hiç yapılmaz; ses ayarı/s
   assert.match(tv.platform.diagnostics(), /^hdmi playing rs4 1920x1080 t= · snd on v100 tr0\/1 sx no · webOS/);
 });
 
+// 0.9.98 (X: LG ve Android TV'de "TV uygulaması açıkken ses yok, PS5'in kendi girişinde var"): ses adımları kapalıyken
+// TV'nin ses çıkışı tanı satırına hiç yazılmıyordu. Açılışta, <video> yokken bir kez okunur; görüntü oynarken okunmaz.
+test('webOS HDMI: ses çıkışı ve ses düzeyi açılışta bir kez okunur, görüntü oynarken okunmaz', () => {
+  const tv = startTv({ mediaFocus: true, luna: (uri, params) => {
+    if (uri.indexOf('settingsservice') >= 0) {
+      const key = params.keys[0];
+      return { returnValue: true, settings: { [key]: key === 'soundOutput' ? 'external_arc' : 'passThrough' } };
+    }
+    if (uri.indexOf('com.webos.audio/getVolume') >= 0) return { returnValue: true, volumeStatus: { volume: 12, muteStatus: false } };
+    return null;
+  } });
+  tv.platform.init();
+  assert.strictEqual(lunaCalls(tv, 'settingsservice').length, 2, 'soundOutput ve soundOutputDigital');
+  assert.strictEqual(lunaCalls(tv, 'com.webos.audio/getVolume').length, 1);
+  const before = lunaCalls(tv, 'com.webos.audio').length + lunaCalls(tv, 'settingsservice').length;
+  tv.show(2);
+  const video = tv.video;
+  const touched = watchSound(video);
+  video.start();
+  tv.advance(10 * 60000);
+  assert.deepStrictEqual(touched, [], '<video>\'nun ses özelliklerine dokunulmaz');
+  assert.strictEqual(lunaCalls(tv, 'com.webos.audio').length + lunaCalls(tv, 'settingsservice').length, before,
+    'görüntü oynarken ses okunmaz');
+  assert.strictEqual(lunaCalls(tv, 'setMuted').length, 0);
+  assert.strictEqual(video.webosMediaFocus, false);
+  assert.match(tv.platform.diagnostics(), / · snd on v100 tr0\/1 out external_arc dig passThrough tv 12 sx no · webOS/);
+});
+
 test('webOS HDMI #643: görüntü gelip stalled olursa <video> eski yolla yeniden kurulur, ses adımı yok', () => {
   const tv = startTv({ luna: () => ({ returnValue: false }) });
   tv.show(2);

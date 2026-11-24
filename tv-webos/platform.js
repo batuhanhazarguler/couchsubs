@@ -511,6 +511,17 @@
     readVolume(function (muted) { if (sound.mutedBefore === null) sound.mutedBefore = muted; });
   }
 
+  // 0.9.98 (X, üç bildirim: LG webOS; Hi-Level Android TV + AV yükseltici; Android TV): "TV uygulaması açıkken görüntü
+  // var, ses yok; PS5'in kendi girişine geçince ses geliyor". Bu sayfa <video>'yu kısmıyor (audioText "snd on v100"),
+  // ses adımları varsayılan kapalı (#643). Kök neden doğrulanmadı; tahmin, TV'nin uygulama içindeki HDMI yolunun PS5'in
+  // sıkıştırılmış sesini (Dolby/DTS) ARC/eARC'a geçirmemesi. Ses adımları kapalıyken TV'nin ses çıkışı, dijital ses çıkışı
+  // ve ses düzeyi hiç okunmuyordu, tanı satırında "out/dig/tv" boş kalıyordu. Artık açılışta (HDMI <video>'su yokken)
+  // bir kez okunur: #643'ün şüphelendiği an (görüntü oynarken okuma) değil. <video>'ya ve TV sesine dokunulmaz.
+  function readSoundAtLaunch() {
+    if (soundEnabled()) return;
+    try { readSoundSettings(); } catch (e) {}
+  }
+
   function buildVideo() {
     // Görüntü gelene kadar 0.9.46'daki kurulumun aynısı (ses adımları: soundSoon).
     var video = document.createElement('video');
@@ -1027,6 +1038,8 @@
       }
 
       try { register(); } catch (e) {}
+      // Ses durumu açılışta, HDMI <video>'su kurulmadan önce bir kez okunur (yalnız tanı; bkz. readSoundAtLaunch).
+      readSoundAtLaunch();
     },
 
     launchParams: function () {
