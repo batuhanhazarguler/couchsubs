@@ -100,13 +100,36 @@ public final class RegionWatcher {
         var renderedBlocks: [(group: Int, item: ScreenTranslation.Item)]?
         /// Hazır alanda arayüz kutusunun art arda bulunamadığı tur sayısı (`panelMissTurns`).
         var panelMisses = 0
-        /// Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı (`unsteadyLimit`).
+        /// Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı (`unsteadyTurns`) ve ilkinin zamanı
+        /// (`unsteadyMs`).
         var unsteady = 0
+        var unsteadySince: Int?
+        /// Çevirinin gönderildiği turdaki alan izi: özgün yazının izi (`traceGone`).
+        var shownTrace: [UInt8]?
     }
 
-    /// Çevirisi gösterilen alanda okuma bu kadar tur art arda değişip doğrulanamazsa (yazı gitti, yerinde sahne oynuyor)
-    /// çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan kalktıktan sonra TV'de kalıyordu (#1198).
-    static let unsteadyLimit = 3
+    /// Alanın kaldırma geçmişi; alanın durumu silinse de (otomatik alan listeden çıkıp dönünce) kalır.
+    private struct Steadiness {
+        /// Kaldırma eşiğinin çarpanı eksi bir (`maxPatience`); kaldırılan yazı hemen geri geldikçe artar.
+        var patience = 0
+        /// Son kaldırılan yazı ve zamanı (`reboundMs`).
+        var clearedText = ""
+        var clearedAt: Int?
+    }
+
+    /// Çevirisi gösterilen alanda okuma en az bu kadar tur ve en az `unsteadyMs` boyunca art arda değişip doğrulanamazsa
+    /// (yazı gitti, yerinde sahne oynuyor) çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan
+    /// kalktıktan sonra TV'de kalıyordu (#1198). Yalnız tur sayısı (3 tur, 500 ms'lik turlarda 1,5 sn) arkası oynayan sabit
+    /// yazının çevirisini kaldırıp önbellekten geri getiriyordu: koyu kutu 2-3 sn'de bir yanıp sönüyordu (Samsung'da
+    /// parlaklık sıçraması). Windows ve Android ile aynı.
+    static let unsteadyTurns = 4
+    static let unsteadyMs = 3000
+    /// Kaldırılan yazı bu süre içinde yeniden gösterilirse yerindeydi: alanın kaldırma eşiği uzar (`maxPatience`).
+    static let reboundMs = 10_000
+    /// Kaldırma eşiği en çok (1 + bu) katına uzar.
+    static let maxPatience = 2
+    /// Ekrandaki yazının en az bu kadar harfli bir sözcüğü okumada geçiyorsa yazı hâlâ (kısmen) görünür (`partlyVisible`).
+    static let visibleWordLength = 4
     /// Alanın izindeki örneklerin bu kadarı bir turda değiştiyse görüntü bütünüyle değişmiştir (`clearIfUnsteady`).
     static let bigChangeShare = 0.5
     /// Çeviri motoru bu süreyi aşarsa tur biter (aday sonraki turda yeniden denenir): asılı istek turu kilitliyordu.
@@ -174,6 +197,8 @@ public final class RegionWatcher {
     private var session = 0
     /// Yalnız kararlı okumaların başarılı çevirileri saklanır.
     private var translations: [String: Translation] = [:]
+    /// Alanların kaldırma geçmişi (`Steadiness`).
+    private var steadiness: [String: Steadiness] = [:]
 
     /// Oyun paketi: satırın hazır Türkçesi (ana altyazıyla aynı arama).
     public var packLookup: ((String) -> PackMatch?)?
@@ -283,6 +308,7 @@ public final class RegionWatcher {
         guard changed else {
             // İz bir tur değişmedi: okunan yazı kararlıdır.
             state.unsteady = 0
+            state.unsteadySince = nil
             if let candidate = state.candidate {
                 state.candidate = nil
                 states[area.id] = state
@@ -350,8 +376,12 @@ public final class RegionWatcher {
         let own = subtitleEcho?.filter(reading, place: place, geometry: geometry) ?? reading
         let candidate = Self.candidate(own, in: region, frame: crop, auto: area.auto, menu: area.menu,
                                        styled: GameAreaPresets.isPreset(area.id))
-        if state.lastRead == candidate.key {
+        // Çevirisi gösterilen alanda art arda boş okuma (görüntü değişirken) yazının gittiğini tek başına kanıtlamaz: kaldırma
+        // kararı `clearIfUnsteady`'de (özgün yazının izi ya da süre).
+        let emptyWhileShown = candidate.key.isEmpty && !(state.renderedText ?? "").isEmpty
+        if state.lastRead == candidate.key, !emptyWhileShown {
             state.unsteady = 0
+            state.unsteadySince = nil
             state.candidate = nil
             states[area.id] = state
             await commit(candidate, area: area)
@@ -365,19 +395,30 @@ public final class RegionWatcher {
         }
     }
 
-    /// Çevirisi gösterilen alanda okuma doğrulanamadı: `unsteadyLimit` tur sürdüyse ya da görüntü bütünüyle değiştiyse
-    /// (`bigChangeShare`) ve yeni okuma gösterilen yazıya benzemiyorsa çeviri kaldırılır. Yazı gidince yerinde oynayan
-    /// sahne hiç kararlı okunmuyor, eski çeviri TV'de kalıyordu (#1198; Windows ve Android ile aynı).
+    /// Çevirisi gösterilen alanda okuma doğrulanamadı. Çeviri iki durumda kaldırılır (#1198; Windows ve Android ile aynı):
+    /// - Yazı gitti: okuma boş ve özgün yazının izi yok (`traceGone`); görüntü de bütünüyle değiştiyse (`bigChangeShare`) ilk
+    ///   turda, değilse ikinci turda. Gerçekten kalkan yazının çevirisi beklemez.
+    /// - Okuma en az `unsteadyTurns` tur ve `unsteadyMs` boyunca gösterilen yazıya benzemedi (`unsteadyLong`).
+    /// Okumada gösterilen yazının bir parçası hâlâ görünüyorsa (`partlyVisible`) tur kararsız sayılmaz: arkası oynayan sabit
+    /// yazının çevirisi kalkıp geri gelmez.
     private func clearIfUnsteady(_ candidate: Candidate, area: ExtraArea, state: inout State, before: [UInt8]?,
                                  signature: [UInt8]) {
+        if Self.partlyVisible(candidate.text, state.shownText) {
+            state.unsteady = 0
+            state.unsteadySince = nil
+            return
+        }
+        let time = now()
         state.unsteady += 1
+        let since = state.unsteadySince ?? time
+        state.unsteadySince = since
         let turns = state.unsteady
-        // Görüntünün bütünüyle değişmesi ilk turda tek başına yetmez: yeni yazı eskisinin yerine geçerken eski çeviri yenisi
-        // doğrulanana dek kalır (kutu yanıp sönmesin). Yazı da gittiyse (boş okuma) ya da ikinci turdaysa kaldırılır.
+        let patience = steadiness[area.id]?.patience ?? 0
         let bigChange = before.map { Self.changedShare($0, signature) >= Self.bigChangeShare } ?? false
-            && (candidate.key.isEmpty || turns >= 2)
-        guard turns >= Self.unsteadyLimit || bigChange else { return }
-        guard !Self.matches(candidate.text, state.shownText), !Self.isPartOf(candidate.text, state.shownText) else { return }
+        // Kaldırılan yazı daha önce geri geldiyse (`patience`) boş okuma da art arda o kadar tur daha görülmeli.
+        let gone = candidate.key.isEmpty && Self.traceGone(state.shownTrace, signature) && (bigChange || turns >= 2)
+            && turns > patience
+        guard gone || Self.unsteadyLong(turns: turns, elapsedMs: time - since, patience: patience) else { return }
         let shownText = state.shownText
         server.sendRegion(id: area.id, text: "", box: nil, lineHeight: nil)
         state.shown = ""
@@ -391,8 +432,54 @@ public final class RegionWatcher {
         state.renderedLayout = nil
         state.renderedBlocks = nil
         state.unsteady = 0
-        drops.note("RegionWatcher", "\(area.name): \(turns) tur kararlı okunmadı ya da görüntü çok değişti, çevirisi kaldırıldı",
+        state.unsteadySince = nil
+        state.shownTrace = nil
+        if steadiness.count >= Self.translationLimit, steadiness[area.id] == nil { steadiness.removeAll(keepingCapacity: true) }
+        var memory = steadiness[area.id] ?? Steadiness()
+        memory.clearedText = shownText
+        memory.clearedAt = time
+        steadiness[area.id] = memory
+        drops.note("RegionWatcher", gone ? "\(area.name): yazı kalktı (boş okuma, iz yok), çevirisi kaldırıldı"
+                                         : "\(area.name): \(Self.unsteadyMs * (1 + patience) / 1000) sn kararlı okunmadı, çevirisi kaldırıldı",
                    IconText.plain(shownText), log: onLog)
+    }
+
+    /// Kaldırılan yazı `reboundMs` içinde yeniden gösterildi: yazı yerindeydi; alanın kaldırma eşiği uzar, günlüğe yazılır.
+    private func noteRebound(_ candidate: Candidate, area: ExtraArea) {
+        guard var memory = steadiness[area.id], let at = memory.clearedAt else { return }
+        memory.clearedAt = nil
+        if now() - at <= Self.reboundMs, Self.partlyVisible(candidate.text, memory.clearedText) {
+            memory.patience = min(Self.maxPatience, memory.patience + 1)
+            drops.note("RegionWatcher", "\(area.name): kaldırılan yazı geri geldi, kaldırma eşiği \(1 + memory.patience) katına uzadı",
+                       IconText.plain(candidate.paragraphs.joined(separator: " ")), log: onLog)
+        }
+        steadiness[area.id] = memory
+    }
+
+    /// Okumada ekrandaki yazının bir parçası görünüyor: benzer ya da eksik okuma, ya da ekrandakinin en az bir uzun sözcüğü
+    /// (`visibleWordLength`) okumada geçiyor (arkası oynayan yazı yarım okunur).
+    static func partlyVisible(_ reading: String, _ shown: String) -> Bool {
+        guard !reading.isEmpty, !shown.isEmpty else { return false }
+        if matches(reading, shown) || isPartOf(reading, shown) { return true }
+        let have = words(reading)
+        return words(shown).contains { word in
+            word.filter(\.isLetter).count >= visibleWordLength && have.contains { matches($0, word) }
+        }
+    }
+
+    /// Kararsız okuma kaldırmaya yetecek kadar sürdü mü: en az `unsteadyTurns` tur ve `unsteadyMs`; alanın kaldırılan
+    /// yazısı daha önce geri geldiyse ikisi de (1 + `patience`) katı.
+    static func unsteadyLong(turns: Int, elapsedMs: Int, patience: Int) -> Bool {
+        let scale = 1 + max(0, min(maxPatience, patience))
+        return turns >= unsteadyTurns * scale && elapsedMs >= unsteadyMs * scale
+    }
+
+    /// Çevirinin gönderildiği turdaki alan izi (`trace`) bu turdakine benzemiyor: özgün yazı yerinde değil
+    /// (`ScreenPresence.goneCorrelation`; izlerden biri düzse de yok sayılır).
+    static func traceGone(_ trace: [UInt8]?, _ signature: [UInt8]) -> Bool {
+        guard let trace else { return true }
+        guard let score = ScreenPresence.correlation(trace.map(Int.init), signature.map(Int.init)) else { return true }
+        return score < ScreenPresence.goneCorrelation
     }
 
     /// İzdeki örneklerin `ReadScheduler.defaultChangeThreshold`'dan çok değişen payı.
@@ -782,6 +869,11 @@ public final class RegionWatcher {
         states[area.id]?.renderedLineHeight = candidate.lineHeight
         states[area.id]?.renderedLayout = candidate.blocks
         states[area.id]?.renderedBlocks = blocks
+        let trace = states[area.id]?.signature
+        states[area.id]?.shownTrace = trace
+        states[area.id]?.unsteady = 0
+        states[area.id]?.unsteadySince = nil
+        noteRebound(candidate, area: area)
     }
 
     /// Her grubun çevirisi kendi yeriyle. Çevirisi aslıyla aynı grup (ad, sayı) atlanır; İngilizcesi görünür kalır.
@@ -1004,6 +1096,7 @@ public final class RegionWatcher {
         running = nil
         lastPass = nil
         translations.removeAll()
+        steadiness.removeAll()
         terms.removeAll()
         worldText.removeAll()
         autoSeen.removeAll()

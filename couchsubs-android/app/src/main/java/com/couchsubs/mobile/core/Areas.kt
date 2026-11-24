@@ -329,10 +329,54 @@ class RegionWatcher(
         const val PANEL_MISS_TURNS = 3
 
         /**
-         * Çevirisi gösterilen alanda okuma bu kadar tur art arda değişip doğrulanamazsa (yazı gitti, yerinde sahne oynuyor)
-         * çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan kalktıktan sonra TV'de kalıyordu (#1198).
+         * Çevirisi gösterilen alanda okuma en az bu kadar tur ve en az [UNSTEADY_MS] boyunca art arda değişip doğrulanamazsa
+         * (yazı gitti, yerinde sahne oynuyor) çeviri kaldırılır: menü, tabela ve ipucu kutusunun çevirisi yazı oyundan
+         * kalktıktan sonra TV'de kalıyordu (#1198). Yalnız tur sayısı (3 tur, 500 ms'lik turlarda 1,5 sn) arkası oynayan sabit
+         * yazının çevirisini kaldırıp önbellekten geri getiriyordu: koyu kutu 2-3 sn'de bir yanıp sönüyordu (Samsung'da
+         * parlaklık sıçraması). Mac/iPhone ve Windows ile aynı.
          */
-        internal const val UNSTEADY_LIMIT = 3
+        internal const val UNSTEADY_TURNS = 4
+        internal const val UNSTEADY_MS = 3000L
+
+        /** Kaldırılan yazı bu süre içinde yeniden gösterilirse yerindeydi: alanın kaldırma eşiği uzar ([MAX_PATIENCE]). */
+        internal const val REBOUND_MS = 10_000L
+
+        /** Kaldırma eşiği en çok (1 + bu) katına uzar. */
+        internal const val MAX_PATIENCE = 2
+
+        /** Ekrandaki yazının en az bu kadar harfli bir sözcüğü okumada geçiyorsa yazı hâlâ (kısmen) görünür ([partlyVisible]). */
+        internal const val VISIBLE_WORD_LENGTH = 4
+
+        /**
+         * Okumada ekrandaki yazının bir parçası görünüyor: benzer ya da eksik okuma, ya da ekrandakinin en az bir uzun sözcüğü
+         * ([VISIBLE_WORD_LENGTH]) okumada geçiyor (arkası oynayan yazı yarım okunur).
+         */
+        internal fun partlyVisible(reading: String, shown: String): Boolean {
+            if (reading.isEmpty() || shown.isEmpty()) return false
+            if (matches(reading, shown) || isPartOf(reading, shown)) return true
+            val have = words(reading)
+            return words(shown).any { word -> word.count { it.isLetter() } >= VISIBLE_WORD_LENGTH && have.any { matches(it, word) } }
+        }
+
+        /**
+         * Kararsız okuma kaldırmaya yetecek kadar sürdü mü: en az [UNSTEADY_TURNS] tur ve [UNSTEADY_MS]; alanın kaldırılan
+         * yazısı daha önce geri geldiyse ikisi de (1 + [patience]) katı.
+         */
+        internal fun unsteadyLong(turns: Int, elapsedMs: Long, patience: Int): Boolean {
+            val scale = 1 + patience.coerceIn(0, MAX_PATIENCE)
+            return turns >= UNSTEADY_TURNS * scale && elapsedMs >= UNSTEADY_MS * scale
+        }
+
+        /**
+         * Çevirinin gönderildiği turdaki alan izi ([trace]) bu turdakine benzemiyor: özgün yazı yerinde değil
+         * ([ScreenPresence.GONE_CORRELATION]; izlerden biri düzse de yok sayılır).
+         */
+        internal fun traceGone(trace: ByteArray?, signature: ByteArray): Boolean {
+            if (trace == null) return true
+            val score = ScreenPresence.correlation(trace.map { it.toInt() and 0xFF }, signature.map { it.toInt() and 0xFF })
+                ?: return true
+            return score < ScreenPresence.GONE_CORRELATION
+        }
 
         /** Alanın izindeki örneklerin bu kadarı bir turda değiştiyse görüntü bütünüyle değişmiştir: beklemeden kaldırılır. */
         internal const val BIG_CHANGE_SHARE = 0.5
@@ -676,8 +720,16 @@ class RegionWatcher(
         var signature: ByteArray? = null
         /** Bir önceki turun izi ([BIG_CHANGE_SHARE] için; [signature] okuma hatasında silinir). */
         var passSignature: ByteArray? = null
-        /** Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı ([UNSTEADY_LIMIT]). */
+        /** Çevirisi gösterilirken art arda kaç turdur okuma değişip doğrulanamadı ([UNSTEADY_TURNS]) ve ilkinin zamanı ([UNSTEADY_MS]). */
         var unsteady = 0
+        var unsteadySince: Long? = null
+        /** Çevirinin gönderildiği turdaki alan izi: özgün yazının izi ([traceGone]). */
+        var shownTrace: ByteArray? = null
+        /**
+         * Çevirisi gösterilen otomatik alanın son okuması boş ya da gürültüydü (bulucuya bildirilmedi): görüntü değişmeden bir
+         * tur daha geçerse bildirilir (Mac/iPhone ve Windows'ta aynı okumanın kararlı sayılıp reddedilmesi).
+         */
+        var rejectPending = false
         var lastRead: String? = null
         var candidate: Candidate? = null
         var shown = ""
@@ -706,8 +758,18 @@ class RegionWatcher(
         var renderedStyles: List<TextStyleSampler.Style?>? = null
     }
 
+    /** Alanın kaldırma geçmişi; alanın durumu silinse de (otomatik alan listeden çıkıp dönünce) kalır. */
+    private class Steadiness {
+        /** Kaldırma eşiğinin çarpanı eksi bir ([MAX_PATIENCE]); kaldırılan yazı hemen geri geldikçe artar. */
+        var patience = 0
+        /** Son kaldırılan yazı ve zamanı ([REBOUND_MS]). */
+        var clearedText = ""
+        var clearedAt: Long? = null
+    }
+
     private val lock = Any()
     private val states = mutableMapOf<String, State>()
+    private val steadiness = HashMap<String, Steadiness>()
     private var lastPass: Long? = null
     private var busy = false
     @Volatile private var session = 0
@@ -876,6 +938,15 @@ class RegionWatcher(
         if (!changed) {
             // İz bir tur değişmedi: okunan yazı kararlıdır.
             state.unsteady = 0
+            state.unsteadySince = null
+            if (state.rejectPending) {
+                // Çevirisi gösterilen otomatik alanda boş ya da gürültü okuma, görüntü değişmeden kaldı: bulucuya bildirilir
+                // (alan listeden çıkar, kutusu kalkar; Mac/iPhone ve Windows'ta kararlı okumanın reddi).
+                state.rejectPending = false
+                state.lastRead = null
+                onAutoRejected?.invoke(area.id)
+                return
+            }
             state.candidate?.let {
                 state.candidate = null
                 commit(it, area, state, started)
@@ -938,9 +1009,23 @@ class RegionWatcher(
             val unwanted = kind(area, candidate)?.let { !allows(it) } ?: false
             if (candidate.key.isEmpty() || ScreenTextNoise.isNoise(candidate.paragraphs.joinToString(" ") { IconText.plain(it) }, area.menu) ||
                 (!area.menu && isWorldText(candidate)) || unwanted) {
+                val repeated = candidate.key.isNotEmpty() && state.lastRead == candidate.key
+                if (!state.renderedText.isNullOrEmpty() && !repeated) {
+                    // Çevirisi gösterilen alanda tek boş ya da gürültü okuma yazının gittiğini kanıtlamaz: alan hemen
+                    // düşürülmez, kaldırma kararı [clearIfUnsteady]'de (Mac/iPhone ve Windows ile aynı). Önceden tek boş
+                    // okuma alanı listeden çıkarıp çeviriyi kaldırıyordu; yazı yeniden okununca geri geliyordu.
+                    state.lastRead = candidate.key
+                    state.held = null
+                    state.holds = 0
+                    state.candidate = null
+                    state.rejectPending = true
+                    clearIfUnsteady(candidate, area, state, before, crop.signature, started)
+                    return
+                }
                 // Sayaç, harita, kısa etiket ya da yazısız kutu: çevrilmez; alan bir sonraki turda listeden çıkar.
                 state.candidate = null
                 state.lastRead = null
+                state.rejectPending = false
                 onAutoRejected?.invoke(area.id)
                 return
             }
@@ -949,8 +1034,13 @@ class RegionWatcher(
             // Oyunun hazır alanı otomatik alan gibi özgün stilinde, her grup kendi bloğunda çizilir (siyah kutu değil, #856).
             candidate = styled(candidate, text, area.region, crop.frame, crop.color)
         }
-        if (state.lastRead == candidate.key) {
+        state.rejectPending = false
+        // Çevirisi gösterilen alanda art arda boş okuma (görüntü değişirken) yazının gittiğini tek başına kanıtlamaz: kaldırma
+        // kararı [clearIfUnsteady]'de (özgün yazının izi ya da süre).
+        val emptyWhileShown = candidate.key.isEmpty() && !state.renderedText.isNullOrEmpty()
+        if (state.lastRead == candidate.key && !emptyWhileShown) {
             state.unsteady = 0
+            state.unsteadySince = null
             state.candidate = null
             commit(candidate, area, state, started)
         } else {
@@ -965,18 +1055,28 @@ class RegionWatcher(
     }
 
     /**
-     * Çevirisi gösterilen alanda okuma doğrulanamadı: [UNSTEADY_LIMIT] tur sürdüyse ya da görüntü bütünüyle değiştiyse
-     * ([BIG_CHANGE_SHARE]) ve yeni okuma gösterilen yazıya benzemiyorsa çeviri kaldırılır. Yazı gidince yerinde oynayan sahne
-     * hiç kararlı okunmuyor, eski çeviri TV'de kalıyordu (#1198; Mac/iPhone ve Windows ile aynı).
+     * Çevirisi gösterilen alanda okuma doğrulanamadı. Çeviri iki durumda kaldırılır (#1198; Mac/iPhone ve Windows ile aynı):
+     * - Yazı gitti: okuma boş ve özgün yazının izi yok ([traceGone]); görüntü de bütünüyle değiştiyse ([BIG_CHANGE_SHARE]) ilk
+     *   turda, değilse ikinci turda. Gerçekten kalkan yazının çevirisi beklemez.
+     * - Okuma en az [UNSTEADY_TURNS] tur ve [UNSTEADY_MS] boyunca gösterilen yazıya benzemedi ([unsteadyLong]).
+     * Okumada gösterilen yazının bir parçası hâlâ görünüyorsa ([partlyVisible]) tur kararsız sayılmaz: arkası oynayan sabit
+     * yazının çevirisi kalkıp geri gelmez.
      */
     private fun clearIfUnsteady(candidate: Candidate, area: ExtraArea, state: State, before: ByteArray?, signature: ByteArray, started: Int) {
+        if (partlyVisible(candidate.text, state.shownText)) {
+            state.unsteady = 0
+            state.unsteadySince = null
+            return
+        }
+        val time = clock()
         val turns = ++state.unsteady
-        // Görüntünün bütünüyle değişmesi tek başına ilk turda yetmez: yeni yazı eskisinin yerine geçerken eski çeviri yenisi
-        // doğrulanana dek kalır (kutu yanıp sönmesin). Yazı da gittiyse (boş okuma) ya da ikinci turdaysa kaldırılır.
-        val bigChange = before != null && RegionSignature.changedShare(before, signature) >= BIG_CHANGE_SHARE &&
-            (candidate.key.isEmpty() || turns >= 2)
-        if (turns < UNSTEADY_LIMIT && !bigChange) return
-        if (matches(candidate.text, state.shownText) || isPartOf(candidate.text, state.shownText)) return
+        val since = state.unsteadySince ?: time
+        state.unsteadySince = since
+        val patience = synchronized(steadiness) { steadiness[area.id]?.patience ?: 0 }
+        val bigChange = before != null && RegionSignature.changedShare(before, signature) >= BIG_CHANGE_SHARE
+        // Kaldırılan yazı daha önce geri geldiyse (patience) boş okuma da art arda o kadar tur daha görülmeli.
+        val gone = candidate.key.isEmpty() && traceGone(state.shownTrace, signature) && (bigChange || turns >= 2) && turns > patience
+        if (!gone && !unsteadyLong(turns, time - since, patience)) return
         val shownText = state.shownText
         synchronized(lock) { if (started == session) sender.sendRegion(area.id, "", null, null) }
         state.shown = ""
@@ -993,7 +1093,30 @@ class RegionWatcher(
         state.renderedBlocks = null
         state.renderedStyles = null
         state.unsteady = 0
-        drops.note("RegionWatcher", "${area.name}: $turns tur kararlı okunmadı ya da görüntü çok değişti, çevirisi kaldırıldı", shownText, onLog)
+        state.unsteadySince = null
+        state.shownTrace = null
+        synchronized(steadiness) {
+            if (steadiness.size >= TRANSLATION_LIMIT && area.id !in steadiness) steadiness.clear()
+            val memory = steadiness.getOrPut(area.id) { Steadiness() }
+            memory.clearedText = shownText
+            memory.clearedAt = time
+        }
+        drops.note("RegionWatcher", if (gone) "${area.name}: yazı kalktı (boş okuma, iz yok), çevirisi kaldırıldı"
+            else "${area.name}: ${UNSTEADY_MS * (1 + patience) / 1000} sn kararlı okunmadı, çevirisi kaldırıldı", shownText, onLog)
+    }
+
+    /** Kaldırılan yazı [REBOUND_MS] içinde yeniden gösterildi: yazı yerindeydi; alanın kaldırma eşiği uzar, günlüğe yazılır. */
+    private fun noteRebound(candidate: Candidate, area: ExtraArea) {
+        val patience = synchronized(steadiness) {
+            val memory = steadiness[area.id] ?: return
+            val at = memory.clearedAt ?: return
+            memory.clearedAt = null
+            if (clock() - at > REBOUND_MS || !partlyVisible(candidate.text, memory.clearedText)) return
+            memory.patience = minOf(MAX_PATIENCE, memory.patience + 1)
+            memory.patience
+        }
+        drops.note("RegionWatcher", "${area.name}: kaldırılan yazı geri geldi, kaldırma eşiği ${1 + patience} katına uzadı",
+            candidate.paragraphs.joinToString(" ") { IconText.plain(it) }, onLog)
     }
 
     /**
@@ -1152,6 +1275,10 @@ class RegionWatcher(
             state.renderedLayout = candidate.blocks
             state.renderedBlocks = blocks
             state.renderedStyles = candidate.styles
+            state.shownTrace = state.passSignature
+            state.unsteady = 0
+            state.unsteadySince = null
+            noteRebound(candidate, area)
         }
         state.renderedKey = candidate.key
     }
@@ -1302,6 +1429,7 @@ class RegionWatcher(
         }
         val anyShown = states.values.any { it.shown.isNotEmpty() || !it.renderedText.isNullOrEmpty() }
         states.clear()
+        synchronized(steadiness) { steadiness.clear() }
         if (anyShown) sender.clearRegions()
     }
 }

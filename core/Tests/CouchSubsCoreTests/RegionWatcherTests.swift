@@ -303,26 +303,128 @@ final class RegionWatcherTests: XCTestCase {
         return context!.makeImage()!
     }
 
-    /// #1198: yazı gidip yerinde sahne oynayınca okuma hiç kararlı olmuyordu; eski çeviri TV'de kalıyordu. Üç tur art arda
-    /// doğrulanamayan, gösterilene benzemeyen okumada çeviri kalkar; benzer okumalar (OCR titremesi) kaldırmaz.
-    func testUnsteadyReadsRemoveTheShownTranslationOnlyWhenTheTextIsGone() async {
-        let reader = Reader(), translator = Translator(), server = Server()
-        let watcher = RegionWatcher(reader: reader, translator: translator, server: server)
+    /// Görev alanında sabit, parlak "yazı" çizgileri; arkası (`background`) değişir. Yazının izi her karede aynıdır
+    /// (`RegionWatcher.traceGone` yanlış), ama alanın çoğu değişir (`bigChangeShare` üstü).
+    private func lettered(_ background: UInt8) -> CGImage {
+        let width = 320, height = 180
+        var pixels = [UInt8](repeating: background, count: width * height)
+        let region = quest.region
+        let left = Int(region.left * Double(width)), right = Int(region.right * Double(width))
+        let top = Int(region.top * Double(height)), bottom = Int(region.bottom * Double(height))
+        let band = (top + (bottom - top) / 3)..<(top + 2 * (bottom - top) / 3)
+        for y in band { for x in left..<right where (x - left) % 8 < 4 { pixels[y * width + x] = 255 } }
+        let context = pixels.withUnsafeMutableBytes { buffer in
+            CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)
+        }
+        return context!.makeImage()!
+    }
+
+    /// Otomatik ekran yazısı gibi 500 ms'de bir tur atan saat ve izleyici; `Talk to Arthur at the camp` gösterilmiş olarak.
+    private func shownCamp(_ reader: Reader, _ translator: Translator, _ server: Server,
+                           log: @escaping (String) -> Void = { _ in }) async -> (RegionWatcher, () -> Int, (Int) -> Void) {
+        var clock = 0
+        let watcher = RegionWatcher(reader: reader, translator: translator, server: server, clock: { clock })
+        watcher.onLog = log
         reader.lines = [line("Talk to Arthur at the camp")]
-        await watcher.pass(partly(10), areas: [quest])
-        await watcher.pass(partly(10), areas: [quest])
+        await watcher.pass(lettered(10), areas: [quest])
+        clock += 500
+        await watcher.pass(lettered(10), areas: [quest])
         XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp"])
-        for (shade, text) in [(40, "Talk to Arthur at the cam"), (80, "Talk to Arthur at the camp."), (120, "Talk to Arthr at the camp"),
-                              (160, "Talk to Arthur at the cam")] as [(UInt8, String)] {
-            reader.lines = [line(text)]
-            await watcher.pass(partly(shade), areas: [quest])
+        return (watcher, { clock }, { clock += $0 })
+    }
+
+    /// Yazı sabit, arkasında sahne oynuyor: okumalar yarım, bozuk, arada boş ya da ilgisiz. Çeviri kalır; kutu 10 sn boyunca
+    /// hiç kalkıp geri gelmez (önceden 3 tur = 1,5 sn'de kalkıp önbellekten geri geliyordu; Samsung'da parlaklık sıçraması).
+    func testSteadyTextOverAMovingSceneKeepsItsTranslationWithoutBlinking() async {
+        let reader = Reader(), translator = Translator(), server = Server()
+        let (watcher, _, advance) = await shownCamp(reader, translator, server)
+        let reads = ["Talk to Arthur at the cam", "", "Wind noise", "Arthur at tho camp", "Tlk t0 Arthr", "Grss camp",
+                     "", "Talk to Arthur", "Birds flying", "Talk Arthur at camp."]
+        for step in 0..<20 {
+            advance(500)
+            let text = reads[step % reads.count]
+            reader.lines = text.isEmpty ? [] : [line(text)]
+            await watcher.pass(lettered(UInt8(40 + (step % 4) * 40)), areas: [quest])
         }
         XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp"])
-        for (shade, text) in [(40, "Grass and trees"), (80, "Sky above the hills"), (120, "Dust road ahead")] as [(UInt8, String)] {
+        XCTAssertEqual(translator.calls, ["Talk to Arthur at the camp"])
+    }
+
+    /// #1198: yazı gidip yerinde sahne oynayınca okuma hiç kararlı olmuyordu; eski çeviri TV'de kalıyordu. Gösterilene
+    /// benzemeyen okumalar `unsteadyTurns` tur ve `unsteadyMs` sürünce çeviri kalkar: ~3 sn içinde, 1,5 sn'den önce değil.
+    func testTextThatReallyLeavesLosesItsTranslationWithinThreeSeconds() async {
+        let reader = Reader(), translator = Translator(), server = Server()
+        var lines: [String] = []
+        let (watcher, time, advance) = await shownCamp(reader, translator, server) { lines.append($0) }
+        let start = time() + 500
+        var clearedAt: Int?
+        for (step, text) in ["Grass and trees", "Sky above hills", "Dust road ahead", "Rocky cliffs", "Blue river",
+                             "Green pines", "Old fence", "Wet stones", "Dark clouds"].enumerated() {
+            advance(500)
             reader.lines = [line(text)]
-            await watcher.pass(partly(shade), areas: [quest])
+            await watcher.pass(frame(UInt8(40 + step * 20)), areas: [quest])
+            if clearedAt == nil, server.sent.count > 1 { clearedAt = time() }
         }
         XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp", ""])
+        let after = (clearedAt ?? .max) - start
+        XCTAssertGreaterThanOrEqual(after, RegionWatcher.unsteadyMs)
+        XCTAssertLessThanOrEqual(after, 3000)
+        XCTAssertTrue(lines.contains { $0.contains("kararlı okunmadı, çevirisi kaldırıldı") }, "\(lines)")
+    }
+
+    /// Yazı ve izi birlikte gitti (boş okuma, yazısız kare): çeviri beklemeden kalkar. Boş okumada izi yerinde duran yazının
+    /// çevirisi ise hemen kalkmaz.
+    func testEmptyReadRemovesTheTranslationAtOnceOnlyWhenTheTraceIsGone() async {
+        let reader = Reader(), translator = Translator(), server = Server()
+        let (watcher, _, advance) = await shownCamp(reader, translator, server)
+        advance(500)
+        reader.lines = []
+        await watcher.pass(lettered(200), areas: [quest])
+        XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp"])
+        advance(500)
+        await watcher.pass(frame(100), areas: [quest])
+        XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp", ""])
+    }
+
+    /// Kaldırılan yazı kısa sürede yeniden okunursa yerindeydi: çeviri önbellekten geri gelir, günlüğe yazılır ve o alanın
+    /// kaldırma eşiği uzar (aynı kararsızlık bu kez 3 sn'de çeviriyi kaldırmaz, uzamış eşikte kaldırır).
+    func testSameTextReturningAfterRemovalExtendsTheThreshold() async {
+        let reader = Reader(), translator = Translator(), server = Server()
+        var lines: [String] = []
+        let (watcher, _, advance) = await shownCamp(reader, translator, server) { lines.append($0) }
+        func unrelated(_ count: Int) async {
+            for step in 0..<count {
+                advance(500)
+                reader.lines = [line("Noise \(["alpha", "bravo", "delta", "omega", "kappa", "sigma"][step % 6]) \(step)")]
+                await watcher.pass(frame(UInt8(40 + (step % 8) * 20)), areas: [quest])
+            }
+        }
+        await unrelated(7)
+        XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp", ""])
+        reader.lines = [line("Talk to Arthur at the camp")]
+        advance(500)
+        await watcher.pass(lettered(10), areas: [quest])
+        advance(500)
+        await watcher.pass(lettered(10), areas: [quest])
+        XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp", "", "TR: Talk to Arthur at the camp"])
+        XCTAssertEqual(translator.calls, ["Talk to Arthur at the camp"])
+        XCTAssertTrue(lines.contains { $0.contains("kaldırılan yazı geri geldi") }, "\(lines)")
+        await unrelated(8)
+        XCTAssertEqual(server.sent.count, 3)
+        await unrelated(13)
+        XCTAssertEqual(server.sent.map(\.text), ["TR: Talk to Arthur at the camp", "", "TR: Talk to Arthur at the camp", ""])
+    }
+
+    func testPartlyVisibleReadingsAreNotUnsteady() {
+        XCTAssertTrue(RegionWatcher.partlyVisible("tlk t0 arthr", "talk to arthur at the camp"))
+        XCTAssertTrue(RegionWatcher.partlyVisible("grss camp", "talk to arthur at the camp"))
+        XCTAssertFalse(RegionWatcher.partlyVisible("sky above the hills", "talk to arthur at the camp"))
+        XCTAssertFalse(RegionWatcher.partlyVisible("", "talk to arthur at the camp"))
+        XCTAssertFalse(RegionWatcher.unsteadyLong(turns: 3, elapsedMs: 5000, patience: 0))
+        XCTAssertFalse(RegionWatcher.unsteadyLong(turns: 7, elapsedMs: 2500, patience: 0))
+        XCTAssertTrue(RegionWatcher.unsteadyLong(turns: 7, elapsedMs: 3000, patience: 0))
+        XCTAssertFalse(RegionWatcher.unsteadyLong(turns: 7, elapsedMs: 3000, patience: 1))
     }
 
     /// Görüntü bütünüyle değişip yazı da gittiyse çeviri beklemeden kalkar.

@@ -60,6 +60,33 @@ class AutoAreaWatcherTest {
         assertEquals(listOf("auto-1"), rejected)
     }
 
+    /**
+     * Çevirisi gösterilen alanda tek boş okuma alanı hemen düşürmez (önceden alan listeden çıkıp çeviri kalkıyor, yazı yeniden
+     * okununca geri geliyordu: kutu yanıp sönüyordu). Görüntü değişmeden bir tur daha geçerse alan bildirilir (Mac/iPhone ve
+     * Windows'ta aynı boş okumanın kararlı sayılıp reddedilmesi).
+     */
+    @Test
+    fun singleEmptyReadOnAShownAreaIsNotRejectedAtOnce() {
+        val recorder = Recorder()
+        val rejected = mutableListOf<String>()
+        var lines = listOf(TextLine("Lamar has sent you a message.", TextBox(0.08, 0.18, 0.9, 0.57)))
+        val watcher = RegionWatcher({ Reading(lines) }, { "Lamar sana bir mesaj gönderdi." }, recorder)
+        watcher.onAutoRejected = { rejected.add(it) }
+        watcher.onLog = {}
+        // Yazının izi: ortadaki satırlarda parlak örnekler; arkaplan değişse de iz aynı kalır.
+        fun lettered(background: Int) = ByteArray(RegionSignature.WIDTH * RegionSignature.HEIGHT) { index ->
+            (if (index / RegionSignature.WIDTH in 4..7 && index % 2 == 0) 255 else background).toByte()
+        }
+        repeat(2) { watcher.pass(setOf(auto.id), listOf(auto to RegionWatcher.Crop(Unit, lettered(25), crop))) }
+        assertEquals(1, recorder.sent.size)
+        lines = emptyList()
+        watcher.pass(setOf(auto.id), listOf(auto to RegionWatcher.Crop(Unit, lettered(200), crop)))
+        assertTrue(rejected.isEmpty())
+        assertEquals(1, recorder.sent.size)
+        watcher.pass(setOf(auto.id), listOf(auto to RegionWatcher.Crop(Unit, lettered(200), crop)))
+        assertEquals(listOf("auto-1"), rejected)
+    }
+
     @Test
     fun textIsTranslatedInPlaceWithTheOriginalStyle() {
         val recorder = Recorder()

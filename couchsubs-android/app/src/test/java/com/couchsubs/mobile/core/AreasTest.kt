@@ -569,33 +569,123 @@ class AreasTest {
         queued.single().run()
         assertEquals(listOf("Board the train"), calls)
     }
+    /**
+     * Arkaplanı [background] olan iz; ortadaki satırlarda sabit, parlak "yazı" örnekleri. Yazının izi her karede aynıdır
+     * ([RegionWatcher.traceGone] yanlış), ama izin çoğu değişir ([RegionWatcher.BIG_CHANGE_SHARE] üstü).
+     */
+    private fun lettered(background: Int) = ByteArray(RegionSignature.WIDTH * RegionSignature.HEIGHT) { index ->
+        val x = index % RegionSignature.WIDTH
+        val y = index / RegionSignature.WIDTH
+        (if (y in 4..7 && x % 2 == 0) 255 else background).toByte()
+    }
 
-    /** İzin yalnız bir örneği değişmiş hâli: iz değişti sayılır ama görüntü bütünüyle değişmedi ([RegionWatcher.BIG_CHANGE_SHARE]). */
-    private fun nudged(step: Int) = signature(10).also { it[0] = (10 + step * 40).toByte() }
+    /** Otomatik ekran yazısı gibi 500 ms'de bir tur atan saat ve izleyici; "Talk to Arthur at the camp" gösterilmiş olarak. */
+    private inner class Camp {
+        var text = "Talk to Arthur at the camp"
+        var now = 0L
+        val calls = mutableListOf<String>()
+        val log = mutableListOf<String>()
+        val recorder = Recorder()
+        val watcher = RegionWatcher({ Reading.fromText(text) }, { calls.add(it); "TR: $it" }, recorder, clock = { now })
+            .apply { onLog = { log.add(it) } }
+        val sent: List<String> get() = recorder.sent.map { it.second }
+
+        init {
+            watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, lettered(10))))
+            now += 500
+            watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, lettered(10))))
+            assertEquals(listOf("TR: Talk to Arthur at the camp"), sent)
+        }
+
+        fun pass(text: String, signature: ByteArray) {
+            now += 500
+            this.text = text
+            watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, signature)))
+        }
+    }
 
     /**
-     * #1198: çevirisi gösterilen alanda okuma 3 tur art arda değişip doğrulanamazsa (yazı gitti, yerinde sahne oynuyor)
-     * çeviri kaldırılır. Gösterilen yazıya benzeyen yeniden okumalar kaldırmaz.
+     * Yazı sabit, arkasında sahne oynuyor: okumalar yarım, bozuk, arada boş ya da ilgisiz. Çeviri kalır; kutu 10 sn boyunca
+     * hiç kalkıp geri gelmez (önceden 3 tur = 1,5 sn'de kalkıp önbellekten geri geliyordu; Samsung'da parlaklık sıçraması).
      */
     @Test
-    fun unsteadyReadsClearTheShownTranslationButSimilarRereadsDoNot() {
-        val scene = Scene()
-        scene.show("Find the blacksmith", 10)
-        assertEquals(listOf("TR: Find the blacksmith"), scene.sent)
-        listOf("Find the blacksmlth", "Find the blacksmith", "Find the blacksmlth", "Find the blacksmith", "Find the blacksmlth")
-            .forEachIndexed { i, text ->
-                scene.text = text
-                scene.watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, nudged(i + 1))))
-            }
-        assertEquals(listOf("TR: Find the blacksmith"), scene.sent)
-        // Değişmeyen iz sayacı sıfırlar.
-        scene.watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, nudged(5))))
-        listOf("Dlorp wenk", "Sarn uvvet kir", "Pmolt").forEachIndexed { i, text ->
-            scene.text = text
-            scene.watcher.pass(setOf(quest.id), listOf(quest to RegionWatcher.Crop(Unit, nudged(i))))
-            if (i < 2) assertEquals(1, scene.sent.size)
+    fun steadyTextOverAMovingSceneKeepsItsTranslationWithoutBlinking() {
+        val camp = Camp()
+        val reads = listOf("Talk to Arthur at the cam", "", "Wind noise", "Arthur at tho camp", "Tlk t0 Arthr", "Grss camp",
+            "", "Talk to Arthur", "Birds flying", "Talk Arthur at camp.")
+        repeat(20) { step -> camp.pass(reads[step % reads.size], lettered(40 + step % 4 * 40)) }
+        assertEquals(listOf("TR: Talk to Arthur at the camp"), camp.sent)
+        assertEquals(listOf("Talk to Arthur at the camp"), camp.calls)
+    }
+
+    /**
+     * #1198: yazı gidip yerinde sahne oynayınca okuma hiç kararlı olmuyordu; eski çeviri TV'de kalıyordu. Gösterilene
+     * benzemeyen okumalar [RegionWatcher.UNSTEADY_TURNS] tur ve [RegionWatcher.UNSTEADY_MS] sürünce çeviri kalkar: ~3 sn
+     * içinde, daha önce değil.
+     */
+    @Test
+    fun textThatReallyLeavesLosesItsTranslationWithinThreeSeconds() {
+        val camp = Camp()
+        val start = camp.now + 500
+        var clearedAt: Long? = null
+        listOf("Grass and trees", "Sky above hills", "Dust road ahead", "Rocky cliffs", "Blue river", "Green pines", "Old fence",
+            "Wet stones", "Dark clouds").forEachIndexed { step, text ->
+            camp.pass(text, signature(40 + step * 20))
+            if (clearedAt == null && camp.sent.size > 1) clearedAt = camp.now
         }
-        assertEquals(listOf("TR: Find the blacksmith", ""), scene.sent)
+        assertEquals(listOf("TR: Talk to Arthur at the camp", ""), camp.sent)
+        val after = clearedAt!! - start
+        assertTrue("$after", after in RegionWatcher.UNSTEADY_MS..3000L)
+        assertTrue(camp.log.toString(), camp.log.any { it.contains("kararlı okunmadı, çevirisi kaldırıldı") })
+    }
+
+    /**
+     * Yazı ve izi birlikte gitti (boş okuma, yazısız kare): çeviri beklemeden kalkar. Boş okumada izi yerinde duran yazının
+     * çevirisi ise hemen kalkmaz.
+     */
+    @Test
+    fun emptyReadRemovesTheTranslationAtOnceOnlyWhenTheTraceIsGone() {
+        val camp = Camp()
+        camp.pass("", lettered(200))
+        assertEquals(1, camp.sent.size)
+        camp.pass("", signature(100))
+        assertEquals(listOf("TR: Talk to Arthur at the camp", ""), camp.sent)
+    }
+
+    /**
+     * Kaldırılan yazı kısa sürede yeniden okunursa yerindeydi: çeviri önbellekten geri gelir, günlüğe yazılır ve o alanın
+     * kaldırma eşiği uzar (aynı kararsızlık bu kez 3 sn'de çeviriyi kaldırmaz, uzamış eşikte kaldırır).
+     */
+    @Test
+    fun sameTextReturningAfterRemovalExtendsTheThreshold() {
+        val camp = Camp()
+        val names = listOf("alpha", "bravo", "delta", "omega", "kappa", "sigma")
+        fun unrelated(count: Int) = repeat(count) { step ->
+            camp.pass("Noise ${names[step % names.size]} $step", signature(40 + step % 8 * 20))
+        }
+        unrelated(7)
+        assertEquals(listOf("TR: Talk to Arthur at the camp", ""), camp.sent)
+        camp.pass("Talk to Arthur at the camp", lettered(10))
+        camp.pass("Talk to Arthur at the camp", lettered(10))
+        assertEquals(listOf("TR: Talk to Arthur at the camp", "", "TR: Talk to Arthur at the camp"), camp.sent)
+        assertEquals(listOf("Talk to Arthur at the camp"), camp.calls)
+        assertTrue(camp.log.toString(), camp.log.any { it.contains("kaldırılan yazı geri geldi") })
+        unrelated(8)
+        assertEquals(3, camp.sent.size)
+        unrelated(13)
+        assertEquals(listOf("TR: Talk to Arthur at the camp", "", "TR: Talk to Arthur at the camp", ""), camp.sent)
+    }
+
+    @Test
+    fun partlyVisibleReadingsAreNotUnsteady() {
+        assertTrue(RegionWatcher.partlyVisible("tlk t0 arthr", "talk to arthur at the camp"))
+        assertTrue(RegionWatcher.partlyVisible("grss camp", "talk to arthur at the camp"))
+        assertFalse(RegionWatcher.partlyVisible("sky above the hills", "talk to arthur at the camp"))
+        assertFalse(RegionWatcher.partlyVisible("", "talk to arthur at the camp"))
+        assertFalse(RegionWatcher.unsteadyLong(3, 5000, 0))
+        assertFalse(RegionWatcher.unsteadyLong(7, 2500, 0))
+        assertTrue(RegionWatcher.unsteadyLong(7, 3000, 0))
+        assertFalse(RegionWatcher.unsteadyLong(7, 3000, 1))
     }
 
     /**
