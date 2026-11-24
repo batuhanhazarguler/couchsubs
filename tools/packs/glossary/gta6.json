@@ -62,9 +62,9 @@
   },
   {
    "en": "nigga",
-   "tr": "kanka",
+   "tr": "piç",
    "gta_v": "Kanka...",
-   "note": "küfür değil hitap; GTA V'te de 'kanka'"
+   "note": "argo hitap, sertliği korunur: arkadaşa 'lan piç', başkası için 'o piç', 'piçler'; 'kanka/dostum/kardeşim' gibi yumuşatılmaz, atlanmaz; 'zenci' de değil (anlamı ırk etiketine çevirir)"
   },
   {
    "en": "sir",
@@ -160,18 +160,19 @@
    "en": "asshole",
    "tr": "orospu çocuğu",
    "gta_v": "Orospu çocuğu!",
-   "note": "hafif bağlamda 'pislik'"
+   "note": "bağlama göre 'göt herif', 'şerefsiz'; 'pislik' gibi yumuşatma yok"
   },
   {
    "en": "bitch",
    "tr": "orospu",
    "gta_v": "Orospu!",
-   "note": "erkeğe hakarette 'kaltak/ibne' değil, bağlama göre 'pislik'"
+   "note": "erkeğe hakarette 'amcık', 'karı kılıklı'; nesneye 'bu orospu'; 'pislik' gibi yumuşatma yok"
   },
   {
    "en": "pussy",
-   "tr": "korkak",
-   "gta_v": "Korkak."
+   "tr": "amcık",
+   "gta_v": "Korkak.",
+   "note": "korkak anlamında da 'amcık'; 'korkak/ödlek' sertliği düşürür"
   },
   {
    "en": "idiot",

@@ -18,7 +18,9 @@ CHOICES = {
     "address": [
         ("dude", "ahbap", None), ("man", "dostum", "cümle sonunda 'adamım' da olur (GTA V'te ikisi de sık)"),
         ("bro", "kardeş", None), ("homie", "kardeşim", None), ("buddy", "dostum", None),
-        ("my friend", "dostum", None), ("nigga", "kanka", "küfür değil hitap; GTA V'te de 'kanka'"),
+        ("my friend", "dostum", None), ("nigga", "piç",
+         "argo hitap, sertliği korunur: arkadaşa 'lan piç', başkası için 'o piç', 'piçler'; 'kanka/dostum/kardeşim' "
+         "gibi yumuşatılmaz, atlanmaz; 'zenci' de değil (anlamı ırk etiketine çevirir)"),
         ("sir", "efendim", "resmî; polisler ve görevliler"), ("ma'am", "hanımefendi", None), ("boss", "patron", None),
         ("honey", "canım", None), ("baby", "bebeğim", "sevgililer arası hitapta"), ("partner", "ortak", None),
         ("kid", "evlat", None), ("son", "evlat", None),
@@ -27,8 +29,9 @@ CHOICES = {
         ("fuck", "siktir", None), ("shit", "siktir", "ünlem; nesne olarak 'bok'"), ("damn", "lanet olsun", None),
         ("what the fuck", "bu da ne amına koyayım", None), ("holy shit", "ha siktir", None),
         ("son of a bitch", "orospunun evladı", None), ("fuck you", "siktir git", None), ("fuck off", "siktir git", None),
-        ("motherfucker", "orospu çocuğu", None), ("asshole", "orospu çocuğu", "hafif bağlamda 'pislik'"),
-        ("bitch", "orospu", "erkeğe hakarette 'kaltak/ibne' değil, bağlama göre 'pislik'"), ("pussy", "korkak", None),
+        ("motherfucker", "orospu çocuğu", None), ("asshole", "orospu çocuğu", "bağlama göre 'göt herif', 'şerefsiz'; 'pislik' gibi yumuşatma yok"),
+        ("bitch", "orospu", "erkeğe hakarette 'amcık', 'karı kılıklı'; nesneye 'bu orospu'; 'pislik' gibi yumuşatma yok"),
+        ("pussy", "amcık", "korkak anlamında da 'amcık'; 'korkak/ödlek' sertliği düşürür"),
         ("idiot", "geri zekalı", None), ("fool", "salak", None), ("jerk", "lavuk", None), ("punk", "serseri", None),
         ("snitch", "muhbir", None), ("rat", "sıçan", "ihbarcı anlamında"),
     ],

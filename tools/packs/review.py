@@ -10,8 +10,17 @@ from translate_rules import GLOSSARY, RULES
 game, src, out = sys.argv[1:4]
 lines = json.load(open(src, encoding="utf-8"))
 
-STRONG_EN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|bastard\w*|asshole\w*|motherfuck\w*|dick\w*|cunt\w*)\b", re.I)
-STRONG_TR = re.compile(r"(?<!\w)(?:sik|amk|amın|amına|orospu|piç|bok|göt|kahpe|yavşak|puşt|siktir|ibne|şerefsiz|pislik|kaltak|lanet|kahrolası|aşağılık|alçak)", re.I)
+# Strong English swearing. "ass" is matched as a whole word (with a few compounds) so "assassin", "class" or "pass"
+# never count; "nigga" is street address but keeps its weight and is never translated softly.
+STRONG_EN = re.compile(r"\b(fuck\w*|shit\w*|bitch\w*|bastard\w*|(?:dumb|jack|smart|fat|kiss|kick)?ass(?:es)?|"
+                       r"asshole\w*|motherfuck\w*|dick\w*|cunt\w*|whor(?:e|es|ing)|slut\w*|pricks?|puss(?:y|ies)|"
+                       r"nigga\w*|nigger\w*)\b", re.I)
+# Turkish swearing that keeps a strong English word at its strength. Mild words (pislik, lanet, kahrolası...) are not
+# here: "asshole" -> "pislik" or "pussy" -> "korkak" is softening and must be flagged.
+HARD_TR = re.compile(r"(?<!\w)(?:sik|amk|amın|amına|amcık|orospu|piç|bok|göt|kıç|kahpe|yavşak|puşt|siktir|ibne|şerefsiz|"
+                     r"kaltak|sürtük|fahişe|yarak|yarrak|dalyarak|pezevenk|gavat)", re.I)
+# Any Turkish insult, mild ones included: a correction must not add one the English does not have.
+STRONG_TR = re.compile(HARD_TR.pattern + r"|(?<!\w)(?:pislik|lanet|kahrolası|aşağılık|alçak)", re.I)
 TR_CHARS = re.compile(r"[çğıöşüÇĞİÖŞÜ]")
 EN_WORDS = re.compile(r"\b(the|and|you|what|this|that|with|have|are|is|not|for|your|we|they)\b", re.I)
 BAD_SCRIPT = re.compile(r"[Ѐ-ӿ぀-ヿ一-鿿가-힯]")
@@ -28,7 +37,7 @@ def problems(en, tr):
         p.append("english")
     if len(en) >= 25 and not (0.45 <= len(tr) / len(en) <= 2.3):
         p.append("length")
-    if STRONG_EN.search(en) and not STRONG_TR.search(tr):
+    if STRONG_EN.search(en) and not HARD_TR.search(tr):
         p.append("softened")
     return p
 

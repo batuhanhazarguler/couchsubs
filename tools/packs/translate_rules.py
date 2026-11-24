@@ -24,7 +24,10 @@ RULES = """Rules:
 - Translate every sentence separately: each numbered sentence gets its own Turkish sentence that stands on its own,
   because the game may show it alone on screen. Never move meaning between sentences; never merge or skip one.
 - Keep profanity and insults at the same strength (fuck = siktir/amına koyayım etc., shit = siktir/bok, damn = lanet olsun/kahretsin).
-  Do not soften and do not intensify.
+  Do not soften and do not intensify. Never censor, mask with asterisks or swap in a euphemism ("pislik", "korkak",
+  "kanka", "lanet olası" for a strong word): asshole = göt herif/şerefsiz/orospu çocuğu, bitch = orospu/kaltak,
+  pussy = amcık (also when it means coward), whore = orospu, slut = sürtük, prick = yarak kafalı, ass = göt/kıç,
+  the n-word ("nigga") as street address = "lan piç"/"piç", about others = "o piç"/"piçler" (never "kanka", never dropped).
 - Keep punctuation style (…, ?!, quotes, em dashes). Keep numbers. No English words left unless they are names or listed terms.
 - Interjections and sounds (Ugh, Huh, Hmm, Ah) get a Turkish equivalent or stay as a sound (Ah, Hı, Hmm).
 - Output only the requested JSON."""

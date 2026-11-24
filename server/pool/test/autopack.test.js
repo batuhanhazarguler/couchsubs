@@ -835,6 +835,10 @@ test("translation prompt asks for natural Turkish swearing, kept speaker labels 
   assert.doesNotMatch(text, /"damn" = "Kahretsin"/);
   assert.doesNotMatch(text, /"pislik"\s*\//);
   assert.match(text, /Never translate it as "zenci"/);
+  // n-kelimesi yumuşatılmaz ve atlanmaz; eski "kanka ... or drop it" eşlemesi kalmadı.
+  assert.doesNotMatch(text, /between friends is an address: "kanka"/);
+  assert.doesNotMatch(text, /or drop it/);
+  assert.match(text, /"pussy" \(coward\) = "amcık"/);
   assert.match(text, /Keep a character-name label exactly as it is/);
   assert.match(text, /output an empty string ""/);
   assert.match(text, /radio station, song/);
