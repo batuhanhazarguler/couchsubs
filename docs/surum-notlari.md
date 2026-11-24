@@ -6,6 +6,7 @@ CouchSubs'ın yeni deneme sürümü. Türkçe dil desteği olmayan PS5 oyunları
 
 **Bu sürümde yeni**
 
+- **Menü ve kart yazıları yerinde birebir Türkçe:** Menü, ipucu ve görev kartı yazılarının çevirisi özgün yazının yerinde, zeminle aynı renkte opak kutuda çiziliyor; aynı listedeki satırlar aynı boyda, uzun çeviri boş tarafa uzuyor, görev kartında satır arası boşluk kalmıyor. Map, Settings ve Exit de çevriliyor; "Set Destination" artık "Hedef Belirle" (Windows, Mac, iPhone, Android; TV uygulaması 0.9.102).
 - **TV yeniden bulunuyor:** TV kapanıp açılınca ya da modem yeniden başlayınca adresi değişen TV artık kimliğiyle (UUID/MAC) bulunuyor; ad değişse ya da aynı adlı iki TV olsa da doğru TV seçiliyor. Android TV ve telefonun arka planı yeni adresi izliyor, bilgisayarın ya da telefonun adresi değişince TV'ye hemen bildiriliyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.100).
 - **Menü sanılınca kaybolan altyazı:** Ekran yanlışlıkla menü sanıldığında konuşma satırı artık atılmıyor; ipucu ve görev yazısı menü sayılmıyor, GTA 6'da altyazı atlanmıyor (Windows, Mac, iPhone, Android).
 - **GTA 6 Mesajlar listesi:** Elde sallanan telefonda TV'deki mesaj listesi iki düzen arasında gidip gelmiyor, sabit kalıyor; kişi adı kalın, önizleme altında, kesik önizlemeden yarım sözcük uydurulmuyor (Windows, Mac, iPhone, Android; TV uygulaması 0.9.101).
