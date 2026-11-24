@@ -2785,7 +2785,7 @@ final class AppModel: ObservableObject {
         let panelScale = ScreenPhoneCard.textScale(fontSize: settings.style.fontSize)
         screenTask = Task { [weak self] in
             do {
-                let read = try await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail("ekranı çevir", frame)) {
+                let read = try await ReadQueue.shared.run(priority: .background, detail: ReadQueue.detail("ekranı çevir", frame), droppable: false) {
                     try reader.readLines(frame, deep: false)
                 }
                 // Altyazı zaten kendi yerinde çevriliyor: ekran çevirisinde ikinci kez çizilmez (bkz. SubtitleEcho).
@@ -3469,7 +3469,11 @@ final class AppModel: ObservableObject {
             case .rescueFailed(let stall, let failures):
                 SubtitleLog.write("yedek okuyucu da takıldı (\(failures). kez): \(stall.logText); yeniden kuruluyor")
             case .degraded(let stalls):
-                SubtitleLog.write("okuma \(stalls) kez takıldı; bu oturumda hızlı düzeyde okunacak (Neural Engine yolu bırakıldı)")
+                SubtitleLog.write("okuma \(stalls) kez takıldı; \(queue.fastLevelHoldMs / 1000) sn hızlı düzeyde okunacak (Neural Engine yolu bırakıldı), sonra isabetli düzey yeniden denenecek")
+            case .restored(let ms):
+                SubtitleLog.write("hızlı düzeyin süresi doldu (\(ms / 1000) sn); okuma yeniden isabetli düzeyde")
+            case .backgroundYielded(let stall, let dropped, let rescued):
+                SubtitleLog.write("altyazı arka plan okumasını bekledi (takılma sayılmadı): \(stall.logText); sıradaki \(dropped) arka plan okuması düşürüldü\(rescued ? ", altyazı bu tur yedekten okunuyor" : "")")
             case .abandonedFinished(let still):
                 SubtitleLog.write("bırakılan takılı okuma sonunda bitti (bitmeyen bırakılmış okuma: \(still))")
             }
