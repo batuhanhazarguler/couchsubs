@@ -262,6 +262,11 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
     private string? loggedPhone;
     /// <summary>Doğruysa bu karede okunan blok kaydedilmez (ekranda menü var, altyazı gönderilmiyor).</summary>
     public Func<bool>? EchoPaused { get; init; }
+    /// <summary>
+    /// Altyazı alanında konuşan adıyla başlayan bir satır okundu (her okumada). Uygulama ekran yazısı dedektörüne bildirir
+    /// (<see cref="ScreenTextDetector.NoteDialogue"/>): konuşma sürerken menü sayılmaz (#1240). Mac/iPhone ve Android aynı.
+    /// </summary>
+    public Action? DialogueRead { get; init; }
     /// <summary>Son gösterilen çevirinin nereden geldiği: "paket" ya da "motor" (günlük ve sayım için).</summary>
     public string? LastOrigin { get; private set; }
     /// <summary>Bu hatta paketten gelen satır sayısı.</summary>
@@ -485,6 +490,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
         }
         // Ekran yazısı okuyucuları altyazıyı ikinci kez çizmesin (bkz. SubtitleEcho). Menüde altyazı gönderilmez; okunan
         // menü satırları altyazı sayılmaz (yoksa menünün kendi çevirisi metin eşleşmesiyle atılırdı).
+        if (DialogueRead is { } dialogue && reading.Lines.Any(line => SpeakerPrefix.Parse(line.Text) is not null)) dialogue();
         var menu = EchoPaused?.Invoke() == true;
         if (Echo is { } echo && !menu) echo.Record(reading, region);
 

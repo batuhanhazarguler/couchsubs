@@ -123,6 +123,54 @@ final class ScreenMenuTests: XCTestCase {
         XCTAssertTrue(detector.areas.allSatisfy { !before.contains($0.id) && !$0.menu }, "\(detector.areas)")
     }
 
+    /// #1240, GTA 6 karanlık balık tutma sahnesi: tuş ipucu (sağ alt), görev yazısı (alt orta) ve HUD (sol üst) birlikte
+    /// belirince menü sanılıyordu (Windows ve Android ile aynı sahne).
+    private static func fishing() -> Canvas {
+        var canvas = Canvas(fill: 70)
+        canvas.paint(26, 15, 3, ink: 240)
+        canvas.paint(12, 16, 8, ink: 240)
+        canvas.paint(1, 1, 3, ink: 240)
+        return canvas
+    }
+
+    func testPromptAndMissionTextDoNotMakeAMenu() {
+        let detector = ScreenTextDetector()
+        run(detector, 0, 400) { _ in Self.fishing().image }
+        XCTAssertTrue(detector.inMenu)
+        // Alt bantta okunan alanlar tuş ipucu ve görev yazısı çıktı (RegionWatcher.onAutoHud).
+        for area in detector.areas where area.region.top > 0.7 { detector.markHud(area.id) }
+        run(detector, 500, 1500) { _ in Self.fishing().image }
+        XCTAssertFalse(detector.inMenu)
+    }
+
+    func testDialogueEndsAFalseMenuAtOnce() {
+        let detector = ScreenTextDetector()
+        run(detector, 0, 400) { _ in Self.fishing().image }
+        XCTAssertTrue(detector.inMenu)
+        detector.noteDialogue(now: 450)
+        XCTAssertFalse(detector.inMenu)
+        XCTAssertFalse(detector.areas.contains { $0.menu })
+        run(detector, 500, 1500) { _ in Self.fishing().image }
+        XCTAssertFalse(detector.inMenu)
+    }
+
+    func testARealMenuStaysAMenuWhenOneLabelIsAPrompt() {
+        let detector = ScreenTextDetector()
+        run(detector, 0, 400) { _ in Self.wheel().image }
+        XCTAssertTrue(detector.inMenu)
+        detector.markHud(detector.areas[0].id)
+        run(detector, 500, 1500) { _ in Self.wheel().image }
+        XCTAssertTrue(detector.inMenu)
+    }
+
+    func testPromptsAndMissionTextAreHud() {
+        XCTAssertTrue(ScreenTextKind.isHud(["R2 Reel in"]))
+        XCTAssertTrue(ScreenTextKind.isHud(["Catch a fish."]))
+        XCTAssertFalse(ScreenTextKind.isHud(["MAP", "BRIEF"]))
+        XCTAssertFalse(ScreenTextKind.isHud(["SETTINGS"]))
+        XCTAssertFalse(ScreenTextKind.isHud(["Resume Game", "Settings", "Quit"]))
+    }
+
     func testLabelsOnABusyMovingSceneAreNotAMenu() {
         let detector = ScreenTextDetector()
         run(detector, 0, 1000) { time in

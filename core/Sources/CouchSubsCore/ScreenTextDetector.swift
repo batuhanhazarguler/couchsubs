@@ -55,6 +55,8 @@ public final class ScreenTextDetector: @unchecked Sendable {
         var stableSince = 0
         var rejected = Mask()
         var isRejected = false
+        /// Karo okununca tuş ipucu ya da görev/HUD yazısı çıktı (`markHud`): menü için sayılmaz.
+        var isHud = false
         var quiet = false
         // Zemin (koyu) örneklerinin toplamları: panel zemini kanıtı için.
         var darkSum = 0, darkSquares = 0, darkCount = 0
@@ -104,11 +106,11 @@ public final class ScreenTextDetector: @unchecked Sendable {
     /// Son örnekte ekranda menü vardı (bulanık zeminde birlikte beliren en az üç yazı).
     public var inMenu: Bool { lock.withLock { menu } }
 
-    /// Menü durumu değişince altyazı günlüğüne yazılan satır (menüdeyken altyazı okunmaz; günlükte görünmeyince "altyazı
-    /// hattı hiç satır üretmiyor" nedensiz kalıyordu). Android aynı metni yazar; Windows menüde okur ama göstermez
-    /// (MenuPausedSender) ve bunu yazar.
+    /// Menü durumu değişince altyazı günlüğüne yazılan satır (`MenuHeldSender` yazar; menüdeyken altyazı okunur ama
+    /// bekletilir). Günlükte görünmeyince "altyazı hattı hiç satır üretmiyor" nedensiz kalıyordu. Android ve Windows
+    /// (MenuPausedSender) aynı metni yazar.
     public static func menuLog(_ inMenu: Bool) -> String {
-        inMenu ? "ekran menüsü açık: altyazı okunmuyor" : "ekran menüsü kapandı: altyazı okunuyor"
+        inMenu ? "ekran menüsü açık: altyazı bekletiliyor" : "ekran menüsü kapandı: altyazı gösteriliyor"
     }
 
     /// Şu an önerilen otomatik alanlar.
@@ -140,7 +142,7 @@ public final class ScreenTextDetector: @unchecked Sendable {
                     var tile = tiles[index]
                     tile.quiet = deviation < Self.quietDeviation
                     (tile.darkSum, tile.darkSquares, tile.darkCount) = (darkSum, darkSquares, dark)
-                    if !tile.hasLast || tile.last.distance(mask) > Self.maskChange { tile.stableSince = now }
+                    if !tile.hasLast || tile.last.distance(mask) > Self.maskChange { tile.stableSince = now; tile.isHud = false }
                     tile.last = mask
                     tile.hasLast = true
                     if tile.isRejected && tile.rejected.distance(mask) > Self.maskChange { tile.isRejected = false }
@@ -179,6 +181,34 @@ public final class ScreenTextDetector: @unchecked Sendable {
         }
     }
 
+    /// Alan okundu ve yazısı tuş ipucu ya da görev/HUD yazısı (`RegionWatcher.onAutoHud`): karoları menü için gereken
+    /// `menuComponents` bileşene sayılmaz (görüntü değişene dek). GTA 6 balık tutma sahnesinde (#1240) ipucu ve görev yazısı
+    /// birlikte belirip menü sanılıyordu; alan çevrilmeye devam eder (Windows ve Android ile aynı).
+    public func markHud(_ id: String) {
+        lock.withLock {
+            guard let area = tracked.first(where: { $0.id == id }) else { return }
+            for tile in area.tiles { tiles[tile].isHud = true }
+        }
+    }
+
+    /// Konuşma satırı okunduktan sonra bu kadar süre menü durumu açılmaz.
+    public static let dialogueMs = 1500
+    private var dialogueAt: Int?
+
+    /// Altyazı alanında konuşma satırı (konuşan adıyla) okundu: ekranda menü yoktur. Menü durumu hemen biter (menü alanları
+    /// kalkar) ve `dialogueMs` boyunca yeniden açılmaz (#1240). Gerçek menüde (duraklatma, ayarlar, harita) altyazı alanında
+    /// konuşma satırı olmaz.
+    public func noteDialogue(now: Int) {
+        lock.withLock {
+            dialogueAt = now
+            guard menu else { return }
+            menu = false
+            menuFloor = now
+            menuAnchors = []
+            tracked.removeAll { $0.menu }
+        }
+    }
+
     /// Çeviri durdu ya da oturum sıfırlandı: alanlar ve karo durumu silinir.
     public func reset() {
         lock.withLock {
@@ -189,6 +219,7 @@ public final class ScreenTextDetector: @unchecked Sendable {
             menuAnchors = []
             menuFloor = nil
             menuExpired = false
+            dialogueAt = nil
         }
     }
 
@@ -353,9 +384,13 @@ public final class ScreenTextDetector: @unchecked Sendable {
         return Double(means.filter { abs($0 - median) <= Self.groundTone }.count) >= Self.groundShare * Double(means.count)
     }
 
-    private func isMenu(_ components: [(cells: Cells, tiles: [Int])], now: Int) -> Bool {
+    private func isMenu(_ all: [(cells: Cells, tiles: [Int])], now: Int) -> Bool {
+        // Konuşma satırı az önce okundu: menü yok (#1240).
+        if let spoken = dialogueAt, now - spoken <= Self.dialogueMs { return false }
+        // Tuş ipucu ve görev/HUD yazısı (`markHud`) menü bileşeni sayılmaz; zeminin sakinliğinde yazı karosu olarak kalır.
+        let components = all.filter { !$0.tiles.allSatisfy { tiles[$0].isHud } }
         guard components.count >= Self.menuComponents else { return false }
-        let inside = Set(components.flatMap(\.tiles))
+        let inside = Set(all.flatMap(\.tiles))
         let outside = tiles.indices.filter { !inside.contains($0) }
         guard !outside.isEmpty,
               Double(outside.filter { tiles[$0].quiet }.count) >= Self.menuQuietShare * Double(outside.count) else { return false }
@@ -374,7 +409,7 @@ public final class ScreenTextDetector: @unchecked Sendable {
         guard appeared.max()! - appeared.min()! <= Self.menuTogetherMs,
               menuFloor.map({ floor in appeared.allSatisfy { $0 > floor } }) ?? true else { return false }
         if !menu { menuEnteredAt = now }
-        menuAnchors = inside
+        menuAnchors = Set(components.flatMap(\.tiles))
         return true
     }
 

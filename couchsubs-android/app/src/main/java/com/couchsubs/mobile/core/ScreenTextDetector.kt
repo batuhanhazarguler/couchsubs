@@ -40,6 +40,8 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         const val MENU_COMPONENTS = 3
         /** Menüde hiçbir yazı değişmeden bu kadar süre geçince menü durumu biter (altyazı okunur). */
         const val MENU_LIFE_MS = 5000L
+        /** Konuşma satırı okunduktan sonra bu kadar süre menü durumu açılmaz ([noteDialogue]). */
+        const val DIALOGUE_MS = 1500L
         /** Menü durumu: bileşenlerin dışındaki karoların en az bu kadarı bulanık/karartılmış (düşük sapmalı). */
         const val MENU_CALM_SHARE = 0.60
         /** Bulanık karo: noktalarının parlaklık sapması bundan küçük. */
@@ -89,6 +91,8 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         var hasLast = false
         var stableSince = 0L
         var rejected: LongArray? = null
+        /** Karo okununca tuş ipucu ya da görev/HUD yazısı çıktı ([markHud]): menü için sayılmaz. */
+        var hud = false
     }
 
     private class Auto(val id: String, var region: CropRegion, var seen: Long, val tiles: MutableSet<Int>, var menu: Boolean = false)
@@ -193,7 +197,10 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         for (index in 0 until TILES) {
             val tile = tiles[index]
             val at = index * WORDS
-            if (!tile.hasLast || distance(sample.masks, at, tile.last, 0) > HAMMING) tile.stableSince = now
+            if (!tile.hasLast || distance(sample.masks, at, tile.last, 0) > HAMMING) {
+                tile.stableSince = now
+                tile.hud = false
+            }
             System.arraycopy(sample.masks, at, tile.last, 0, WORDS)
             tile.hasLast = true
             tile.rejected?.let { if (distance(sample.masks, at, it, 0) > HAMMING) tile.rejected = null }
@@ -237,10 +244,15 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         val wasMenu = menu
         // Menü kanıtı altyazı alanının dışındaki bileşenlerden: iki satırlık altyazı (sakin zeminde) menü sanılıp
         // altyazıyı duraklatmasın.
-        val evidence = all.filter { members -> members.any { !inSubtitle[it] } }
+        // Tuş ipucu ve görev/HUD yazısı ([markHud]) menü bileşeni sayılmaz (#1240).
+        val all0 = all.filter { members -> members.any { !inSubtitle[it] } }
+        val evidence = all0.filter { members -> !members.all { tiles[it].hud } }
+        val hudDropped = evidence.size < all0.size && evidence.size < MENU_COMPONENTS
+        // Konuşma satırı az önce okundu ([noteDialogue]): menü yok (#1240).
+        val spoken = dialogueAt?.let { now - it <= DIALOGUE_MS } == true
         // Süresi dolan menünün yazıları yeniden menü sayılmaz; menü ancak sonradan beliren yazılarla açılır.
         val floor = menuFloor
-        menu = isMenu(if (floor == null) evidence else evidence.filter { members -> members.maxOf { tiles[it].stableSince } > floor }, sample)
+        menu = !spoken && isMenu(if (floor == null) evidence else evidence.filter { members -> members.maxOf { tiles[it].stableSince } > floor }, sample)
         if (menu && !wasMenu) {
             menuAnchors = evidence.flatten().toSet()
             menuEnteredAt = now
@@ -249,7 +261,8 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         // yazılardan biri hâlâ görünüyorsa menü sürer (kutular yanıp sönmez, kısa etiketler gürültü sayılmaz). Menüdeyken
         // sonradan beliren yazı (karanlık sahnenin görev yazısı, PS5 bildirimi) menüyü sürdürmez: GTA 6 "Gone Fishing"te
         // menü durumu bitmiyor, altyazı bütün oturum okunmuyordu (Mac/iPhone, Windows ile aynı kural).
-        if (!menu && wasMenu && autos.any { auto -> auto.menu && auto.tiles.any { candidate[it] && it in menuAnchors } }) menu = true
+        if (!menu && wasMenu && !spoken && !hudDropped &&
+            autos.any { auto -> auto.menu && auto.tiles.any { candidate[it] && it in menuAnchors && !tiles[it].hud } }) menu = true
         // Menüde bir şey değişmeden (gezinme, seçim) MENU_LIFE_MS geçti: menü sayılmaz, altyazı yeniden okunur
         // (Mac/iPhone, Windows ile aynı). Karanlık sahnede birlikte beliren sabit HUD yazıları da menü sanılabiliyor.
         var expired = false
@@ -344,6 +357,32 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         autos.remove(auto)
     }
 
+    /**
+     * Alan okundu ve yazısı tuş ipucu ya da görev/HUD yazısı ([RegionWatcher.onAutoHud]): karoları menü için gereken
+     * [MENU_COMPONENTS] bileşene sayılmaz (görüntü değişene dek). GTA 6 balık tutma sahnesinde (#1240) ipucu ve görev yazısı
+     * birlikte belirip menü sanılıyordu; alan çevrilmeye devam eder (Mac/iPhone ve Windows ile aynı).
+     */
+    fun markHud(id: String): Unit = synchronized(lock) {
+        val auto = autos.firstOrNull { it.id == id } ?: return
+        for (index in auto.tiles) tiles[index].hud = true
+    }
+
+    private var dialogueAt: Long? = null
+
+    /**
+     * Altyazı alanında konuşma satırı (konuşan adıyla) okundu: ekranda menü yoktur. Menü durumu hemen biter (menü alanları
+     * kalkar) ve [DIALOGUE_MS] boyunca yeniden açılmaz (#1240). Gerçek menüde (duraklatma, ayarlar, harita) altyazı
+     * alanında konuşma satırı olmaz.
+     */
+    fun noteDialogue(now: Long = clock()): Unit = synchronized(lock) {
+        dialogueAt = now
+        if (!menu) return
+        menu = false
+        menuFloor = now
+        menuAnchors = emptySet()
+        autos.removeAll { it.menu }
+    }
+
     /** Çeviri durdu ya da oturum yenilendi: alanlar ve karo durumu sıfırlanır. */
     fun reset(): Unit = synchronized(lock) {
         for (index in 0 until TILES) tiles[index] = Tile()
@@ -351,6 +390,7 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         menu = false
         menuAnchors = emptySet()
         menuFloor = null
+        dialogueAt = null
         lastSample = null
         busy = false
     }

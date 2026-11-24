@@ -56,6 +56,15 @@ public enum ScreenTextKind: String, CaseIterable, Sendable {
         let last = IconText.plain(paragraphs.first ?? "").trimmingCharacters(in: CharacterSet(charactersIn: " \"'\u{201D}\u{2019}"))
         return words >= 2 && paragraphs.count == 1 && last.last.map { ".!?".contains($0) } == true ? .mission : .other
     }
+
+    /// Menü durumundaki alanın yazısı tuş ipucu ya da görev/HUD yazısı: bütün parçaları tuş ipucu ya da tuş simgeli, ya da
+    /// noktalamayla biten kısa tek cümle (`.mission`). Böyle alan menü bileşeni sayılmaz (`ScreenTextDetector.markHud`,
+    /// #1240; Windows ve Android ile aynı).
+    public static func isHud(_ paragraphs: [String]) -> Bool {
+        guard !paragraphs.isEmpty else { return false }
+        return paragraphs.allSatisfy { $0.contains(ButtonIcons.marker) || ButtonPrompts.isPrompt(IconText.plain($0)) }
+            || of(paragraphs: paragraphs) == .mission
+    }
 }
 
 extension UserSettings {

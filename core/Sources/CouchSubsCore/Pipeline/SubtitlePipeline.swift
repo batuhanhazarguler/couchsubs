@@ -210,6 +210,9 @@ public final class SubtitlePipeline {
     /// Altyazı günlüğü (`SubtitleLog`): ilk kare, okunan her kararlı satır ve akıbeti (paket, önbellek, çeviri, geç
     /// kaldı, atıldı), çöp sayılıp bırakılan ve yok sayılan yeniden okumalar. Kararları değiştirmez.
     public var onLog: ((String) -> Void)?
+    /// Altyazı alanında konuşan adıyla başlayan bir satır okundu (her okumada). Uygulama ekran yazısı dedektörüne bildirir
+    /// (`ScreenTextDetector.noteDialogue`): konuşma sürerken menü sayılmaz (#1240). Windows ve Android aynı.
+    public var onDialogue: (() -> Void)?
     /// Paket isabetinde satırın geldiği paket (günlük için; bilinmiyorsa nil).
     public var packName: (() -> String?)?
     /// Oturumun (hat kurulunca ya da sıfırlanınca) başladığı an; ilk karenin ne kadar sonra geldiği günlüğe yazılır.
@@ -380,6 +383,7 @@ public final class SubtitlePipeline {
             onNoticesChanged?(notices.areas)
         }
         subtitleBand.record(reading, in: place)
+        if let onDialogue, reading.lines.contains(where: { SpeakerPrefix.split($0.text) != nil }) { onDialogue() }
         // Ekran yazısı okuyucuları altyazıyı ikinci kez çizmesin (bkz. `SubtitleEcho`).
         echo?.record(reading, region: region)
         currentRead = ReadInfo(capturedAt: captured, ocrMs: lastReadMs, confidence: reading.confidence)
@@ -981,7 +985,8 @@ public final class SubtitlePipeline {
         log("altyazı sayılmadı: \(SubtitleLog.excerpt(left.joined(separator: "\n"))) (\(picked))")
     }
 
-    /// Ekranda menü var (otomatik ekran yazısı menü durumunda) ve uygulama bu kareyi altyazı için okumuyor. Eskiden bu
+    /// Ekranda menü var (otomatik ekran yazısı menü durumunda): bu karenin altyazısı gönderilmez, bekletilir
+    /// (`MenuHeldSender`). Sessizlik özetinde sayılır. Eskiden bu
     /// atlama günlüğe hiç yazılmıyordu: Mac'te (beta.80, PS5, GTA 6) ekranda diyalog varken altyazı günlüğüne dakikalarca
     /// hiçbir satır düşmüyor, okunmadığı mı, boş mu okunduğu mu anlaşılmıyordu.
     public func skipForMenu() {

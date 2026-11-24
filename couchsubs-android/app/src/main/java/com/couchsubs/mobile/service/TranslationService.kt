@@ -409,8 +409,11 @@ class TranslationService : Service() {
     private val background = Executors.newSingleThreadScheduledExecutor { Thread(it, "CouchSubs background").apply { isDaemon = true } }
     private val reading = AtomicBoolean(false)
     private var lastRead = 0L
-    /** Günlüğe son yazılan menü durumu: menüdeyken altyazı okunmaz, günlükte görünsün (Mac/iPhone ile aynı satırlar). */
-    @Volatile private var loggedMenu = false
+    /**
+     * Altyazı hattının göndericisi: ekranda menü varken satırları bekletir, menü kapanınca konuşma satırını gönderir
+     * (#1240); her karede yoklanır, geçişleri günlüğe yazar (Mac/iPhone ile aynı satırlar).
+     */
+    @Volatile private var menuSender: com.couchsubs.mobile.core.MenuHeldSender? = null
     private var lastSignature = 0L
     private var lastReading = com.couchsubs.mobile.core.Reading.Empty
     @Volatile private var lastOcrMs: Int? = null
@@ -776,7 +779,12 @@ class TranslationService : Service() {
             }
         }
         reader = SubtitleReader(settings.sourceLanguage)
-        pipeline =SubtitlePipeline(translator, subtitleServer).apply {
+        // Ekranda menü varken altyazı bekletilir; menü kapanınca bekletilen konuşma satırı gönderilir (#1240).
+        val held = com.couchsubs.mobile.core.MenuHeldSender(subtitleServer, { detector.menu }, { Log.i(TAG, it) })
+        menuSender = held
+        pipeline =SubtitlePipeline(translator, held).apply {
+            // Altyazı alanında konuşan adıyla satır okundu: ekranda menü yok (#1240).
+            onDialogue = { detector.noteDialogue() }
             // Yarım ya da bozuk okuma hemen çevrilmez; aynı satırın en iyi okuması çevrilir (Windows ve iPhone ile aynı).
             holdReadings = true
             applyWaits(settings.misreadWaitMs, settings.partialWaitMs)
@@ -860,6 +868,8 @@ class TranslationService : Service() {
                 detector.rejected(id)
                 autoAreas = detector.areas
             }
+            // Menüde okunan tuş ipucu ya da görev/HUD yazısı menü bileşeni sayılmaz (#1240).
+            onAutoHud = { id -> detector.markHud(id) }
             packLookup = { text ->
                 if (packTitles != null && settings.packsEnabled) {
                     library.setDisabled(settings.disabledPacks)
@@ -905,15 +915,12 @@ class TranslationService : Service() {
                     }
                 }
             }
-            // Menü açıkken (tekerlek, duraklatma menüsü) altyazı okunmaz: menünün alt ortadaki etiketleri altyazı sanılmasın.
-            val inMenu = detector.menu
-            if (inMenu != loggedMenu) {
-                loggedMenu = inMenu
-                Log.i(TAG, if (inMenu) "ekran menüsü açık: altyazı okunmuyor" else "ekran menüsü kapandı: altyazı okunuyor")
-            }
-            // Atlanan kareler sessizlik özetinde sayılır (bkz. SubtitlePipeline.skipForMenu).
-            if (inMenu) pipeline?.skipForMenu()
-            if (!reading.get() && !inMenu && now - lastRead >= 1000 / MAX_READS_PER_SECOND) {
+            // Menü açıkken (tekerlek, duraklatma menüsü) altyazı okunur ama gönderilmez, bekletilir: menünün alt ortadaki
+            // etiketleri altyazı olarak gösterilmesin; menü kapanınca bekletilen konuşma satırı gönderilir (MenuHeldSender,
+            // #1240). Eskiden menüde altyazı hiç okunmuyordu; menü sanılan anlarda konuşma satırları kayboluyordu.
+            // Menüdeki kareler sessizlik özetinde sayılır (bkz. SubtitlePipeline.skipForMenu).
+            if (menuSender?.poll() == true) pipeline?.skipForMenu()
+            if (!reading.get() && now - lastRead >= 1000 / MAX_READS_PER_SECOND) {
                 val area = region
                 // Karenin geldiği an: gecikme buradan TV'ye gidene kadar ölçülür (hattın saatiyle).
                 val capturedAt = com.couchsubs.mobile.core.monotonicClock()

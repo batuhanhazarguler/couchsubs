@@ -851,6 +851,11 @@ class RegionWatcher(
 
     /** Otomatik alan okundu ama yazı yok ya da gürültü ([ScreenTextNoise]): bulucu o karoları reddeder. */
     @Volatile var onAutoRejected: ((String) -> Unit)? = null
+    /**
+     * Menü durumundaki otomatik alanın yazısı tuş ipucu ya da görev/HUD yazısı ([ScreenTextKind.isHud]): alanın kimliği.
+     * Bulucu bu alanı menü bileşeni saymaz ([ScreenTextDetector.markHud], #1240).
+     */
+    @Volatile var onAutoHud: ((String) -> Unit)? = null
 
     /** Bir tur sürüyor mu. */
     val isBusy: Boolean get() = synchronized(lock) { busy }
@@ -1004,6 +1009,7 @@ class RegionWatcher(
         var candidate = candidate(text, area.region, crop.frame, keepPrompts = area.menu, auto = area.auto, styled = preset,
             color = crop.color)
         if (area.auto) {
+            if (area.menu && !candidate.missionCard && ScreenTextKind.isHud(candidate.paragraphs)) onAutoHud?.invoke(area.id)
             // Menü dışındaki otomatik alanın türü okunan yazıdan çıkar (yardım/eylem ya da diğer); kapalı tür gürültü gibi
             // çizilmez, bulucuya bildirilir.
             val unwanted = kind(area, candidate)?.let { !allows(it) } ?: false

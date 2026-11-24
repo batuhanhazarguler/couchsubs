@@ -215,6 +215,9 @@ public final class RegionWatcher {
     public var subtitleEcho: SubtitleEcho?
     /// Otomatik alan okundu ama yazı yok ya da gürültü (`ScreenTextNoise`): alanın kimliği (`ScreenTextDetector.reject`).
     public var onAutoRejected: ((String) -> Void)?
+    /// Menü durumundaki otomatik alanın yazısı tuş ipucu ya da görev/HUD yazısı (`ScreenTextKind.isHud`): alanın kimliği.
+    /// Dedektör bu alanı menü bileşeni saymaz (`ScreenTextDetector.markHud`, #1240).
+    public var onAutoHud: ((String) -> Void)?
     /// Her okumanın süresi (ms; ölçüm için).
     public var onReadMs: ((Int) -> Void)?
     /// Tamamlanan tur sayısı ve okuma sayısı (ölçüm ve testler için).
@@ -717,6 +720,7 @@ public final class RegionWatcher {
         guard var state = states[area.id] else { return }
         // Menü dışındaki otomatik alanın türü okunan yazıdan çıkar (yardım/eylem ya da diğer); kapalı tür gürültü gibi
         // çizilmez, dedektöre bildirilir.
+        if area.auto, area.menu, !candidate.missionCard, ScreenTextKind.isHud(candidate.paragraphs) { onAutoHud?(area.id) }
         let unwanted = area.auto && (Self.kind(area, candidate).map { !allows($0) } ?? false)
         if area.auto, candidate.key.isEmpty || ScreenTextNoise.isNoise(candidate.paragraphs.joined(separator: " "), menu: area.menu)
             || (!area.menu && isWorldText(candidate)) || unwanted {

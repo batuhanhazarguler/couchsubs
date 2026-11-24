@@ -64,6 +64,16 @@ enum class ScreenTextKind {
             if (sentence != null && words >= 2 && sentence.lastOrNull() in setOf('.', '!', '?')) return MISSION
             return OTHER
         }
+
+        /**
+         * Menü durumundaki alanın yazısı tuş ipucu ya da görev/HUD yazısı: bütün parçaları tuş ipucu ya da tuş simgeli, ya
+         * da noktalamayla biten kısa tek cümle ([MISSION]). Böyle alan menü bileşeni sayılmaz ([ScreenTextDetector.markHud],
+         * #1240; Mac/iPhone ve Windows ile aynı).
+         */
+        fun isHud(paragraphs: List<String>): Boolean =
+            paragraphs.isNotEmpty() &&
+                (paragraphs.all { it.contains(ButtonIcons.MARKER) || ButtonPrompts.isPrompt(IconText.plain(it)) } ||
+                    ofParagraphs(paragraphs) == MISSION)
     }
 }
 

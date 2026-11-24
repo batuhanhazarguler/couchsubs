@@ -100,6 +100,83 @@ class MenuScreenTextTest {
         assertTrue(areas.toString(), areas.none { it.id in before || it.menu })
     }
 
+    /**
+     * #1240, GTA 6 karanlık balık tutma sahnesi: tuş ipucu (sağ alt), görev yazısı (alt orta) ve HUD (sol üst) birlikte
+     * belirince menü sanılıyordu (Mac/iPhone ve Windows ile aynı sahne).
+     */
+    private fun fishing(): ByteArray {
+        val pixels = ByteArray(width * height) { 112 }
+        label(pixels, 26, 15, columns = 3)
+        label(pixels, 12, 16, columns = 8)
+        label(pixels, 1, 1, columns = 3)
+        return pixels
+    }
+
+    @Test
+    fun promptAndMissionTextDoNotMakeAMenu() {
+        val detector = ScreenTextDetector()
+        var areas = emptyList<ExtraArea>()
+        for (t in 0L..400L step 100) areas = detector.step(fishing(), t)
+        assertTrue(detector.menu)
+        // Alt bantta okunan alanlar tuş ipucu ve görev yazısı çıktı (RegionWatcher.onAutoHud).
+        areas.filter { it.region.top > 0.7 }.forEach { detector.markHud(it.id) }
+        for (t in 500L..1500L step 100) detector.step(fishing(), t)
+        assertFalse(detector.menu)
+    }
+
+    @Test
+    fun dialogueEndsAFalseMenuAtOnce() {
+        val detector = ScreenTextDetector()
+        for (t in 0L..400L step 100) detector.step(fishing(), t)
+        assertTrue(detector.menu)
+        detector.noteDialogue(450)
+        assertFalse(detector.menu)
+        assertTrue(detector.areas.none { it.menu })
+        for (t in 500L..1500L step 100) detector.step(fishing(), t)
+        assertFalse(detector.menu)
+    }
+
+    @Test
+    fun aRealMenuStaysAMenuWhenOneLabelIsAPrompt() {
+        val detector = ScreenTextDetector()
+        var areas = emptyList<ExtraArea>()
+        for (t in 0L..400L step 100) areas = detector.step(wheel(t.toInt()), t)
+        assertTrue(detector.menu)
+        detector.markHud(areas.first().id)
+        for (t in 500L..1500L step 100) detector.step(wheel(t.toInt()), t)
+        assertTrue(detector.menu)
+    }
+
+    @Test
+    fun promptsAndMissionTextAreHud() {
+        assertTrue(ScreenTextKind.isHud(listOf("R2 Reel in")))
+        assertTrue(ScreenTextKind.isHud(listOf("Catch a fish.")))
+        assertFalse(ScreenTextKind.isHud(listOf("MAP", "BRIEF")))
+        assertFalse(ScreenTextKind.isHud(listOf("SETTINGS")))
+        assertFalse(ScreenTextKind.isHud(listOf("Resume Game", "Settings", "Quit")))
+    }
+
+    /**
+     * #1240 uçtan uca: ipucu ve görev yazısı birlikte belirip bulucu menü sandı; altyazı alanında konuşan adıyla satır
+     * okundu (SubtitlePipeline.onDialogue) → menü biter, satır TV'ye hemen gider.
+     */
+    @Test
+    fun promptAndMissionWithDialogueStillSendsTheLine() {
+        val detector = ScreenTextDetector()
+        for (t in 0L..400L step 100) detector.step(fishing(), t)
+        assertTrue(detector.menu)
+        val sent = mutableListOf<String>()
+        val sink = object : SubtitleSender {
+            override fun sendSubtitle(text: String, durationMs: Int, box: TextBox?, replaces: Boolean) { sent += text }
+            override fun clear() {}
+        }
+        val sender = MenuHeldSender(sink, { detector.menu }, clock = { 450 })
+        assertTrue(sender.poll())
+        detector.noteDialogue(450)
+        sender.sendSubtitle("Lucia: Balık yine kaçtı.")
+        assertEquals(listOf("Lucia: Balık yine kaçtı."), sent)
+    }
+
     @Test
     fun shortLabelsOverASharpMovingSceneAreNotAMenu() {
         val detector = ScreenTextDetector()

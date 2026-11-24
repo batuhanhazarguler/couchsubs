@@ -903,8 +903,9 @@ final class AppModel: ObservableObject {
     /// Ekran yazılarını kendiliğinden bulan (ayar açık ve çeviri sürerken var); örnek arka planda, tek uçuşta alınır.
     private var screenTextDetector: ScreenTextDetector?
     private var screenTextBusy = false
-    /// Altyazı günlüğüne son yazılan menü durumu (`ScreenTextDetector.menuLog`).
-    private var loggedMenu = false
+    /// Altyazı hattının göndericisi: ekranda menü varken satırları bekletir, menü kapanınca konuşma satırını gönderir
+    /// (#1240); her karede yoklanır.
+    private var menuSender: MenuHeldSender?
     /// Altyazı hattının altyazıdan ayırdığı görev satırının bölgesi (bkz. `MissionLine`); yoksa nil.
     private var missionRegion: CropRegion?
     /// Altyazı hattının altyazıdan ayırdığı kenar bildirimlerinin alanları (bkz. `ScreenNotices`); yoksa boş.
@@ -3111,9 +3112,14 @@ final class AppModel: ObservableObject {
         skippedFrame = nil
         let scheduler = ReadScheduler(maxReuse: settings.fastSubtitleDetection
             ? ReadScheduler.fastMaxReuse : ReadScheduler.defaultMaxReuse)
+        // Ekranda menü varken altyazı bekletilir; menü kapanınca bekletilen konuşma satırı gönderilir (#1240).
+        let sender = MenuHeldSender(server, inMenu: { [weak self] in self?.screenTextDetector?.inMenu == true })
+        menuSender = sender
         let pipeline = SubtitlePipeline(reader: VisionReader(language: settings.sourceLanguage),
                                         translator: makeTranslator(),
-                                        server: server, scheduler: scheduler)
+                                        server: sender, scheduler: scheduler)
+        // Altyazı alanında konuşan adıyla satır okundu: ekranda menü yok (#1240).
+        pipeline.onDialogue = { [weak self] in self?.screenTextDetector?.noteDialogue(now: SubtitleStabilizer.uptimeMs()) }
         pipeline.showSpeakerNames = settings.showSpeakerNames
         pipeline.applyWaits(from: settings)
         pipeline.echo = .shared
@@ -3222,6 +3228,8 @@ final class AppModel: ObservableObject {
         watcher.onLog = { SubtitleLog.write($0) }
         // Okunup yazısız ya da gürültülü çıkan otomatik alan dedektöre bildirilir (o görüntüde yeniden önerilmez).
         watcher.onAutoRejected = { [weak self] id in self?.screenTextDetector?.reject(id) }
+        // Menüde okunan tuş ipucu ya da görev/HUD yazısı menü bileşeni sayılmaz (#1240).
+        watcher.onAutoHud = { [weak self] id in self?.screenTextDetector?.markHud(id) }
         return watcher
     }
 
@@ -3442,7 +3450,7 @@ final class AppModel: ObservableObject {
         endTVReconnecting()
         pipeline?.reset()
         if pipeline != nil { SubtitleLog.write("oturum bitti") }
-        loggedMenu = false
+        menuSender = nil
         pipeline = nil
         regionWatcher?.reset()
         regionWatcher = nil
@@ -3777,13 +3785,10 @@ final class AppModel: ObservableObject {
         // konsoldan okunurken kare burada verilir.
         if let anchor = phoneAnchor, capturedWindow?.trackAnchor !== anchor { anchor.feed(frame, at: capturedAt) }
         regionWatcher?.offer(frame, areas: areas, phone: pose, capturedAt: capturedAt)
-        // Ekranda menü açık (otomatik ekran yazısı menü durumunda): menü satırları altyazıya karışmasın, altyazı okunmaz.
-        let inMenu = screenTextDetector?.inMenu == true
-        if inMenu != loggedMenu {
-            loggedMenu = inMenu
-            SubtitleLog.write(ScreenTextDetector.menuLog(inMenu))
-        }
-        if inMenu { pipeline?.skipForMenu(); return }
+        // Ekranda menü açık (otomatik ekran yazısı menü durumunda): altyazı okunur ama gönderilmez, bekletilir; menü
+        // kapanınca bekletilen konuşma satırı gönderilir (MenuHeldSender, #1240). Eskiden menüde altyazı hiç okunmuyordu;
+        // menü sanılan anlarda konuşma satırları kayboluyordu.
+        if menuSender?.poll() == true { pipeline?.skipForMenu() }
         // Önceki kare hâlâ işleniyorsa bu kare atlanır; okuma kareleri biriktirmez.
         var entry = frameGate.enter(now: SubtitleStabilizer.uptimeMs())
         if case .stuck(let ms) = entry {
@@ -3806,7 +3811,7 @@ final class AppModel: ObservableObject {
             // belirirken gelen son kare atlanınca yeni satır kamera oynatılana dek okunmuyordu (GitHub #1019).
             guard frameGate.leave(token), let skipped = skippedFrame else { return }
             skippedFrame = nil
-            guard self.pipeline === pipeline, !subtitlesPaused, screenTextDetector?.inMenu != true,
+            guard self.pipeline === pipeline, !subtitlesPaused,
                   case .enter(let again) = frameGate.enter(now: SubtitleStabilizer.uptimeMs()) else { return }
             token = again
             next = skipped

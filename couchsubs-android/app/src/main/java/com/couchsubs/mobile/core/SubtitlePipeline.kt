@@ -154,6 +154,11 @@ class SubtitlePipeline(
 
     /** Altyazı günlüğü (Mac/iPhone `onLog`, Windows `Log`): şimdilik sahne yazısı sayılıp atılan bloklar. */
     var onLog: ((String) -> Unit)? = null
+    /**
+     * Altyazı alanında konuşan adıyla başlayan bir satır okundu (her okumada). Hizmet ekran yazısı bulucusuna bildirir
+     * ([ScreenTextDetector.noteDialogue]): konuşma sürerken menü sayılmaz (#1240). Mac/iPhone ve Windows aynı.
+     */
+    @Volatile var onDialogue: (() -> Unit)? = null
 
     /**
      * Altyazı alanında yazı çıkmayan sürenin tanısı ([QuietReads]); sessizlik [QuietReads.REPORT_AFTER_MS] sürerse nedeni
@@ -162,7 +167,8 @@ class SubtitlePipeline(
     private var quiet = QuietReads(now())
 
     /**
-     * Ekranda menü var (otomatik ekran yazısı menü durumunda) ve bu kare altyazı için okunmuyor. Eskiden bu atlama günlüğe
+     * Ekranda menü var (otomatik ekran yazısı menü durumunda): bu karenin altyazısı gönderilmez, bekletilir
+     * ([MenuHeldSender]). Sessizlik özetinde sayılır. Eskiden bu atlama günlüğe
      * hiç yazılmıyordu: Mac'te (beta.80, PS5, GTA 6) ekranda diyalog varken altyazı günlüğüne dakikalarca hiçbir satır
      * düşmüyor, okunmadığı mı, boş mu okunduğu mu anlaşılmıyordu.
      */
@@ -383,6 +389,7 @@ class SubtitlePipeline(
             onLog?.invoke(if (noticeAreas.isEmpty()) "kenar bildirimi kalktı" else "kenar bildirimi kendi yerinde gösteriliyor (${noticeAreas.size})")
             onNoticesChanged?.invoke(noticeAreas)
         }
+        onDialogue?.let { dialogue -> if (reading.lines.any { SpeakerPrefix.split(it.text) != null }) dialogue() }
         // Ekran yazısı okuyucuları altyazıyı ikinci kez çizmesin (bkz. [SubtitleEcho]).
         echo?.record(reading, area)
         val quietMessage = synchronized(lock) {
