@@ -603,7 +603,6 @@ public partial class SettingsView : UserControl
         var text = Localizer.Current;
         var installing = controller.TvApp.Kind == TvAppKind.Working;
         PairTvButton.Visibility = controller.HasTv ? Visibility.Collapsed : Visibility.Visible;
-        PairTvButton.Content = text[controller.Tv is null ? "Connect TV" : "Pair the TV"];
         OpenTvAppButton.Visibility = controller.HasTv && controller.TvClients == 0 ? Visibility.Visible : Visibility.Collapsed;
         OpenTvAppButton.Content = text[tvOpening ? "Opening on the TV…" : "Open CouchSubs on the TV"];
         PerdeProps.SetBusy(OpenTvAppButton, tvOpening);

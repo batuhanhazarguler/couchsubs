@@ -706,7 +706,7 @@ private fun OutputsPage(onTarget: () -> Unit, onTvInstall: () -> Unit) {
                 // TV yoksa "TV'yi Bağla", eşli ama TV uygulaması bağlı değilse "TV'de CouchSubs'ı Aç" (eşleşme onayı açılır,
                 // bağlanana dek düğme yükleniyor), bağlıyken eşleştirme düğmesi yok (önceden eşli ve bağlı TV'de de "TV'yi
                 // Eşleştir" duruyordu; Mac, Windows ve iPhone ile aynı).
-                if (!hasTv) SecondaryButton(stringResource(R.string.set_connect_tv), Modifier.weight(1f), onClick = onTarget)
+                if (!hasTv) SecondaryButton(stringResource(R.string.set_pair_the_tv), Modifier.weight(1f), onClick = onTarget)
                 else if (live.connectedTvs == 0) SecondaryButton(
                     stringResource(if (openingApp) R.string.set_opening_on_tv else R.string.set_open_on_tv), Modifier.weight(1f),
                     enabled = !openingApp, busy = openingApp,

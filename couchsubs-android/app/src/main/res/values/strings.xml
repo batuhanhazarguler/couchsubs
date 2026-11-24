@@ -854,7 +854,7 @@
     <string name="set_pair_the_tv">TV\'yi Eşleştir</string>
     <string name="set_open_on_tv">TV\'de CouchSubs\'ı Aç</string>
     <string name="set_opening_on_tv">TV\'de açılıyor…</string>
-    <string name="set_pairing_waiting">TV\'de CouchSubs açılınca bağlanır. TV kod gösterirse bu telefonda açılan pencerede onaylayın.</string>
+    <string name="set_pairing_waiting">Eşleştiriliyor… Açılan pencerede isteği onaylayın.</string>
     <string name="set_tv_open_failed">TV uygulaması bağlanmadı. TV\'nin açık ve aynı ağda olduğundan emin olup yeniden deneyin.</string>
     <string name="set_connect_tv">TV Bağla</string>
     <string name="set_bold">Kalın yazı</string>

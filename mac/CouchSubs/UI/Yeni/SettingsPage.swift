@@ -913,9 +913,7 @@ private struct OutputSettings: View {
                 }
                 .buttonStyle(DSButtonStyle(kind: .secondary, busy: busy == .test))
             }
-            if model.tv == nil {
-                Button("Connect TV") { model.step = .tv }.buttonStyle(.dsSecondary)
-            } else if !model.hasTV {
+            if !model.hasTV {
                 Button("Pair the TV") { model.step = .tv }.buttonStyle(.dsSecondary)
             } else if model.tvClients == 0 {
                 Button(busy == .open ? "Opening on the TV…" : "Open CouchSubs on the TV") {

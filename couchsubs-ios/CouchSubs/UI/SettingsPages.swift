@@ -776,7 +776,7 @@ private struct OutputsPage: View {
         // TV yoksa "TV'yi Bağla", eşli ama TV uygulaması bağlı değilse "TV'de CouchSubs'ı Aç", bağlıyken eşleştirme düğmesi
         // yok (önceden eşli ve bağlı TV'de de "TV'yi Eşleştir" duruyordu; Mac ve Windows ile aynı).
         if !model.hasTV {
-            Button(model.tv == nil ? "Connect TV" : "Pair the TV") { path.append(.target) }
+            Button("Pair the TV") { path.append(.target) }
                 .buttonStyle(DSButtonStyle(kind: .secondary))
         } else if model.tvClients == 0 {
             Button(openingApp ? "Opening on the TV…" : "Open CouchSubs on the TV") {
