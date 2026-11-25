@@ -1426,6 +1426,14 @@ final class PhoneModel: ObservableObject {
             SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, telefon listesi altyazı yolunda atıldı (\(reason))")
             self.showsGamePhoneHint = true
         }
+        // Telefon çevirisi kapalıyken de altyazı hattı GTA 6'da telefonu arar (yalnız bulmak için; okumaz, çevirmez): ekranındaki
+        // satırlar altyazı sayılmaz, telefon art arda bulunursa oturumda bir kez ipucu (#1282; Mac, Windows, Android ile aynı).
+        pipeline.onPhoneLooked = { [weak self] found in
+            guard let self, self.gamePhoneHint.observePhone(found: found, readsPhone: self.settings.readsGamePhone,
+                                                            game: self.gameChoice.game?.name) else { return }
+            SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, GTA 6 telefonu ekranda bulundu")
+            self.showsGamePhoneHint = true
+        }
         pipeline.onReadResult = { [weak self] error in
             // Takılıyken her kare beklemeden `stuck` alır; takılma uzarsa (`ReadQueue.defaultAbandonStallAfterMs`) okuma
             // kendiliğinden bırakılır, altyazı yeni kuyrukta sürer (Mac ile aynı).
@@ -1495,9 +1503,10 @@ final class PhoneModel: ObservableObject {
         regionWatcher?.closePhone()
         gamePhoneTracker = Self.tracksGamePhone(running: pipeline != nil, enabled: settings.readsGamePhone,
                                                 game: gameChoice.game?.name) ? GamePhoneTracker() : nil
-        // Altyazı hattı telefonu yalnız GTA 6'da ve telefon ayarı açıkken arar: başka oyunda ya da karanlık sahnede yanlış
-        // bulunan telefon alt şeritteki altyazıyı silmesin (Mac, Windows, Android ile aynı).
-        pipeline?.findsPhone = gamePhoneTracker != nil
+        // Altyazı hattı telefonu yalnız GTA 6'da arar: başka oyunda ya da karanlık sahnede yanlış bulunan telefon alt şeritteki
+        // altyazıyı silmesin. Telefon ayarı kapalıyken de arar (#1282): telefonun mesaj listesi altyazı olarak çevrilip
+        // gidip geliyordu; bulunan telefonun satırları altyazı sayılmaz, ipucu gösterilir (Mac, Windows, Android ile aynı).
+        pipeline?.findsPhone = Self.tracksGamePhone(running: pipeline != nil, enabled: true, game: gameChoice.game?.name)
     }
 
     static func tracksGamePhone(running: Bool, enabled: Bool, game: String?) -> Bool {

@@ -258,6 +258,12 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
     /// Android ile aynı).
     /// </summary>
     public bool FindsPhone { get; set; } = true;
+    /// <summary>
+    /// Telefon arandı (bulundu mu); <see cref="FindsPhone"/> açıkken GamePhoneTracker.IntervalMs arayla. Telefon çevirisi
+    /// kapalıyken "Telefon çevirisi kapalı, açmak ister misiniz?" ipucu (<see cref="GamePhoneHint.ObservePhone"/>, #1282).
+    /// Kararları değiştirmez; okuma iş parçacığında çağrılır.
+    /// </summary>
+    public event Action<bool>? PhoneLooked;
     private ScreenPhoneCard.Handset? phone;
     private long? phoneLookedAt;
     /// <summary>Günlüğe yazılmış son telefon yazısı (her karede yeniden yazılmasın).</summary>
@@ -341,6 +347,7 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
                 ScreenPhoneCard.Handset? found = null;
                 try { found = ScreenPhoneCard.Phone(frame); } catch { }
                 lock (gate) phone = found;
+                PhoneLooked?.Invoke(found is not null);
             }
             byte[]? signature = null;
             Frame? cropped = null;

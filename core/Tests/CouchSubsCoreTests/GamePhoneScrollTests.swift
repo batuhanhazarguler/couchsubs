@@ -52,4 +52,23 @@ final class GamePhoneScrollTests: XCTestCase {
         hint.reset()
         XCTAssertTrue(hint.observe(reason: "eğik satır (tabela)", readsPhone: false, game: "gta6"))
     }
+
+    /// #1282: telefon ayarı kapalıyken GTA 6 telefonu altyazı hattında art arda iki bakışta bulunursa (listesi altyazı olarak
+    /// kabul edilip sahne yazısı reddi hiç olmasa da) ipucu oturumda bir kez; tek bakışlık bulma, telefon açıkken ya da
+    /// başka oyunda yok.
+    func testSeenPhoneOffersTheHintOnceAfterConsecutiveSightingsWithThePhoneOff() {
+        var hint = GamePhoneHint()
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: "GTA 6"))
+        XCTAssertFalse(hint.observePhone(found: false, readsPhone: false, game: "GTA 6"))
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: "GTA 6"))
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: true, game: "GTA 6"))
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: "Red Dead Redemption 2"))
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: nil))
+        XCTAssertTrue(hint.observePhone(found: true, readsPhone: false, game: "Grand Theft Auto VI"))
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: "GTA 6"))
+        XCTAssertFalse(hint.observe(reason: "eğik satır (tabela)", readsPhone: false, game: "GTA 6"))
+        hint.reset()
+        XCTAssertFalse(hint.observePhone(found: true, readsPhone: false, game: "GTA 6"))
+        XCTAssertTrue(hint.observePhone(found: true, readsPhone: false, game: "GTA 6"))
+    }
 }

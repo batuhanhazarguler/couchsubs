@@ -168,6 +168,9 @@ public final class SubtitlePipeline {
     /// kısmındaki mesajlar (telefon ortaya yakın tutulunca bütün sohbet) altyazı sanılıp ekranın ortasında tek uzun satır
     /// olarak çevriliyor, telefonun çevirisi de altyazının altında kalıyordu. Varsayılan açık (Windows ve Android ile aynı).
     public var findsPhone = true
+    /// Telefon arandı (bulundu mu); `findsPhone` açıkken `GamePhoneTracker.intervalMs` arayla. Telefon çevirisi kapalıyken
+    /// "Telefon çevirisi kapalı, açmak ister misiniz?" ipucu (`GamePhoneHint.observePhone`, #1282). Kararları değiştirmez.
+    public var onPhoneLooked: ((Bool) -> Void)?
     private var phone: ScreenPhoneCard.Handset?
     private var phoneLookedAt: Int?
     /// Son yazı tanımanın süresi (ms); kare değişmeyip okuma yeniden kullanılınca da o okumanın süresi geçerlidir.
@@ -295,6 +298,7 @@ public final class SubtitlePipeline {
                 log(found == nil ? "telefon kalktı" : "telefon bulundu: ekranındaki satırlar altyazı sayılmayacak")
             }
             phone = found
+            onPhoneLooked?(found != nil)
         }
         let handset = findsPhone ? phone : nil
         guard session == startedSession else { return }

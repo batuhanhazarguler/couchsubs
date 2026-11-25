@@ -24,6 +24,29 @@ public class GamePhoneHintTests
         Assert.True(hint.Observe(InkTone.Reason, readsPhone: false, "gta6"));
     }
 
+    /// <summary>
+    /// #1282: telefon ayarı kapalıyken GTA 6 telefonu altyazı hattında art arda iki bakışta bulunursa (listesi altyazı
+    /// olarak kabul edilip sahne yazısı reddi hiç olmasa da) ipucu oturumda bir kez verilir; tek bakışlık bulma, telefon
+    /// açıkken ya da başka oyunda verilmez. Sahne yazısı reddiyle aynı "bir kez" hakkını paylaşır.
+    /// </summary>
+    [Fact]
+    public void SeenPhoneOffersOnceAfterConsecutiveSightingsWithThePhoneOff()
+    {
+        var hint = new GamePhoneHint();
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, "GTA 6"));
+        Assert.False(hint.ObservePhone(found: false, readsPhone: false, "GTA 6"));
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, "GTA 6"));
+        Assert.False(hint.ObservePhone(found: true, readsPhone: true, "GTA 6"));
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, "Red Dead Redemption 2"));
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, null));
+        Assert.True(hint.ObservePhone(found: true, readsPhone: false, "Grand Theft Auto VI"));
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, "GTA 6"));
+        Assert.False(hint.Observe("eğik satır (tabela)", readsPhone: false, "GTA 6"));
+        hint.Reset();
+        Assert.False(hint.ObservePhone(found: true, readsPhone: false, "GTA 6"));
+        Assert.True(hint.ObservePhone(found: true, readsPhone: false, "GTA 6"));
+    }
+
     [Fact]
     public void PhoneListReasonsAreTiltAndDarkInk()
     {

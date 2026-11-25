@@ -31,4 +31,25 @@ class GamePhoneHintTest {
         hint.reset()
         assertTrue(hint.observe(InkTone.REASON, readsPhone = false, game = "GTA 6"))
     }
+
+    /**
+     * #1282: telefon ayarı kapalıyken GTA 6 telefonu art arda iki bakışta bulunursa (listesi altyazı olarak kabul edilip
+     * sahne yazısı reddi hiç olmasa da) ipucu oturumda bir kez; tek bakışlık bulma, telefon açıkken ya da başka oyunda yok.
+     */
+    @Test
+    fun seenPhoneOffersOnceAfterConsecutiveSightingsWithThePhoneOff() {
+        val hint = GamePhoneHint()
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = "GTA 6"))
+        assertFalse(hint.observePhone(found = false, readsPhone = false, game = "GTA 6"))
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = "GTA 6"))
+        assertFalse(hint.observePhone(found = true, readsPhone = true, game = "GTA 6"))
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = "Red Dead Redemption 2"))
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = null))
+        assertTrue(hint.observePhone(found = true, readsPhone = false, game = "Grand Theft Auto VI"))
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = "GTA 6"))
+        assertFalse(hint.observe("eğik satır (tabela)", readsPhone = false, game = "GTA 6"))
+        hint.reset()
+        assertFalse(hint.observePhone(found = true, readsPhone = false, game = "GTA 6"))
+        assertTrue(hint.observePhone(found = true, readsPhone = false, game = "GTA 6"))
+    }
 }

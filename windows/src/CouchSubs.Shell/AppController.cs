@@ -3733,7 +3733,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             Echo = SubtitleEcho,
             EchoPaused = sender.Poll,
             DialogueRead = () => Volatile.Read(ref screenText)?.NoteDialogue(Environment.TickCount64),
-            FindsPhone = settings.ReadsGamePhone && GameName.Key(gameSense.Current?.Name) == "gta 6",
+            // Telefon ayarı kapalıyken de GTA 6'da telefon aranır (#1282; yalnız bulmak için, okunmaz, çevrilmez).
+            FindsPhone = GameName.Key(gameSense.Current?.Name) == "gta 6",
         };
         built.MetricsReady += metrics => post(() =>
         {
@@ -3773,6 +3774,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         built.PackName = () => services.GamePacks?.SearchScope;
         built.MissionChanged += OnMissionChanged;
         built.OnSceneTextDropped += OnSceneTextDropped;
+        built.PhoneLooked += OnPhoneLooked;
         built.NoticesChanged += OnNoticesChanged;
         ConnectPacks(built);
         ApplyWaits(built);
@@ -3843,6 +3845,20 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         post(() => ShowsGamePhoneHint = !settings.ReadsGamePhone);
     }
 
+    /// <summary>
+    /// Altyazı hattı telefonu aradı: telefon çevirisi kapalıyken de GTA 6'da aranır (yalnız bulmak için; okunmaz,
+    /// çevrilmez). Ekranındaki satırlar altyazı sayılmaz; telefon art arda bulunursa oturumda bir kez "Telefon çevirisi
+    /// kapalı, açmak ister misiniz?" ipucu (#1282; Mac, iPhone, Android ile aynı). Okuma iş parçacığında çağrılır.
+    /// </summary>
+    private void OnPhoneLooked(bool found)
+    {
+        bool offer;
+        lock (gamePhoneHint) offer = gamePhoneHint.ObservePhone(found, settings.ReadsGamePhone, gameSense.Current?.Name);
+        if (!offer) return;
+        SubtitleLog.Write("telefon ipucu: telefon çevirisi kapalı, GTA 6 telefonu ekranda bulundu");
+        post(() => ShowsGamePhoneHint = !settings.ReadsGamePhone);
+    }
+
     /// <summary>İpucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.</summary>
     public void EnableGamePhone()
     {
@@ -3894,9 +3910,11 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
                 ClosePhone();
                 phoneTracker = null;
             }
-            // Altyazı hattı telefonu yalnız GTA 6'da ve telefon ayarı açıkken arar: başka oyunda ya da karanlık sahnede
-            // yanlış bulunan telefon alt şeritteki altyazıyı silmesin (Mac, iPhone, Android ile aynı).
-            if (pipeline is { } current) current.FindsPhone = phoneTracker is not null;
+            // Altyazı hattı telefonu yalnız GTA 6'da arar: başka oyunda ya da karanlık sahnede yanlış bulunan telefon alt
+            // şeritteki altyazıyı silmesin. Telefon ayarı kapalıyken de arar (#1282): telefonun mesaj listesi altyazı olarak
+            // çevrilip gidip geliyordu; bulunan telefonun satırları altyazı sayılmaz, ipucu gösterilir (Mac, iPhone, Android
+            // ile aynı).
+            if (pipeline is { } current) current.FindsPhone = running && GameName.Key(gameSense.Current?.Name) == "gta 6";
             if (running && settings.AutoScreenText && !settings.ExtraAreasPausedByFullScreen)
                 screenText ??= new ScreenTextDetector();
             else

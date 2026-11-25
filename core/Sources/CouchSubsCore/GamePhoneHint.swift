@@ -9,6 +9,10 @@ import Foundation
 public struct GamePhoneHint: Sendable {
     /// Bu oturumda ipucu gösterildi.
     public private(set) var offered = false
+    /// Telefonun art arda kaç bakışta bulunduğu (`observePhone`); tek karelik yanlış bulma ipucu doğurmasın.
+    private var sightings = 0
+    /// İpucu için telefonun art arda bulunması gereken bakış sayısı (bakışlar `GamePhoneTracker.intervalMs` arayla).
+    public static let phoneSightings = 2
 
     public init() {}
 
@@ -24,6 +28,20 @@ public struct GamePhoneHint: Sendable {
         return true
     }
 
+    /// Altyazı hattı telefonu aradı (`SubtitlePipeline.onPhoneLooked`; telefon ayarı kapalıyken de GTA 6'da aranır, #1282).
+    /// Telefon kapalıyken telefonun mesaj listesi altyazı olarak kabul edilip çevrilip gidip geliyordu; sahne yazısı
+    /// reddi hiç olmadığı için ipucu da çıkmıyordu. Telefon art arda `phoneSightings` bakışta bulunursa ipucu oturumda bir
+    /// kez önerilir (true).
+    public mutating func observePhone(found: Bool, readsPhone: Bool, game: String?) -> Bool {
+        sightings = found ? sightings + 1 : 0
+        guard !offered, !readsPhone, let game, GameName.key(game) == "gta 6", sightings >= Self.phoneSightings else { return false }
+        offered = true
+        return true
+    }
+
     /// Yeni oturum: ipucu yeniden gösterilebilir.
-    public mutating func reset() { offered = false }
+    public mutating func reset() {
+        offered = false
+        sightings = 0
+    }
 }

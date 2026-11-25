@@ -662,7 +662,7 @@ class TranslationService : Service() {
         Backend.breadcrumb("çeviri: başlıyor (${settings.target.name}, ${settings.engine.name}, paketler ${settings.packsEnabled})")
         // Oturum başı ayar özeti: telefon okuyucusunun açık mı kapalı mı olduğu günlükte görünsün (#1202).
         Log.i(TAG, "oturum başladı: " + com.couchsubs.mobile.settings.SessionLogSummary.of(settings.autoScreenText, settings.readsGamePhone))
-        gamePhoneHint.reset()
+        synchronized(gamePhoneHint) { gamePhoneHint.reset() }
         // Çevrimiçi motor satırı ücretsiz çeviriye bıraktığında nedeni günlüğe gider (Mac/Windows ile aynı).
         com.couchsubs.mobile.translation.SentenceTranslator.fallbackLog = Backend::breadcrumb
         startedAt = System.currentTimeMillis()
@@ -843,7 +843,7 @@ class TranslationService : Service() {
             onPackMissed = { text -> linePool.offer(text) }
             // Telefon ayarı kapalıyken GTA 6 telefonunun listesi altyazı yolunda sahne yazısı sayılırsa oturumda bir kez ipucu.
             onSceneTextDropped = { reason ->
-                if (gamePhoneHint.observe(reason, settings.readsGamePhone, playedGame)) {
+                if (synchronized(gamePhoneHint) { gamePhoneHint.observe(reason, settings.readsGamePhone, playedGame) }) {
                     Log.i(TAG, "telefon çevirisi kapalı: telefon listesi altyazı sayılmadı ($reason), ipucu gösterildi")
                     LiveState.update { it.copy(gamePhoneHint = true) }
                 }
@@ -957,15 +957,22 @@ class TranslationService : Service() {
                 // Karenin geldiği an: gecikme buradan TV'ye gidene kadar ölçülür (hattın saatiyle).
                 val capturedAt = com.couchsubs.mobile.core.monotonicClock()
                 // Karede GTA 6 telefonu açıksa ekranındaki satırlar altyazı değildir; telefon seyrek aranır, bulunan yer
-                // sonraki okumalara da geçerlidir (Mac, Windows: SubtitlePipeline.findsPhone). Yalnız GTA 6'da ve telefon
-                // ayarı açıkken: başka oyunda (ya da karanlık sahnede) yanlış bulunan telefon alt şeritteki altyazıyı silmesin.
-                if (!playsGta6 || !settings.readsGamePhone) subtitlePhone = null
+                // sonraki okumalara da geçerlidir (Mac, Windows: SubtitlePipeline.findsPhone). Yalnız GTA 6'da: başka oyunda
+                // (ya da karanlık sahnede) yanlış bulunan telefon alt şeritteki altyazıyı silmesin. Telefon ayarı kapalıyken de
+                // aranır (#1282; yalnız bulmak için, okunmaz, çevrilmez): telefonun mesaj listesi altyazı olarak çevrilip gidip
+                // geliyordu; bulunan telefonun satırları altyazı sayılmaz, telefon art arda bulunursa oturumda bir kez ipucu.
+                if (!playsGta6) subtitlePhone = null
                 else if (now - subtitlePhoneAt >=com.couchsubs.mobile.core.GamePhoneTracker.INTERVAL_MS || now < subtitlePhoneAt) {
                     subtitlePhoneAt = now
                     subtitlePhone = try {
                         com.couchsubs.mobile.core.ScreenPhoneCard.phone(com.couchsubs.mobile.ocr.LivePhoneImage(frame))
                     } catch (error: Exception) {
                         null
+                    }
+                    val found = subtitlePhone != null
+                    if (synchronized(gamePhoneHint) { gamePhoneHint.observePhone(found, settings.readsGamePhone, playedGame) }) {
+                        Log.i(TAG, "telefon ipucu: telefon çevirisi kapalı, GTA 6 telefonu ekranda bulundu")
+                        LiveState.update { it.copy(gamePhoneHint = true) }
                     }
                 }
                 val phone = subtitlePhone

@@ -3239,6 +3239,14 @@ final class AppModel: ObservableObject {
             SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, telefon listesi altyazı yolunda atıldı (\(reason))")
             self.showsGamePhoneHint = true
         }
+        // Telefon çevirisi kapalıyken de altyazı hattı GTA 6'da telefonu arar (yalnız bulmak için; okumaz, çevirmez): ekranındaki
+        // satırlar altyazı sayılmaz, telefon art arda bulunursa oturumda bir kez ipucu (#1282; iPhone, Windows, Android ile aynı).
+        pipeline.onPhoneLooked = { [weak self] found in
+            guard let self, self.gamePhoneHint.observePhone(found: found, readsPhone: self.settings.readsGamePhone,
+                                                            game: self.gameChoice.game?.name) else { return }
+            SubtitleLog.write("telefon ipucu: telefon çevirisi kapalı, GTA 6 telefonu ekranda bulundu")
+            self.showsGamePhoneHint = true
+        }
         watchReadQueue()
         onlineIssue = nil
         pipeline.warmUp()
@@ -3263,9 +3271,16 @@ final class AppModel: ObservableObject {
         // kendi yerinde çizilebilir). PS5'ten doğrudan okurken eski davranış (Sinan Bey kararı, 24 Kas: önce Mac).
         setPhoneAnchor(gamePhoneTracker != nil && settings.drawScreenInPlace && capturedWindow != nil
                        ? PhoneAnchorSession() : nil)
-        // Altyazı hattı telefonu yalnız GTA 6'da ve telefon ayarı açıkken arar: başka oyunda ya da karanlık sahnede yanlış
-        // bulunan telefon alt şeritteki altyazıyı silmesin (iPhone, Windows, Android ile aynı).
-        pipeline?.findsPhone = gamePhoneTracker != nil
+        // Altyazı hattı telefonu yalnız GTA 6'da arar: başka oyunda ya da karanlık sahnede yanlış bulunan telefon alt şeritteki
+        // altyazıyı silmesin. Telefon ayarı kapalıyken de arar (#1282): telefonun mesaj listesi altyazı olarak çevrilip
+        // gidip geliyordu; bulunan telefonun satırları altyazı sayılmaz, ipucu gösterilir (iPhone, Windows, Android ile aynı).
+        pipeline?.findsPhone = Self.findsGamePhone(running: pipeline != nil, game: gameChoice.game?.name)
+    }
+
+    /// Altyazı hattı telefonu arar mı: çeviri sürüyor ve oyun GTA 6 (telefon ayarından bağımsız, #1282).
+    static func findsGamePhone(running: Bool, game: String?) -> Bool {
+        guard running, let game else { return false }
+        return GameName.key(game) == "gta 6"
     }
 
     /// Çapayı değiştirir: okuma, pencere yakalaması ve çizim yeni çapaya bağlanır; eskisi bırakılır.
