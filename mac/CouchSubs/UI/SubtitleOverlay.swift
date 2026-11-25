@@ -326,8 +326,10 @@ struct SubtitleOverlayView: View {
                     Spacer(minLength: 0)
                 } else {
                     GamePhoneBlocks(items: model.overlayPhoneItems,
-                                    panelFont: max(13, CGFloat(model.settings.style.fontSize) * scale * 0.55))
+                                    panelFont: CGFloat(model.settings.style.fontSize) * scale * 0.55)
                         .layoutPriority(-1)
+                        // Telefon görününce solarak gelir, kalkınca solarak kaybolur (yayın penceresi ve TV ile aynı, 250 ms).
+                        .transition(.opacity)
                 }
                 if lines.isEmpty, adjusting {
                     line(SubtitleStack.Line(id: 0, text: String(localized: "Subtitles appear here."), role: .current,
@@ -335,6 +337,7 @@ struct SubtitleOverlayView: View {
                 }
                 ForEach(lines) { line($0) }
             }
+            .animation(.easeOut(duration: 0.25), value: model.overlayPhoneItems.isEmpty || model.drawsPhoneInPlace)
             .padding(.horizontal, model.settings.style.backgroundShape == .band ? 0 : 24 * scale)
             .padding(.bottom, 8 * scale)
         }

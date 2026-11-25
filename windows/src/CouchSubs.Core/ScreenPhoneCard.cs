@@ -477,6 +477,87 @@ public static class ScreenPhoneCard
                          [.. items.Where(item => item.Panel is null)]);
     }
 
+    /// <summary>
+    /// Saydam altyazı penceresindeki sohbet paneli (SubtitleOverlayWindow; Mac SubtitleOverlay): pencere oyun karesi değil,
+    /// kullanıcının seçtiği alan olduğundan balonlar telefondaki İngilizce balonlarına hizalanamaz. Görünüm hizalı panelle
+    /// aynıdır (koyu kart ve simge yok; her balon ayrı, telefonun balon renginde, <see cref="BubbleColor"/>): balonlar alanın
+    /// telefon tarafındaki kenarında üstten alta, telefondaki sırasıyla ve aralarındaki boşlukla (en çok
+    /// <see cref="StackedGapMax"/> satır) dizilir; gelen sola, giden sağa yaslı, kişi adı üstte küçük başlık. Yazı boyu
+    /// <paramref name="font"/> (piksel, en az <see cref="StackedMinFont"/>); yazı küçülmez, sığmazsa en eski mesajlar düşer.
+    /// Kutular alana oranla (0–1); <see cref="PhonePanelView"/> hizalı paneli çizer gibi çizer. Aynı girdi her zaman birebir
+    /// aynı çıktı (#1279). Mac: ScreenPhoneCard.stacked, Android: ScreenPhoneCard.stacked.
+    /// </summary>
+    public static ChatPanel Stacked(ChatPanel panel, double width, double height, double font)
+    {
+        if (width <= 0 || height <= 0) return panel;
+        font = Math.Max(StackedMinFont, font);
+        // Çiziciler yazı boyunu satır yüksekliğinin 0,85'i alır (PhonePanelView.Aligned).
+        var line = font / 0.85 / height;
+        var aspect = width / height;
+        var column = Math.Min(width * StackedShare, font * StackedChars) / width;
+        var right = (panel.Card.Box.Left + panel.Card.Box.Right) / 2 > 0.5;
+        var left = right ? 1 - column : 0;
+        // Balonun yan dolgusu (çizicilerde yazı boyunun 0,6'sı), alana oranla.
+        var padX = font * 0.6 / width;
+
+        var card = panel.Card with { Box = new TextBox(left, 0, left + column, 1), LineHeight = line, Aligned = true };
+        var title = panel.Title is { } head
+            ? head with { Box = new TextBox(left, 0, left + column, line * TitleHeight), LineHeight = line }
+            : null;
+        var bodyTop = title is null ? 0 : line * (TitleHeight + TitleGap);
+
+        var rows = panel.Messages.Select((source, index) =>
+        {
+            var bubble = source.Panel is PanelPart.Mine or PanelPart.Theirs;
+            var item = source with
+            {
+                LineHeight = line,
+                Style = source.Panel switch
+                {
+                    PanelPart.Mine => BubbleColor(source.Style, OutgoingColor),
+                    PanelPart.Theirs => BubbleColor(source.Style, IncomingColor),
+                    _ => source.Style,
+                },
+            };
+            var widest = (bubble ? BubbleShare : 1) * column;
+            var lines = Wrap(item.Translation, (int)((widest - 2 * padX) * aspect / (line * CharWidth)));
+            // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
+            var gap = BubbleSpacing;
+            if (index > 0)
+                gap = Math.Min(StackedGapMax, Math.Max(0, (source.Box.Top - panel.Messages[index - 1].Box.Bottom)
+                                                         / Math.Max(1e-9, source.LineHeight)));
+            return (Item: item, Width: widest, Height: lines.Count * line * LineSpacing + line * BubblePadding, Gap: gap * line);
+        }).ToList();
+        // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
+        double Bottom(int start)
+        {
+            var sum = bodyTop;
+            for (var i = start; i < rows.Count; i++) sum += rows[i].Height + (i > start ? rows[i].Gap : 0);
+            return sum;
+        }
+        var first = 0;
+        while (first < rows.Count - 1 && Bottom(first) > 1 + 1e-9) first++;
+
+        var messages = new List<ScreenTranslation.Item>();
+        var top = bodyTop;
+        for (var i = first; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            if (i > first) top += row.Gap;
+            var x = row.Item.Panel == PanelPart.Mine ? left + column - row.Width : left;
+            messages.Add(row.Item with { Box = new TextBox(x, top, x + row.Width, top + row.Height) });
+            top += row.Height;
+        }
+        return new ChatPanel(card, title, messages, panel.Outside);
+    }
+
+    /// <summary>
+    /// Saydam pencerede panelin yazısı en az bu boyda (piksel); sütunun eni alanın en çok <see cref="StackedShare"/>'i ve
+    /// yazı boyunun <see cref="StackedChars"/> katı; balonlar arası boşluk en çok <see cref="StackedGapMax"/> satır.
+    /// </summary>
+    public const double StackedMinFont = 13;
+    internal const double StackedShare = 0.45, StackedChars = 20, StackedGapMax = 1.2;
+
     /// <summary>Altyazı boyutu ayarının (TV pikseli, 1080p) panel yazısına çarpanı: varsayılan boyda 1.</summary>
     public static double TextScale(int fontSize) => Math.Min(MaxScale, Math.Max(MinScale, fontSize / (double)DefaultFontSize));
     internal const int DefaultFontSize = 46;

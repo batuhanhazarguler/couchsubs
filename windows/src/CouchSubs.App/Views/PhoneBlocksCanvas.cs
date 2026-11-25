@@ -35,8 +35,9 @@ internal sealed class PhoneBlocksCanvas : Canvas
     public bool HasItems => items.Count > 0;
 
     /// <summary>
-    /// Verilirse (saydam pencere: alan oyun karesi değil, kullanıcının seçtiği altyazı yeri) sohbet paneli alanın telefon
-    /// tarafındaki kenarına yaslanır, yazısı bu boydadır (altyazı boyutundan; Mac GamePhoneBlocks panelFont ile aynı).
+    /// Verilirse (saydam pencere: alan oyun karesi değil, kullanıcının seçtiği altyazı yeri) sohbet panelinin kartsız
+    /// balonları alanın telefon tarafındaki kenarında alt alta dizilir (<see cref="ScreenPhoneCard.Stacked"/>), yazısı bu
+    /// boydadır (altyazı boyutundan, en az <see cref="ScreenPhoneCard.StackedMinFont"/>; Mac GamePhoneBlocks panelFont ile aynı).
     /// </summary>
     public double? PanelFont { get; set; }
 
@@ -97,7 +98,10 @@ internal sealed class PhoneBlocksCanvas : Canvas
 
     private void AddPanel(ScreenPhoneCard.ChatPanel panel, double width, double height, bool appearing)
     {
-        if (panel.Aligned && PanelFont is null)
+        // Saydam pencere: alan oyun karesi değil; hizalı panelin kartsız balonları alanın telefon tarafındaki kenarında,
+        // alt alta (ScreenPhoneCard.Stacked; Mac GamePhoneBlocks panelFont ile aynı).
+        if (PanelFont is { } font) panel = ScreenPhoneCard.Stacked(panel, width, height, font);
+        if (panel.Aligned)
         {
             // Hizalı panel: her parça kendi kutusunda, zeminsiz (PhonePanelView.Aligned); ilk görünüşte solarak gelir.
             foreach (var (part, x, y) in PhonePanelView.Aligned(panel.Title, panel.Messages, panel.Card.LineHeight * height * 0.85, width, height))
@@ -110,22 +114,9 @@ internal sealed class PhoneBlocksCanvas : Canvas
             }
             return;
         }
-        FrameworkElement view;
-        double left, top;
-        if (PanelFont is { } font)
-        {
-            var panelWidth = Math.Min(width * 0.45, font * 20);
-            view = PhonePanelView.Make(panel, panelWidth, height, font, Math.Max(8, font * 0.7));
-            left = (panel.Card.Box.Left + panel.Card.Box.Right) / 2 > 0.5 ? width - panelWidth : 0;
-            top = 0;
-        }
-        else
-        {
-            var (x, y, w, h) = Frame(panel.Card.Box, width, height);
-            view = PhonePanelView.Make(panel, w, h, panel.Card.LineHeight * height * 0.85,
+        var (left, top, w, h) = Frame(panel.Card.Box, width, height);
+        var view = PhonePanelView.Make(panel, w, h, panel.Card.LineHeight * height * 0.85,
                                        Math.Max(6, ScreenPhoneCard.PanelRadius * height / 1080));
-            (left, top) = (x, y);
-        }
         SetLeft(view, left);
         SetTop(view, top);
         Children.Add(view);

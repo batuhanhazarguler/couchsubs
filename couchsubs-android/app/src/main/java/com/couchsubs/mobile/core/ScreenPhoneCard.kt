@@ -452,6 +452,78 @@ object ScreenPhoneCard {
             parts.filter { it.panel != PanelPart.TITLE }.sortedBy { it.box.top }, items.filter { it.panel == null })
     }
 
+    /**
+     * Saydam altyazı penceresindeki sohbet paneli (Mac SubtitleOverlay, Windows SubtitleOverlayWindow; ortak çekirdekte
+     * dört platformda aynı): pencere oyun karesi değil, kullanıcının seçtiği alan olduğundan balonlar telefondaki İngilizce
+     * balonlarına hizalanamaz. Görünüm hizalı panelle aynıdır (koyu kart ve simge yok; her balon ayrı, telefonun balon
+     * renginde, [bubbleColor]): balonlar alanın telefon tarafındaki kenarında üstten alta, telefondaki sırasıyla ve
+     * aralarındaki boşlukla (en çok [STACKED_GAP_MAX] satır) dizilir; gelen sola, giden sağa yaslı, kişi adı üstte küçük
+     * başlık. Yazı boyu [font] (piksel, en az [STACKED_MIN_FONT]); yazı küçülmez, sığmazsa en eski mesajlar düşer. Kutular
+     * alana oranla (0–1); [com.couchsubs.mobile.ui.PhonePanelAligned] hizalı paneli çizer gibi çizer. Aynı girdi her zaman
+     * birebir aynı çıktı (#1279). Mac: ScreenPhoneCard.stacked, Windows: ScreenPhoneCard.Stacked.
+     */
+    fun stacked(panel: Panel, width: Double, height: Double, font: Double): Panel {
+        if (width <= 0 || height <= 0) return panel
+        val size = maxOf(STACKED_MIN_FONT, font)
+        // Çiziciler yazı boyunu satır yüksekliğinin 0,85'i alır (PhonePanelAligned).
+        val line = size / 0.85 / height
+        val aspect = width / height
+        val column = minOf(width * STACKED_SHARE, size * STACKED_CHARS) / width
+        val right = (panel.card.box.left + panel.card.box.right) / 2 > 0.5
+        val left = if (right) 1 - column else 0.0
+        // Balonun yan dolgusu (çizicilerde yazı boyunun 0,6'sı), alana oranla.
+        val padX = size * 0.6 / width
+
+        val card = panel.card.copy(box = TextBox(left, 0.0, left + column, 1.0), lineHeight = line, aligned = true)
+        val title = panel.title?.copy(box = TextBox(left, 0.0, left + column, line * TITLE_HEIGHT), lineHeight = line)
+        val bodyTop = if (title == null) 0.0 else line * (TITLE_HEIGHT + TITLE_GAP)
+
+        class Row(val item: ScreenTranslation.Item, val width: Double, val height: Double, val gap: Double)
+        val rows = panel.messages.mapIndexed { index, source ->
+            val bubble = source.panel == PanelPart.MINE || source.panel == PanelPart.THEIRS
+            val surface = when (source.panel) {
+                PanelPart.MINE -> bubbleColor(source.surface, OUTGOING)
+                PanelPart.THEIRS -> bubbleColor(source.surface, INCOMING)
+                else -> source.surface
+            }
+            val item = source.copy(lineHeight = line, surface = surface)
+            val widest = (if (bubble) BUBBLE_SHARE else 1.0) * column
+            val lines = wrap(item.translation, ((widest - 2 * padX) * aspect / (line * CHAR_WIDTH)).toInt())
+            // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
+            val gap = if (index == 0) BUBBLE_SPACING else minOf(STACKED_GAP_MAX,
+                maxOf(0.0, (source.box.top - panel.messages[index - 1].box.bottom) / maxOf(1e-9, source.lineHeight)))
+            Row(item, widest, lines.size * line * LINE_SPACING + line * BUBBLE_PADDING, gap * line)
+        }
+        // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
+        fun bottom(start: Int): Double {
+            var sum = bodyTop
+            for (i in start until rows.size) sum += rows[i].height + (if (i > start) rows[i].gap else 0.0)
+            return sum
+        }
+        var first = 0
+        while (first < rows.size - 1 && bottom(first) > 1 + 1e-9) first++
+
+        val messages = mutableListOf<ScreenTranslation.Item>()
+        var top = bodyTop
+        for (i in first until rows.size) {
+            val row = rows[i]
+            if (i > first) top += row.gap
+            val x = if (row.item.panel == PanelPart.MINE) left + column - row.width else left
+            messages += row.item.copy(box = TextBox(x, top, x + row.width, top + row.height))
+            top += row.height
+        }
+        return Panel(card, title, messages, panel.outside)
+    }
+
+    /**
+     * Saydam pencerede panelin yazısı en az bu boyda (piksel); sütunun eni alanın en çok [STACKED_SHARE]'i ve yazı boyunun
+     * [STACKED_CHARS] katı; balonlar arası boşluk en çok [STACKED_GAP_MAX] satır.
+     */
+    const val STACKED_MIN_FONT = 13.0
+    const val STACKED_SHARE = 0.45
+    const val STACKED_CHARS = 20.0
+    const val STACKED_GAP_MAX = 1.2
+
     /** Altyazı boyutu ayarının (TV pikseli, 1080p) panel yazısına çarpanı: varsayılan boyda 1. */
     fun textScale(fontSize: Int): Double = minOf(MAX_SCALE, maxOf(MIN_SCALE, fontSize / DEFAULT_FONT_SIZE.toDouble()))
 

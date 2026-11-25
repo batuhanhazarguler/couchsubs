@@ -232,6 +232,73 @@ final class ScreenPhoneCardTests: XCTestCase {
                                                    fallback: ScreenPhoneCard.incomingColor).foreground, "#17181B")
     }
 
+    /// Saydam altyazı penceresi (Mac SubtitleOverlay, Windows SubtitleOverlayWindow): hizalı panelin görünümü aynen
+    /// (kartsız balonlar, telefonun balon rengi), balonlar alanın telefon tarafındaki kenarında alt alta, sırası ve
+    /// aralıklarıyla; yazı alt sınırın altına inmez, küçülmez; aynı içerik birebir aynı çıktı. Windows
+    /// ScreenPhoneCardTests.StackedPanel…, Android ScreenPhoneCardTest.stackedPanel… aynı durumlar.
+    func testStackedPanelInTheOverlayWindowKeepsTheAlignedLook() {
+        func part(_ text: String, _ panel: ScreenPhoneCard.PanelPart, top: Double, bottom: Double,
+                  style: PhoneTextStyle? = nil, align: TextLook.Align = .left) -> ScreenTranslation.Item {
+            var item = ScreenTranslation.Item(source: text, translation: text, box: TextBox(left: 0.72, top: top, right: 0.9, bottom: bottom),
+                                              lineHeight: 0.03)
+            item.panel = panel
+            item.style = style
+            item.look = TextLook(bold: false, condensed: false, align: align, upper: false, flat: true)
+            return item
+        }
+        let cream = PhoneTextStyle(background: "#F0E8E0", foreground: "#282828")
+        var card = part(ScreenPhoneCard.backdropText, .card, top: 0.2, bottom: 0.8)
+        card.aligned = true
+        let items = [card,
+                     part("Brian", .title, top: 0.2, bottom: 0.24),
+                     part("Neredesin", .theirs, top: 0.30, bottom: 0.36, style: cream),
+                     // Boşluk 0,6 satır (0,018): saydam pencerede de 0,6 satır kalır.
+                     part("Yoldayım", .mine, top: 0.378, bottom: 0.438, style: nil, align: .right),
+                     // Okunmayan yazı rengi: zemine göre koyu yazı.
+                     part("Tamam", .theirs, top: 0.6, bottom: 0.66, style: PhoneTextStyle(background: "#F0E8E0", foreground: "#E8E0D8"))]
+        let panel = ScreenPhoneCard.panel(items)!
+        let stacked = ScreenPhoneCard.stacked(panel, width: 1600, height: 400, font: 20)
+        XCTAssertEqual(stacked, ScreenPhoneCard.stacked(ScreenPhoneCard.panel(items)!, width: 1600, height: 400, font: 20),
+                       "aynı içerik birebir aynı çıktı")
+        // Kartsız: hizalı panel olarak çizilir (zemin ve simge yok, her parça kendi kutusunda).
+        XCTAssertTrue(stacked.aligned)
+        let line = stacked.card.lineHeight
+        XCTAssertEqual(line * 400 * 0.85, 20, accuracy: 1e-9, "yazı boyu verilen boyda")
+        // Telefon sağda: sütun alanın sağ kenarında; en çok alanın %45'i ve yazı boyunun 20 katı.
+        XCTAssertEqual(stacked.card.box.right, 1, accuracy: 1e-9)
+        XCTAssertEqual((stacked.card.box.right - stacked.card.box.left) * 1600, 400, accuracy: 1e-6)
+        let rows = stacked.messages
+        XCTAssertEqual(rows.map(\.translation), ["Neredesin", "Yoldayım", "Tamam"])
+        // Gelen sola, giden sağa yaslı; sırası ve aralığı korunur.
+        XCTAssertEqual(rows[0].box.left, stacked.card.box.left, accuracy: 1e-9)
+        XCTAssertEqual(rows[1].box.right, 1, accuracy: 1e-9)
+        XCTAssertEqual(rows[1].box.top - rows[0].box.bottom, 0.6 * line, accuracy: 1e-9)
+        XCTAssertEqual(rows[2].box.top - rows[1].box.bottom, ScreenPhoneCard.stackedGapMax * line, accuracy: 1e-9,
+                       "uzak balonlar arası boşluk sınırlı")
+        let title = stacked.title!
+        XCTAssertEqual(title.box.top, 0)
+        XCTAssertLessThan(title.box.bottom, rows[0].box.top)
+        // Renk: telefonun balonundan; örneği yoksa yedek; yazı okunmuyorsa koyu yazı.
+        XCTAssertEqual(rows[0].style, cream)
+        XCTAssertEqual(rows[1].style, ScreenPhoneCard.outgoingColor)
+        XCTAssertEqual(rows[2].style?.foreground, "#17181B")
+        // Telefon solda: sütun sol kenarda, giden balon sütunun sağında.
+        var leftItems = items
+        leftItems[0].box = TextBox(left: 0.1, top: 0.2, right: 0.3, bottom: 0.8)
+        let left = ScreenPhoneCard.stacked(ScreenPhoneCard.panel(leftItems)!, width: 1600, height: 400, font: 20)
+        XCTAssertEqual(left.card.box.left, 0)
+        XCTAssertEqual(left.messages[1].box.right, left.card.box.right, accuracy: 1e-9)
+        // Punto alt sınırı: küçük altyazıda yazı 13 pikselin altına inmez.
+        let tiny = ScreenPhoneCard.stacked(panel, width: 1600, height: 400, font: 6)
+        XCTAssertEqual(tiny.card.lineHeight * 400 * 0.85, ScreenPhoneCard.stackedMinFont, accuracy: 1e-9)
+        // Alan dolarsa yazı küçülmez, en eski mesajlar düşer; son mesaj görünür.
+        let short = ScreenPhoneCard.stacked(panel, width: 1600, height: 90, font: 20)
+        XCTAssertEqual(short.card.lineHeight * 90 * 0.85, 20, accuracy: 1e-9)
+        XCTAssertEqual(short.messages.last?.translation, "Tamam")
+        XCTAssertLessThan(short.messages.count, 3)
+        XCTAssertLessThanOrEqual(short.messages.last!.box.bottom, 1 + 1e-9)
+    }
+
     /// Telefonun ana ekranı sohbet değildir: kart kurulmaz, bileşenin yazıları kendi yerinde kalır, uygulama adı ("WhatUp")
     /// çevrilmez. Önceden ana ekran sohbet kartı sayılıyor, "Hatırlatıcılar / 10 Bildirim / Ne haber!" telefonun yanında
     /// tek blok oluyordu (X'teki bildirim).

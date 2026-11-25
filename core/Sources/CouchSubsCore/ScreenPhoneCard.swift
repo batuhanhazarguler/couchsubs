@@ -444,6 +444,82 @@ public enum ScreenPhoneCard {
                      outside: items.filter { $0.panel == nil })
     }
 
+    /// Saydam altyazı penceresindeki sohbet paneli (Mac SubtitleOverlay, Windows SubtitleOverlayWindow): pencere oyun karesi
+    /// değil, kullanıcının seçtiği alan olduğundan balonlar telefondaki İngilizce balonlarına hizalanamaz. Görünüm hizalı
+    /// panelle aynıdır (koyu kart ve simge yok; her balon ayrı, telefonun balon renginde, `bubbleColor`): balonlar alanın
+    /// telefon tarafındaki kenarında (telefon sağdaysa sağda) üstten alta, telefondaki sırasıyla ve aralarındaki boşlukla
+    /// (en çok `stackedGapMax` satır) dizilir; gelen sola, giden sağa yaslı, kişi adı üstte küçük başlık. Yazı boyu `font`
+    /// (piksel, en az `stackedMinFont`); yazı küçülmez, alana sığmazsa en eski mesajlar düşer. `width`×`height`: alanın
+    /// boyu (piksel); dönen kutular alana oranla (0–1) ve çiziciler hizalı paneli çizer gibi çizer (`PhonePanelAligned`,
+    /// Windows `PhonePanelView.Aligned`). Aynı girdi her zaman birebir aynı çıktı (#1279). Windows: `Stacked`, Android: `stacked`.
+    public static func stacked(_ panel: Panel, width: Double, height: Double, font: Double) -> Panel {
+        guard width > 0, height > 0 else { return panel }
+        let font = max(stackedMinFont, font)
+        // Çiziciler yazı boyunu satır yüksekliğinin 0,85'i alır (`PhonePanelAligned`).
+        let line = font / 0.85 / height
+        let aspect = width / height
+        let column = min(width * stackedShare, font * stackedChars) / width
+        let right = (panel.card.box.left + panel.card.box.right) / 2 > 0.5
+        let left = right ? 1 - column : 0
+        // Balonun yan dolgusu (çizicilerde yazı boyunun 0,6'sı), alana oranla.
+        let padX = font * 0.6 / width
+
+        var card = panel.card
+        card.box = TextBox(left: left, top: 0, right: left + column, bottom: 1)
+        card.lineHeight = line
+        card.aligned = true
+        var title = panel.title
+        let bodyTop = title == nil ? 0 : line * (titleHeight + titleGap)
+        if var head = title {
+            head.box = TextBox(left: left, top: 0, right: left + column, bottom: line * titleHeight)
+            head.lineHeight = line
+            title = head
+        }
+
+        struct Row { var item: ScreenTranslation.Item; var width: Double; var height: Double; var gap: Double }
+        let rows: [Row] = panel.messages.enumerated().map { index, source in
+            var item = source
+            let bubble = item.panel == .mine || item.panel == .theirs
+            if item.panel == .mine { item.style = bubbleColor(item.style, fallback: outgoingColor) }
+            if item.panel == .theirs { item.style = bubbleColor(item.style, fallback: incomingColor) }
+            item.lineHeight = line
+            let widest = (bubble ? bubbleShare : 1) * column
+            let lines = wrap(item.translation, perLine: Int((widest - 2 * padX) * aspect / (line * charWidth)))
+            // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
+            var gap = bubbleSpacing
+            if index > 0 {
+                let previous = panel.messages[index - 1]
+                gap = min(stackedGapMax, max(0, (source.box.top - previous.box.bottom) / max(1e-9, source.lineHeight)))
+            }
+            return Row(item: item, width: widest, height: Double(lines.count) * line * lineSpacing + line * bubblePadding,
+                       gap: gap * line)
+        }
+        // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
+        var first = 0
+        func bottom(from start: Int) -> Double {
+            rows[start...].indices.reduce(bodyTop) { sum, index in sum + rows[index].height + (index > start ? rows[index].gap : 0) }
+        }
+        while first < rows.count - 1, bottom(from: first) > 1 + 1e-9 { first += 1 }
+
+        var messages: [ScreenTranslation.Item] = []
+        var top = bodyTop
+        for index in rows.indices where index >= first {
+            let row = rows[index]
+            if index > first { top += row.gap }
+            var item = row.item
+            let x = item.panel == .mine ? left + column - row.width : left
+            item.box = TextBox(left: x, top: top, right: x + row.width, bottom: top + row.height)
+            messages.append(item)
+            top += row.height
+        }
+        return Panel(card: card, title: title, messages: messages, outside: panel.outside)
+    }
+
+    /// Saydam pencerede panelin yazısı en az bu boyda (piksel); sütunun eni alanın en çok `stackedShare`'i ve yazı boyunun
+    /// `stackedChars` katı; balonlar arası boşluk en çok `stackedGapMax` satır.
+    public static let stackedMinFont = 13.0
+    static let stackedShare = 0.45, stackedChars = 20.0, stackedGapMax = 1.2
+
     /// Panelin köşe yarıçapı ve zemin örtüsü (1080 satırlık ekranda piksel; çiziciler ekran boyuna ölçekler).
     public static let panelRadius = 18.0, panelOpacity = 0.88
 

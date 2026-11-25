@@ -245,7 +245,8 @@ struct StreamWindowView: View {
 /// Yayın katmanının koordinatları telefondaki kaynak kutularıyla aynı, sol üst köşeye göre 0…1 aralığındadır.
 /// Yanda Panel'de telefonun mesajları sohbet panelinde (`PhonePanelView`; TV ve Windows ile aynı çizim), panel dışındaki
 /// yazılar (ana ekran) kendi yerinde. `panelFont` verilirse (saydam pencere: alan oyun karesi değil, kullanıcının seçtiği
-/// altyazı yeri) panel alanın telefon tarafındaki kenarına yaslanır, yazısı altyazı boyundan gelir.
+/// altyazı yeri) hizalı panelin balonları alanın telefon tarafındaki kenarında alt alta dizilir (`ScreenPhoneCard.stacked`),
+/// yazısı altyazı boyundan gelir.
 struct GamePhoneBlocks: View {
     let items: [ScreenTranslation.Item]
     var panelFont: CGFloat? = nil
@@ -256,11 +257,11 @@ struct GamePhoneBlocks: View {
         GeometryReader { proxy in
             if let panel {
                 if let font = panelFont {
-                    let width = min(proxy.size.width * 0.45, font * 20)
-                    let right = (panel.card.box.left + panel.card.box.right) / 2 > 0.5
-                    PhonePanelView(panel, fontSize: font, radius: max(8, font * 0.7))
-                        .frame(width: width, height: proxy.size.height)
-                        .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
+                    // Saydam pencere: hizalı panelin kartsız balonları alanın telefon tarafındaki kenarında, alt alta.
+                    PhonePanelAligned(ScreenPhoneCard.stacked(panel, width: proxy.size.width, height: proxy.size.height,
+                                                              font: font),
+                                      size: proxy.size, minFont: max(ScreenPhoneCard.stackedMinFont, font))
+                        .transition(.opacity)
                 } else {
                     PhonePanelInFrame(panel, size: proxy.size)
                 }

@@ -171,6 +171,64 @@ class ScreenPhoneCardTest {
     }
 
     /**
+     * Saydam altyazı penceresi (Mac testStackedPanelInTheOverlayWindowKeepsTheAlignedLook, Windows
+     * StackedPanelInTheOverlayWindowKeepsTheAlignedLook ile aynı): hizalı panelin görünümü aynen (kartsız balonlar,
+     * telefonun balon rengi), balonlar alanın telefon tarafındaki kenarında alt alta, sırası ve aralıklarıyla; yazı alt
+     * sınırın altına inmez, küçülmez; aynı içerik birebir aynı çıktı.
+     */
+    @Test
+    fun stackedPanelInTheOverlayWindowKeepsTheAlignedLook() {
+        fun part(text: String, panel: ScreenPhoneCard.PanelPart, top: Double, bottom: Double, surface: TextSurface? = null,
+                 align: String = "left") = ScreenTranslation.Item(text, text, TextBox(0.72, top, 0.9, bottom), 0.03,
+            surface = surface, look = TextLook(false, false, align, false), panel = panel)
+        val cream = TextSurface("#F0E8E0", "#282828")
+        val items = listOf(
+            part(ScreenPhoneCard.BACKDROP_TEXT, ScreenPhoneCard.PanelPart.CARD, 0.2, 0.8).copy(aligned = true),
+            part("Brian", ScreenPhoneCard.PanelPart.TITLE, 0.2, 0.24),
+            part("Neredesin", ScreenPhoneCard.PanelPart.THEIRS, 0.30, 0.36, cream),
+            // Boşluk 0,6 satır (0,018): saydam pencerede de 0,6 satır kalır.
+            part("Yoldayım", ScreenPhoneCard.PanelPart.MINE, 0.378, 0.438, null, "right"),
+            // Okunmayan yazı rengi: zemine göre koyu yazı.
+            part("Tamam", ScreenPhoneCard.PanelPart.THEIRS, 0.6, 0.66, TextSurface("#F0E8E0", "#E8E0D8")),
+        )
+        val panel = ScreenPhoneCard.panel(items)!!
+        val stacked = ScreenPhoneCard.stacked(panel, 1600.0, 400.0, 20.0)
+        assertEquals("aynı içerik birebir aynı çıktı", stacked, ScreenPhoneCard.stacked(ScreenPhoneCard.panel(items)!!, 1600.0, 400.0, 20.0))
+        // Kartsız: hizalı panel olarak çizilir.
+        assertTrue(stacked.aligned)
+        val line = stacked.card.lineHeight
+        assertEquals(20.0, line * 400 * 0.85, 1e-9)
+        assertEquals(1.0, stacked.card.box.right, 1e-9)
+        assertEquals(400.0, (stacked.card.box.right - stacked.card.box.left) * 1600, 1e-6)
+        val rows = stacked.messages
+        assertEquals(listOf("Neredesin", "Yoldayım", "Tamam"), rows.map { it.translation })
+        assertEquals(stacked.card.box.left, rows[0].box.left, 1e-9)
+        assertEquals(1.0, rows[1].box.right, 1e-9)
+        assertEquals(0.6 * line, rows[1].box.top - rows[0].box.bottom, 1e-9)
+        assertEquals(ScreenPhoneCard.STACKED_GAP_MAX * line, rows[2].box.top - rows[1].box.bottom, 1e-9)
+        val title = stacked.title!!
+        assertEquals(0.0, title.box.top, 0.0)
+        assertTrue(title.box.bottom < rows[0].box.top)
+        assertEquals(cream, rows[0].surface)
+        assertEquals(ScreenPhoneCard.OUTGOING, rows[1].surface)
+        assertEquals("#17181B", rows[2].surface?.foreground)
+        // Telefon solda: sütun sol kenarda, giden balon sütunun sağında.
+        val leftItems = items.toMutableList().also { it[0] = it[0].copy(box = TextBox(0.1, 0.2, 0.3, 0.8)) }
+        val left = ScreenPhoneCard.stacked(ScreenPhoneCard.panel(leftItems)!!, 1600.0, 400.0, 20.0)
+        assertEquals(0.0, left.card.box.left, 0.0)
+        assertEquals(left.card.box.right, left.messages[1].box.right, 1e-9)
+        // Punto alt sınırı.
+        val tiny = ScreenPhoneCard.stacked(panel, 1600.0, 400.0, 6.0)
+        assertEquals(ScreenPhoneCard.STACKED_MIN_FONT, tiny.card.lineHeight * 400 * 0.85, 1e-9)
+        // Alan dolarsa yazı küçülmez, en eski mesajlar düşer; son mesaj görünür.
+        val short = ScreenPhoneCard.stacked(panel, 1600.0, 90.0, 20.0)
+        assertEquals(20.0, short.card.lineHeight * 90 * 0.85, 1e-9)
+        assertEquals("Tamam", short.messages.last().translation)
+        assertTrue(short.messages.size < 3)
+        assertTrue(short.messages.last().box.bottom <= 1 + 1e-9)
+    }
+
+    /**
      * Hizalı panel (Mac testAlignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble ile aynı): her Türkçe balon telefondaki
      * İngilizce balonuyla aynı yükseklikte (üst kenarı ±birkaç piksel), çakışan balon en az kaydırmayla aşağı itilir; balon
      * telefonun balon renginde, giden sağa, gelen sola yaslı; kişi adı panelin üstünde küçük başlık; aynı içerik aynı çıktı.

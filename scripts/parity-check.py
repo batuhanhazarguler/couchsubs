@@ -49,6 +49,16 @@ _DROID_TESTS = "couchsubs-android/app/src/test/java/com/couchsubs/mobile/core/"
 # ve ortak deneme dosyasını okuyan testi olmalı. (platform, dosya, düzenli ifade) üçlüleri; biri eksikse denetim kırmızı.
 # Android'de "RECENTER 13" gibi yanlış okunmuş tuş simgesi kutuda kalıyordu: markFree yalnız Mac ve Windows'taydı (#860).
 CAPABILITIES = {
+    "GTA 6 telefon paneli saydam altyazı penceresinde kartsız balonlar (stacked)": [
+        ("mac", _CORE + "ScreenPhoneCard.swift", r"public static func stacked\("),
+        ("mac", "mac/CouchSubs/UI/StreamWindow.swift", r"ScreenPhoneCard\.stacked\("),
+        ("windows", _WIN + "ScreenPhoneCard.cs", r"public static ChatPanel Stacked\("),
+        ("windows", "windows/src/CouchSubs.App/Views/PhoneBlocksCanvas.cs", r"ScreenPhoneCard\.Stacked\("),
+        ("android", _DROID + "ScreenPhoneCard.kt", r"fun stacked\("),
+        ("mac", _CORE_TESTS + "ScreenPhoneCardTests.swift", r"func testStackedPanelInTheOverlayWindowKeepsTheAlignedLook"),
+        ("windows", _WIN_TESTS + "ScreenPhoneCardTests.cs", r"void StackedPanelInTheOverlayWindowKeepsTheAlignedLook"),
+        ("android", _DROID_TESTS + "ScreenPhoneCardTest.kt", r"fun stackedPanelInTheOverlayWindowKeepsTheAlignedLook"),
+    ],
     "Görüntüden tuş simgesi bulma (markFree)": [
         ("mac", _CORE + "ButtonIcons.swift", r"static func markFree\("),
         ("windows", _WIN + "ButtonIcons.cs", r"public static TextLine MarkFree\("),

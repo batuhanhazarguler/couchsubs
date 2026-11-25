@@ -248,6 +248,71 @@ public class ScreenPhoneCardTests
         Assert.Equal("#17181B", ScreenPhoneCard.BubbleColor(new PhoneTextStyle("#F0E8E0", "#E8E0D8"), ScreenPhoneCard.IncomingColor).Foreground);
     }
 
+    /// <summary>
+    /// Saydam altyazı penceresi (Mac testStackedPanelInTheOverlayWindowKeepsTheAlignedLook ile aynı): hizalı panelin
+    /// görünümü aynen (kartsız balonlar, telefonun balon rengi), balonlar alanın telefon tarafındaki kenarında alt alta,
+    /// sırası ve aralıklarıyla; yazı alt sınırın altına inmez, küçülmez; aynı içerik birebir aynı çıktı.
+    /// </summary>
+    [Fact]
+    public void StackedPanelInTheOverlayWindowKeepsTheAlignedLook()
+    {
+        static ScreenTranslation.Item Part(string text, ScreenPhoneCard.PanelPart panel, double top, double bottom,
+                                           PhoneTextStyle? style = null, string align = "left") =>
+            new(text, text, new TextBox(0.72, top, 0.9, bottom), 0.03)
+            {
+                Panel = panel, Style = style, Look = new TextLook(false, false, align, false, true),
+            };
+        var cream = new PhoneTextStyle("#F0E8E0", "#282828");
+        List<ScreenTranslation.Item> items =
+        [
+            Part(ScreenPhoneCard.BackdropText, ScreenPhoneCard.PanelPart.Card, 0.2, 0.8) with { Aligned = true },
+            Part("Brian", ScreenPhoneCard.PanelPart.Title, 0.2, 0.24),
+            Part("Neredesin", ScreenPhoneCard.PanelPart.Theirs, 0.30, 0.36, cream),
+            // Boşluk 0,6 satır (0,018): saydam pencerede de 0,6 satır kalır.
+            Part("Yoldayım", ScreenPhoneCard.PanelPart.Mine, 0.378, 0.438, null, "right"),
+            // Okunmayan yazı rengi: zemine göre koyu yazı.
+            Part("Tamam", ScreenPhoneCard.PanelPart.Theirs, 0.6, 0.66, new PhoneTextStyle("#F0E8E0", "#E8E0D8")),
+        ];
+        var panel = ScreenPhoneCard.PanelOf(items)!;
+        var stacked = ScreenPhoneCard.Stacked(panel, 1600, 400, 20);
+        var again = ScreenPhoneCard.Stacked(ScreenPhoneCard.PanelOf(items)!, 1600, 400, 20);
+        Assert.Equal(stacked.Card, again.Card);
+        Assert.Equal(stacked.Title, again.Title);
+        Assert.Equal(stacked.Messages, again.Messages);
+        // Kartsız: hizalı panel olarak çizilir.
+        Assert.True(stacked.Aligned);
+        var line = stacked.Card.LineHeight;
+        Assert.Equal(20, line * 400 * 0.85, 9);
+        Assert.Equal(1, stacked.Card.Box.Right, 9);
+        Assert.Equal(400, (stacked.Card.Box.Right - stacked.Card.Box.Left) * 1600, 6);
+        var rows = stacked.Messages;
+        Assert.Equal(["Neredesin", "Yoldayım", "Tamam"], rows.Select(row => row.Translation));
+        Assert.Equal(stacked.Card.Box.Left, rows[0].Box.Left, 9);
+        Assert.Equal(1, rows[1].Box.Right, 9);
+        Assert.Equal(0.6 * line, rows[1].Box.Top - rows[0].Box.Bottom, 9);
+        Assert.Equal(ScreenPhoneCard.StackedGapMax * line, rows[2].Box.Top - rows[1].Box.Bottom, 9);
+        Assert.Equal(0, stacked.Title!.Box.Top);
+        Assert.True(stacked.Title.Box.Bottom < rows[0].Box.Top);
+        Assert.Equal(cream, rows[0].Style);
+        Assert.Equal(ScreenPhoneCard.OutgoingColor, rows[1].Style);
+        Assert.Equal("#17181B", rows[2].Style!.Foreground);
+        // Telefon solda: sütun sol kenarda, giden balon sütunun sağında.
+        var leftItems = items.ToList();
+        leftItems[0] = leftItems[0] with { Box = new TextBox(0.1, 0.2, 0.3, 0.8) };
+        var left = ScreenPhoneCard.Stacked(ScreenPhoneCard.PanelOf(leftItems)!, 1600, 400, 20);
+        Assert.Equal(0, left.Card.Box.Left);
+        Assert.Equal(left.Card.Box.Right, left.Messages[1].Box.Right, 9);
+        // Punto alt sınırı.
+        var tiny = ScreenPhoneCard.Stacked(panel, 1600, 400, 6);
+        Assert.Equal(ScreenPhoneCard.StackedMinFont, tiny.Card.LineHeight * 400 * 0.85, 9);
+        // Alan dolarsa yazı küçülmez, en eski mesajlar düşer; son mesaj görünür.
+        var shortPanel = ScreenPhoneCard.Stacked(panel, 1600, 90, 20);
+        Assert.Equal(20, shortPanel.Card.LineHeight * 90 * 0.85, 9);
+        Assert.Equal("Tamam", shortPanel.Messages[^1].Translation);
+        Assert.True(shortPanel.Messages.Count < 3);
+        Assert.True(shortPanel.Messages[^1].Box.Bottom <= 1 + 1e-9);
+    }
+
     [Fact]
     public void FullCardDropsTheOldestMessagesAndKeepsTheNewest()
     {
