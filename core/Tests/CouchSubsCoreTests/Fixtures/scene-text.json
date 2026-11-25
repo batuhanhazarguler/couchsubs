@@ -1444,6 +1444,84 @@
     }
    ],
    "subtitle": "Jason: I'm with the\nFBI."
+  },
+  {
+   "name": "konuşmanın altındaki küçük görev yazısı devam satırı sayılmaz",
+   "lines": [
+    {
+     "text": "Lucia: Come on",
+     "box": [
+      0.3,
+      0.62,
+      0.7,
+      0.72
+     ],
+     "confidence": 1.0
+    },
+    {
+     "text": "Lose the cops",
+     "box": [
+      0.42,
+      0.75,
+      0.58,
+      0.8
+     ],
+     "confidence": 1.0
+    }
+   ],
+   "subtitle": "Lucia: Come on"
+  },
+  {
+   "name": "kısa konuşma altındaki uzun görev yazısına yenilmez",
+   "lines": [
+    {
+     "text": "Okay.",
+     "box": [
+      0.45,
+      0.62,
+      0.55,
+      0.72
+     ],
+     "confidence": 1.0
+    },
+    {
+     "text": "Drive to the marina before the storm",
+     "box": [
+      0.35,
+      0.84,
+      0.65,
+      0.89
+     ],
+     "confidence": 1.0
+    }
+   ],
+   "subtitle": "Okay."
+  },
+  {
+   "name": "küçük harfli kısa devam satırı konuşmada kalır",
+   "lines": [
+    {
+     "text": "I told you to wait right",
+     "box": [
+      0.3,
+      0.62,
+      0.7,
+      0.72
+     ],
+     "confidence": 1.0
+    },
+    {
+     "text": "now.",
+     "box": [
+      0.46,
+      0.75,
+      0.54,
+      0.8
+     ],
+     "confidence": 1.0
+    }
+   ],
+   "subtitle": "I told you to wait right\nnow."
   }
  ]
 }

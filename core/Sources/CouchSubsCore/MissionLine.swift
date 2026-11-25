@@ -13,6 +13,12 @@ public struct MissionLine {
     public static let settleMs = 3000
     /// Bu kadar görülmeyen satır ekrandan kalkmış sayılır.
     public static let forgetMs = 1500
+    /// Görev çevirisinin kutusu: koyu kehribar zemin, beyaz yazı. Kullanıcı bildirimi (beta.100): görev yazısının Türkçesi
+    /// altyazıyla ve öbür ekran yazılarıyla aynı görünüyor, hangisinin görev olduğu anlaşılmıyordu. TV ve önizlemeler bu
+    /// zemini öğenin `style`ından çizer (Windows: MissionLine.Style, Android: MissionLine.STYLE).
+    public static let style = PhoneTextStyle(background: "#7A4E00", foreground: "#FFFFFF")
+    /// Görev çevirisinin başındaki hedef imi (yaygın yazı tiplerinde bulunan dolu üçgen; emoji değildir).
+    public static let marker = "\u{25BA} "
 
     private struct Track {
         var text: String

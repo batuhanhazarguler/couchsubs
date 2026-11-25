@@ -167,6 +167,9 @@ public sealed partial class RegionWatcher
         public TextPaint? Paint { get; init; }
         /// <summary>Özgün yazının satır sayısı (<see cref="ScreenTranslation.Group.Rows"/>); TV çeviriyi bu satır aralığıyla dizer.</summary>
         public int Rows { get; init; } = 1;
+        /// <summary>Görev/hedef satırının bloğu (<see cref="MissionLine.AreaId"/>): çevirisi altyazıdan ayrı görünüşte
+        /// (<see cref="MissionLine.Style"/>, başında <see cref="MissionLine.Marker"/>).</summary>
+        public bool Mission { get; init; }
     }
 
     /// <param name="Icons">Her parçadaki kumanda simgeleri (kareden kesilmiş), parçadaki sırasıyla.</param>
@@ -893,6 +896,11 @@ public sealed partial class RegionWatcher
                     list[painted[k]] = block;
                 }
             }
+            // Görev/hedef satırı altyazıdan ve öbür ekran yazılarından ayrı görünür: koyu kehribar kutu, başında hedef imi
+            // (MissionLine.Style, MissionLine.Marker). Yerinde birebir çizim (örtü/yanına yazma) uygulanmaz; kutu görevin
+            // kendi yerindedir (#1273). TV ve dört platformun önizlemesi bunu öğenin zemininden çizer (Mac/Android aynı).
+            if (kind == ScreenTextKind.Mission)
+                list = [.. list.Select(block => block with { Mission = true, Style = MissionLine.Style, Paint = null })];
             blocks = list;
             key = TextKey(paragraphs) + "|" + string.Join(',', list.Select(block => block.Count));
         }
@@ -1407,7 +1415,7 @@ public sealed partial class RegionWatcher
     /// Her grubun çevirisi kendi yeriyle. Çevirisi aslıyla aynı grup (ad, sayı) atlanır; İngilizcesi görünür kalır.
     /// <paramref name="text"/> simge imlerini bütün alanın sırasıyla taşır; <paramref name="slots"/> o sıradaki simgeler.
     /// </summary>
-    private static List<(int Group, ScreenTranslation.Item Item)> RenderBlocks(
+    internal static List<(int Group, ScreenTranslation.Item Item)> RenderBlocks(
         Candidate candidate, IReadOnlyList<Block> layout, IReadOnlyList<string> text, IReadOnlyList<bool> similar,
         IReadOnlyList<IconSlot> slots, bool keepUnchanged = false)
     {
@@ -1423,6 +1431,7 @@ public sealed partial class RegionWatcher
             var joined = string.Join('\n', range.Select(i => text[i]));
             // Özgün yazı BÜYÜK HARF: çeviri de Türkçe kurallarıyla büyük harf (simge imleri harf değildir, korunur).
             if (block.Look is { Upper: true }) joined = TextStyleSampler.TurkishUpper(joined);
+            if (block.Mission) joined = MissionLine.Marker + joined;
             var (translation, icons) = IconText.Render(joined, slots);
             var source = string.Join('\n', range.Select(i => IconText.Plain(candidate.Paragraphs[i])));
             result.Add((g, new ScreenTranslation.Item(source, translation, block.Box, block.LineHeight,

@@ -16,6 +16,14 @@ public sealed class MissionLine
     public const int SettleMs = 3000;
     /// <summary>Bu kadar görülmeyen satır ekrandan kalkmış sayılır.</summary>
     public const int ForgetMs = 1500;
+    /// <summary>
+    /// Görev çevirisinin kutusu: koyu kehribar zemin, beyaz yazı. Kullanıcı bildirimi (beta.100): görev yazısının Türkçesi
+    /// altyazıyla ve öbür ekran yazılarıyla aynı görünüyor, hangisinin görev olduğu anlaşılmıyordu. TV ve önizlemeler bu
+    /// zemini öğenin Style'ından çizer (Mac/iPhone: MissionLine.style, Android: MissionLine.STYLE).
+    /// </summary>
+    public static readonly PhoneTextStyle Style = new("#7A4E00", "#FFFFFF");
+    /// <summary>Görev çevirisinin başındaki hedef imi (yaygın yazı tiplerinde bulunan dolu üçgen; emoji değildir).</summary>
+    public const string Marker = "\u25BA ";
 
     private sealed class Track(string text, string source, long since, TextBox box)
     {

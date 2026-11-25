@@ -688,6 +688,13 @@ class RegionWatcher(
                 val style = aligned[i]
                 if (side != null && style != null) aligned[i] = style.copy(look = style.look.copy(align = side))
             }
+            // Görev/hedef satırı altyazıdan ve öbür ekran yazılarından ayrı görünür: koyu kehribar kutu, başında hedef imi
+            // ([MissionLine.STYLE], [MissionLine.MARKER]). Yerinde birebir çizim (örtü/yanına yazma) uygulanmaz; kutu görevin
+            // kendi yerindedir (#1273). TV ve dört platformun önizlemesi bunu öğenin zemininden çizer (Mac/Windows aynı).
+            if (kind == ScreenTextKind.MISSION) {
+                for (i in blocks.indices) blocks[i] = blocks[i].copy(paint = null, mission = true)
+                for (i in aligned.indices) aligned[i] = aligned[i]?.let { it.copy(surface = MissionLine.STYLE) }
+            }
             return candidate.copy(blocks = blocks, styles = aligned)
         }
 
@@ -770,7 +777,8 @@ class RegionWatcher(
             val range = block.start until block.start + block.count
             // İkiz panelde çevrilmeyen yazı (kişi adı) da özgün hâliyle yazılır: ikiz özgünün eksiksiz kopyası olsun.
             if (range.all { similar[it] } && block.paint?.mode != TextPaint.MODE_TWIN) return@mapIndexedNotNull null
-            val rendered = IconText.render(range.joinToString("\n") { text[it] }, slots)
+            val joined = range.joinToString("\n") { text[it] }
+            val rendered = IconText.render(if (block.mission) MissionLine.MARKER + joined else joined, slots)
             val source = range.joinToString("\n") { IconText.plain(candidate.paragraphs[it]) }
             val style = candidate.styles?.getOrNull(index)
             // Özgün yazı BÜYÜK HARFse çeviri de (Türkçe kurallarıyla); simge yerleri değişmez.
@@ -799,6 +807,11 @@ class RegionWatcher(
         val paint: TextPaint? = null,
         /** Haritanın görev kartının parçası ([MissionCard]): çizim kipi hep örtme. */
         val card: Boolean = false,
+        /**
+         * Görev/hedef satırının bloğu ([MissionLine.AREA_ID]): çevirisi altyazıdan ayrı görünüşte ([MissionLine.STYLE],
+         * başında [MissionLine.MARKER]).
+         */
+        val mission: Boolean = false,
     )
 
     /**

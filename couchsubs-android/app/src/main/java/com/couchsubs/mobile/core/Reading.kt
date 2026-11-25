@@ -98,6 +98,13 @@ class Reading(lines: List<TextLine>) {
          * geldi. Alttaki satır üsttekinin devamıysa [CONTINUATION_GAP] geçerlidir (Mac/Windows: aynı eşikler).
          */
         const val LINE_GAP = 0.8
+
+        /**
+         * Konuşma satırı, altındaki görev/hedef satırının yazısından en az bu kat büyükse görev ayrı bloktur
+         * ([isSmallerObjective]). Büyük harfle başlayan kuyruksuz kısa satırın ("Go on.") kutusu en çok ~1,45 kat alçak
+         * çıkar; GTA 6 ve RDR2'nin görev yazısı konuşmanın yarısından da küçüktür (Mac/Windows: aynı eşik).
+         */
+        const val OBJECTIVE_SCALE = 1.6
         const val CONTINUATION_GAP = 1.3
 
         /**
@@ -328,7 +335,26 @@ class Reading(lines: List<TextLine>) {
             val placed = centered[other].box!!.placedIn(area)
             other != index && placed.bottom <= box.top + height * 0.25 && box.top - placed.bottom <= height * 3
         }.map { centered[it] }.maxByOrNull { it.box!!.bottom } ?: return null
+        // Görev yazısı konuşmadan belirgin küçük yazıyla (isSmallerObjective): konuşma kısa olsa da ("Okay.") altyazı
+        // üstteki bloktur; görev uzun diye konuşmayı yutmaz.
+        val upper = above.lines.last().box?.placedIn(area)
+        if (upper != null && isSmallerObjective(lowest.text, height, upper.bottom - upper.top, above.lines.last().text)) return above
         return if (letters(lowest.text) <= StickyRows.JOINED_SHARE * letters(above.text)) above else null
+    }
+
+    /**
+     * [text] satırı, üstündeki konuşma satırının (yüksekliği [upper]) altında duran görev/hedef yazısı mı: konuşan adı
+     * taşımıyor, büyük harfle başlıyor, ikisi de küçük harf taşıyor (BÜYÜK HARFLİ tabela satırları bölünmez) ve yazısı konuşmanınkinden en az [OBJECTIVE_SCALE] kat küçük. Kullanıcı bildirimi
+     * (beta.100, GTA 6): kısa görev yazısı (en çok üç sözcük) konuşmanın devamı sayılıp yazı boyu karşılaştırılmıyor,
+     * "Come on Lose the cops" diye tek altyazı çevriliyordu. Küçük harfle başlayan devam satırı ("now.") bu kurala
+     * girmez (GitHub #715; Mac/Windows: aynı kural).
+     */
+    internal fun isSmallerObjective(text: String, height: Double, upper: Double, spoken: String): Boolean {
+        if (height <= 0 || SpeakerPrefix.split(text) != null || text.none { it.isLowerCase() } || spoken.none { it.isLowerCase() }) {
+            return false
+        }
+        val first = text.firstOrNull { it.isLetter() } ?: return false
+        return first.isUpperCase() && upper >= OBJECTIVE_SCALE * height
     }
 
     private fun letters(text: String) = text.count { it.isLetter() }
@@ -384,6 +410,8 @@ class Reading(lines: List<TextLine>) {
         val own = box.bottom - box.top
         val previous = last.bottom - last.top
         val height = maxOf(own, previous)
+        // Konuşmanın altındaki küçük görev yazısı devam satırı sayılmaz (isSmallerObjective).
+        if (isSmallerObjective(text, own, previous, block.last().text)) return false
         val upper = block.last().text
         val continuing = continues(upper, text)
         val wide = continuing && wordCount(upper) >= CONTINUATION_MIN_WORDS

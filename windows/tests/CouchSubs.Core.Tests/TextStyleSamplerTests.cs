@@ -137,4 +137,26 @@ public class TextStyleSamplerTests
         // Kullanıcının alanında (otomatik değil) tek grup eskisi gibi bloksuzdur.
         Assert.Null(RegionWatcher.MakeCandidate(reading, new CropRegion(0, 1, 0, 1), frame).Blocks);
     }
+
+    /// <summary>
+    /// Görev/hedef satırının çevirisi altyazıdan ve öbür ekran yazılarından ayrı görünür (beta.100): özgün zemin yerine koyu
+    /// kehribar kutu, birebir çizim yok, başında hedef imi (Mac ve Android aynı).
+    /// </summary>
+    [Fact]
+    public void MissionLineHasItsOwnAmberLook()
+    {
+        var frame = Text((20, 22, 30), (240, 240, 240), 5);
+        var reading = new Reading([new TextLine("Lose the cops", new TextBox(0, 10.0 / 60, 0.6, 50.0 / 60))]);
+        var other = Assert.Single(RegionWatcher.MakeCandidate(reading, new CropRegion(0, 1, 0, 1), frame, auto: true).Blocks!);
+        Assert.Equal("#14161E", other.Style!.Background);
+        Assert.False(other.Mission);
+        var candidate = RegionWatcher.MakeCandidate(reading, new CropRegion(0, 1, 0, 1), frame, auto: true, kind: ScreenTextKind.Mission);
+        var block = Assert.Single(candidate.Blocks!);
+        Assert.True(block.Mission);
+        Assert.Null(block.Paint);
+        Assert.Equal(MissionLine.Style, block.Style);
+        var item = Assert.Single(RegionWatcher.RenderBlocks(candidate, candidate.Blocks!, ["Polislerden kurtul"], [false], [])).Item;
+        Assert.Equal("\u25BA Polislerden kurtul", item.Translation);
+        Assert.Equal("#7A4E00", item.Style!.Background);
+    }
 }

@@ -311,7 +311,35 @@ public sealed class Reading
             .Where(reading => reading.Box!.Value.PlacedIn(area) is var other && other.Bottom <= box.Top + height * 0.25
                               && box.Top - other.Bottom <= height * 3)
             .MaxBy(reading => reading.Box!.Value.Bottom);
-        return above is not null && Letters(lowest.Text) <= StickyRows.JoinedShare * Letters(above.Text) ? above : null;
+        if (above is null) return null;
+        // Görev yazısı konuşmadan belirgin küçük yazıyla (IsSmallerObjective): konuşma kısa olsa da ("Okay.") altyazı
+        // üstteki bloktur; görev uzun diye konuşmayı yutmaz.
+        if (above.Lines[^1].Box is { } upperBox && upperBox.PlacedIn(area) is var upper
+            && IsSmallerObjective(lowest.Text, height, upper.Bottom - upper.Top, above.Lines[^1].Text)) return above;
+        return Letters(lowest.Text) <= StickyRows.JoinedShare * Letters(above.Text) ? above : null;
+    }
+
+    /// <summary>
+    /// Konuşma satırı, altındaki görev/hedef satırının yazısından en az bu kat büyükse görev ayrı bloktur
+    /// (<see cref="IsSmallerObjective"/>). Büyük harfle başlayan kuyruksuz kısa satırın ("Go on.") kutusu en çok ~1,45 kat
+    /// alçak çıkar; GTA 6 ve RDR2'nin görev yazısı konuşmanın yarısından da küçüktür (Mac/Android: aynı eşik).
+    /// </summary>
+    internal const double ObjectiveScale = 1.6;
+
+    /// <summary>
+    /// <paramref name="text"/> satırı, üstündeki konuşma satırının (yüksekliği <paramref name="upper"/>) altında duran
+    /// görev/hedef yazısı mı: konuşan adı taşımıyor, büyük harfle başlıyor, ikisi de küçük harf taşıyor (BÜYÜK HARFLİ
+    /// tabela satırları bölünmez) ve yazısı konuşmanınkinden en az
+    /// <see cref="ObjectiveScale"/> kat küçük. Kullanıcı bildirimi (beta.100, GTA 6): kısa görev yazısı (en çok üç sözcük)
+    /// konuşmanın devamı sayılıp yazı boyu karşılaştırılmıyor, "Come on Lose the cops" diye tek altyazı çevriliyordu.
+    /// Küçük harfle başlayan devam satırı ("now.") bu kurala girmez (GitHub #715; Mac/Android: aynı kural).
+    /// </summary>
+    internal static bool IsSmallerObjective(string text, double height, double upper, string spoken)
+    {
+        if (height <= 0 || SpeakerPrefix.Parse(text) is not null || !text.Any(char.IsLower) || !spoken.Any(char.IsLower))
+            return false;
+        var first = text.FirstOrDefault(char.IsLetter);
+        return first != default && char.IsUpper(first) && upper >= ObjectiveScale * height;
     }
 
     private static int Letters(string text) => text.Count(char.IsLetter);
@@ -398,6 +426,8 @@ public sealed class Reading
         var last = block[^1].Box!.Value.PlacedIn(area);
         double own = box.Bottom - box.Top, previous = last.Bottom - last.Top;
         var height = Math.Max(own, previous);
+        // Konuşmanın altındaki küçük görev yazısı devam satırı sayılmaz (IsSmallerObjective).
+        if (IsSmallerObjective(text, own, previous, block[^1].Text)) return false;
         var continuing = Continues(block[^1].Text, text);
         var wide = continuing && WordCount(block[^1].Text) >= ContinuationMinWords;
         if (box.Top - last.Bottom > height * (wide ? ContinuationGap : LineGap) || box.Top < last.Top) return false;

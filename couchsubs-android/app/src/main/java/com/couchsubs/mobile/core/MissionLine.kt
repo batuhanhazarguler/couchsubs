@@ -17,6 +17,14 @@ class MissionLine {
         const val SETTLE_MS = 3000L
         /** Bu kadar görülmeyen satır ekrandan kalkmış sayılır. */
         const val FORGET_MS = 1500L
+        /**
+         * Görev çevirisinin kutusu: koyu kehribar zemin, beyaz yazı. Kullanıcı bildirimi (beta.100): görev yazısının
+         * Türkçesi altyazıyla ve öbür ekran yazılarıyla aynı görünüyor, hangisinin görev olduğu anlaşılmıyordu. TV ve
+         * önizlemeler bu zemini öğenin yüzeyinden çizer (Mac/iPhone: MissionLine.style, Windows: MissionLine.Style).
+         */
+        val STYLE = TextSurface("#7A4E00", "#FFFFFF")
+        /** Görev çevirisinin başındaki hedef imi (yaygın yazı tiplerinde bulunan dolu üçgen; emoji değildir). */
+        const val MARKER = "\u25BA "
 
         /**
          * Satır (kutusu karede) görev olabilir mi. Görev satırı ortadadır ve sözcüklerden oluşur; ekranın bir yanındaki HUD

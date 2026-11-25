@@ -108,4 +108,27 @@ class TextStyleSamplerTest {
         assertTrue(style.surface.background, distance(style.surface.background, 58, 148, 187) <= 8)
         assertTrue(style.surface.foreground, distance(style.surface.foreground, 240, 240, 240) <= 8)
     }
+
+    /**
+     * Görev/hedef satırının çevirisi altyazıdan ve öbür ekran yazılarından ayrı görünür (beta.100): özgün zemin yerine koyu
+     * kehribar kutu, birebir çizim yok, başında hedef imi (Mac ve Windows aynı).
+     */
+    @Test
+    fun missionLineHasItsOwnAmberLook() {
+        val frame = image(30, 230, 2)
+        val region = CropRegion(0.0, 1.0, 0.0, 1.0)
+        val reading = Reading(listOf(TextLine("Lose the cops", TextBox(0.0, 0.1, 0.6, 0.9))))
+        val base = RegionWatcher.candidate(reading, region, frame, auto = true)
+        val other = RegionWatcher.styled(base, reading, region, frame, modes = true)
+        assertEquals("#1E1E1E", other.styles!!.single()!!.surface.background)
+        assertFalse(other.blocks!!.single().mission)
+        val mission = RegionWatcher.styled(base, reading, region, frame, modes = true, kind = ScreenTextKind.MISSION)
+        val block = mission.blocks!!.single()
+        assertTrue(block.mission)
+        assertEquals(null, block.paint)
+        assertEquals(MissionLine.STYLE, mission.styles!!.single()!!.surface)
+        val item = RegionWatcher.renderBlocks(mission, mission.blocks!!, listOf("Polislerden kurtul"), listOf(false), emptyList()).single().second
+        assertEquals("\u25BA Polislerden kurtul", item.translation)
+        assertEquals("#7A4E00", item.surface!!.background)
+    }
 }

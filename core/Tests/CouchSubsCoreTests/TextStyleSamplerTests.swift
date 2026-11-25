@@ -129,4 +129,27 @@ final class TextStyleSamplerTests: XCTestCase {
         XCTAssertEqual(preset.blocks?.count, 1)
         XCTAssertEqual(preset.blocks?.first?.style?.background, "#14161E")
     }
+
+    /// Görev/hedef satırının çevirisi altyazıdan ve öbür ekran yazılarından ayrı görünür (beta.100): özgün zemin yerine koyu
+    /// kehribar kutu, birebir çizim yok, başında hedef imi; TV'ye zemin `surface` olarak gider (Windows ve Android aynı).
+    @MainActor
+    func testMissionLineHasItsOwnAmberLook() throws {
+        let frame = Self.text((20, 22, 30), (240, 240, 240), stroke: 5)
+        let reading = Reading(lines: [TextLine("Lose the cops", box: TextBox(left: 0, top: 10.0 / 60, right: 0.6, bottom: 50.0 / 60))])
+        let whole = CropRegion(top: 0, bottom: 1, left: 0, right: 1)
+        let other = try XCTUnwrap(RegionWatcher.candidate(reading, in: whole, frame: frame, auto: true).blocks?.first)
+        XCTAssertEqual(other.style?.background, "#14161E")
+        XCTAssertFalse(other.mission)
+        let candidate = RegionWatcher.candidate(reading, in: whole, frame: frame, auto: true, kind: .mission)
+        let block = try XCTUnwrap(candidate.blocks?.first)
+        XCTAssertTrue(block.mission)
+        XCTAssertNil(block.paint)
+        XCTAssertEqual(block.style, MissionLine.style)
+        let item = try XCTUnwrap(RegionWatcher.renderBlocks(candidate, layout: [block], text: ["Polislerden kurtul"],
+                                                           similar: [false], slots: []).first?.item)
+        XCTAssertEqual(item.translation, "\u{25BA} Polislerden kurtul")
+        let json = SubtitleServer.json(item)
+        XCTAssertEqual((json["surface"] as? [String: Any])?["background"] as? String, "#7A4E00")
+        XCTAssertNil(json["bg"])
+    }
 }

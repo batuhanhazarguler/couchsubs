@@ -308,7 +308,31 @@ public struct Reading: Equatable, Sendable {
             return placed.bottom <= box.top + height * 0.25 && box.top - placed.bottom <= height * 3
         }.map { centered[$0] }.max(by: { $0.box!.bottom < $1.box!.bottom })
         guard let above else { return nil }
+        // Görev yazısı konuşmadan belirgin küçük yazıyla (`isSmallerObjective`): konuşma kısa olsa da ("Okay.") altyazı
+        // üstteki bloktur; görev uzun diye konuşmayı yutmaz.
+        if let upper = above.lines.last?.box?.placed(in: area),
+           isSmallerObjective(lowest.text, height: height, below: upper.bottom - upper.top, under: above.lines.last!.text) { return above }
         return Double(letters(lowest.text)) <= StickyRows.joinedShare * Double(letters(above.text)) ? above : nil
+    }
+
+    /// Konuşma satırı, altındaki görev/hedef satırının yazısından en az bu kat büyükse görev ayrı bloktur
+    /// (`isSmallerObjective`). Satır kutusu harflere göre ölçülür: büyük harfle başlayan, kuyruksuz kısa satırın ("Go on.")
+    /// kutusu en çok ~1,45 kat alçak çıkar; GTA 6 ve RDR2'nin görev yazısı konuşmanın yarısından da küçüktür (gerçek
+    /// karelerde 2,2–3,6 kat).
+    static let objectiveScale = 1.6
+
+    /// `text` satırı, üstündeki konuşma satırının (yüksekliği `upper`) altında duran görev/hedef yazısı mı: konuşan adı
+    /// taşımıyor, büyük harfle başlıyor ("Lose the cops", "Go to Brian's"), ikisi de küçük harf taşıyor (konuşma ve görev cümle
+    /// düzeninde; BÜYÜK HARFLİ tabela/kitap kapağı satırları bölünmez, `SceneText` onları bütün atar) ve yazısı konuşmanınkinden en az
+    /// `objectiveScale` kat küçük. Kullanıcı bildirimi (beta.100, GTA 6): görev yazısı farklı yazı tipinde, konturlu ve
+    /// küçük olduğu halde kısa olduğu için (en çok üç sözcük) üstteki konuşmanın devamı sayılıp (`continues`) yazı boyu hiç
+    /// karşılaştırılmıyor, "Come on Lose the cops" diye tek altyazı çevriliyordu. Küçük harfle başlayan devam satırı
+    /// ("now.") bu kurala girmez (GitHub #715). Windows (Reading.IsSmallerObjective) ve Android (isSmallerObjective) aynı.
+    static func isSmallerObjective(_ text: String, height: Double, below upper: Double, under spoken: String) -> Bool {
+        guard height > 0, SpeakerPrefix.split(text) == nil, text.contains(where: \.isLowercase),
+              spoken.contains(where: \.isLowercase),
+              let first = text.first(where: \.isLetter), first.isUppercase else { return false }
+        return upper >= objectiveScale * height
     }
 
     private static func letters(_ text: String) -> Int { text.filter(\.isLetter).count }
@@ -372,6 +396,8 @@ public struct Reading: Equatable, Sendable {
         let last = block.last!.box!.placed(in: area)
         let own = box.bottom - box.top, previous = last.bottom - last.top
         let height = max(own, previous)
+        // Konuşmanın altındaki küçük görev yazısı devam satırı sayılmaz (`isSmallerObjective`).
+        if isSmallerObjective(text, height: own, below: previous, under: block.last!.text) { return false }
         let continuing = continues(block.last!.text, with: text)
         let wide = continuing && wordCount(block.last!.text) >= continuationMinWords
         guard box.top - last.bottom <= height * (wide ? continuationGap : lineGap), box.top >= last.top else { return false }

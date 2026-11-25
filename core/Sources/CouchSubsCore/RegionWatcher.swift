@@ -154,6 +154,9 @@ public final class RegionWatcher {
         var paint: TextPaint? = nil
         /// Özgün yazının satır sayısı (`Group.rows`); TV çeviriyi bu satır aralığıyla dizer.
         var rows = 1
+        /// Görev/hedef satırının bloğu (`MissionLine.areaId`): çevirisi altyazıdan ayrı görünüşte (`MissionLine.style`,
+        /// başında `MissionLine.marker`).
+        var mission = false
     }
 
     struct Candidate {
@@ -682,6 +685,16 @@ public final class RegionWatcher {
                     if let side = paints[k].iconSide { list[i].look?.align = side }
                 }
             }
+            // Görev/hedef satırı altyazıdan ve öbür ekran yazılarından ayrı görünür: koyu kehribar kutu, başında hedef imi
+            // (`MissionLine.style`, `MissionLine.marker`). Yerinde birebir çizim (örtü/yanına yazma) uygulanmaz; kutu
+            // görevin kendi yerindedir (#1273). TV ve dört platformun önizlemesi bunu öğenin zemininden çizer.
+            if kind == .mission {
+                for i in list.indices {
+                    list[i].mission = true
+                    list[i].style = MissionLine.style
+                    list[i].paint = nil
+                }
+            }
             blocks = list
             key = textKey(paragraphs) + "|" + list.map { String($0.count) }.joined(separator: ",")
         }
@@ -1001,6 +1014,7 @@ public final class RegionWatcher {
             var joined = range.map { text[$0] }.joined(separator: "\n")
             // Özgün yazı BÜYÜK HARF: çeviri de Türkçe kurallarıyla büyük harf (simge imleri harf değildir, korunur).
             if block.look?.upper == true { joined = TextStyleSampler.turkishUpper(joined) }
+            if block.mission { joined = MissionLine.marker + joined }
             let rendered = IconText.render(joined, slots: slots)
             let source = range.map { IconText.plain(candidate.paragraphs[$0]) }.joined(separator: "\n")
             var item = ScreenTranslation.Item(source: source, translation: rendered.text, box: block.box,
