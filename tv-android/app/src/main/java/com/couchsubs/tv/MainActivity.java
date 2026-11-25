@@ -203,6 +203,18 @@ public class MainActivity extends Activity implements TvPage.Host {
     }
 
     /** Katmana geçilebilecekken yalnız kullanıcının Uygulama içinde seçimi yüzünden uygulama içinde kalınıyor. */
+    /**
+     * Uygulama içi seçili ama TV ekranı geri vermiyor: CouchSubs arkada kalınca altyazı hiç görünmez (X, üç kullanıcı).
+     * Katman bu TV'de bozuk bilinmiyorsa ona geçilir (bkz. DisplayMode.rescueToOverlay). Geçildiyse true.
+     */
+    private boolean rescueToOverlay() {
+        if (!DisplayMode.rescueToOverlay(TvPage.storedDisplayMode(this), overlayAllowed(), TvPage.overlayBroken(this))) {
+            return false;
+        }
+        switchToOverlay(R.string.in_app_rescued_overlay);
+        return isFinishing();
+    }
+
     private boolean keptInApp() {
         return DisplayMode.keptInApp(TvPage.storedDisplayMode(this), overlayAllowed());
     }
@@ -946,6 +958,8 @@ public class MainActivity extends Activity implements TvPage.Host {
             if (autoOverlay) {
                 switchToOverlay(R.string.overlay_fallback);
                 if (isFinishing()) return;
+            } else if (keepInApp && rescueToOverlay()) {
+                return;
             } else if (keepInApp) {
                 keepInAppNotice(R.string.in_app_kept_taken);
             }
@@ -968,6 +982,7 @@ public class MainActivity extends Activity implements TvPage.Host {
                 handler.postDelayed(this::reclaimScreen, ScreenReclaim.DELAY_MS);
                 return;
             }
+            if (rescueToOverlay()) return;
             keepInAppNotice(R.string.in_app_kept_taken);
         }
         if (page != null) page.background(true);

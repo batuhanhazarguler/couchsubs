@@ -1,0 +1,2 @@
+0.9.107: Konuşma altyazısı hiçbir TV'de ve modda basık, dar ya da çok küçük çizilmiyor; TV'nin yazı ölçeği altyazıyı değiştirmiyor. Katman güncellemeden sonra yazılım çizimine geçmiyor; Uygulama içinde TV ekranı geri vermezse altyazı Katman'da sürüyor.
+0.9.106: GTA 6 telefon paneli yenilendi; her Türkçe balon İngilizce balonuyla aynı yükseklikte.

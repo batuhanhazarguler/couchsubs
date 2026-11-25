@@ -17,6 +17,16 @@ package com.couchsubs.tv;
  * - Sayfanın WebView işlemi donanımlı pencerede çökerse de (aynı kökten olabilir) sonraki pencere yazılımla kurulur.
  * Yanlış pozitif (süreç denemenin ilk saniyelerinde başka nedenle öldü) yalnız yazılım çizimi demektir, çökme değil.
  *
+ * Yanlış pozitif zararsız değil (#1255, #1259): yazılımla çizilen katmanda altyazı kutusu ve yazısı yatayda ezik, dar
+ * çiziliyor (TCL ve başka Android TV'ler; "Uygulama içinde" modunda, aynı sayfa düzgün). Deneme süresinde süreci
+ * öldüren sıradan olaylar (bilgisayarın TV uygulamasını güncellemesi ya da bağlanmayan uygulamayı kapatıp açması,
+ * TV'nin kapanması, bellek yetmeyince sistemin kapatması) TV'yi kalıcı olarak yazılım çizimine geçiriyordu; yalnız
+ * uygulama silinip yeniden kurulunca düzeliyordu. Android 11+ son çıkışın nedenini verir (ApplicationExitInfo):
+ * - Deneme sürerken süreç gittiyse yalnız yerel çökmede (REASON_CRASH_NATIVE, EGL_BAD_ALLOC böyledir) yazılıma geçilir.
+ * - 0.9.106 ve öncesinin doğrulamadan sakladığı yazılım tercihi bir kez silinir, donanım yeniden denenir; gerçekten
+ *   çöken TV bir sonraki açılışta doğrulanmış olarak yazılıma döner.
+ * Android 10 ve öncesinde neden bilinmez (Philips 55PUS7503 Android 8): davranış eskisi gibi.
+ *
  * Android'e bağlı değildir; saklama ve zaman dışarıdan verilir (bkz. OverlayDrawingTest).
  */
 final class OverlayDrawing {
@@ -29,6 +39,8 @@ final class OverlayDrawing {
 
     static final String KEY_SOFTWARE = "overlaySoftware";
     static final String KEY_HARDWARE_TRYING = "overlayHardwareTrying";
+    /** Yazılım tercihi çıkış nedeniyle doğrulanarak (ya da WebView çökmesiyle) bu sürümde mi verildi. */
+    static final String KEY_SOFTWARE_CHECKED = "overlaySoftwareChecked";
     static final long SETTLE_MS = 15_000;
     static final long INPUT_SETTLE_MS = 2_000;
     static final long SURVIVE_MS = 3_000;
@@ -39,14 +51,33 @@ final class OverlayDrawing {
     private boolean trying;
     private long shownAt;
     private long inputAt;
+    /** Eski sürümün sakladığı yazılım tercihi silindi, donanım yeniden deneniyor (tanı satırı için). */
+    private boolean rechecked;
 
+    /** Neden bilinmeyen (Android 10 ve öncesi) TV: her süreç ölümü deneme sırasında çökme sayılır. */
     OverlayDrawing(Store store) {
+        this(store, null);
+    }
+
+    /**
+     * lastExitNativeCrash: uygulamanın önceki sürecinin son çıkışı yerel çökme miydi; null: bilinmiyor (Android 10 ve
+     * öncesi ya da kayıt yok).
+     */
+    OverlayDrawing(Store store, Boolean lastExitNativeCrash) {
         this.store = store;
         software = store.get(KEY_SOFTWARE);
         if (software) why = "saved";
+        if (software && lastExitNativeCrash != null && !store.get(KEY_SOFTWARE_CHECKED)) {
+            // Eski sürümün doğrulamadan sakladığı tercih: donanım yeniden denenir (deneme yine korunur).
+            software = false;
+            why = "";
+            rechecked = true;
+            store.put(KEY_SOFTWARE, false);
+        }
         if (store.get(KEY_HARDWARE_TRYING)) {
             store.put(KEY_HARDWARE_TRYING, false);
-            if (!software) useSoftware("crash");
+            // Güncelleme, kapatıp açma, TV'nin kapanması, bellek: çökme değil, donanımla devam.
+            if (!software && !Boolean.FALSE.equals(lastExitNativeCrash)) useSoftware("crash");
         }
     }
 
@@ -88,13 +119,14 @@ final class OverlayDrawing {
     /** Bilgi panelinin tanı satırı için. */
     String diagnostics() {
         if (software) return "draw software (" + why + ")";
-        return trying ? "draw hw checking" : "draw hw";
+        return (trying ? "draw hw checking" : "draw hw") + (rechecked ? " (rechecked)" : "");
     }
 
     private void useSoftware(String reason) {
         software = true;
         why = reason;
         store.put(KEY_SOFTWARE, true);
+        store.put(KEY_SOFTWARE_CHECKED, true);
     }
 
     private void stopTrying() {

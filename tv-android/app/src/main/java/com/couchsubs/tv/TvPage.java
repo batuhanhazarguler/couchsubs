@@ -96,6 +96,12 @@ final class TvPage {
         settings.setUseWideViewPort(true);
         settings.setLoadWithOverviewMode(true);
         settings.setSupportZoom(false);
+        // Yazı boyunu yalnız sayfa belirler (#1255, #1259): cihazın yazı ölçeği (Ayarlar › Erişilebilirlik › Yazı boyutu)
+        // ve WebView'in yazı otomatik boyutlandırması altyazıyı büyütüp küçültmez; Katman ve Uygulama içinde aynı.
+        settings.setTextZoom(100);
+        settings.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
+        settings.setMinimumFontSize(1);
+        settings.setMinimumLogicalFontSize(1);
         // Ölçek fiziksel piksel başına yüzde: 1920 CSS pikseli ekranın tam genişliğine sığar (1080p'de %100).
         webView.setInitialScale(fitScalePercent());
         webView.addJavascriptInterface(new Bridge(), "AndroidTV");
@@ -198,6 +204,17 @@ final class TvPage {
         if (prefs.getBoolean(KEY_AUTO_OVERLAY_TOLD, false)) return false;
         prefs.edit().putBoolean(KEY_AUTO_OVERLAY_TOLD, true).apply();
         return true;
+    }
+
+    private static final String KEY_OVERLAY_BROKEN = "overlayBroken";
+
+    /** Katman bu TV'de açılamadı ya da sayfası art arda çöktü (bkz. DisplayMode.rescueToOverlay). */
+    static boolean overlayBroken(Context context) {
+        return prefs(context).getBoolean(KEY_OVERLAY_BROKEN, false);
+    }
+
+    static void markOverlayBroken(Context context) {
+        prefs(context).edit().putBoolean(KEY_OVERLAY_BROKEN, true).apply();
     }
 
     private static SharedPreferences prefs(Context context) {

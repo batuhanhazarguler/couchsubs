@@ -10,6 +10,10 @@ html, body {
   /* Her TV'nin kendi yazı tipi: LG, Samsung (Tizen), Android TV; sonra genel yedek. "Segoe UI" bilerek yok: harfleri
      ekran çevirisi kutularının satır yüksekliğini aşıyor, Windows'ta tv-screen.test.js'in 4K ölçümünü bozuyordu. */
   font-family: "LG Smart UI", "Museo Sans", "SamsungOne", "Tizen Sans", Roboto, Arial, sans-serif;
+  /* Tarayıcının kendi yazı büyütmesi (Android WebView'de yazı otomatik boyutlandırma) kapalı: yazı boyunu yalnız sayfa
+     belirler (#1255). Android TV'de cihazın yazı ölçeği ayrıca TvPage'de %100'e sabitlenir. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 #video-host, #video-host video {

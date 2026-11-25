@@ -1,0 +1,2 @@
+0.9.107: Dialogue subtitles are never drawn squashed, narrow or tiny on any TV or mode; the TV's font scale no longer changes them. Overlay no longer falls back to software drawing after an update; in Inside the app mode, subtitles continue in overlay when the TV keeps its HDMI screen in front.
+0.9.106: Redesigned GTA 6 phone panel; each Turkish bubble sits at the height of its English bubble.

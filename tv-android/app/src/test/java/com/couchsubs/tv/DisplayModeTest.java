@@ -172,4 +172,16 @@ public class DisplayModeTest {
         assertFalse(watch.shouldSwitch(late, true, DisplayMode.mayAutoSwitch("inAppOnly", true)));
         assertTrue(watch.noPicture(late));
     }
+
+    // X (üç kullanıcı): "Uygulama içinde" seçiliyken TV görüntüyü kendi HDMI ekranına alıp geri vermiyor, altyazı hiç
+    // görünmüyordu. Katman bu TV'de bozuk bilinmiyorsa ona geçilir; bozuksa (#1074, #1118) uygulama içinde kalınır.
+    @Test
+    public void inAppOnlyThatLostTheScreenIsRescuedToOverlayUnlessOverlayIsBroken() {
+        assertTrue(DisplayMode.rescueToOverlay("inAppOnly", true, false));
+        assertFalse("katman bu TV'de açılamadı/çöktü", DisplayMode.rescueToOverlay("inAppOnly", true, true));
+        assertFalse("izin yok (Play paketi)", DisplayMode.rescueToOverlay("inAppOnly", false, false));
+        // Otomatik ve Katman zaten kendi yolunda katmana geçer (mayAutoSwitch).
+        assertFalse(DisplayMode.rescueToOverlay("auto", true, false));
+        assertFalse(DisplayMode.rescueToOverlay("overlay", true, false));
+    }
 }

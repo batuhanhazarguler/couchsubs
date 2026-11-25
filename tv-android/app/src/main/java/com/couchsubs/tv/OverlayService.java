@@ -2,6 +2,8 @@
 package com.couchsubs.tv;
 
 import android.Manifest;
+import android.app.ActivityManager;
+import android.app.ApplicationExitInfo;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -30,6 +32,8 @@ import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.Toast;
+
+import java.util.List;
 
 /**
  * Katman modu: HDMI'yı TV kendi giriş ekranında gösterir, altyazı onun üstündeki şeffaf bir pencerede durur.
@@ -82,6 +86,9 @@ public class OverlayService extends Service implements TvPage.Host {
         proofPending = false;
         if (page != null && drawing != null) drawing.survived();
     };
+    private static final long PROOF_DRAW_DELAY_MS = 100;
+    /** Donanım denemesinin kanıt çizimi: pencere yeniden çizilir (bkz. watchDraws). */
+    private final Runnable proofDraw = () -> { if (root != null) root.invalidate(); };
 
     /**
      * Servisi başlatır; başlatılamadıysa false döner ve çağıran uygulama içinde kalır. Android 12+ arka plandan ön plan
@@ -119,7 +126,10 @@ public class OverlayService extends Service implements TvPage.Host {
         if (!goForeground()) {
             // TV ön plan servisine izin vermedi: katman açılamaz, uygulama içi moda dönülür ve nedeni söylenir.
             stopSelf();
-            if (page == null) openApp(DisplayMode.FAILED_FOREGROUND);
+            if (page == null) {
+                TvPage.markOverlayBroken(this);
+                openApp(DisplayMode.FAILED_FOREGROUND);
+            }
             return START_NOT_STICKY;
         }
         String params = intent == null ? null : intent.getStringExtra(EXTRA_PARAMS);
@@ -133,6 +143,7 @@ public class OverlayService extends Service implements TvPage.Host {
             if (!showWindow(params == null ? "" : params)) {
                 // İzin var ama TV katman penceresini açtırmadı (BadTokenException ya da benzeri).
                 stopSelf();
+                TvPage.markOverlayBroken(this);
                 openApp(DisplayMode.FAILED_WINDOW);
                 return START_NOT_STICKY;
             }
@@ -148,7 +159,7 @@ public class OverlayService extends Service implements TvPage.Host {
 
     private boolean showWindow(String params) {
         windows = (WindowManager) getSystemService(WINDOW_SERVICE);
-        if (drawing == null) drawing = new OverlayDrawing(new PrefsStore(this));
+        if (drawing == null) drawing = new OverlayDrawing(new PrefsStore(this), lastExitNativeCrash(this));
         boolean software = drawing.software();
         page = new TvPage(this, this, params, true, software);
         root = software ? softwareRoot(page.webView) : page.webView;
@@ -190,7 +201,12 @@ public class OverlayService extends Service implements TvPage.Host {
             return false;
         }
         // Pencerenin ilk çizimi bir sonraki karede: dinleyici eklendikten hemen sonra kurulsa da kaçmaz.
-        if (!software) watchDraws(root);
+        if (!software) {
+            watchDraws(root);
+            // Altyazı gelmezse şeffaf sayfa hiç yeniden çizilmez, deneme açık kalır; süreç o arada başka nedenle ölürse
+            // (güncelleme, kapatıp açma) TV yazılıma geçiyordu (#1255). Kanıt çizimi süre dolunca istenir.
+            ui.postDelayed(proofDraw, OverlayDrawing.SETTLE_MS + PROOF_DRAW_DELAY_MS);
+        }
         Log.i(TAG, "overlay window " + drawing.diagnostics());
         page.load();
         return true;
@@ -237,6 +253,28 @@ public class OverlayService extends Service implements TvPage.Host {
         public ApplicationInfo getApplicationInfo() { return info; }
     }
 
+    /**
+     * Uygulamanın önceki ana sürecinin son çıkışı yerel çökme miydi (#1255; bkz. OverlayDrawing). Android 10 ve öncesinde
+     * ya da kayıt yoksa null: neden bilinmez, eski davranış.
+     */
+    static Boolean lastExitNativeCrash(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null;
+        try {
+            ActivityManager manager = (ActivityManager) context.getSystemService(ACTIVITY_SERVICE);
+            if (manager == null) return null;
+            String main = context.getApplicationInfo().processName;
+            List<ApplicationExitInfo> exits = manager.getHistoricalProcessExitReasons(context.getPackageName(), 0, 8);
+            for (ApplicationExitInfo exit : exits) {
+                // Yalnız ana süreç; WebView'in yalıtılmış süreçleri sayılmaz. Liste en yeniden eskiye.
+                if (main != null && !main.equals(exit.getProcessName())) continue;
+                return exit.getReason() == ApplicationExitInfo.REASON_CRASH_NATIVE;
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "exit reasons unavailable", e);
+        }
+        return null;
+    }
+
     /** OverlayDrawing'in kalıcı deposu; commit: deneme işareti çizimden (olası çökmeden) önce diskte olmalı. */
     private static final class PrefsStore implements OverlayDrawing.Store {
         private final SharedPreferences prefs;
@@ -281,7 +319,11 @@ public class OverlayService extends Service implements TvPage.Host {
             startActivity(view);
             tunedPort = port;
             inputState = "HDMI " + port + " opened";
-            if (drawing != null) drawing.inputOpened(SystemClock.elapsedRealtime());
+            if (drawing != null) {
+                drawing.inputOpened(SystemClock.elapsedRealtime());
+                ui.removeCallbacks(proofDraw);
+                ui.postDelayed(proofDraw, OverlayDrawing.INPUT_SETTLE_MS + PROOF_DRAW_DELAY_MS);
+            }
             page.status("ready");
         } catch (ActivityNotFoundException | SecurityException e) {
             // TV bu yolla girişe geçemiyor: kullanıcı girişi kumandadan seçer, altyazı yine üstte görünür.
@@ -321,6 +363,7 @@ public class OverlayService extends Service implements TvPage.Host {
         }
         if (!restarts.allow(SystemClock.elapsedRealtime())) {
             Log.w(TAG, "overlay page keeps dying; leaving overlay mode");
+            TvPage.markOverlayBroken(this);
             Toast.makeText(this, R.string.overlay_renderer_failed, Toast.LENGTH_LONG).show();
             stopSelf();
             return;
@@ -329,6 +372,7 @@ public class OverlayService extends Service implements TvPage.Host {
             if (!running || page != null) return;
             if (!showWindow(params == null ? "" : params)) {
                 stopSelf();
+                TvPage.markOverlayBroken(this);
                 openApp(DisplayMode.FAILED_WINDOW);
             }
         }, PageRestarts.DELAY_MS);
@@ -407,6 +451,7 @@ public class OverlayService extends Service implements TvPage.Host {
 
     private void removeWindow() {
         ui.removeCallbacks(proofSurvived);
+        ui.removeCallbacks(proofDraw);
         proofPending = false;
         if (page != null) {
             try { windows.removeView(root); } catch (RuntimeException ignored) { /* pencere zaten yok */ }

@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.106';
+  var APP_VERSION = '0.9.107';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -889,6 +889,8 @@
   // Satırı yazar. Sayfadaki metin bölünmüş hâlidir; karşılaştırmalar için özgün metin elementte kalır.
   function setLineText(textId, text, paragraphs, baseSize, speakers) {
     var el = $(textId);
+    // Konuşma satırı alt sınırın altına inmez (bilgisayardan gelen boy ne olursa olsun); bölme bu boyla ölçülür.
+    if (!paragraphs) baseSize = Math.max(baseSize, dialogueMinFont());
     // Önceki satır için daraltılmış kutu (fitBox) yeni satır ölçülmeden önce bırakılır: yoksa yeni satır eski satırın dar
     // kutusunda ölçülüyor, fazladan satıra bölünmüş sayılıp yazı gereksiz yere küçülüyordu (0.9.42).
     el.style.width = '';
@@ -1138,6 +1140,29 @@
   // ScreenFit.IsDialogue (Windows), ScreenFit.isDialogue (Android).
   var SPEAKER_PREFIX = /^[A-ZÇĞİÖŞÜ][^:：\n]{0,30}[:：]\s+\S/;
   var SPOKEN_END = /[.!?…]["'”’»)\]]*$/;
+  // Konuşma satırının en küçük yazı boyu: sayfa yüksekliğinin %2,2'si (1080'de 24, 720'de 16 CSS pikseli; TV uygulaması
+  // 0.9.107, #1255, #1259). Konuşma satırı hiçbir TV'de ve hiçbir yolda (altyazı, ekran yazısı olarak okunan replik) bunun
+  // altına küçülmez, yatayda sıkışmaz, dar aile almaz: sığmazsa satır kırılır, kutu büyür.
+  var DIALOGUE_MIN_SHARE = 0.022;
+
+  function dialogueMinFont(height) {
+    var page = height || (document.documentElement.clientHeight || window.innerHeight || 1080) / (window.COUCHSUBS_ZOOM || 1);
+    return Math.max(12, Math.round(page * DIALOGUE_MIN_SHARE));
+  }
+
+  // Boy ve genişlik kuralları (alt sınır, iki yana genişleme) yalnız kesin konuşma satırında: konuşan adıyla başlayan ya
+  // da en çok beş sözcüklük replik. Görev/hedef cümlesi de küçük harfli ve noktalı olabilir; o özgün kutusunda kalır.
+  var SPOKEN_MAX_WORDS = 5;
+  function isSpoken(text, rows) {
+    if (!isDialogue(text, rows)) return false;
+    var line = String(text || '').replace(/^\s+|\s+$/g, '');
+    return SPEAKER_PREFIX.test(line) || line.split(/\s+/).length <= SPOKEN_MAX_WORDS;
+  }
+
+  function rowsOf(item) {
+    return item && item.paragraphs === true ? 2 : item && item.rows;
+  }
+
   function isDialogue(text, rows) {
     var line = String(text || '').replace(/^\s+|\s+$/g, '');
     if (!line) return false;
@@ -1465,7 +1490,9 @@
       var box = validBox(item && item.box);
       if (!box || !item.text || tooBig(box)) continue;
       // Bilgisayar özgün görünüşü ölçüp gönderdiyse yerinde birebir çizim (placeExact); telefon ve balon eski yolda.
-      if (!phone && setApart && item.bubble !== true && isExact(item)) {
+      // Ekran yazısı olarak okunan konuşma satırı birebir yolda küçülebiliyordu (tek sözcük kutuya sığana kadar); o
+      // fitStyled'da çizilir: sıkışmaz, alt sınırın altına inmez (#1255).
+      if (!phone && setApart && item.bubble !== true && isExact(item) && !isSpoken(item.text, item.rows)) {
         exact.push(item);
         continue;
       }
@@ -1519,6 +1546,9 @@
       el.style.minHeight = Math.min(Math.round(boxHeight), available) + 'px';
       var line = typeof item.line === 'number' && item.line > 0 ? item.line * height : box.bottom * height - box.top * height;
       var floor = phone ? Math.max(10, Math.round(12 * height / 1080)) : SCREEN_MIN_FONT;
+      // Konuşma satırı (ekran yazısı olarak okunmuş replik) alt sınırın altına küçülmez (#1255).
+      var spoken = !phone && item.bubble !== true && isSpoken(item.text, item.rows);
+      if (spoken) floor = Math.max(floor, dialogueMinFont(height));
       var size = Math.max(floor, Math.min(96, Math.round(line * 0.95)));
       // Özgün görünüşlü yazı özgün genişlikte kalır: Türkçe uzunsa önce satır kırılır, sığmazsa yazı en çok %20 küçülür,
       // yine sığmazsa kutu aşağı uzar.
@@ -1613,6 +1643,7 @@
     var room = validBox(item.room);
     var words = item.text.split(/\s+/).length;
     // Konuşma satırı ("Ne?", "Yoldan çık.") etiket gibi sıkışmaz (#1255).
+    var spoken = isSpoken(item.text, label ? 1 : rowsOf(item));
     var squeezable = label && words <= 2 && !isDialogue(item.text, 1);
     var padX = pad * width, padY = pad * height;
     var pl = room ? Math.min(padX, Math.max(0, x0 - room.left * width)) : 0;
@@ -1628,6 +1659,8 @@
     var subtitle = typeof fontBase === 'number' && fontBase > 0 ? fontBase : 46;
     // Alt sınır yalnız cümlede (en az üç sözcük ya da çok satırlı yazı); kısa etiket simgeye taşmasın diye küçülebilir.
     var floor = squeezable ? 0 : FIT_FLOOR_SHARE * subtitle * height / 1080 / size;
+    // Konuşma satırı ayrıca sayfa yüksekliğine göre alt sınırın altına inmez (#1255).
+    if (spoken) floor = Math.max(floor, dialogueMinFont(height) / size);
     var inner = document.createElement('span');
     while (el.firstChild) inner.appendChild(el.firstChild);
     el.appendChild(inner);
@@ -1678,6 +1711,16 @@
       }
     }
     place();
+    // 0) Konuşma satırı altyazı gibi davranır: özgün İngilizce kutu dar olsa da ("What?" → "Ne?", "Lucia: Maybe." →
+    // "Lucia: Evet, belki.") kutu özgün yazının ortasından iki yana, ekranın %84'üne kadar genişler; sözcük başına bir
+    // satıra bölünmüş küçük ve dar kutu çizilmez (#1255). Daha uzunsa satır kırılır.
+    if (spoken && label && wide()) {
+      var natural = Math.min(width * 0.84, inner.scrollWidth + 2);
+      var middle = (x0 + x1) / 2;
+      x0 = Math.max(0, Math.min(middle - natural / 2, width - natural));
+      x1 = Math.min(width, x0 + natural);
+      place();
+    }
     // 1) Yalnız en çok iki sözcüklük etiket (menü sekmesi, düğme) yatayda en çok %10 sıkışır.
     if (squeezable) squeezeTo(FIT_FIRST_SQUEEZE);
     // 2) Yazı küçülür (alt sınırın altına inmeden).
@@ -1696,6 +1739,16 @@
     }
     // 4) Satıra sığmayan tek sözcük: yazı (alt sınırın da altına) küçülür; etiketse en çok %10 sıkışır. Yana taşmamak alt
     // sınırdan önce gelir.
+    // Konuşma satırı alt sınırın altına inmez: sığmayan tek sözcükte kutu iki yana (ekran içinde) genişler.
+    if (spoken) {
+      if (wide()) {
+        var grown = inner.scrollWidth + 2;
+        x0 = Math.max(0, Math.min(x0 - (grown - (x1 - x0)) / 2, width - grown));
+        x1 = Math.min(width, x0 + grown);
+        place();
+      }
+      return;
+    }
     shrinkTo(FIT_LAST_SCALE, function () { return !wide(); }, true);
     if (squeezable) squeezeTo(FIT_FIRST_SQUEEZE);
     // Paragrafta kutunun yüksekliği sabit değil (en az özgün kutununki): yazı sığana kadar aşağı uzar.
@@ -2497,8 +2550,10 @@
     if (style.fontSize) {
       fontBase = style.fontSize;
       $('subtitle-text').style.fontSize = style.fontSize + 'px';
-      $('subtitle-prev-text').style.fontSize = Math.round(style.fontSize * 0.8) + 'px';
-      $('subtitle-prev2-text').style.fontSize = Math.round(style.fontSize * 0.8) + 'px';
+      // Önceki satırlar %80 boyda; konuşma satırı alt sınırının altına inmez (#1255).
+      var previous = Math.max(dialogueMinFont(), Math.round(style.fontSize * 0.8));
+      $('subtitle-prev-text').style.fontSize = previous + 'px';
+      $('subtitle-prev2-text').style.fontSize = previous + 'px';
     }
     if (PLACEMENTS[style.placement]) placement = style.placement;
     bandShape = style.backgroundShape === 'band';

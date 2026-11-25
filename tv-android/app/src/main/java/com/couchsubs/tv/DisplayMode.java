@@ -101,6 +101,17 @@ final class DisplayMode {
     }
 
     /**
+     * Uygulama içi seçiliyken TV, PS5 görüntüsünü kendi HDMI oynatıcısına alıp CouchSubs'ı arkada bırakıyor ve ekran geri
+     * alınamıyor (hak doldu): katmana geçilsin mi. X'te üç kullanıcı (TCL ve diğer Android TV'ler): "Uygulama içinde"
+     * seçiliyken altyazı hiç gelmiyordu; CouchSubs arkada kalınca Android başka uygulamanın üstüne çizmeye izin vermez,
+     * sayfa da arka planda bağlantıyı bırakır. Katman bu TV'de daha önce açılamadıysa ya da sayfası art arda çöktüyse
+     * (overlayBroken, #1074/#1118: kullanıcı bu yüzden Uygulama içinde seçmiş olabilir) uygulama içinde kalınır.
+     */
+    static boolean rescueToOverlay(String preference, boolean canDrawOverlays, boolean overlayBroken) {
+        return canDrawOverlays && !overlayBroken && IN_APP.equals(orAuto(preference));
+    }
+
+    /**
      * Katmana geçilebilecek bir anda (izin var) uygulama içinde yalnız kullanıcının seçimi yüzünden mi kalındı: o zaman
      * durum ekranda söylenir (seçici, geri alma notu).
      */
