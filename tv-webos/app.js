@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.109';
+  var APP_VERSION = '0.9.110';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1390,7 +1390,7 @@
   // Panel gelirken ve telefon kalkınca kaybolurken solma süresi (ms; style.css phone-panel-in, .leaving ile aynı).
   var PANEL_FADE_MS = 250;
 
-  // Telefon listesinin tek kartı (TV uygulaması 0.9.109; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar
+  // Telefon listesinin tek kartı (TV uygulaması 0.9.110; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar
   // dağınıktı. Her satır telefondaki satırın Türkçe kopyası: telefonun satır kartı renginde yuvarlak köşeli kart, solda
   // oyundan kesilmiş avatar (okunmamış kırmızı nokta resmin içinde), kalın ad ve altında önizleme, sağ üstte rozet,
   // seçili satırda telefondaki renkte çerçeve. Ana ekran bileşeni ("Hatırlatıcılar / 6 Bildirim") aynı kart. Ölçüler
@@ -1471,7 +1471,7 @@
       var colors = item.surface;
       var paint = colors && phoneColor(colors.background) && phoneColor(colors.foreground)
         ? colors.background + '/' + colors.foreground : '';
-      // Liste kartı (TV uygulaması 0.9.109): avatar, ad, önizleme, rozet ve seçim çerçevesi kartın görünüşüdür.
+      // Liste kartı (TV uygulaması 0.9.110): avatar, ad, önizleme, rozet ve seçim çerçevesi kartın görünüşüdür.
       var listing = part === 'row' && item.row && typeof item.row === 'object' ? item.row : null;
       if (listing) paint += '|' + listCardKey(listing);
       var row = old[rowKey] && old[rowKey].shift();

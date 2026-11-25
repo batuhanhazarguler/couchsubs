@@ -216,7 +216,7 @@ html, body {
 .phone-panel.aligned .panel-row.note .panel-bubble { padding: 0.3em 0.6em; }
 .phone-panel.aligned .panel-row.title { font-size: 0.8em; font-weight: 700; text-align: left; }
 .phone-panel.aligned .panel-row.title .panel-bubble { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Telefon listesinin tek kartı (0.9.109): avatar 2,2 satır (satır ≈ 1,05em), dolgu 0,45 satır, avatarla yazı arası 0,5 satır. */
+/* Telefon listesinin tek kartı (0.9.110): avatar 2,2 satır (satır ≈ 1,05em), dolgu 0,45 satır, avatarla yazı arası 0,5 satır. */
 .phone-panel.aligned .panel-card {
   position: relative; box-sizing: border-box; width: 100%; border-radius: 0.85em; background-color: rgba(244, 241, 236, 0.85);
   color: #17181B; padding: 0.47em 0.47em 0.47em 3.31em; text-align: left;

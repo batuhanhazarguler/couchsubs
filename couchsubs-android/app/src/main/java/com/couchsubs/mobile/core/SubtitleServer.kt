@@ -382,7 +382,7 @@ class SubtitleServer(
             item.panel?.let { json["panel"] = it.wire }
             // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer (Mac ile aynı).
             if (item.aligned) json["aligned"] = true
-            // Liste kartı (TV uygulaması 0.9.109): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
+            // Liste kartı (TV uygulaması 0.9.110): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
             // `text`'i (ad ve önizleme iki satır) yerinde çizer (iPhone ile aynı).
             item.listRow?.let { json["row"] = rowJson(it) }
             return json

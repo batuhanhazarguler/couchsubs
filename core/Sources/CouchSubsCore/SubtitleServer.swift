@@ -617,7 +617,7 @@ public final class SubtitleServer: @unchecked Sendable {
         if let panel = item.panel { result["panel"] = panel.rawValue }
         // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer.
         if item.aligned { result["aligned"] = true }
-        // Liste kartı (TV uygulaması 0.9.109): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
+        // Liste kartı (TV uygulaması 0.9.110): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
         // `text`'i (ad ve önizleme iki satır) yerinde çizer.
         if let row = item.listRow { result["row"] = Self.json(row) }
         return result

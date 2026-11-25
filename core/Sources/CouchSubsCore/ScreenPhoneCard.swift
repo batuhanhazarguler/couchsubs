@@ -40,7 +40,7 @@ public enum ScreenPhoneCard {
         /// Ortalı kısa satır ("Bugün", saat) ve sohbet listesinin bölüm başlığı.
         case note
         /// Sohbet listesinin bir satırı ya da ana ekran bileşeni tek kartta (`ListRow`: avatar, kalın ad, altında önizleme,
-        /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.109; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
+        /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.110; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
         case row
     }
 

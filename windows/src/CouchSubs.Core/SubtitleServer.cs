@@ -855,7 +855,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         if (item.Panel is { } panel) json["panel"] = panel.Json();
         // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer (Mac ile aynı).
         if (item.Aligned) json["aligned"] = true;
-        // Liste kartı (TV uygulaması 0.9.109): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
+        // Liste kartı (TV uygulaması 0.9.110): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
         // `text`'i (ad ve önizleme iki satır) yerinde çizer (Mac ile aynı).
         if (item.ListRow is { } row) json["row"] = RowJson(row);
         return json;

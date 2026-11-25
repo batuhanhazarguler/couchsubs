@@ -21,7 +21,7 @@ public static class ScreenPhoneCard
     /// <summary>
     /// Panelin parçası; JSON'da <c>panel</c> alanının değeri (card, title, theirs, mine, note, row). <c>Row</c>: sohbet
     /// listesinin bir satırı ya da ana ekran bileşeni tek kartta (<see cref="ListRow"/>: avatar, kalın ad, altında önizleme,
-    /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.109; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
+    /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.110; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
     /// </summary>
     public enum PanelPart { Card, Title, Theirs, Mine, Note, Row }
 

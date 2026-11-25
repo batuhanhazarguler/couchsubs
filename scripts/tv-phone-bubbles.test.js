@@ -479,7 +479,7 @@ test('hizalı panel 720p, 1080p, 4K ve dpr 1/2/3 aynı oranda; sıkıştırma yo
   }
 });
 
-// Telefon listesinin tek kartı (TV uygulaması 0.9.109; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar değil,
+// Telefon listesinin tek kartı (TV uygulaması 0.9.110; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar değil,
 // telefondaki satırın Türkçe kopyası tek kartta: avatar (oyundan kesilmiş resim), kalın ad, altında önizleme, rozet,
 // seçili satırın çerçevesi. Kartın üstü gönderilen kutuda (İngilizce adın hizası), boyu en az telefondaki satır kadar;
 // bölüm başlığı küçük başlık olarak kalır. Aynı gönderi düğümleri yeniden yaratmaz, kaydırılan liste aynı düğümlerle kayar.
