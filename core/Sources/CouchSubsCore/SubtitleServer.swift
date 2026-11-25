@@ -617,6 +617,18 @@ public final class SubtitleServer: @unchecked Sendable {
         if let panel = item.panel { result["panel"] = panel.rawValue }
         // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer.
         if item.aligned { result["aligned"] = true }
+        // Liste kartı (TV uygulaması 0.9.109): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
+        // `text`'i (ad ve önizleme iki satır) yerinde çizer.
+        if let row = item.listRow { result["row"] = Self.json(row) }
+        return result
+    }
+
+    static func json(_ row: ScreenPhoneCard.ListRow) -> [String: Any] {
+        var result: [String: Any] = ["name": row.name, "preview": row.preview]
+        if let avatar = row.avatar { result["avatar"] = avatar }
+        if let badge = row.badge { result["badge"] = badge }
+        if let selected = row.selected, isRGB(selected) { result["selected"] = selected }
+        if row.widget { result["widget"] = true }
         return result
     }
 
@@ -851,7 +863,7 @@ public final class SubtitleServer: @unchecked Sendable {
         if let all = blocks, !all.isEmpty {
             let kept = all.filter { area($0.box) <= maxBoxArea }
             // Sohbet panelinin balonları panelin zemininin içindedir: toplam alana bir kez (zemin olarak) girer.
-            let inside: Set<ScreenPhoneCard.PanelPart> = [.title, .theirs, .mine, .note]
+            let inside: Set<ScreenPhoneCard.PanelPart> = [.title, .theirs, .mine, .note, .row]
             if kept.filter({ $0.panel.map { !inside.contains($0) } ?? true }).reduce(0, { $0 + area($1.box) }) > maxBoxArea {
                 return ("", nil)
             }

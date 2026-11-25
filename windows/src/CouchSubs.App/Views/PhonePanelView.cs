@@ -3,6 +3,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using CouchSubs.Core;
 
@@ -79,6 +80,19 @@ internal static class PhonePanelView
         for (var i = 0; i < parts.Count; i++)
         {
             var item = parts[i];
+            if (item.Panel == ScreenPhoneCard.PanelPart.Row && item.ListRow is { } listRow)
+            {
+                // Liste kartı (ScreenPhoneCard.ListRow): kutusunun boyunda tek kart.
+                var cardWidth = Math.Max(1, (item.Box.Right - item.Box.Left) * width);
+                var cardHeight = Math.Max(1, (item.Box.Bottom - item.Box.Top) * height);
+                var card = ListCard(item, listRow, fontSize, cardWidth, cardHeight);
+                var cardTop = item.Box.Top * height;
+                if (i > 0) cardTop = Math.Max(cardTop, bottom + Math.Max(0, Math.Min(cardTop - plannedBottom, fontSize / 0.95 * 0.6)));
+                plannedBottom = item.Box.Bottom * height;
+                bottom = cardTop + cardHeight;
+                result.Add((card, item.Box.Left * width, cardTop));
+                continue;
+            }
             var isTitle = item == title;
             var listed = IsListRow(item);
             var note = item.Panel == ScreenPhoneCard.PanelPart.Note && !listed;
@@ -116,6 +130,118 @@ internal static class PhonePanelView
             result.Add((row, item.Box.Left * width, top));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Telefon listesinin tek kartı (<see cref="ScreenPhoneCard.ListRow"/>; Mac/iPhone PhoneListCard, TV app.js placeListCard,
+    /// Android PhonePanel aynı çizim): telefonun satır kartı renginde yuvarlak köşeli kart; solda oyundan kesilmiş avatar,
+    /// yanında kalın ad ve altında önizleme, sağda rozet; seçili satırda telefondaki renkte çerçeve. Kartın üstü adın
+    /// İngilizcesiyle aynı hizada, boyu kutusu kadar.
+    /// </summary>
+    internal static FrameworkElement ListCard(ScreenTranslation.Item item, ScreenPhoneCard.ListRow row, double fontSize,
+                                              double width, double height)
+    {
+        var line = fontSize / 0.85;
+        var avatarSize = line * ScreenPhoneCard.AvatarLines;
+        var spacing = line * ScreenPhoneCard.AvatarGap;
+        var ink = new SolidColorBrush(Parse(item.Style?.Foreground, Colors.Black));
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        if (Decode(row.Avatar) is { } avatar)
+        {
+            var picture = new Image
+            {
+                Source = avatar,
+                Width = avatarSize,
+                Height = avatarSize,
+                Stretch = Stretch.Fill,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, spacing, 0),
+                Clip = new RectangleGeometry(new Rect(0, 0, avatarSize, avatarSize), avatarSize * 0.3, avatarSize * 0.3),
+            };
+            RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.HighQuality);
+            Grid.SetColumn(picture, 0);
+            grid.Children.Add(picture);
+        }
+        var texts = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        if (row.Name.Length > 0)
+            texts.Children.Add(new TextBlock
+            {
+                Text = row.Name,
+                FontSize = fontSize,
+                FontWeight = FontWeights.Bold,
+                Foreground = ink,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            });
+        if (row.Preview.Length > 0)
+            texts.Children.Add(new TextBlock
+            {
+                Text = row.Preview,
+                FontSize = fontSize * 0.92,
+                FontWeight = FontWeights.Normal,
+                Foreground = ink,
+                Opacity = 0.8,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, row.Name.Length > 0 ? line * 0.1 : 0, 0, 0),
+            });
+        Grid.SetColumn(texts, 1);
+        grid.Children.Add(texts);
+        if (Decode(row.Badge) is { } badge)
+        {
+            var mark = new Image
+            {
+                Source = badge,
+                Width = line * 1.1,
+                Height = line * 1.1,
+                Stretch = Stretch.Fill,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(spacing, 0, 0, 0),
+            };
+            RenderOptions.SetBitmapScalingMode(mark, BitmapScalingMode.HighQuality);
+            Grid.SetColumn(mark, 2);
+            grid.Children.Add(mark);
+        }
+        var selected = row.Selected is { } color ? Parse(color, Colors.DodgerBlue) : (Color?)null;
+        return new Border
+        {
+            Width = width,
+            Height = height,
+            Padding = new Thickness(line * ScreenPhoneCard.RowPadding),
+            CornerRadius = new CornerRadius(line * 0.8),
+            Background = new SolidColorBrush(Parse(item.Style?.Background, Colors.White)) { Opacity = ScreenPhoneCard.BubbleOpacity },
+            BorderBrush = selected is { } frame ? new SolidColorBrush(frame) : null,
+            BorderThickness = new Thickness(selected is null ? 0 : Math.Max(1.5, line * 0.12)),
+            Child = grid,
+            ClipToBounds = true,
+            IsHitTestVisible = false,
+        };
+    }
+
+    /// <summary>PNG data: adresinden resim; çözülemezse null.</summary>
+    internal static BitmapSource? Decode(string? url)
+    {
+        if (url is null) return null;
+        var comma = url.IndexOf(',');
+        if (comma < 0) return null;
+        try
+        {
+            var bytes = Convert.FromBase64String(url[(comma + 1)..]);
+            using var stream = new System.IO.MemoryStream(bytes);
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = stream;
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <summary>Sohbet listesinin satırı (kişi adı, önizleme, bölüm başlığı): sola yaslı not; ad ve başlık kalın. Mac ile aynı.</summary>

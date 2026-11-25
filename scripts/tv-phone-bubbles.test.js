@@ -478,3 +478,89 @@ test('hizalı panel 720p, 1080p, 4K ve dpr 1/2/3 aynı oranda; sıkıştırma yo
     });
   }
 });
+
+// Telefon listesinin tek kartı (TV uygulaması 0.9.109; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar değil,
+// telefondaki satırın Türkçe kopyası tek kartta: avatar (oyundan kesilmiş resim), kalın ad, altında önizleme, rozet,
+// seçili satırın çerçevesi. Kartın üstü gönderilen kutuda (İngilizce adın hizası), boyu en az telefondaki satır kadar;
+// bölüm başlığı küçük başlık olarak kalır. Aynı gönderi düğümleri yeniden yaratmaz, kaydırılan liste aynı düğümlerle kayar.
+// Ana ekran bileşeni aynı kart. Eski TV (0.9.105) kartı tanımaz; ad ve önizleme iki satır yerinde çizilir, kaybolmaz.
+const avatarPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGM4YaMBRwzEcQDxwxLBXOwG1wAAAABJRU5ErkJggg==';
+const badgePng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGPQyHsGRwzEcQBd8hfBRQprogAAAABJRU5ErkJggg==';
+const rowCard = { background: '#F4F1EC', foreground: '#17181B' };
+const listRow = (name, preview, box, extra) => Object.assign(part('row', name + '\n' + preview, box, rowCard),
+  { paragraphs: true, row: Object.assign({ name, preview, avatar: avatarPng }, extra || {}) });
+const listCards = () => [
+  Object.assign(part('card', ' ', [0.31, 0.26, 0.592, 0.81], cardStyle), { aligned: true }),
+  Object.assign(part('note', 'Önerilen', [0.323, 0.262, 0.579, 0.302], { background: '#141518', foreground: '#A9A59C' }),
+    { style: { align: 'left', bold: true, condensed: false, upper: false } }),
+  listRow('Cal', '$ posta kutunda. Beni yine...', [0.323, 0.31, 0.579, 0.39], { badge: badgePng, selected: '#3A6FD8' }),
+  listRow('Brian', 'Tamam. Biraz para var...', [0.323, 0.41, 0.579, 0.49], { badge: badgePng }),
+  listRow('Donnie', '', [0.323, 0.51, 0.579, 0.59]),
+  Object.assign(listRow('Hatırlatıcılar', '6 Bildirim', [0.323, 0.62, 0.579, 0.68], { widget: true }),
+    { surface: { background: '#3A3F55', foreground: '#FFFFFF' } })];
+const listCardsScript = `
+  var region = { id: 'game-phone', text: 'x', box: { left: 0.31, top: 0.26, right: 0.79, bottom: 0.81 }, blocks: ${JSON.stringify(listCards())} };
+  showRegion(region);
+  var panel = document.querySelector('.phone-panel');
+  var nodes = Array.prototype.slice.call(panel.querySelectorAll('.panel-row'));
+  nodes.forEach(function (row, i) { row.couchsubsMark = i; });
+  var cards = Array.prototype.map.call(panel.querySelectorAll('.panel-card'), function (card) {
+    var style = getComputedStyle(card), name = card.querySelector('.panel-card-name'), preview = card.querySelector('.panel-card-preview');
+    var avatar = card.querySelector('.panel-avatar'), badge = card.querySelector('.panel-badge');
+    return { box: rect(card), cls: card.className, background: style.backgroundColor, shadow: style.boxShadow,
+      name: name ? name.textContent : null, nameWeight: name ? getComputedStyle(name).fontWeight : null,
+      preview: preview ? preview.textContent : null, avatar: avatar ? rect(avatar) : null, badge: badge ? rect(badge) : null,
+      pills: card.querySelectorAll('.panel-bubble').length };
+  });
+  var heading = panel.querySelector('.panel-row.note .panel-bubble');
+  var info = { loose: document.querySelectorAll('#regions .item').length, heading: heading ? heading.textContent : null,
+    headingFont: heading ? parseFloat(getComputedStyle(heading).fontSize) : 0, panel: rect(panel) };
+  showRegion(JSON.parse(JSON.stringify(region)));
+  var same = Array.prototype.every.call(panel.querySelectorAll('.panel-row'), function (row, i) { return row.couchsubsMark === i; });
+  var moved = JSON.parse(JSON.stringify(region));
+  moved.blocks.forEach(function (b, i) { if (i > 0) { b.box.top -= 0.04; b.box.bottom -= 0.04; } });
+  showRegion(moved);
+  var after = Array.prototype.slice.call(panel.querySelectorAll('.panel-row'));
+  var follows = after.length === nodes.length && after.every(function (row, i) { return row.couchsubsMark === i; }) &&
+    Math.abs(parseFloat(after[1].style.top) - Math.round((0.31 - 0.04 - 0.26) * window.innerHeight)) <= 1;
+  $('result').textContent = JSON.stringify({ cards: cards, info: info, same: same, follows: follows, h: window.innerHeight, w: window.innerWidth });`;
+
+test('Mesajlar listesi: her satır tek kart (avatar, kalın ad, önizleme, rozet, seçim), hizalı; bileşen kartı', { skip: !browser && 'Chromium/Chrome bulunamadı' }, () => {
+  const r = measure(listCardsScript);
+  const blocks = listCards(), card = blocks[0].box;
+  assert.equal(r.info.loose, 0, 'kart parçaları ayrıca yerinde çizildi');
+  assert.equal(r.cards.length, 4, 'her satır tek kart değil');
+  assert.ok(r.cards.every(c => c.pills === 0), 'kartın içinde ayrı hap var');
+  assert.deepEqual(r.cards.map(c => c.name), ['Cal', 'Brian', 'Donnie', 'Hatırlatıcılar']);
+  assert.deepEqual(r.cards.map(c => c.preview), ['$ posta kutunda. Beni yine...', 'Tamam. Biraz para var...', null, '6 Bildirim']);
+  assert.ok(r.cards.every(c => Number(c.nameWeight) >= 700), 'ad kalın değil');
+  const y = v => r.info.panel.top + (v - card.top) * r.h;
+  r.cards.forEach((c, i) => {
+    const sent = blocks[i + 2].box;
+    assert.ok(Math.abs(c.box.top - y(sent.top)) <= 3, 'kart hizasız: ' + i + ' ' + c.box.top + ' ' + y(sent.top));
+    assert.ok(c.box.bottom - c.box.top >= (sent.bottom - sent.top) * r.h - 2, 'kart telefondaki satırdan kısa: ' + i);
+    assert.ok(c.avatar && c.avatar.left >= c.box.left && c.avatar.right < c.box.left + (c.box.right - c.box.left) / 3, 'avatar solda değil: ' + i);
+  });
+  for (let i = 0; i + 1 < r.cards.length; i++) assert.ok(r.cards[i].box.bottom <= r.cards[i + 1].box.top + 1, 'kartlar üst üste');
+  assert.equal(r.cards[0].background, 'rgba(244, 241, 236, 0.85)', 'satır kartı rengi');
+  assert.ok(/58, 111, 216/.test(r.cards[0].shadow), 'seçili satırın çerçevesi yok: ' + r.cards[0].shadow);
+  assert.equal(r.cards[1].shadow, 'none', 'seçili olmayan satırda çerçeve');
+  assert.ok(r.cards[0].badge && r.cards[0].badge.right <= r.cards[0].box.right && r.cards[0].badge.left > r.cards[0].box.left + (r.cards[0].box.right - r.cards[0].box.left) / 2, 'rozet sağda değil');
+  assert.equal(r.cards[2].badge, null);
+  assert.ok(/widget/.test(r.cards[3].cls) && r.cards[3].background === 'rgba(58, 63, 85, 0.85)', 'bileşen kartı rengi');
+  assert.equal(r.info.heading, 'Önerilen', 'bölüm başlığı küçük başlık değil');
+  assert.equal(r.same, true, 'aynı liste kartları yeniden yarattı');
+  assert.equal(r.follows, true, 'kaydırılan listede kartlar birlikte kaymadı');
+  shoot(listCardsScript, 'tv-phone-list-cards.png');
+});
+
+const oldTvCards = `
+  showRegion({ id: 'game-phone', text: 'x', box: { left: 0.31, top: 0.26, right: 0.79, bottom: 0.81 }, blocks: ${JSON.stringify(listCards())} });
+  $('result').textContent = JSON.stringify({ text: document.getElementById('regions').textContent });`;
+
+test('eski TV (0.9.105) liste kartını tanımaz; ad ve önizleme yine görünür', { skip: (!browser && 'Chromium/Chrome bulunamadı') || (!oldApp && 'git geçmişi yok') }, () => {
+  const r = measure(oldTvCards, oldApp);
+  for (const text of ['Cal', '$ posta kutunda. Beni yine...', 'Brian', 'Hatırlatıcılar', '6 Bildirim']) {
+    assert.ok(r.text.indexOf(text) >= 0, 'eski TV yazıyı düşürdü: ' + text);
+  }
+});

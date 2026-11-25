@@ -134,8 +134,10 @@ internal static class PhoneChat
     internal static string Clean(string text)
     {
         var words = WordsOf(text).ToList();
+        // Para simgesi ("$ in your mailbox") mesajın parçasıdır.
         static bool Junk(string word) =>
-            !word.Any(c => char.IsLetter(c) || char.IsNumber(c)) && !word.All(c => ".,!?…'\"-:;()".Contains(c));
+            !word.Any(c => char.IsLetter(c) || char.IsNumber(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.CurrencySymbol)
+            && !word.All(c => ".,!?…'\"-:;()".Contains(c));
         while (words.Count > 0 && Junk(words[0])) words.RemoveAt(0);
         while (words.Count > 0 && Junk(words[^1])) words.RemoveAt(words.Count - 1);
         return string.Join(' ', words);
@@ -202,15 +204,32 @@ internal static class PhoneChat
         var blocks = new List<List<Row>>();
         foreach (var row in rows)
         {
+            // Bileşenin sayacı ("6 Notifications") başlığın altındadır ama başlığın solunda simge olduğundan sol hizası
+            // başlıktan önde başlar: yine aynı bloktur (WidgetIndent kadar).
             if (blocks.Count > 0 && blocks[^1][^1] is var last && blocks[^1][0] is var first
-                && row.Spot.Top - last.Spot.Bottom < median * HomeGap && row.Spot.Top >= last.Spot.Top
-                && Math.Abs(row.Spot.Left - first.Spot.Left) <= LeftAlign && !SameBand(row, last))
+                && row.Spot.Top - last.Spot.Bottom < median * HomeGap && row.Spot.Top >= last.Spot.Top && !SameBand(row, last)
+                && (Math.Abs(row.Spot.Left - first.Spot.Left) <= LeftAlign
+                    || (blocks[^1].Count == 1 && IsCounter(row.Text) && first.Spot.Left - row.Spot.Left <= WidgetIndent
+                        && row.Spot.Left <= first.Spot.Left)))
                 blocks[^1].Add(row);
             else
                 blocks.Add([row]);
         }
         return blocks;
     }
+
+    /// <summary>Bileşen başlığının solundaki simgenin payı (düz ekran genişliğine oranla).</summary>
+    internal const double WidgetIndent = 0.2;
+
+    /// <summary>Bildirim sayacı ("6 Notifications", "3 new messages").</summary>
+    internal static bool IsCounter(string text) => Counter.IsMatch(text.Trim(' ', '\t'));
+
+    /// <summary>
+    /// Ana ekran bileşeni: kısa başlık ve hemen altında sayaç ("Reminders / 6 Notifications"). Sinan Bey (beta.100, 3397):
+    /// bileşen çevrilmiyordu; panelde tek kart olur (<see cref="ScreenPhoneCard.Role.Widget"/>; Mac ile aynı).
+    /// </summary>
+    internal static bool IsWidget(IReadOnlyList<Row> block) =>
+        block.Count == 2 && IsCounter(block[1].Text) && !IsCounter(block[0].Text) && block[0].Words is >= 1 and <= 3;
 
     /// <summary>Blok tek başına duran kısa bir ad: uygulamanın adı (simge etiketi, "WhatUp"); çevrilmez.</summary>
     internal static bool IsAppName(IReadOnlyList<Row> block) => block.Count == 1 && IsAppLabel(block[0].Text);
@@ -260,6 +279,18 @@ internal static class PhoneChat
         foreach (var block in HomeBlocks(rows, median))
         {
             if (IsAppName(block)) continue;
+            if (IsWidget(block))
+            {
+                var boxes = block.SelectMany(row => row.Lines).Where(line => line.Box is not null).Select(line => line.Box!.Value).ToList();
+                var widget = Group([block[0]], ScreenPhoneCard.Role.Widget, handset);
+                result.Add(widget with
+                {
+                    Paragraphs = [block[0].Text, block[1].Text],
+                    Box = boxes.Skip(1).Aggregate(boxes[0], (a, b) => a.Union(b)),
+                    Phone = new ScreenPhoneCard.Placement(ScreenPhoneCard.Role.Widget, block[0].Spot.Union(block[1].Spot)),
+                });
+                continue;
+            }
             var piece = new List<Row>();
             foreach (var row in block)
             {

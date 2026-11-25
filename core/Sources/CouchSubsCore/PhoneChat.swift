@@ -114,7 +114,9 @@ enum PhoneChat {
     static func clean(_ text: String) -> String {
         var words = text.split(whereSeparator: \.isWhitespace).map(String.init)
         func junk(_ word: String) -> Bool {
-            !word.contains(where: { $0.isLetter || $0.isNumber }) && !word.allSatisfy { ".,!?…'\"-:;()".contains($0) }
+            // Para simgesi ("$ in your mailbox") mesajın parçasıdır.
+            !word.contains(where: { $0.isLetter || $0.isNumber || $0.unicodeScalars.first?.properties.generalCategory == .currencySymbol })
+                && !word.allSatisfy { ".,!?…'\"-:;()".contains($0) }
         }
         while let first = words.first, junk(first) { words.removeFirst() }
         while let last = words.last, junk(last) { words.removeLast() }
@@ -174,14 +176,31 @@ enum PhoneChat {
     static func homeBlocks(_ rows: [Row], median: Double) -> [[Row]] {
         var blocks: [[Row]] = []
         for row in rows {
+            // Bileşenin sayacı ("6 Notifications") başlığın altındadır ama başlığın solunda simge olduğundan sol hizası
+            // başlıktan önde başlar: yine aynı bloktur (`widgetIndent` kadar).
             if let last = blocks.last?.last, let first = blocks.last?.first, row.spot.top - last.spot.bottom < median * homeGap,
-               row.spot.top >= last.spot.top, abs(row.spot.left - first.spot.left) <= leftAlign, !sameBand(row, last) {
+               row.spot.top >= last.spot.top, !sameBand(row, last),
+               abs(row.spot.left - first.spot.left) <= leftAlign
+                || (blocks.last?.count == 1 && isCounter(row.text) && first.spot.left - row.spot.left <= widgetIndent
+                    && row.spot.left <= first.spot.left) {
                 blocks[blocks.count - 1].append(row)
             } else {
                 blocks.append([row])
             }
         }
         return blocks
+    }
+
+    /// Bileşen başlığının solundaki simgenin payı (düz ekran genişliğine oranla).
+    static let widgetIndent = 0.2
+
+    /// Bildirim sayacı ("6 Notifications", "3 new messages").
+    static func isCounter(_ text: String) -> Bool { matches(counter, text.trimmingCharacters(in: .whitespaces)) }
+
+    /// Ana ekran bileşeni: kısa başlık ve hemen altında sayaç ("Reminders / 6 Notifications"). Sinan Bey (beta.100,
+    /// 3397): bileşen çevrilmiyordu; panelde tek kart olur (`ScreenPhoneCard.Role.widget`).
+    static func isWidget(_ block: [Row]) -> Bool {
+        block.count == 2 && isCounter(block[1].text) && !isCounter(block[0].text) && (1...3).contains(block[0].words)
     }
 
     /// Blok tek başına duran kısa bir ad: uygulamanın adı (simge etiketi, "WhatUp"); çevrilmez.
@@ -220,6 +239,15 @@ enum PhoneChat {
         var result: [ScreenTranslation.Group] = []
         for block in homeBlocks(rows, median: median) {
             if isAppName(block) { continue }
+            if isWidget(block) {
+                var widget = group([block[0]], role: .widget, handset: handset)
+                widget.paragraphs = [block[0].text, block[1].text]
+                let boxes = block.flatMap(\.lines).compactMap(\.box)
+                widget.box = boxes.dropFirst().reduce(boxes[0]) { $0.union($1) }
+                widget.phone = ScreenPhoneCard.Placement(role: .widget, spot: block[0].spot.union(block[1].spot))
+                result.append(widget)
+                continue
+            }
             var piece: [Row] = []
             for row in block {
                 if let last = piece.last, !(row.text.first(where: \.isLetter)?.isLowercase == true && !endsSentence(last.text)) {

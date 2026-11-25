@@ -148,15 +148,17 @@ public class ScreenPhoneCardTests
         };
         var pose = new GamePhoneGeometry.Pose(Upright[0], Upright[1], Upright[2], Upright[3]);
         var panel = RegionWatcher.ArrangedPhone(items, pose, 16.0 / 9, new PhonePanelOptions());
-        Assert.Equal([ScreenPhoneCard.PanelPart.Card, ScreenPhoneCard.PanelPart.Title, ScreenPhoneCard.PanelPart.Theirs,
-                      ScreenPhoneCard.PanelPart.Mine], panel.Select(item => item.Panel!.Value));
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402).
+        Assert.Equal([ScreenPhoneCard.PanelPart.Card, ScreenPhoneCard.PanelPart.Theirs, ScreenPhoneCard.PanelPart.Mine],
+                     panel.Select(item => item.Panel!.Value));
+        Assert.Equal([ScreenPhoneCard.BackdropText, "Bugün yanıtla.", "Kamerayı aç."], panel.Select(item => item.Translation));
         var card = panel[0].Box;
         Assert.True(card.Right <= pose.Bounds.Left || card.Left >= pose.Bounds.Right);
         // Örneklenmiş renk yok: yedek renkler; panel hizalı.
-        Assert.Equal(ScreenPhoneCard.IncomingColor, panel[2].Style);
-        Assert.Equal(ScreenPhoneCard.OutgoingColor, panel[3].Style);
+        Assert.Equal(ScreenPhoneCard.IncomingColor, panel[1].Style);
+        Assert.Equal(ScreenPhoneCard.OutgoingColor, panel[2].Style);
         Assert.True(panel[0].Aligned);
-        Assert.True(panel[2].Box.Left < panel[3].Box.Left && panel[2].Box.Top < panel[3].Box.Top);
+        Assert.True(panel[1].Box.Left < panel[2].Box.Left && panel[1].Box.Top < panel[2].Box.Top);
         Assert.Equal("card", ScreenPhoneCard.PanelPart.Card.Json());
 
         var bubbles = RegionWatcher.ArrangedPhone(items, pose, 16.0 / 9, new PhonePanelOptions(Enabled: false));
@@ -176,23 +178,21 @@ public class ScreenPhoneCardTests
             OnPhone("On my way", "Yoldayım", ScreenPhoneCard.Role.Outgoing, 0.3, 0.6, 0.93),
         ], phone);
         Assert.Equal("Arabayı bul", laid[0].Translation);
-        Assert.Equal(5, laid.Count);
+        // Sohbetin üstündeki kişi adı ("Brian") çizilmez (Sinan Bey, beta.100 3400/3402).
+        Assert.Equal(4, laid.Count);
+        Assert.DoesNotContain(laid, item => item.Translation == "Brian");
         var backdrop = laid[1];
         Assert.True(ScreenPhoneCard.IsBackdrop(backdrop));
         Assert.Equal(phone.Bounds.Top, backdrop.Box.Top);
         Assert.Equal(phone.Bounds.Bottom, backdrop.Box.Bottom);
         Assert.True(backdrop.Box.Right < phone.Bounds.Left);
-        // Kişi adı çevrilmese de panelin başlığıdır: balonların hizasında (sola yaslı), kalın; yazı TV'de okunacak boyda.
-        Assert.Equal("Brian", laid[2].Translation);
-        Assert.Equal("left", laid[2].Look?.Align);
-        Assert.True(laid[2].Look?.Bold);
         Assert.Equal(ScreenPhoneCard.MinLine, laid[2].LineHeight);
         var width = backdrop.Box.Right - backdrop.Box.Left;
-        Assert.Equal(ScreenPhoneCard.IncomingColor, laid[3].Style);
-        Assert.Equal(backdrop.Box.Left + width * 0.05, laid[3].Box.Left, 9);
-        Assert.Equal(ScreenPhoneCard.OutgoingColor, laid[4].Style);
-        Assert.Equal("right", laid[4].Look?.Align);
-        Assert.Equal(backdrop.Box.Right - width * 0.05, laid[4].Box.Right, 9);
+        Assert.Equal(ScreenPhoneCard.IncomingColor, laid[2].Style);
+        Assert.Equal(backdrop.Box.Left + width * 0.05, laid[2].Box.Left, 9);
+        Assert.Equal(ScreenPhoneCard.OutgoingColor, laid[3].Style);
+        Assert.Equal("right", laid[3].Look?.Align);
+        Assert.Equal(backdrop.Box.Right - width * 0.05, laid[3].Box.Right, 9);
         // Satırlar üst üste binmez ve kartın içinde kalır.
         for (var i = 2; i + 1 < laid.Count; i++) Assert.True(laid[i].Box.Bottom <= laid[i + 1].Box.Top);
         Assert.All(laid.Skip(2), item => Assert.True(item.Box.Left >= backdrop.Box.Left && item.Box.Right <= backdrop.Box.Right
@@ -242,8 +242,9 @@ public class ScreenPhoneCardTests
         Assert.Equal(ScreenPhoneCard.OutgoingColor, rows[3].Style);
         Assert.True(rows[0].Box.Left < rows[1].Box.Left);
         Assert.Equal(rows[1].Box.Right, rows[3].Box.Right, 9);
-        Assert.Equal(rows[0].Box.Left, panel.Title!.Box.Left, 9);
-        Assert.True(panel.Title.Box.Bottom < rows[0].Box.Top);
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402); balonlar hizalı kalır.
+        Assert.Null(panel.Title);
+        Assert.DoesNotContain(laid, item => item.Panel == ScreenPhoneCard.PanelPart.Title || item.Translation == header.Translation);
         Assert.Equal(ScreenPhoneCard.IncomingColor, ScreenPhoneCard.BubbleColor(GamePhonePalette.Neutral, ScreenPhoneCard.IncomingColor));
         Assert.Equal("#17181B", ScreenPhoneCard.BubbleColor(new PhoneTextStyle("#F0E8E0", "#E8E0D8"), ScreenPhoneCard.IncomingColor).Foreground);
     }
@@ -347,31 +348,52 @@ public class ScreenPhoneCardTests
         Assert.Equal(blue.Style, laid[1].Style);
         Assert.Equal(ScreenPhoneCard.PanelPart.Theirs, laid[2].Panel);
         Assert.Equal(gray.Style, laid[2].Style);
-        Assert.True(laid[3].Look?.Bold);
+        // Liste satırı (ad + önizleme) tek kart: sola yaslı, telefonun satır kartı renginde (örnek yoksa yedek).
+        Assert.Equal(4, laid.Count);
+        Assert.Equal(ScreenPhoneCard.PanelPart.Row, laid[3].Panel);
         Assert.Equal("left", laid[3].Look?.Align);
-        Assert.Equal(ScreenPhoneCard.CardColor, laid[4].Style);
+        Assert.Equal("Lucia", laid[3].ListRow?.Name);
+        Assert.Equal("Geliyor musun?", laid[3].ListRow?.Preview);
+        Assert.Equal("Lucia\nGeliyor musun?", laid[3].Translation);
+        Assert.Equal(ScreenPhoneCard.RowColor, laid[3].Style);
     }
 
+    /// <summary>
+    /// Telefonun ana ekranı sohbet değildir; uygulama adı ("WhatUp") çevrilmez. Bileşen (başlık + sayaç: "Reminders /
+    /// 10 Notifications") telefonun boş tarafında tek kart olur (Sinan Bey, beta.100 3397: bileşen çevrilmiyordu): kalın
+    /// başlık, altında sayaç, kartın üstü bileşenin İngilizcesiyle aynı hizada; telefonun üstüne yazılmaz (Mac ile aynı).
+    /// </summary>
     [Fact]
-    public void HomeScreenIsTranslatedInPlaceWithoutACard()
+    public void HomeScreenWidgetBecomesOneCardBesideThePhone()
     {
-        // Telefonun ana ekranı sohbet değildir: kart kurulmaz, bileşenin yazıları kendi yerinde kalır, uygulama adı ("WhatUp")
-        // çevrilmez. Önceden ana ekran sohbet kartı sayılıyor, çeviri telefonun yanında tek blok oluyordu (X'teki bildirim).
         var vector = Vectors().GetProperty("cases").EnumerateArray().First(c => c.GetProperty("name").GetString()!.StartsWith("ana ekran: bildirim"));
         var phone = Handset(Numbers(vector.GetProperty("pose")), vector.GetProperty("aspect").GetDouble());
         var reading = new Reading(vector.GetProperty("lines").EnumerateArray()
             .Select(line => new TextLine(line.GetProperty("text").GetString()!, Box(Numbers(line.GetProperty("box"))))));
         var groups = ScreenTranslation.ScreenGroups(reading, phone);
         var words = new Dictionary<string, string> { ["Reminders"] = "Hatırlatıcılar", ["10 Notifications"] = "10 Bildirim" };
-        var items = groups.Select(group => new ScreenTranslation.Item(group.Paragraphs[0], words[group.Paragraphs[0]], group.Box, group.LineHeight)
+        var items = groups.Select(group => new ScreenTranslation.Item(string.Join('\n', group.Paragraphs),
+            string.Join('\n', group.Paragraphs.Select(paragraph => words[paragraph])), group.Box, group.LineHeight)
         {
             Phone = group.Phone,
         }).ToList();
         var shown = ScreenTranslation.Present(items, phone);
-        Assert.Equal(["Hatırlatıcılar", "10 Bildirim"], shown.Select(item => item.Translation));
-        Assert.DoesNotContain(shown, ScreenPhoneCard.IsBackdrop);
-        Assert.Equal(groups.Select(group => group.Box), shown.Select(item => item.Box));
-        Assert.All(shown, item => Assert.True(item.Box.Left >= phone.Bounds.Left && item.Box.Right <= phone.Bounds.Right));
+        Assert.Equal(shown, ScreenTranslation.Present(items, phone)); // aynı içerik birebir aynı çıktı
+        var cards = shown.Where(item => item.Panel == ScreenPhoneCard.PanelPart.Row).ToList();
+        var card = Assert.Single(cards);
+        var widget = card.ListRow!;
+        Assert.True(widget.Widget);
+        Assert.Equal("Hatırlatıcılar", widget.Name);
+        Assert.Equal("10 Bildirim", widget.Preview);
+        Assert.NotNull(widget.PortraitSpot); // bileşenin simgesi kesilir
+        Assert.True(card.Box.Right <= phone.Bounds.Left + 1e-9 || card.Box.Left >= phone.Bounds.Right - 1e-9); // kart telefonun yanında
+        Assert.Equal(ScreenPhoneCard.AlignedTop(items[0], card.LineHeight), card.Box.Top, 9);
+        Assert.True(Math.Abs(card.Box.Top - groups[0].Box.Top) < 0.03); // kart bileşenin hizasında
+        var json = SubtitleServer.ItemJson(card, phone: true);
+        Assert.Equal("row", json["panel"]);
+        var row = Assert.IsType<SortedDictionary<string, object>>(json["row"]);
+        Assert.Equal(true, row["widget"]);
+        Assert.Equal("Hatırlatıcılar", row["name"]);
     }
 
     [Fact]

@@ -18,8 +18,12 @@ public sealed record PhonePanelOptions(bool Enabled = true, double TextScale = 1
 /// </summary>
 public static class ScreenPhoneCard
 {
-    /// <summary>Panelin parçası; JSON'da <c>panel</c> alanının değeri (card, title, theirs, mine, note).</summary>
-    public enum PanelPart { Card, Title, Theirs, Mine, Note }
+    /// <summary>
+    /// Panelin parçası; JSON'da <c>panel</c> alanının değeri (card, title, theirs, mine, note, row). <c>Row</c>: sohbet
+    /// listesinin bir satırı ya da ana ekran bileşeni tek kartta (<see cref="ListRow"/>: avatar, kalın ad, altında önizleme,
+    /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.109; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
+    /// </summary>
+    public enum PanelPart { Card, Title, Theirs, Mine, Note, Row }
 
     public static string Json(this PanelPart part) => part switch
     {
@@ -27,8 +31,39 @@ public static class ScreenPhoneCard
         PanelPart.Title => "title",
         PanelPart.Theirs => "theirs",
         PanelPart.Mine => "mine",
+        PanelPart.Row => "row",
         _ => "note",
     };
+
+    /// <summary>
+    /// Liste kartının içeriği (<see cref="PanelPart.Row"/>; JSON <c>row</c>). Sinan Bey (beta.100, 3399): ad ve önizleme
+    /// ayrı haplar dağınıktı; telefondaki satırın Türkçe kopyası tek kartta. Avatar ve rozet oyundan kesilir (küçük PNG,
+    /// aynı satırda bir kez kesilip saklanır; <see cref="PhoneListLook"/>), seçili satırın çerçevesi kareden okunur.
+    /// Görünüşü aynı mı karşılaştırmasına karedeki arama yerleri girmez (el titremesiyle oynar; #1279). Mac ile aynı.
+    /// </summary>
+    /// <param name="Name">Kalın ad (kişi adı çevrilmez; bileşen başlığı çevrilir). Boşsa yalnız önizleme.</param>
+    /// <param name="Preview">Adın altındaki önizleme (çeviri; kesikse "..." ile biter). Boş olabilir (yalnız emoji önizleme).</param>
+    public sealed record ListRow(string Name, string Preview)
+    {
+        /// <summary>Oyundan kesilmiş avatar ya da bileşen simgesi (PNG data: adresi); yoksa null.</summary>
+        public string? Avatar { get; init; }
+        /// <summary>Sağdaki rozet (gönder/konum simgesi; PNG data: adresi); yoksa null.</summary>
+        public string? Badge { get; init; }
+        /// <summary>Seçili satırın çerçeve rengi (telefonda mavi); seçili değilse null.</summary>
+        public string? Selected { get; init; }
+        /// <summary>Ana ekran bileşeni ("Hatırlatıcılar / 6 Bildirim").</summary>
+        public bool Widget { get; init; }
+        /// <summary>Karede avatarın, rozetin ve seçim çerçevesinin aranacağı yerler (kesmek için; gönderilmez).</summary>
+        public TextBox? PortraitSpot { get; init; }
+        public TextBox? BadgeSpot { get; init; }
+        public TextBox? FrameSpot { get; init; }
+
+        public bool Equals(ListRow? other) =>
+            other is not null && Name == other.Name && Preview == other.Preview && Avatar == other.Avatar
+            && Badge == other.Badge && Selected == other.Selected && Widget == other.Widget;
+
+        public override int GetHashCode() => HashCode.Combine(Name, Preview, Avatar, Badge, Selected, Widget);
+    }
 
     /// <summary>Kartın zemini: yazısı yalnız bölünmez boşluk olan öğe, kartın tamamını kaplar; balonlar üstüne çizilir.</summary>
     public const string BackdropText = " ";
@@ -88,8 +123,10 @@ public static class ScreenPhoneCard
         Preview,
         /// <summary>Sohbet listesinde bölüm başlığı ("Messages").</summary>
         Heading,
-        /// <summary>Ana ekranın yazısı (bileşen, bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir.</summary>
+        /// <summary>Ana ekranın yazısı (bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir.</summary>
         Home,
+        /// <summary>Ana ekran bileşeni (başlık + sayaç: "Reminders / 6 Notifications"): panelde tek kart (<see cref="ListRow.Widget"/>).</summary>
+        Widget,
     }
 
     /// <summary>Çevirmene gitmez, aslıyla gösterilir (ad).</summary>
@@ -134,6 +171,13 @@ public static class ScreenPhoneCard
             double dx = bottomX - topX, dy = bottomY - topY;
             double t = 0.04 + 0.915 * v, side = (u - 0.5) * 0.52;
             return (topX + dx * t + side * dy / aspect, topY + dy * t - side * dx * aspect * (0.52 + v * 0.30));
+        }
+
+        /// <summary>Düz ekrandaki kutunun karedeki sınır kutusu (dört köşesinden; eğik telefonda biraz geniştir).</summary>
+        internal TextBox FrameBox(TextBox box)
+        {
+            (double X, double Y)[] corners = [Point(box.Left, box.Top), Point(box.Right, box.Top), Point(box.Left, box.Bottom), Point(box.Right, box.Bottom)];
+            return new TextBox(corners.Min(c => c.X), corners.Min(c => c.Y), corners.Max(c => c.X), corners.Max(c => c.Y));
         }
 
         /// <summary>Karedeki noktanın düz ekrandaki yeri (Newton adımlarıyla; dönüşüm neredeyse doğrusal, dört adım yeter).</summary>
@@ -271,50 +315,67 @@ public static class ScreenPhoneCard
         double pad = cardWidth * 0.05, padY = line * 0.4, spacing = line * BubbleSpacing;
         static TextLook Flat(string align, bool bold) => new(bold, false, align, false, true);
 
-        var body = onPhone;
-        ScreenTranslation.Item? header = null;
-        if (body.Count > 0 && body[0].Phone!.Role == Role.Header)
-        {
-            header = body[0];
-            body = body.Skip(1).ToList();
-        }
-        var headerHeight = header is null ? 0 : line * 1.4 + spacing;
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402: "Cal" başlığı gereksiz); balonlar aynen kalır.
+        var body = onPhone.Where(item => item.Phone!.Role != Role.Header).ToList();
 
         // Her satırın panelde kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
-        // Not ve liste satırı da balon gibi dolgulu, koyu yarı saydam zeminde çizilir (oyunun üstünde okunsun).
-        var rows = body.Select(item =>
+        // Sohbet listesinin satırı (ad + altındaki önizleme) ve ana ekran bileşeni tek kart olur (ListRowItem; Mac ile aynı).
+        var rows = new List<Row>();
+        var index = 0;
+        while (index < body.Count)
         {
-            var role = item.Phone!.Role == Role.Message ? (IsOutgoing(item.Style) ? Role.Outgoing : Role.Incoming) : item.Phone!.Role;
-            var bubble = role is Role.Incoming or Role.Outgoing;
+            var item = body[index];
+            var role = item.Phone!.Role;
+            index++;
+            if (role is Role.Contact or Role.Preview or Role.Widget)
+            {
+                ScreenTranslation.Item? name = null, preview = null;
+                if (role == Role.Contact)
+                {
+                    name = item;
+                    if (index < body.Count && body[index].Phone?.Role == Role.Preview)
+                    {
+                        preview = body[index];
+                        index++;
+                    }
+                }
+                else if (role == Role.Preview)
+                {
+                    preview = item;
+                }
+                else
+                {
+                    name = item;
+                }
+                if (ListRowItem(name, preview, role == Role.Widget, handset, line, cardWidth - 2 * pad) is { } made)
+                    rows.Add(new Row(made.Item, cardWidth - 2 * pad, made.Height, "left"));
+                continue;
+            }
+            var kind = role == Role.Message ? (IsOutgoing(item.Style) ? Role.Outgoing : Role.Incoming) : role;
+            var bubble = kind is Role.Incoming or Role.Outgoing;
             var widest = (bubble ? BubbleShare : 1) * cardWidth - (bubble ? 0 : 2 * pad);
             var inner = widest - 2 * pad;
             var lines = Wrap(item.Translation, (int)(inner * handset.Aspect / (line * CharWidth)));
             var longest = lines.Max(l => l.Length) * line * CharWidth / handset.Aspect + 2 * pad;
             var width = bubble ? Math.Min(widest, Math.Max(cardWidth * BubbleMin, longest)) : widest;
-            var side = role == Role.Outgoing ? "right" : role == Role.Note ? "center" : "left";
+            var side = kind == Role.Outgoing ? "right" : kind == Role.Note ? "center" : "left";
             var placed = item with
             {
                 Unchanged = false, LineHeight = line,
-                Style = role switch
+                Style = kind switch
                 {
-                    // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı (Mac ile aynı).
+                    // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın küçük başlık, sola yaslı; not ortalı (Mac ile aynı).
                     Role.Outgoing => BubbleColor(item.Style, OutgoingColor), Role.Incoming => BubbleColor(item.Style, IncomingColor),
-                    Role.Note or Role.Heading => NoteColor,
-                    _ => CardColor,
+                    _ => NoteColor,
                 },
-                Panel = role switch { Role.Outgoing => PanelPart.Mine, Role.Incoming => PanelPart.Theirs, _ => PanelPart.Note },
-                Look = Flat(side, role is Role.Contact or Role.Heading),
+                Panel = kind switch { Role.Outgoing => PanelPart.Mine, Role.Incoming => PanelPart.Theirs, _ => PanelPart.Note },
+                Look = Flat(side, kind == Role.Heading),
             };
-            return new Row(placed, width, lines.Count * line * LineSpacing + line * BubblePadding, side);
-        }).ToList();
-        // Sohbet listesinde önizleme kişi adının hemen altındadır (ListGap); öbür satırlar arasında spacing kalır (Mac ile aynı).
-        double RowGap(int index) =>
-            index > 0 && rows[index].Item.Phone?.Role == Role.Preview && rows[index - 1].Item.Phone?.Role == Role.Contact
-                ? line * ListGap : spacing;
+            rows.Add(new Row(placed, width, lines.Count * line * LineSpacing + line * BubblePadding, side));
+        }
+        if (rows.Count == 0) return items;
         var limit = 1 - ScreenMargin;
-        // Kişi adı panelin üstünde, balonların hizasında küçük başlık: telefondaki yerinde, telefonun üstünden yukarı çıkmaz.
-        double? titleTop = header is null ? null : Math.Max(ScreenMargin, Math.Min(AlignedTop(header, line), card.Top));
-        var bodyTop = titleTop is { } t ? t + line * (TitleHeight + TitleGap) : ScreenMargin;
+        const double bodyTop = ScreenMargin;
         // Her balon kendi İngilizce balonunun yüksekliğinde; çakışan balon üsttekinin altına en az kaydırmayla itilir. Panel
         // ekranın alt kenar payını aşarsa satırlar alttan yukarı itilir; yukarıda da yer kalmazsa en eski satırlar düşer.
         double[] AlignedTops()
@@ -322,14 +383,14 @@ public static class ScreenPhoneCard
             var tops = new double[rows.Count];
             for (var i = 0; i < rows.Count; i++)
             {
-                var below = i == 0 ? bodyTop : tops[i - 1] + rows[i - 1].Height + RowGap(i);
+                var below = i == 0 ? bodyTop : tops[i - 1] + rows[i - 1].Height + spacing;
                 tops[i] = Math.Max(AlignedTop(rows[i].Item, line), below);
             }
             var floor = limit;
             for (var i = rows.Count - 1; i >= 0; i--)
             {
                 tops[i] = Math.Min(tops[i], floor - rows[i].Height);
-                floor = tops[i] - RowGap(i);
+                floor = tops[i] - spacing;
             }
             return tops;
         }
@@ -340,10 +401,10 @@ public static class ScreenPhoneCard
             tops = AlignedTops();
         }
         if (tops.Length > 0 && tops[0] < bodyTop) tops[0] = bodyTop;
-        var contentTop = Math.Min(titleTop ?? card.Top, tops.Length > 0 ? tops[0] : card.Top);
+        var contentTop = tops.Length > 0 ? tops[0] : card.Top;
         var contentBottom = rows.Count > 0 ? tops[^1] + rows[^1].Height : card.Bottom;
-        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, başlık, aralıklar) da sığar.
-        var flow = 2 * padY + headerHeight + rows.Sum(row => row.Height) + Enumerable.Range(1, Math.Max(0, rows.Count - 1)).Sum(RowGap);
+        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, aralıklar) da sığar.
+        var flow = 2 * padY + rows.Sum(row => row.Height) + Math.Max(0, rows.Count - 1) * spacing;
         var cardTop = Math.Max(ScreenMargin, Math.Min(card.Top, contentTop));
         card = new TextBox(card.Left, cardTop, card.Right,
                            Math.Min(limit, Math.Max(Math.Max(card.Bottom, contentBottom + padY), cardTop + flow)));
@@ -364,15 +425,6 @@ public static class ScreenPhoneCard
             Style = CardColor, Look = Flat("left", false), Panel = PanelPart.Card, Aligned = true,
         });
 
-        if (header is not null && titleTop is { } top)
-        {
-            result.Add(header with
-            {
-                Unchanged = false,
-                Box = new TextBox(card.Left + pad, top, card.Right - pad, top + line * TitleHeight),
-                LineHeight = line, Style = CardColor, Look = Flat("left", true), Panel = PanelPart.Title,
-            });
-        }
         for (var i = 0; i < rows.Count; i++)
         {
             var row = rows[i];
@@ -381,6 +433,87 @@ public static class ScreenPhoneCard
             result.Add(row.Item with { Box = new TextBox(left, tops[i], left + row.Width, tops[i] + row.Height) });
         }
         return result;
+    }
+
+    /// <summary>Liste kartının rengi okunamadıysa: GTA 6 telefonunun açık satır kartı.</summary>
+    internal static readonly PhoneTextStyle RowColor = new("#F4F1EC", "#17181B");
+    /// <summary>Liste kartında avatarın çapı, avatarla yazı arası ve kartın iç dolgusu (satır yüksekliğine oranla).</summary>
+    public const double AvatarLines = 2.2, AvatarGap = 0.5, RowPadding = 0.45;
+
+    /// <summary>
+    /// Liste satırını (ad + önizleme) ya da ana ekran bileşenini tek kart yapar: kartın üstü adın İngilizcesiyle aynı hizada,
+    /// boyu Türkçenin satır sayısına ve telefondaki satırın boyuna göre (hangisi büyükse; kartlar arası boşluk telefondakiyle
+    /// orantılı kalır). Kart telefonun satır kartı renginde (önizlemenin örneklenen zemini). Avatarın, rozetin ve seçim
+    /// çerçevesinin karedeki yeri <see cref="ListRow"/>'a yazılır; kesmek çağıranın işi (<see cref="PhoneListLook"/>).
+    /// Mac: ScreenPhoneCard.listRow.
+    /// </summary>
+    internal static (ScreenTranslation.Item Item, double Height)? ListRowItem(ScreenTranslation.Item? name, ScreenTranslation.Item? preview,
+                                                                           bool widget, Handset handset, double line, double width)
+    {
+        if ((name ?? preview) is not { } first) return null;
+        string title, below;
+        if (widget)
+        {
+            var parts = first.Translation.Split('\n', 2);
+            title = parts[0];
+            below = parts.Length > 1 ? parts[1] : "";
+        }
+        else
+        {
+            title = name?.Translation ?? "";
+            below = preview?.Translation ?? "";
+        }
+        var row = new ListRow(title, below) { Widget = widget };
+        var inset = RowPadding * line / handset.Aspect;
+        var inner = width - 2 * inset - (AvatarLines + AvatarGap) * line / handset.Aspect;
+        var wrapped = below.Length == 0 ? 0 : Wrap(below, (int)(inner * handset.Aspect / (line * CharWidth))).Count;
+        var lines = (title.Length == 0 ? 0 : 1) + wrapped;
+        var needed = Math.Max(Math.Max(1, lines) * line * LineSpacing, AvatarLines * line) + 2 * RowPadding * line;
+        // Telefondaki satırın boyu (adın üstünden önizlemenin altına, dolguyla).
+        var last = preview ?? first;
+        var original = last.Box.Bottom - first.Box.Top + line * BubblePadding;
+        // Karedeki yerler (düz ekrandan): avatar adın solunda, ad ve önizleme bloğunun ortasında; rozet satırın sağ ucunda,
+        // ad hizasında; seçim çerçevesi satırın üst kenarı (adın biraz üstü).
+        if (first.Phone?.Spot is { } top && last.Phone?.Spot is { } bottom)
+        {
+            const double shape = Handset.ScreenShape;
+            if (widget)
+            {
+                // Bileşenin simgesi başlığın solunda (sayaç satırının sol hizasında), başlık satırı boyunda.
+                var size = (top.Bottom - top.Top) * 0.5;
+                row = row with
+                {
+                    PortraitSpot = handset.FrameBox(new TextBox(top.Left - size * 0.1 / shape, top.Top - size * 0.1,
+                                                                top.Left + size * 1.1 / shape, top.Top + size * 1.1)),
+                };
+            }
+            else
+            {
+                var block = Math.Max(1e-4, bottom.Bottom - top.Top);
+                var center = (top.Top + bottom.Bottom) / 2;
+                var size = block * 1.35;
+                var right = Math.Min(top.Left, bottom.Left) - block * 0.1 / shape;
+                double nameCenter = (top.Top + top.Bottom) / 2, badge = block * 0.62;
+                row = row with
+                {
+                    PortraitSpot = handset.FrameBox(new TextBox(right - size / shape, center - size / 2, right, center + size / 2)),
+                    BadgeSpot = handset.FrameBox(new TextBox(0.985 - badge / shape, nameCenter - badge / 2, 0.985, nameCenter + badge / 2)),
+                    FrameSpot = handset.FrameBox(new TextBox(Math.Max(0.25, top.Left), top.Top - block * 0.6, 0.8, top.Top - block * 0.05)),
+                };
+            }
+        }
+        var item = first with
+        {
+            Source = widget ? first.Source : string.Join("\n", new[] { name?.Source, preview?.Source }.Where(text => text is not null)),
+            Translation = string.Join("\n", new[] { title, below }.Where(text => text.Length > 0)),
+            Unchanged = false,
+            LineHeight = line,
+            Style = BubbleColor(preview?.Style ?? first.Style, widget ? CardColor : RowColor),
+            Look = new TextLook(false, false, "left", false, true),
+            Panel = PanelPart.Row,
+            ListRow = row,
+        };
+        return (item, Math.Max(needed, original));
     }
 
     /// <summary>
@@ -520,13 +653,17 @@ public static class ScreenPhoneCard
                 },
             };
             var widest = (bubble ? BubbleShare : 1) * column;
-            var lines = Wrap(item.Translation, (int)((widest - 2 * padX) * aspect / (line * CharWidth)));
+            // Liste kartında yazı avatarın sağında; kart en az avatar boyunda.
+            var avatar = item.Panel == PanelPart.Row ? (AvatarLines + AvatarGap + 2 * RowPadding) * line / aspect : 0;
+            var lines = Wrap(item.Translation, (int)((widest - 2 * padX - avatar) * aspect / (line * CharWidth)));
             // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
             var gap = BubbleSpacing;
             if (index > 0)
                 gap = Math.Min(StackedGapMax, Math.Max(0, (source.Box.Top - panel.Messages[index - 1].Box.Bottom)
                                                          / Math.Max(1e-9, source.LineHeight)));
-            return (Item: item, Width: widest, Height: lines.Count * line * LineSpacing + line * BubblePadding, Gap: gap * line);
+            var height = lines.Count * line * LineSpacing + line * BubblePadding;
+            if (item.Panel == PanelPart.Row) height = Math.Max(lines.Count * line * LineSpacing, AvatarLines * line) + 2 * RowPadding * line;
+            return (Item: item, Width: widest, Height: height, Gap: gap * line);
         }).ToList();
         // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
         double Bottom(int start)

@@ -47,6 +47,8 @@ public enum ScreenTranslation {
         /// Panelin zemininde (`card`): parçalar akışla değil, kutularının yerinde çizilir; her Türkçe balon telefondaki
         /// İngilizce balonuyla aynı yükseklikte durur (`ScreenPhoneCard.layout`, JSON `aligned`). Eski TV yok sayar.
         public var aligned = false
+        /// Sohbet listesinin satırı ya da ana ekran bileşeni tek kartta (`panel == .row`; JSON `row`). Eski TV yok sayar.
+        public var listRow: ScreenPhoneCard.ListRow?
         /// Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; `ScreenFit`); nil ise bilinmiyor.
         public var room: TextBox?
         /// Özgün yazının satır sayısı (`Group.rows`).
@@ -88,8 +90,13 @@ public enum ScreenTranslation {
         let all = withImages(groups(reading, frame: frame, wholeScreen: true, handset: phone), from: frame)
         let chat = chatTitle(all)
         var made: [Int: Item] = [:]
+        // Telefon listesi kartlarının avatarı, rozeti ve seçim çerçevesi bu kareden (`PhoneListLook`).
+        let looks = PhoneListLook()
         func shown() -> [Item] {
-            ScreenFit.fitted(present(made.keys.sorted().map { made[$0]! }, phone: phone, card: phoneCard, textScale: panelScale), frame: frame)
+            var items = present(made.keys.sorted().map { made[$0]! }, phone: phone, card: phoneCard, textScale: panelScale)
+            if let frame { items = looks.apply(items, frame: frame) }
+            // Liste kartı kendi kutusunda çizilir; yerinde birebir çizim ölçüleri (`ScreenFit`) ona uygulanmaz.
+            return ScreenFit.fitted(items.filter { $0.panel != .row }, frame: frame) + items.filter { $0.panel == .row }
         }
         // Önce çevirmene gitmeyecek gruplar (sözlük, bu ekranda daha önce çevrilmiş yazı): çeviri beklemeden hemen çizilir.
         let prepared = all.map { $0.paragraphs.map(IconText.protect) }

@@ -1223,7 +1223,7 @@
   // mesajlar sırayla (karşı taraf solda krem, oyuncu sağda amber balon, not ortada); sığmayan en eski mesajlar düşer,
   // son mesajlar görünür kalır. Sağ altta sade kanepe simgesi. Mac, Windows, iPhone ve Android aynı çizimi yapar.
   // Alanı göndermeyen eski bilgisayarda öğeler eskisi gibi yerinde çizilir.
-  var PANEL_PARTS = { title: true, theirs: true, mine: true, note: true };
+  var PANEL_PARTS = { title: true, theirs: true, mine: true, note: true, row: true };
   var PANEL_OPACITY = 0.88;
   var PANEL_COUCH = [[3, 1, 18, 8, 2.5], [0, 5, 5, 8, 2], [19, 5, 5, 8, 2], [4, 8, 16, 5, 1.5], [2, 13, 2, 3, 0.8], [20, 13, 2, 3, 0.8]];
 
@@ -1390,6 +1390,63 @@
   // Panel gelirken ve telefon kalkınca kaybolurken solma süresi (ms; style.css phone-panel-in, .leaving ile aynı).
   var PANEL_FADE_MS = 250;
 
+  // Telefon listesinin tek kartı (TV uygulaması 0.9.109; Sinan Bey, beta.100 3399): ad ve önizleme ayrı haplar
+  // dağınıktı. Her satır telefondaki satırın Türkçe kopyası: telefonun satır kartı renginde yuvarlak köşeli kart, solda
+  // oyundan kesilmiş avatar (okunmamış kırmızı nokta resmin içinde), kalın ad ve altında önizleme, sağ üstte rozet,
+  // seçili satırda telefondaki renkte çerçeve. Ana ekran bileşeni ("Hatırlatıcılar / 6 Bildirim") aynı kart. Ölçüler
+  // satır yüksekliğine oranla (ScreenPhoneCard.avatarLines 2,2, avatarGap 0,5, rowPadding 0,45); Mac, Windows, iPhone ve
+  // Android (PhoneListCard, PhoneBlocksCanvas, PhonePanel) aynı kartı çizer. Eski TV kartı tanımaz, `text`'i (ad ve
+  // önizleme iki satır) yerinde çizer.
+  function listImage(src) {
+    return typeof src === 'string' && src.indexOf('data:image/png;base64,') === 0 && src.length < 200000 ? src : '';
+  }
+
+  function listCardKey(card) {
+    return [card.name || '', card.preview || '', listImage(card.avatar), listImage(card.badge),
+      phoneColor(card.selected) ? card.selected : '', card.widget === true ? 'w' : ''].join('\u001f');
+  }
+
+  function listCard(card, colors, line) {
+    var el = document.createElement('div');
+    el.className = 'panel-card' + (card.widget === true ? ' widget' : '');
+    if (colors && phoneColor(colors.background)) el.style.backgroundColor = translucent(colors.background, PANEL_BUBBLE_OPACITY);
+    if (colors && phoneColor(colors.foreground)) el.style.color = colors.foreground;
+    if (phoneColor(card.selected)) {
+      el.style.boxShadow = 'inset 0 0 0 ' + Math.max(2, Math.round(line * 0.12)) + 'px ' + card.selected;
+    }
+    var avatar = listImage(card.avatar);
+    if (avatar) {
+      var face = document.createElement('img');
+      face.className = 'panel-avatar';
+      face.src = avatar;
+      el.appendChild(face);
+    } else el.className += ' bare';
+    var badge = listImage(card.badge);
+    if (badge) {
+      var mark = document.createElement('img');
+      mark.className = 'panel-badge';
+      mark.src = badge;
+      el.appendChild(mark);
+      el.className += ' badged';
+    }
+    var text = document.createElement('div');
+    text.className = 'panel-card-text';
+    if (typeof card.name === 'string' && card.name) {
+      var name = document.createElement('div');
+      name.className = 'panel-card-name';
+      name.textContent = card.name;
+      text.appendChild(name);
+    }
+    if (typeof card.preview === 'string' && card.preview) {
+      var preview = document.createElement('div');
+      preview.className = 'panel-card-preview';
+      preview.textContent = card.preview;
+      text.appendChild(preview);
+    }
+    el.appendChild(text);
+    return el;
+  }
+
   function placeAlignedPanel(host, panel, box, title, messages, width, height, line) {
     panel.style.backgroundColor = 'transparent';
     // Yazı boyu tam piksele yuvarlanmaz: 720p, 1080p ve 4K'da ekrana oranı (ve satır kırılımı) aynı kalır.
@@ -1414,24 +1471,36 @@
       var colors = item.surface;
       var paint = colors && phoneColor(colors.background) && phoneColor(colors.foreground)
         ? colors.background + '/' + colors.foreground : '';
+      // Liste kartı (TV uygulaması 0.9.109): avatar, ad, önizleme, rozet ve seçim çerçevesi kartın görünüşüdür.
+      var listing = part === 'row' && item.row && typeof item.row === 'object' ? item.row : null;
+      if (listing) paint += '|' + listCardKey(listing);
       var row = old[rowKey] && old[rowKey].shift();
       var rowClass = 'panel-row ' + part + (listed ? ' list' : '') + (strong ? ' strong' : '');
       if (!row || row.couchsubsPaint !== paint) {
         row = document.createElement('div');
-        var bubble = document.createElement('div');
-        bubble.className = 'panel-bubble';
-        fillText(bubble, item.text, item.icons);
-        if (paint) {
-          bubble.style.backgroundColor = translucent(colors.background, PANEL_BUBBLE_OPACITY);
-          bubble.style.color = colors.foreground;
+        if (listing) {
+          row.appendChild(listCard(listing, colors, line));
+        } else {
+          var bubble = document.createElement('div');
+          bubble.className = 'panel-bubble';
+          fillText(bubble, item.text, item.icons);
+          if (paint) {
+            bubble.style.backgroundColor = translucent(colors.background, PANEL_BUBBLE_OPACITY);
+            bubble.style.color = colors.foreground;
+          }
+          row.appendChild(bubble);
         }
-        row.appendChild(bubble);
         row.couchsubsKey = rowKey;
         row.couchsubsPaint = paint;
       }
       if (row.className !== rowClass) row.className = rowClass;
       var left = Math.round((at.left - box.left) * width), top = Math.round((at.top - box.top) * height);
       var rowWidth = Math.max(1, Math.round((at.right - at.left) * width));
+      // Kart en az telefondaki satır boyunda (bilgisayarın kutusu); Türkçe uzunsa kart uzar, alttakiler itilir.
+      if (listing) {
+        var least = Math.max(1, Math.round((at.bottom - at.top) * height)) + 'px';
+        if (row.firstChild.style.minHeight !== least) row.firstChild.style.minHeight = least;
+      }
       if (row.style.left !== left + 'px') row.style.left = left + 'px';
       if (row.style.width !== rowWidth + 'px') row.style.width = rowWidth + 'px';
       // Çakışmada korunacak aralık: bilgisayarın bıraktığı (üstteki satırın tahmini altından bu satırın üstüne), en çok

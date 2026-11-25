@@ -382,6 +382,18 @@ class SubtitleServer(
             item.panel?.let { json["panel"] = it.wire }
             // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer (Mac ile aynı).
             if (item.aligned) json["aligned"] = true
+            // Liste kartı (TV uygulaması 0.9.109): avatar, kalın ad, önizleme, rozet, seçim çerçevesi. Eski TV yok sayar,
+            // `text`'i (ad ve önizleme iki satır) yerinde çizer (iPhone ile aynı).
+            item.listRow?.let { json["row"] = rowJson(it) }
+            return json
+        }
+
+        fun rowJson(row: ScreenPhoneCard.ListRow): Map<String, Any> {
+            val json = linkedMapOf<String, Any>("name" to row.name, "preview" to row.preview)
+            row.avatar?.let { json["avatar"] = it }
+            row.badge?.let { json["badge"] = it }
+            row.selected?.takeIf(::isRgb)?.let { json["selected"] = it }
+            if (row.widget) json["widget"] = true
             return json
         }
 

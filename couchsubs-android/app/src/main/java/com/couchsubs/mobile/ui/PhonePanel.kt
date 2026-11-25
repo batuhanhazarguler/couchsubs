@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.couchsubs.mobile.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -37,6 +40,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
@@ -94,7 +101,7 @@ fun PhonePanelAligned(panel: ScreenPhoneCard.Panel, width: Dp, height: Dp, fontS
     val parts = listOfNotNull(panel.title) + panel.messages
     val density = LocalDensity.current
     Layout(content = {
-        parts.forEach { item -> AlignedPart(item, item === panel.title, font, width * (item.box.right - item.box.left).toFloat()) }
+        parts.forEach { item -> AlignedPart(item, item === panel.title, font, width * (item.box.right - item.box.left).toFloat(), height) }
     }) { measurables, constraints ->
         val w = width.toPx()
         val h = height.toPx()
@@ -118,7 +125,12 @@ fun PhonePanelAligned(panel: ScreenPhoneCard.Panel, width: Dp, height: Dp, fontS
 }
 
 @Composable
-private fun AlignedPart(item: ScreenTranslation.Item, title: Boolean, font: Float, rowWidth: Dp) {
+private fun AlignedPart(item: ScreenTranslation.Item, title: Boolean, font: Float, rowWidth: Dp, height: Dp) {
+    val row = item.listRow
+    if (item.panel == ScreenPhoneCard.PanelPart.ROW && row != null) {
+        PhoneListCard(item, row, font, rowWidth, height * (item.box.bottom - item.box.top).toFloat())
+        return
+    }
     val listed = isListRow(item)
     val note = item.panel == ScreenPhoneCard.PanelPart.NOTE && !listed
     val mine = item.panel == ScreenPhoneCard.PanelPart.MINE
@@ -135,6 +147,59 @@ private fun AlignedPart(item: ScreenTranslation.Item, title: Boolean, font: Floa
                 .background(color(item.surface?.background, Color.Black).copy(alpha = ScreenPhoneCard.BUBBLE_OPACITY.toFloat()))
                 .padding(horizontal = (font * 0.6f).dp, vertical = (font * 0.3f).dp))
     }
+}
+
+/**
+ * Telefon listesinin tek kartı ([ScreenPhoneCard.ListRow]; iPhone PhoneListCard, TV app.js `placeListCard`, Windows
+ * PhoneBlocksCanvas aynı çizim): telefonun satır kartı renginde yuvarlak köşeli kart; solda oyundan kesilmiş avatar,
+ * yanında kalın ad ve altında önizleme, sağda rozet; seçili satırda telefondaki renkte çerçeve. Kartın üstü adın
+ * İngilizcesiyle aynı hizada, boyu kutusu kadar.
+ */
+@Composable
+private fun PhoneListCard(item: ScreenTranslation.Item, row: ScreenPhoneCard.ListRow, font: Float, width: Dp, height: Dp) {
+    val line = font / 0.85f
+    val avatar = remember(row.avatar) { pngImage(row.avatar) }
+    val badge = remember(row.badge) { pngImage(row.badge) }
+    val ink = color(item.surface?.foreground, Color.Black)
+    val shape = RoundedCornerShape((line * 0.8f).dp)
+    var card = Modifier.size(width, height)
+        .clip(shape)
+        .background(color(item.surface?.background, Color.White).copy(alpha = ScreenPhoneCard.BUBBLE_OPACITY.toFloat()))
+    row.selected?.let { selected ->
+        card = card.border(maxOf(1.5f, line * 0.12f).dp, color(selected, Color.Blue), shape)
+    }
+    Row(card.padding((line * ScreenPhoneCard.ROW_PADDING.toFloat()).dp), verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy((line * ScreenPhoneCard.AVATAR_GAP.toFloat()).dp)) {
+        avatar?.let {
+            val side = (line * ScreenPhoneCard.AVATAR_LINES.toFloat()).dp
+            Image(it, contentDescription = null, contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.Medium,
+                modifier = Modifier.size(side).clip(RoundedCornerShape(side * 0.3f)))
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy((line * 0.1f).dp)) {
+            if (row.name.isNotEmpty()) {
+                Text(row.name, style = TextStyle(fontSize = font.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.sp), color = ink,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (row.preview.isNotEmpty()) {
+                Text(row.preview, style = TextStyle(fontSize = (font * 0.92f).sp, fontWeight = FontWeight.Normal, letterSpacing = 0.sp),
+                    color = ink.copy(alpha = ink.alpha * 0.8f))
+            }
+        }
+        badge?.let {
+            Image(it, contentDescription = null, contentScale = ContentScale.FillBounds, filterQuality = FilterQuality.Medium,
+                modifier = Modifier.align(Alignment.Top).size((line * 1.1f).dp))
+        }
+    }
+}
+
+/** PNG data: adresinden resim; çözülemezse null. */
+private fun pngImage(url: String?): ImageBitmap? {
+    val comma = url?.indexOf(',') ?: return null
+    if (comma < 0) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(url.substring(comma + 1), android.util.Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }.getOrNull()
 }
 /**
  * Sohbet paneli: yuvarlak köşeli, yarı saydam koyu kart; üstte kişinin adı, altında mesajlar sırayla (karşı taraf solda

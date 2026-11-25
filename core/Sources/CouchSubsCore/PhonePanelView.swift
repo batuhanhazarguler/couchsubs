@@ -2,6 +2,7 @@
 
 #if canImport(SwiftUI)
 import SwiftUI
+import ImageIO
 
 /// GTA 6 telefonunun yanındaki sohbet paneli (Mac yayın ve saydam penceresi, iPhone altyazı ekranı; Windows
 /// PhonePanelView.cs, Android PhonePanel.kt, TV app.js `placePanel` aynı çizim): yuvarlak köşeli, yarı saydam koyu
@@ -198,6 +199,14 @@ public struct PhonePanelAligned: View {
     }
 
     @ViewBuilder private func part(_ item: ScreenTranslation.Item, font: CGFloat, title: Bool) -> some View {
+        if item.panel == .row, let row = item.listRow {
+            PhoneListCard(item: item, row: row, font: font, size: size)
+        } else {
+            bubble(item, font: font, title: title)
+        }
+    }
+
+    @ViewBuilder private func bubble(_ item: ScreenTranslation.Item, font: CGFloat, title: Bool) -> some View {
         let box = item.box
         let width = max(0, box.right - box.left) * size.width
         let listed = PhonePanelView.isListRow(item), note = item.panel == .note && !listed
@@ -216,6 +225,70 @@ public struct PhonePanelAligned: View {
             .frame(maxWidth: width, alignment: alignment)
             .frame(width: width, alignment: alignment)
             .offset(x: box.left * size.width, y: box.top * size.height)
+    }
+}
+
+/// Telefon listesinin tek kartı (`ScreenPhoneCard.ListRow`; TV app.js `placeListCard`, Windows PhoneBlocksCanvas, Android
+/// PhonePanel aynı çizim): telefonun satır kartı renginde yuvarlak köşeli kart; solda oyundan kesilmiş avatar, yanında
+/// kalın ad ve altında önizleme, sağda rozet; seçili satırda telefondaki renkte çerçeve. Kartın üstü adın İngilizcesiyle
+/// aynı hizada, boyu kutusu kadar.
+struct PhoneListCard: View {
+    let item: ScreenTranslation.Item
+    let row: ScreenPhoneCard.ListRow
+    let font: CGFloat
+    let size: CGSize
+
+    var body: some View {
+        let box = item.box
+        let width = max(0, box.right - box.left) * size.width, height = max(0, box.bottom - box.top) * size.height
+        let line = font / 0.85
+        let avatar = line * ScreenPhoneCard.avatarLines
+        let ink = PhonePanelView.color(item.style?.foreground, fallback: .black)
+        HStack(alignment: .center, spacing: line * ScreenPhoneCard.avatarGap) {
+            if let image = Self.image(row.avatar) {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .interpolation(.medium)
+                    .frame(width: avatar, height: avatar)
+                    .clipShape(RoundedRectangle(cornerRadius: avatar * 0.3, style: .continuous))
+            }
+            VStack(alignment: .leading, spacing: line * 0.1) {
+                if !row.name.isEmpty {
+                    Text(verbatim: row.name).font(.system(size: font, weight: .bold)).lineLimit(1)
+                }
+                if !row.preview.isEmpty {
+                    Text(verbatim: row.preview).font(.system(size: font * 0.92, weight: .regular))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .opacity(0.8)
+                }
+            }
+            .foregroundStyle(ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let badge = Self.image(row.badge) {
+                Image(decorative: badge, scale: 1).resizable().interpolation(.medium)
+                    .frame(width: line * 1.1, height: line * 1.1)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .padding(line * ScreenPhoneCard.rowPadding)
+        .frame(width: width, height: height, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: line * 0.8, style: .continuous)
+            .fill(PhonePanelView.color(item.style?.background, fallback: .white).opacity(ScreenPhoneCard.bubbleOpacity)))
+        .overlay {
+            if let selected = row.selected {
+                RoundedRectangle(cornerRadius: line * 0.8, style: .continuous)
+                    .stroke(PhonePanelView.color(selected, fallback: .blue), lineWidth: max(1.5, line * 0.12))
+            }
+        }
+        .offset(x: box.left * size.width, y: box.top * size.height)
+    }
+
+    /// PNG data: adresinden resim.
+    static func image(_ url: String?) -> CGImage? {
+        guard let url, let comma = url.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(url[url.index(after: comma)...])),
+              let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
     }
 }
 #endif

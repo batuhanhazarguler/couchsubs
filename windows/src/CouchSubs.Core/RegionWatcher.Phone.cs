@@ -42,6 +42,7 @@ public sealed partial class RegionWatcher
             if (!map.TryGetValue(area.Id, out state!)) map[area.Id] = state = new State();
         }
         state.PhoneAspect = frame.Width / (double)Math.Max(1, frame.Height);
+        state.PhoneFrame = frame;
         var moved = state.ReadRegion is { } region && !area.Region.IsClose(region, 0.01);
         var changed = moved || state.Signature is not { } previous || ReadScheduler.Changed(previous, signature, ReadScheduler.ChangeThreshold)
             || state.ReadPhonePage?.Changed(frame, area.Region) == true;
@@ -324,6 +325,17 @@ public sealed partial class RegionWatcher
             if (block.Count == 1 && block.Start < result.Length && result[block.Start] is null
                 && PhoneSteady.ShownTranslation(IconText.Plain(candidate.Paragraphs[block.Start]), block.Phone?.Spot, state.SentPhoneBlocks) is { } shown)
                 result[block.Start] = shown;
+        // Listedeki kesik önizlemenin tam mesajı sohbette çevrildiyse o çevirinin başı + "..." (GamePhoneText.KnownPreview;
+        // Mac ile aynı).
+        if (candidate.Blocks?.Any(block => block.Phone?.Role == ScreenPhoneCard.Role.Preview) == true)
+        {
+            var known = phoneMemory.Known;
+            foreach (var block in candidate.Blocks)
+                if (block.Phone?.Role == ScreenPhoneCard.Role.Preview)
+                    for (var i = block.Start; i < block.Start + block.Count && i < result.Length; i++)
+                        if (result[i] is null && GamePhoneText.KnownPreview(IconText.Plain(candidate.Paragraphs[i]), known) is { } preview)
+                            result[i] = preview;
+        }
         // Kişinin adı (sohbet başlığı) çevrilmez: "Rose" "Gül" olmasın; panelin başlığında aslıyla görünür (Mac ile aynı).
         foreach (var block in candidate.Blocks ?? [])
             if (block.Phone?.Role.KeepsText() == true)
@@ -383,11 +395,16 @@ public sealed partial class RegionWatcher
                     }
                 }
                 // Listede "…" ile kesilmiş önizleme kesik çevrilir, yarım sözcük uydurulmaz (GamePhoneText.CutInput; Mac ile aynı).
-                var cuts = missing.Select(i => candidate.Blocks?.Any(block => block.Phone?.Role == ScreenPhoneCard.Role.Preview
-                        && i >= block.Start && i < block.Start + block.Count) == true
-                    ? GamePhoneText.CutInput(candidate.Paragraphs[i]) : null).ToList();
+                // "…" koymadan satır sonunda kesilmiş önizleme de kesik çevrilir (GamePhoneText.ClippedInput); motora "..." ile
+                // gider, sonu tamamlanmaz (Sinan Bey, beta.100 3399).
+                bool InPreview(int i, bool clipped) => candidate.Blocks?.Any(block => block.Phone?.Role == ScreenPhoneCard.Role.Preview
+                    && (!clipped || block.Phone!.Spot.Right >= GamePhoneText.ClipEdge)
+                    && i >= block.Start && i < block.Start + block.Count) == true;
+                var cuts = missing.Select(i => !InPreview(i, false) ? null
+                    : GamePhoneText.CutInput(candidate.Paragraphs[i])
+                      ?? (InPreview(i, true) ? GamePhoneText.ClippedInput(candidate.Paragraphs[i]) : null)).ToList();
                 for (var n = 0; n < missing.Count; n++)
-                    if (cuts[n] is { } cut) prepared[missing[n]] = IconText.Protect(cut);
+                    if (cuts[n] is { } cut) prepared[missing[n]] = IconText.Protect(GamePhoneText.CutHint(cut));
                 var texts = missing.Select(i => EnglishPhoneMessages
                     ? GamePhoneText.EnglishModelInput(prepared[i].Text) : prepared[i].Text).ToList();
                 var translations = await translator.TranslateAllAsync(texts, area.PanelLifetime ?? default).ConfigureAwait(false);
@@ -396,7 +413,8 @@ public sealed partial class RegionWatcher
                     for (var i = 0; i < missing.Count && i < translations.Count; i++)
                     {
                         result[missing[i]] = cuts[i] is null || string.IsNullOrWhiteSpace(translations[i])
-                            ? translations[i] : GamePhoneText.CutTranslation(translations[i]);
+                            ? translations[i]
+                            : GamePhoneText.CutTranslation(GamePhoneText.KeepingLeadingSymbol(candidate.Paragraphs[missing[i]], translations[i]));
                         if (string.IsNullOrWhiteSpace(translations[i]))
                             PhoneNote("PhoneSession", "motor boş çeviri döndü, gösterilmedi", candidate.Paragraphs[missing[i]]);
                     }
@@ -434,6 +452,7 @@ public sealed partial class RegionWatcher
                     if (LatestPhone(area) is { } newer && !ReferenceEquals(newer.Frame, latest.Frame)
                         && PhoneMissing(newer.Frame, newer.Area)) fresh = null;
                     state.ReadRegion = latest.Area.Region;
+                    if (fresh is not null) state.PhoneFrame = latest.Frame;
                     state.ReadPhonePage = fresh?.PhonePage;
                     state.Signature = fresh is { Key.Length: > 0 } ? RegionCropper.Signature(crop) : null;
                     if (fresh?.Key != candidate.Key)

@@ -17,8 +17,11 @@ public enum OcrNoise {
         let tokens = line.split(whereSeparator: \.isWhitespace).map(String.init)
         for (index, token) in tokens.enumerated() {
             // Kumanda simgesinin yeri (`ButtonIcons.marker`) çöp değildir.
+            // Telefonda (`keepIdentifiers`) tek başına para simgesi mesajın parçasıdır ("$ in your mailbox"; beta.100'de
+            // listede "$" düşüyordu).
             if token.unicodeScalars.first == ButtonIcons.markerScalar || (keepIdentifiers &&
-                (GamePhoneText.containsIdentifier(token) || GamePhoneText.isWrittenChatWord(token))) {
+                (GamePhoneText.containsIdentifier(token) || GamePhoneText.isWrittenChatWord(token)
+                 || (token.unicodeScalars.count == 1 && token.unicodeScalars.first?.properties.generalCategory == .currencySymbol))) {
                 kept.append(token)
                 continue
             }

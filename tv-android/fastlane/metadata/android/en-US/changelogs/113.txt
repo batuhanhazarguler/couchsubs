@@ -1,0 +1,1 @@
+0.9.110: The GTA 6 phone's message list is drawn as single cards (avatar, name, preview, badge, selected row); home screen widgets too.

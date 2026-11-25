@@ -50,6 +50,11 @@ public static class ScreenTranslation
         /// İngilizce balonuyla aynı yükseklikte (<see cref="ScreenPhoneCard.Layout"/>, JSON <c>aligned</c>). Eski TV yok sayar.
         /// </summary>
         public bool Aligned { get; init; }
+        /// <summary>
+        /// Sohbet listesinin satırı ya da ana ekran bileşeni tek kartta (<c>Panel == Row</c>; JSON <c>row</c>). Eski TV yok
+        /// sayar (Mac ile aynı).
+        /// </summary>
+        public ScreenPhoneCard.ListRow? ListRow { get; init; }
         /// <summary>Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; <see cref="ScreenFit"/>); null ise bilinmiyor.</summary>
         public TextBox? Room { get; init; }
         /// <summary>Özgün yazının satır sayısı (<see cref="Group.Rows"/>).</summary>
@@ -125,6 +130,16 @@ public static class ScreenTranslation
         var groups = ReadGroups(reading, false, frame, wholeScreen: true, handset: phone);
         var chat = ChatTitle(groups);
         var keep = phone is not null;
+        // Telefon listesi kartlarının avatarı, rozeti ve seçim çerçevesi bu kareden (PhoneListLook).
+        var looks = new PhoneListLook();
+        IReadOnlyList<Item> Fitted(IReadOnlyList<Item> laid)
+        {
+            var items = Present(laid, phone, phoneCard, panelScale);
+            if (frame is not null) items = looks.Apply(items, frame);
+            // Liste kartı kendi kutusunda çizilir; yerinde birebir çizim ölçüleri (ScreenFit) ona uygulanmaz.
+            return [.. ScreenFit.Fitted([.. items.Where(item => item.Panel != ScreenPhoneCard.PanelPart.Row)], frame),
+                    .. items.Where(item => item.Panel == ScreenPhoneCard.PanelPart.Row)];
+        }
         if (frame is not null)
             groups = [.. groups.Select(group => group.Icons is null ? group
                 : group with { Icons = [.. group.Icons.Select(icons => ButtonIcons.WithImages(icons, frame))] })];
@@ -158,7 +173,7 @@ public static class ScreenTranslation
                     if (part.Any(text => text is null)) continue;
                     if (Build(group, protectedGroups[g], [.. part.Select(text => text!)], keep) is { } item) laid.Add(Styled(item, frame));
                 }
-                return ScreenFit.Fitted(Present(laid, phone, phoneCard, panelScale), frame);
+                return Fitted(laid);
             }
             if (asked.Count > 0)
             {
@@ -179,7 +194,7 @@ public static class ScreenTranslation
             return all;
         }
         var made = new SortedDictionary<int, Item>();
-        IReadOnlyList<Item> Shown() => ScreenFit.Fitted(Present([.. made.Values], phone, phoneCard, panelScale), frame);
+        IReadOnlyList<Item> Shown() => Fitted([.. made.Values]);
         // Önce çevirmene gitmeyecek gruplar (sözlük, bu ekranda daha önce çevrilmiş yazı): çeviri beklemeden hemen çizilir.
         var waiting = new List<int>();
         for (var g = 0; g < groups.Count; g++)

@@ -81,7 +81,7 @@ final class GamePhoneTextTests: XCTestCase {
             return Reading(lines: lines)
         }
         let expected: [(String, ScreenPhoneCard.Role)] = [
-            ("Suggested", .heading), ("Cal", .contact), ("in your mailbox. You bailed", .preview), ("Brian", .contact),
+            ("Suggested", .heading), ("Cal", .contact), ("$ in your mailbox. You bailed", .preview), ("Brian", .contact),
             ("Ok. There's some cash in t...", .preview), ("Messages", .heading), ("Donnie", .contact), ("Joey", .contact),
             ("Hey this is Joey from Coa...", .preview), ("Lucia (Yolanda phone)", .contact),
             ("Outside living better than...", .preview), ("Shirley", .contact), ("Oh that's nice hon. aren't...", .preview),
@@ -107,6 +107,51 @@ final class GamePhoneTextTests: XCTestCase {
         XCTAssertNil(GamePhoneText.cutInput("Coa..."))
         XCTAssertEqual(GamePhoneText.cutTranslation("Selam, ben Joey."), "Selam, ben Joey...")
         XCTAssertEqual(GamePhoneText.cutTranslation("Dışarıda yaşamak daha iyi"), "Dışarıda yaşamak daha iyi...")
+    }
+
+    /// Sinan Bey (beta.100, 3399): "…" koymadan satır sonunda kesilen önizleme ("$ in your mailbox. You bailed") bağlamsız
+    /// çevrilip uyduruluyordu ("Posta kutunda. Beni aradın"; "$" düşmüş). Sohbette tam çevirisi bilinen mesajın önizlemesi o
+    /// çevirinin başı + "..."; bilinmiyorsa kesik metin "..." ipucuyla gider, sonu tamamlanmaz; baştaki "$" düşmez.
+    func testClippedPreviewUsesTheKnownChatTranslationOrStaysCut() {
+        XCTAssertEqual(GamePhoneText.clippedInput("$ in your mailbox. You bailed"), "$ in your mailbox. You bailed")
+        XCTAssertEqual(GamePhoneText.clippedInput("Meet me at the"), "Meet me")
+        XCTAssertNil(GamePhoneText.clippedInput("See you there."))
+        XCTAssertNil(GamePhoneText.clippedInput("Okay"))
+        XCTAssertEqual(GamePhoneText.cutHint("Meet me"), "Meet me...")
+        XCTAssertEqual(GamePhoneText.keepingLeadingSymbol("$ in your mailbox", "Posta kutunda"), "$ Posta kutunda")
+        XCTAssertEqual(GamePhoneText.keepingLeadingSymbol("$ in your mailbox", "$ posta kutunda"), "$ posta kutunda")
+        XCTAssertEqual(GamePhoneText.keepingLeadingSymbol("in your mailbox", "Posta kutunda"), "Posta kutunda")
+        let known = ["$ in your mailbox. You bailed me out again bro! You got away right? Tell me you got away. LMK!":
+                        "$ posta kutunda. Beni yine kurtardın, kanka! Kaçtın, değil mi? Kaçtığını söyle bana. Haber ver!",
+                     "I'm good. Thanks for the cash.": "İyiyim. Para için sağ ol."]
+        let preview = try! XCTUnwrap(GamePhoneText.knownPreview("$ in your mailbox. You bailed", in: known))
+        XCTAssertTrue(preview.hasPrefix("$ posta kutunda."), preview)
+        XCTAssertTrue(preview.hasSuffix("..."), preview)
+        XCTAssertLessThan(preview.count, 50)
+        XCTAssertEqual(GamePhoneText.knownPreview("$ in your mailbox. You bailed", in: known), preview, "her seferinde aynı")
+        // "…" ile kesik önizlemenin yarım sözcüğü eşleşmeye girmez.
+        XCTAssertNotNil(GamePhoneText.knownPreview("$ in your mailbox. You bai...", in: known))
+        XCTAssertNil(GamePhoneText.knownPreview("Hey this is Joey from Coa...", in: known), "bilinmeyen mesaj uydurulmaz")
+        XCTAssertNil(GamePhoneText.knownPreview("I'm good", in: known), "çok kısa önizleme eşleşmez")
+        // Para simgesi kumanda simgesi değildir; telefon yolunda tek başına "$" okuma çöpü sayılmaz.
+        XCTAssertFalse(ButtonIcons.isIconToken("$"))
+        XCTAssertEqual(OcrNoise.clean("$ in your mailbox", keepIdentifiers: true), "$ in your mailbox")
+    }
+
+    /// Ana ekran bileşeni (Sinan Bey, beta.100 3397): başlık ve sayaç tek grup, iki parça ("Reminders", "6 Notifications");
+    /// rolü `widget`. Tek satır okunan "Reminders 6 Notifications" de ikiye ayrılır. Uygulama adı ("WhatUp") çevrilmez.
+    func testHomeWidgetIsOneGroupWithTitleAndCounter() {
+        func flat(_ text: String, _ left: Double, _ top: Double, _ right: Double) -> TextLine {
+            var line = TextLine(text, box: TextBox(left: left, top: top, right: right, bottom: top + 0.028))
+            line.phoneBox = line.box
+            return line
+        }
+        let lines = [flat("Reminders", 0.16, 0.12, 0.45), flat("6 Notifications", 0.05, 0.155, 0.5), flat("WhatUp", 0.38, 0.86, 0.62)]
+        let groups = GamePhoneText.groups(Reading(lines: lines))
+        XCTAssertEqual(groups.map(\.paragraphs), [["Reminders", "6 Notifications"]])
+        XCTAssertEqual(groups.first?.phone?.role, .widget)
+        XCTAssertEqual(GamePhoneText.widgetParts("Reminders 6 Notifications")?.counter, "6 Notifications")
+        XCTAssertNil(GamePhoneText.widgetParts("Call me 6 times"))
     }
 
     func testOpposingRepliesAndWrappedMessagesUseFlatDisplayCoordinates() {

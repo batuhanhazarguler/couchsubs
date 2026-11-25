@@ -67,6 +67,11 @@ object ScreenTranslation {
          * [TextPainter]); null ise eski çizim.
          */
         val paint: TextPaint? = null,
+        /**
+         * Sohbet listesinin satırı ya da ana ekran bileşeni tek kartta (`panel == ROW`; JSON `row`). Eski TV yok sayar
+         * (iPhone ile aynı).
+         */
+        val listRow: ScreenPhoneCard.ListRow? = null,
     ) {
         /** Birden çok parça var: satır satır, sola yaslı gösterilir. */
         val paragraphs: Boolean get() = translation.contains('\n')
@@ -91,7 +96,18 @@ object ScreenTranslation {
         val all = withImages(groups(reading, wholeScreen = true, handset = phone, frame = frame, color = color), frame)
         val chat = chatTitle(all)
         val made = sortedMapOf<Int, Item>()
-        fun shown() = ScreenFit.fitted(present(made.values.toList(), phone, phoneCard, panelScale), frame, color)
+        // Telefon listesi kartlarının avatarı, rozeti ve seçim çerçevesi bu kareden ([PhoneListLook]).
+        val looks = PhoneListLook()
+        fun shown(): List<Item> {
+            var items = present(made.values.toList(), phone, phoneCard, panelScale)
+            if (frame != null && frame.isValid && items.any { it.listRow != null }) {
+                items = looks.apply(items, frame.width, frame.height,
+                    color ?: { x, y -> frame.at(x, y).let { (it shl 16) or (it shl 8) or it } })
+            }
+            // Liste kartı kendi kutusunda çizilir; yerinde birebir çizim ölçüleri ([ScreenFit]) ona uygulanmaz.
+            return ScreenFit.fitted(items.filter { it.panel != ScreenPhoneCard.PanelPart.ROW }, frame, color) +
+                items.filter { it.panel == ScreenPhoneCard.PanelPart.ROW }
+        }
         // Simgeler çeviride uydurma adlarla korunur (IconText); sözlükteki kısa etiketler çevirmene gitmez, fiyatlar
         // adla korunur (PriceText).
         val prepared = all.map { group -> group.paragraphs.map { IconText.protect(it) } }

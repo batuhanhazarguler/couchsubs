@@ -120,7 +120,9 @@ object PhoneChat {
     /** Satırın başındaki ve sonundaki harfsiz, rakamsız kırıntılar (emoji ya da simge yanlış okunmuş: "©", "•", "♡") atılır. */
     fun clean(text: String): String {
         val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.toMutableList()
-        fun junk(word: String) = word.none { it.isLetter() || it.isDigit() } && !word.all { ".,!?…'\"-:;()".indexOf(it) >= 0 }
+        // Para simgesi ("$ in your mailbox") mesajın parçasıdır.
+        fun junk(word: String) = word.none { it.isLetter() || it.isDigit() || Character.getType(it) == Character.CURRENCY_SYMBOL.toInt() } &&
+            !word.all { ".,!?…'\"-:;()".indexOf(it) >= 0 }
         while (words.isNotEmpty() && junk(words.first())) words.removeAt(0)
         while (words.isNotEmpty() && junk(words.last())) words.removeAt(words.size - 1)
         return words.joinToString(" ")
@@ -179,8 +181,12 @@ object PhoneChat {
         val blocks = mutableListOf<MutableList<Row>>()
         for (row in rows) {
             val block = blocks.lastOrNull()
+            // Bileşenin sayacı ("6 Notifications") başlığın altındadır ama başlığın solunda simge olduğundan sol hizası
+            // başlıktan önde başlar: yine aynı bloktur ([WIDGET_INDENT] kadar).
             if (block != null && row.spot.top - block.last().spot.bottom < median * HOME_GAP && row.spot.top >= block.last().spot.top &&
-                abs(row.spot.left - block[0].spot.left) <= LEFT_ALIGN && !sameBand(row, block.last())) {
+                !sameBand(row, block.last()) && (abs(row.spot.left - block[0].spot.left) <= LEFT_ALIGN ||
+                    (block.size == 1 && isCounter(row.text) && block[0].spot.left - row.spot.left <= WIDGET_INDENT &&
+                        row.spot.left <= block[0].spot.left))) {
                 block.add(row)
             } else {
                 blocks.add(mutableListOf(row))
@@ -188,6 +194,19 @@ object PhoneChat {
         }
         return blocks
     }
+
+    /** Bileşen başlığının solundaki simgenin payı (düz ekran genişliğine oranla). */
+    const val WIDGET_INDENT = 0.2
+
+    /** Bildirim sayacı ("6 Notifications", "3 new messages"). */
+    fun isCounter(text: String): Boolean = COUNTER.matches(text.trim())
+
+    /**
+     * Ana ekran bileşeni: kısa başlık ve hemen altında sayaç ("Reminders / 6 Notifications"). Sinan Bey (beta.100, 3397):
+     * bileşen çevrilmiyordu; panelde tek kart olur ([ScreenPhoneCard.Role.WIDGET]).
+     */
+    internal fun isWidget(block: List<Row>): Boolean =
+        block.size == 2 && isCounter(block[1].text) && !isCounter(block[0].text) && block[0].words in 1..3
 
     /** Blok tek başına duran kısa bir ad: uygulamanın adı (simge etiketi, "WhatUp"); çevrilmez. */
     internal fun isAppName(block: List<Row>): Boolean = block.size == 1 && isAppLabel(block[0].text)
@@ -231,6 +250,14 @@ object PhoneChat {
         val result = mutableListOf<ScreenTranslation.Group>()
         for (block in homeBlocks(rows, median)) {
             if (isAppName(block)) continue
+            if (isWidget(block)) {
+                val boxes = block.flatMap { it.lines }.mapNotNull { it.box }
+                result.add(group(listOf(block[0]), ScreenPhoneCard.Role.WIDGET, handset).copy(
+                    paragraphs = listOf(block[0].text, block[1].text),
+                    box = boxes.drop(1).fold(boxes[0]) { total, box -> total.union(box) },
+                    phone = ScreenPhoneCard.Placement(ScreenPhoneCard.Role.WIDGET, block[0].spot.union(block[1].spot))))
+                continue
+            }
             val piece = mutableListOf<Row>()
             for (row in block) {
                 val continues = row.text.firstOrNull { it.isLetter() }?.isLowerCase() == true &&

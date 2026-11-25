@@ -310,7 +310,8 @@ internal static class PhoneSteady
             var (x, y) = (a[i], b[i]);
             bool icons = x.Icons is null ? y.Icons is null : y.Icons is not null && x.Icons.SequenceEqual(y.Icons);
             if (x.Panel != y.Panel || x.Translation != y.Translation || x.Style != y.Style || x.Look != y.Look || !icons
-                || x.Bubble != y.Bubble || x.LineHeight != y.LineHeight || x.Aligned != y.Aligned) return false;
+                || x.Bubble != y.Bubble || x.LineHeight != y.LineHeight || x.Aligned != y.Aligned
+                || !Equals(x.ListRow, y.ListRow)) return false;
             if ((aligned || x.Panel is null or ScreenPhoneCard.PanelPart.Card) && x.Box != y.Box) return false;
         }
         return true;

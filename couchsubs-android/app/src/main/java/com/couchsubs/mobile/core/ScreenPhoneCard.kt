@@ -28,8 +28,44 @@ object ScreenPhoneCard {
         TITLE("title"),
         /** Karşı tarafın mesajı (solda, açık zemin) ve oyuncunun mesajı (sağda, amber zemin). */
         THEIRS("theirs"), MINE("mine"),
-        /** Ortalı kısa satır, sohbet listesinin satırları ve bölüm başlığı. */
+        /** Ortalı kısa satır ("Bugün", saat) ve sohbet listesinin bölüm başlığı. */
         NOTE("note"),
+        /**
+         * Sohbet listesinin bir satırı ya da ana ekran bileşeni tek kartta ([ListRow]: avatar, kalın ad, altında önizleme,
+         * rozet, seçili satır çerçevesi). TV uygulaması 0.9.109; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
+         */
+        ROW("row"),
+    }
+
+    /**
+     * Liste kartının içeriği ([PanelPart.ROW]; JSON `row`). Sinan Bey (beta.100, 3399): ad ve önizleme ayrı haplar
+     * dağınıktı; telefondaki satırın Türkçe kopyası tek kartta. Avatar ve rozet oyundan kesilir ([PhoneListLook]; küçük PNG,
+     * aynı satırda bir kez kesilip saklanır), seçili satırın çerçevesi kareden okunur. Eşitlik karedeki arama yerlerini
+     * ([portraitSpot], [badgeSpot], [frameSpot]) saymaz: el titremesiyle oynarlar (#1279). iPhone ile aynı.
+     */
+    data class ListRow(
+        /** Kalın ad (kişi adı çevrilmez; bileşen başlığı çevrilir). Boşsa yalnız önizleme. */
+        val name: String,
+        /** Adın altındaki önizleme (çeviri; kesikse "..." ile biter). Boş olabilir (yalnız emoji önizleme). */
+        val preview: String,
+        /** Oyundan kesilmiş avatar ya da bileşen simgesi (PNG data: adresi); yoksa null. */
+        val avatar: String? = null,
+        /** Sağdaki rozet (gönder/konum simgesi; PNG data: adresi); yoksa null. */
+        val badge: String? = null,
+        /** Seçili satırın çerçeve rengi (telefonda mavi); seçili değilse null. */
+        val selected: String? = null,
+        /** Ana ekran bileşeni ("Hatırlatıcılar / 6 Bildirim"). */
+        val widget: Boolean = false,
+        /** Karede avatarın, rozetin ve seçim çerçevesinin aranacağı yerler (kesmek için; gönderilmez, eşitliğe girmez). */
+        val portraitSpot: TextBox? = null,
+        val badgeSpot: TextBox? = null,
+        val frameSpot: TextBox? = null,
+    ) {
+        /** Görünüşü aynı mı (karedeki arama yerleri el titremesiyle oynar, karşılaştırmaya girmez; #1279). */
+        override fun equals(other: Any?): Boolean = other is ListRow && name == other.name && preview == other.preview &&
+            avatar == other.avatar && badge == other.badge && selected == other.selected && widget == other.widget
+
+        override fun hashCode(): Int = listOf(name, preview, avatar, badge, selected, widget).hashCode()
     }
 
     /** Kartın zemini: yazısı yalnız bölünmez boşluk olan öğe, kartın tamamını kaplar; balonlar üstüne çizilir. */
@@ -93,8 +129,10 @@ object ScreenPhoneCard {
         NOTE("note"),
         /** Sohbet listesi: kişi adı (çevrilmez), son mesaj önizlemesi, bölüm başlığı ("Messages"). */
         CONTACT("contact"), PREVIEW("preview"), HEADING("heading"),
-        /** Ana ekranın yazısı (bileşen, bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir. */
-        HOME("home");
+        /** Ana ekranın yazısı (bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir. */
+        HOME("home"),
+        /** Ana ekran bileşeni (başlık + sayaç: "Reminders / 6 Notifications"): panelde tek kart ([ListRow.widget]). */
+        WIDGET("widget");
 
         /** Çevirmene gitmez, aslıyla gösterilir (ad). */
         val keepsText: Boolean get() = this == HEADER || this == CONTACT
@@ -123,6 +161,12 @@ object ScreenPhoneCard {
             val t = 0.04 + 0.915 * v
             val side = (u - 0.5) * 0.52
             return Pair(pose.topX + dx * t + side * dy / aspect, pose.topY + dy * t - side * dx * aspect * (0.52 + v * 0.30))
+        }
+
+        /** Düz ekrandaki kutunun karedeki sınır kutusu (dört köşesinden; eğik telefonda biraz geniştir). */
+        fun frameBox(box: TextBox): TextBox {
+            val corners = listOf(point(box.left, box.top), point(box.right, box.top), point(box.left, box.bottom), point(box.right, box.bottom))
+            return TextBox(corners.minOf { it.first }, corners.minOf { it.second }, corners.maxOf { it.first }, corners.maxOf { it.second })
         }
 
         /** Karedeki noktanın düz ekrandaki yeri (Newton adımlarıyla; dönüşüm neredeyse doğrusal, dört adım yeter). */
@@ -264,62 +308,74 @@ object ScreenPhoneCard {
         val spacing = line * BUBBLE_SPACING
         fun flat(align: String, bold: Boolean) = TextLook(bold, false, align, false)
 
-        var body = onPhone
-        var header: ScreenTranslation.Item? = null
-        if (body.first().phone?.role == Role.HEADER) {
-            header = body.first()
-            body = body.drop(1)
-        }
-        val headerHeight = if (header == null) 0.0 else line * 1.4 + spacing
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402: "Cal" başlığı gereksiz); balonlar aynen kalır.
+        val body = onPhone.filter { it.phone?.role != Role.HEADER }
 
         // Her satırın panelde kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
-        // Not ve liste satırı da balon gibi dolgulu, koyu yarı saydam zeminde çizilir (oyunun üstünde okunsun).
-        val rows = body.map { item ->
-            val given = item.phone!!.role
-            val role = if (given == Role.MESSAGE) (if (isOutgoing(item.surface)) Role.OUTGOING else Role.INCOMING) else given
-            val bubble = role == Role.INCOMING || role == Role.OUTGOING
+        // Sohbet listesinin satırı (ad + altındaki önizleme) ve ana ekran bileşeni tek kart olur ([listRow]).
+        val rows = mutableListOf<Row>()
+        var index = 0
+        while (index < body.size) {
+            val item = body[index]
+            val role = item.phone!!.role
+            index += 1
+            if (role == Role.CONTACT || role == Role.PREVIEW || role == Role.WIDGET) {
+                var name: ScreenTranslation.Item? = null
+                var preview: ScreenTranslation.Item? = null
+                when (role) {
+                    Role.CONTACT -> {
+                        name = item
+                        if (index < body.size && body[index].phone?.role == Role.PREVIEW) {
+                            preview = body[index]
+                            index += 1
+                        }
+                    }
+                    Role.PREVIEW -> preview = item
+                    else -> name = item
+                }
+                listRow(name, preview, role == Role.WIDGET, handset, line, cardWidth - 2 * pad)?.let { (made, height) ->
+                    rows.add(Row(made, cardWidth - 2 * pad, height, "left"))
+                }
+                continue
+            }
+            val kind = if (role == Role.MESSAGE) (if (isOutgoing(item.surface)) Role.OUTGOING else Role.INCOMING) else role
+            val bubble = kind == Role.INCOMING || kind == Role.OUTGOING
             val widest = (if (bubble) BUBBLE_SHARE else 1.0) * cardWidth - (if (bubble) 0.0 else 2 * pad)
             val inner = widest - 2 * pad
             val lines = wrap(item.translation, (inner * handset.aspect / (line * CHAR_WIDTH)).toInt())
             val longest = (lines.maxOfOrNull { it.length } ?: 0) * line * CHAR_WIDTH / handset.aspect + 2 * pad
             val width = if (bubble) minOf(widest, maxOf(cardWidth * BUBBLE_MIN, longest)) else widest
-            val surface = when (role) {
+            val surface = when (kind) {
                 Role.OUTGOING -> bubbleColor(item.surface, OUTGOING)
                 Role.INCOMING -> bubbleColor(item.surface, INCOMING)
-                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı (iPhone ile aynı).
-                Role.NOTE, Role.HEADING -> NOTE
-                else -> CARD
+                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın küçük başlık, sola yaslı; not ortalı (iPhone ile aynı).
+                else -> NOTE
             }
-            val part = when (role) {
+            val part = when (kind) {
                 Role.OUTGOING -> PanelPart.MINE
                 Role.INCOMING -> PanelPart.THEIRS
                 else -> PanelPart.NOTE
             }
-            val side = if (role == Role.OUTGOING) "right" else if (role == Role.NOTE) "center" else "left"
+            val side = if (kind == Role.OUTGOING) "right" else if (kind == Role.NOTE) "center" else "left"
             val placed = item.copy(unchanged = false, lineHeight = line, surface = surface,
-                look = flat(side, role == Role.CONTACT || role == Role.HEADING), panel = part)
-            Row(placed, width, lines.size * line * LINE_SPACING + line * BUBBLE_PADDING, side)
-        }.toMutableList()
-        // Sohbet listesinde önizleme kişi adının hemen altındadır ([LIST_GAP]); öbür satırlar arasında spacing kalır.
-        fun rowGap(index: Int): Double =
-            if (index > 0 && rows[index].item.phone?.role == Role.PREVIEW && rows[index - 1].item.phone?.role == Role.CONTACT)
-                line * LIST_GAP else spacing
+                look = flat(side, kind == Role.HEADING), panel = part)
+            rows.add(Row(placed, width, lines.size * line * LINE_SPACING + line * BUBBLE_PADDING, side))
+        }
+        if (rows.isEmpty()) return items
         val limit = 1 - SCREEN_MARGIN
-        // Kişi adı panelin üstünde, balonların hizasında küçük başlık: telefondaki yerinde, telefonun üstünden yukarı çıkmaz.
-        val titleTop = header?.let { maxOf(SCREEN_MARGIN, minOf(alignedTop(it, line), start.top)) }
-        val bodyTop = titleTop?.let { it + line * (TITLE_HEIGHT + TITLE_GAP) } ?: SCREEN_MARGIN
+        val bodyTop = SCREEN_MARGIN
         // Her balon kendi İngilizce balonunun yüksekliğinde; çakışan balon üsttekinin altına en az kaydırmayla itilir. Panel
         // ekranın alt kenar payını aşarsa satırlar alttan yukarı itilir; yukarıda da yer kalmazsa en eski satırlar düşer.
         fun alignedTops(): DoubleArray {
             val tops = DoubleArray(rows.size)
             for (i in rows.indices) {
-                val below = if (i == 0) bodyTop else tops[i - 1] + rows[i - 1].height + rowGap(i)
+                val below = if (i == 0) bodyTop else tops[i - 1] + rows[i - 1].height + spacing
                 tops[i] = maxOf(alignedTop(rows[i].item, line), below)
             }
             var floor = limit
             for (i in rows.indices.reversed()) {
                 tops[i] = minOf(tops[i], floor - rows[i].height)
-                floor = tops[i] - rowGap(i)
+                floor = tops[i] - spacing
             }
             return tops
         }
@@ -329,10 +385,10 @@ object ScreenPhoneCard {
             tops = alignedTops()
         }
         if (tops.isNotEmpty() && tops[0] < bodyTop) tops[0] = bodyTop
-        val contentTop = minOf(titleTop ?: start.top, if (tops.isNotEmpty()) tops[0] else start.top)
+        val contentTop = if (tops.isNotEmpty()) tops[0] else start.top
         val contentBottom = if (rows.isNotEmpty()) tops.last() + rows.last().height else start.bottom
-        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, başlık, aralıklar) da sığar.
-        val flow = 2 * padY + headerHeight + rows.sumOf { it.height } + (1 until rows.size).sumOf { rowGap(it) }
+        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, aralıklar) da sığar.
+        val flow = 2 * padY + rows.sumOf { it.height } + maxOf(0, rows.size - 1) * spacing
         val cardTop = maxOf(SCREEN_MARGIN, minOf(start.top, contentTop))
         val card = TextBox(start.left, cardTop, start.right,
             minOf(limit, maxOf(start.bottom, contentBottom + padY, cardTop + flow)))
@@ -348,10 +404,6 @@ object ScreenPhoneCard {
         result.add(ScreenTranslation.Item("", BACKDROP_TEXT, card, line, surface = CARD, look = flat("left", false),
             panel = PanelPart.CARD, aligned = true))
 
-        if (header != null && titleTop != null) {
-            result.add(header.copy(box = TextBox(card.left + pad, titleTop, card.right - pad, titleTop + line * TITLE_HEIGHT),
-                lineHeight = line, surface = CARD, look = flat("left", true), unchanged = false, panel = PanelPart.TITLE))
-        }
         rows.forEachIndexed { index, row ->
             val left = when (row.side) {
                 "right" -> card.right - pad - row.width
@@ -361,6 +413,76 @@ object ScreenPhoneCard {
             result.add(row.item.copy(box = TextBox(left, tops[index], left + row.width, tops[index] + row.height)))
         }
         return result
+    }
+
+    /** Liste kartının rengi okunamadıysa: GTA 6 telefonunun açık satır kartı. */
+    val ROW_COLOR = TextSurface("#F4F1EC", "#17181B")
+    /** Liste kartında avatarın çapı, avatarla yazı arası ve kartın iç dolgusu (satır yüksekliğine oranla). */
+    const val AVATAR_LINES = 2.2
+    const val AVATAR_GAP = 0.5
+    const val ROW_PADDING = 0.45
+
+    /**
+     * Liste satırını (ad + önizleme) ya da ana ekran bileşenini tek kart yapar: kartın üstü adın İngilizcesiyle aynı
+     * hizada, boyu Türkçenin satır sayısına ve telefondaki satırın boyuna göre (hangisi büyükse; kartlar arası boşluk
+     * telefondakiyle orantılı kalır). Kart telefonun satır kartı renginde (önizlemenin örneklenen zemini). Avatarın,
+     * rozetin ve seçim çerçevesinin karedeki yeri [ListRow]'a yazılır; kesmek çağıranın işi ([PhoneListLook]). iPhone ile aynı.
+     */
+    internal fun listRow(name: ScreenTranslation.Item?, preview: ScreenTranslation.Item?, widget: Boolean, handset: Handset,
+                         line: Double, width: Double): Pair<ScreenTranslation.Item, Double>? {
+        val first = name ?: preview ?: return null
+        val title: String
+        val below: String
+        if (widget) {
+            val parts = first.translation.split('\n', limit = 2)
+            title = parts[0]
+            below = if (parts.size > 1) parts[1] else ""
+        } else {
+            title = name?.translation ?: ""
+            below = preview?.translation ?: ""
+        }
+        val inset = ROW_PADDING * line / handset.aspect
+        val inner = width - 2 * inset - (AVATAR_LINES + AVATAR_GAP) * line / handset.aspect
+        val wrapped = if (below.isEmpty()) 0 else wrap(below, (inner * handset.aspect / (line * CHAR_WIDTH)).toInt()).size
+        val lines = (if (title.isEmpty()) 0 else 1) + wrapped
+        val needed = maxOf(maxOf(1, lines) * line * LINE_SPACING, AVATAR_LINES * line) + 2 * ROW_PADDING * line
+        // Telefondaki satırın boyu (adın üstünden önizlemenin altına, dolguyla).
+        val last = preview ?: first
+        val original = last.box.bottom - first.box.top + line * BUBBLE_PADDING
+        // Karedeki yerler (düz ekrandan): avatar adın solunda, ad ve önizleme bloğunun ortasında; rozet satırın sağ ucunda,
+        // ad hizasında; seçim çerçevesi satırın üst kenarı (adın biraz üstü).
+        var portraitSpot: TextBox? = null
+        var badgeSpot: TextBox? = null
+        var frameSpot: TextBox? = null
+        val top = first.phone?.spot
+        val bottom = last.phone?.spot
+        if (top != null && bottom != null) {
+            val shape = Handset.SCREEN_SHAPE
+            if (widget) {
+                // Bileşenin simgesi başlığın solunda (sayaç satırının sol hizasında), başlık satırı boyunda.
+                val size = (top.bottom - top.top) * 0.5
+                portraitSpot = handset.frameBox(TextBox(top.left - size * 0.1 / shape, top.top - size * 0.1,
+                    top.left + size * 1.1 / shape, top.top + size * 1.1))
+            } else {
+                val block = maxOf(1e-4, bottom.bottom - top.top)
+                val center = (top.top + bottom.bottom) / 2
+                val size = block * 1.35
+                val right = minOf(top.left, bottom.left) - block * 0.1 / shape
+                portraitSpot = handset.frameBox(TextBox(right - size / shape, center - size / 2, right, center + size / 2))
+                val nameCenter = (top.top + top.bottom) / 2
+                val badge = block * 0.62
+                badgeSpot = handset.frameBox(TextBox(0.985 - badge / shape, nameCenter - badge / 2, 0.985, nameCenter + badge / 2))
+                frameSpot = handset.frameBox(TextBox(maxOf(0.25, top.left), top.top - block * 0.6, 0.8, top.top - block * 0.05))
+            }
+        }
+        val row = ListRow(title, below, widget = widget, portraitSpot = portraitSpot, badgeSpot = badgeSpot, frameSpot = frameSpot)
+        val item = first.copy(
+            source = if (widget) first.source else listOfNotNull(name?.source, preview?.source).joinToString("\n"),
+            translation = listOf(title, below).filter { it.isNotEmpty() }.joinToString("\n"),
+            unchanged = false, lineHeight = line,
+            surface = bubbleColor(preview?.surface ?: first.surface, if (widget) CARD else ROW_COLOR),
+            look = TextLook(false, false, "left", false), panel = PanelPart.ROW, listRow = row)
+        return item to maxOf(needed, original)
     }
 
     /**
@@ -488,11 +610,16 @@ object ScreenPhoneCard {
             }
             val item = source.copy(lineHeight = line, surface = surface)
             val widest = (if (bubble) BUBBLE_SHARE else 1.0) * column
-            val lines = wrap(item.translation, ((widest - 2 * padX) * aspect / (line * CHAR_WIDTH)).toInt())
+            // Liste kartında yazı avatarın sağında; kart en az avatar boyunda.
+            val listed = item.panel == PanelPart.ROW
+            val avatar = if (listed) (AVATAR_LINES + AVATAR_GAP + 2 * ROW_PADDING) * line / aspect else 0.0
+            val lines = wrap(item.translation, ((widest - 2 * padX - avatar) * aspect / (line * CHAR_WIDTH)).toInt())
             // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
             val gap = if (index == 0) BUBBLE_SPACING else minOf(STACKED_GAP_MAX,
                 maxOf(0.0, (source.box.top - panel.messages[index - 1].box.bottom) / maxOf(1e-9, source.lineHeight)))
-            Row(item, widest, lines.size * line * LINE_SPACING + line * BUBBLE_PADDING, gap * line)
+            val height = if (listed) maxOf(lines.size * line * LINE_SPACING, AVATAR_LINES * line) + 2 * ROW_PADDING * line
+                else lines.size * line * LINE_SPACING + line * BUBBLE_PADDING
+            Row(item, widest, height, gap * line)
         }
         // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
         fun bottom(start: Int): Double {

@@ -265,7 +265,8 @@ enum PhoneSteady {
         guard a.count == b.count else { return false }
         return zip(a, b).allSatisfy { x, y in
             guard x.panel == y.panel, x.translation == y.translation, x.style == y.style, x.look == y.look,
-                  x.icons == y.icons, x.bubble == y.bubble, x.lineHeight == y.lineHeight, x.aligned == y.aligned else { return false }
+                  x.icons == y.icons, x.bubble == y.bubble, x.lineHeight == y.lineHeight, x.aligned == y.aligned,
+                  x.listRow == y.listRow else { return false }
             if let part = x.panel, part != .card, !a.contains(where: { $0.panel == .card && $0.aligned }) { return true }
             return x.box == y.box
         }

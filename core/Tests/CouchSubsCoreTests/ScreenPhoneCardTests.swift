@@ -78,6 +78,99 @@ final class ScreenPhoneCardTests: XCTestCase {
 
     /// Kartsız (varsayılan ayar): her mesajın çevirisi kendi balonunun yerinde, kart zemini yok; kişi adı çevrilmediği
     /// için özgün hâli görünür kalır; telefon dışındaki yazı balon sayılmaz.
+    /// Sinan Bey (beta.100, 3399): Mesajlar listesinde her ad ve önizleme ayrı hap olarak dağınıktı. Her satır tek kart
+    /// (kalın ad + altında önizleme + avatar/rozet/seçim yerleri), kartın üstü adın İngilizcesiyle aynı hizada, boyu en az
+    /// telefondaki satır kadar; kartlar üst üste binmez; bölüm başlığı küçük başlık (not) kalır. Kartlar telefonun boş
+    /// tarafında (telefon sağdaysa solunda, soldaysa sağında). Aynı içerik birebir aynı çıktı (#1279).
+    func testMessageListRowsBecomeOneAlignedCardEach() {
+        func list(_ pose: [Double]) -> (items: [ScreenTranslation.Item], phone: ScreenPhoneCard.Handset) {
+            let phone = handset(pose)
+            var items = [item("Suggested", "Önerilen", role: .heading, top: 0.04),
+                         item("Cal", "Cal", role: .contact, top: 0.10, unchanged: true),
+                         item("$ in your mailbox. You bailed", "$ posta kutunda. Beni yine...", role: .preview, top: 0.14),
+                         item("Brian", "Brian", role: .contact, top: 0.22, unchanged: true),
+                         item("Ok. There's some cash in t...", "Tamam. Biraz para var...", role: .preview, top: 0.26),
+                         item("Messages", "Mesajlar", role: .heading, top: 0.33),
+                         item("Donnie", "Donnie", role: .contact, top: 0.40, unchanged: true)]
+            items[2].style = PhoneTextStyle(background: "#F6F2EE", foreground: "#2A2A2A")
+            return (items, phone)
+        }
+        let (items, phone) = list(upright)
+        let laid = ScreenPhoneCard.layout(items, handset: phone)
+        XCTAssertEqual(laid, ScreenPhoneCard.layout(items, handset: phone), "aynı içerik birebir aynı çıktı")
+        let parts = laid.filter { $0.panel != .card }
+        XCTAssertEqual(parts.map(\.panel), [.note, .row, .row, .note, .row])
+        XCTAssertEqual(parts.compactMap(\.listRow).map(\.name), ["Cal", "Brian", "Donnie"])
+        XCTAssertEqual(parts.compactMap(\.listRow).map(\.preview), ["$ posta kutunda. Beni yine...", "Tamam. Biraz para var...", ""])
+        XCTAssertEqual(parts[1].translation, "Cal\n$ posta kutunda. Beni yine...", "eski TV için ad ve önizleme iki satır")
+        XCTAssertEqual(parts[1].style, PhoneTextStyle(background: "#F6F2EE", foreground: "#2A2A2A"), "telefonun satır kartı rengi")
+        XCTAssertEqual(parts[2].style, ScreenPhoneCard.rowColor, "örnek yoksa yedek satır rengi")
+        XCTAssertEqual(parts[0].look?.bold, true)
+        // Hizalı: kartın üstü adın İngilizcesinin hizasında; boyu en az telefondaki satır (ad + önizleme) kadar.
+        let line = laid.first { $0.panel == .card }!.lineHeight
+        // (Bu dar denemede üstteki başlık kartı en az kaydırmayla iter; kart hizasından yukarı çıkmaz.)
+        XCTAssertGreaterThanOrEqual(parts[1].box.top, ScreenPhoneCard.alignedTop(items[1], line: line) - 1e-9)
+        XCTAssertEqual(parts[1].box.top, parts[0].box.bottom + line * ScreenPhoneCard.bubbleSpacing, accuracy: 1e-9)
+        XCTAssertGreaterThanOrEqual(parts[1].box.bottom - parts[1].box.top, items[2].box.bottom - items[1].box.top)
+        for (upper, lower) in zip(parts, parts.dropFirst()) { XCTAssertLessThanOrEqual(upper.box.bottom, lower.box.top + 1e-9) }
+        // Boş taraf: telefon sağda, kartlar solunda; avatarın aranacağı yer telefonun içinde, satırın hizasında.
+        XCTAssertTrue(parts.allSatisfy { $0.box.right <= phone.bounds.left + 1e-9 })
+        let spot = try! XCTUnwrap(parts[1].listRow?.portraitSpot)
+        XCTAssertTrue(spot.left >= phone.bounds.left - 0.05 && spot.right <= phone.bounds.right + 0.05)
+        XCTAssertNotNil(parts[1].listRow?.badgeSpot)
+        XCTAssertNotNil(parts[1].listRow?.frameSpot)
+        // JSON: panel "row", row {name, preview}.
+        let json = SubtitleServer.json(parts[1], phone: true)
+        XCTAssertEqual(json["panel"] as? String, "row")
+        XCTAssertEqual((json["row"] as? [String: Any])?["name"] as? String, "Cal")
+        // Telefon solda: kartlar sağında.
+        let left = list([0.22, 0.17, 0.22, 0.85])
+        XCTAssertTrue(ScreenPhoneCard.layout(left.items, handset: left.phone).filter { $0.panel == .row }
+            .allSatisfy { $0.box.left >= left.phone.bounds.right - 1e-9 })
+    }
+
+    /// Liste kartının avatarı, rozeti ve seçim çerçevesi kareden okunur (`PhoneListLook`): avatar satır başına bir kez
+    /// kesilir (sonraki karelerin gürültüsü gönderiyi değiştirmez), seçim art arda iki okumada değişir; resimler küçük PNG.
+    func testListCardImagesAreCutOnceAndSelectionNeedsTwoReads() {
+        let phone = handset(upright)
+        var items = [item("Cal", "Cal", role: .contact, top: 0.10, unchanged: true),
+                     item("$ in your mailbox. You bailed", "$ posta kutunda...", role: .preview, top: 0.14)]
+        items[0].box = TextBox(left: 0.80, top: 0.26, right: 0.84, bottom: 0.278)
+        items[1].box = TextBox(left: 0.80, top: 0.284, right: 0.90, bottom: 0.302)
+        let laid = ScreenPhoneCard.layout(items, handset: phone)
+        let row = try! XCTUnwrap(laid.first { $0.panel == .row }?.listRow)
+        let frame = try! XCTUnwrap(row.frameSpot), avatar = try! XCTUnwrap(row.portraitSpot)
+        let width = 1920, height = 1080
+        func inside(_ box: TextBox, _ x: Int, _ y: Int) -> Bool {
+            let u = (Double(x) + 0.5) / Double(width), v = (Double(y) + 0.5) / Double(height)
+            return u >= box.left && u <= box.right && v >= box.top && v <= box.bottom
+        }
+        func pixels(selected: Bool, tint: Int) -> (Int, Int) -> TextPainter.RGB {
+            { x, y in
+                if inside(avatar, x, y) { return (200 + tint, 60, 40) }
+                if selected, inside(frame, x, y), abs(Double(y) / Double(height) - (frame.top + frame.bottom) / 2) < 0.004 {
+                    return (58, 111, 216)
+                }
+                return (244, 241, 236)
+            }
+        }
+        let look = PhoneListLook()
+        let first = look.apply(laid, width: width, height: height, color: pixels(selected: true, tint: 0))
+        let card = try! XCTUnwrap(first.first { $0.panel == .row }?.listRow)
+        let picture = try! XCTUnwrap(card.avatar)
+        XCTAssertTrue(picture.hasPrefix("data:image/png;base64,"))
+        XCTAssertLessThan(picture.count, 12_000, "küçük resim")
+        XCTAssertEqual(card.selected, "#3A6FD8")
+        XCTAssertNil(card.badge, "düz kart zemininde rozet yok")
+        // Sonraki kare: gürültü (renk biraz farklı) avatarı değiştirmez; seçim tek okumada kalkmaz, ikincide kalkar.
+        let second = look.apply(laid, width: width, height: height, color: pixels(selected: false, tint: 9))
+        XCTAssertEqual(second.first { $0.panel == .row }?.listRow?.avatar, picture)
+        XCTAssertEqual(second.first { $0.panel == .row }?.listRow?.selected, "#3A6FD8")
+        let third = look.apply(laid, width: width, height: height, color: pixels(selected: false, tint: 9))
+        XCTAssertNil(third.first { $0.panel == .row }?.listRow?.selected)
+        XCTAssertEqual(PhoneSteady.samePicture(second, second), true)
+    }
+
     func testWithoutTheCardEachMessageStaysOnItsOwnBubble() {
         let phone = handset(upright)
         let outside = ScreenTranslation.Item(source: "Find the car", translation: "Arabayı bul",
@@ -122,22 +215,20 @@ final class ScreenPhoneCardTests: XCTestCase {
         ]
         let laid = ScreenTranslation.present(items, phone: phone)
         XCTAssertEqual(laid.first?.translation, "Arabayı bul")
-        XCTAssertEqual(laid.count, 5)
+        // Sohbetin üstündeki kişi adı ("Brian") çizilmez (Sinan Bey, beta.100 3400/3402).
+        XCTAssertEqual(laid.count, 4)
+        XCTAssertFalse(laid.contains { $0.translation == "Brian" })
         let backdrop = laid[1]
         XCTAssertTrue(ScreenPhoneCard.isBackdrop(backdrop))
         XCTAssertEqual(backdrop.box.top, phone.bounds.top)
         XCTAssertEqual(backdrop.box.bottom, phone.bounds.bottom)
         XCTAssertLessThan(backdrop.box.right, phone.bounds.left)
-        // Kişi adı çevrilmese de panelin başlığıdır: balonların hizasında (sola yaslı), kalın; yazı TV'de okunacak boyda.
-        XCTAssertEqual(laid[2].translation, "Brian")
-        XCTAssertEqual(laid[2].look?.align, .left)
-        XCTAssertEqual(laid[2].look?.bold, true)
         XCTAssertEqual(laid[2].lineHeight, ScreenPhoneCard.minLine)
-        XCTAssertEqual(laid[3].style, ScreenPhoneCard.incomingColor)
-        XCTAssertEqual(laid[3].box.left, backdrop.box.left + (backdrop.box.right - backdrop.box.left) * 0.05, accuracy: 1e-9)
-        XCTAssertEqual(laid[4].style, ScreenPhoneCard.outgoingColor)
-        XCTAssertEqual(laid[4].look?.align, .right)
-        XCTAssertEqual(laid[4].box.right, backdrop.box.right - (backdrop.box.right - backdrop.box.left) * 0.05, accuracy: 1e-9)
+        XCTAssertEqual(laid[2].style, ScreenPhoneCard.incomingColor)
+        XCTAssertEqual(laid[2].box.left, backdrop.box.left + (backdrop.box.right - backdrop.box.left) * 0.05, accuracy: 1e-9)
+        XCTAssertEqual(laid[3].style, ScreenPhoneCard.outgoingColor)
+        XCTAssertEqual(laid[3].look?.align, .right)
+        XCTAssertEqual(laid[3].box.right, backdrop.box.right - (backdrop.box.right - backdrop.box.left) * 0.05, accuracy: 1e-9)
         // Satırlar üst üste binmez ve kartın içinde kalır.
         for (upper, lower) in zip(laid[2...], laid[3...]) { XCTAssertLessThanOrEqual(upper.box.bottom, lower.box.top) }
         XCTAssertTrue(laid[2...].allSatisfy { $0.box.left >= backdrop.box.left && $0.box.right <= backdrop.box.right
@@ -171,9 +262,14 @@ final class ScreenPhoneCardTests: XCTestCase {
         XCTAssertEqual(laid[1].style, blue.style)
         XCTAssertEqual(laid[2].panel, .theirs)
         XCTAssertEqual(laid[2].style, gray.style)
-        XCTAssertEqual(laid[3].look?.bold, true)
+        // Liste satırı (ad + önizleme) tek kart: sola yaslı, telefonun satır kartı renginde (örnek yoksa yedek).
+        XCTAssertEqual(laid.count, 4)
+        XCTAssertEqual(laid[3].panel, .row)
         XCTAssertEqual(laid[3].look?.align, .left)
-        XCTAssertEqual(laid[4].style, ScreenPhoneCard.cardColor)
+        XCTAssertEqual(laid[3].listRow?.name, "Lucia")
+        XCTAssertEqual(laid[3].listRow?.preview, "Geliyor musun?")
+        XCTAssertEqual(laid[3].translation, "Lucia\nGeliyor musun?")
+        XCTAssertEqual(laid[3].style, ScreenPhoneCard.rowColor)
     }
 
     /// Hizalı panel (Sinan Bey'in beğendiği görünüm): her Türkçe balon telefondaki İngilizce balonuyla aynı yükseklikte
@@ -221,10 +317,9 @@ final class ScreenPhoneCardTests: XCTestCase {
         XCTAssertEqual(rows[3].style, ScreenPhoneCard.outgoingColor)
         XCTAssertLessThan(rows[0].box.left, rows[1].box.left)
         XCTAssertEqual(rows[1].box.right, rows[3].box.right, accuracy: 1e-9)
-        // Kişi adı panelin üstünde, balonların hizasında küçük başlık.
-        let title = try! XCTUnwrap(panel.title)
-        XCTAssertEqual(title.box.left, rows[0].box.left, accuracy: 1e-9)
-        XCTAssertLessThan(title.box.bottom, rows[0].box.top)
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402); balonlar hizalı kalır.
+        XCTAssertNil(panel.title)
+        XCTAssertFalse(laid.contains { $0.panel == .title || $0.translation == header.translation })
         // Okunmayan örnek (nötr yedek) ve okunmayan yazı rengi: yedek renk ya da zemine göre koyu/açık yazı.
         XCTAssertEqual(ScreenPhoneCard.bubbleColor(GamePhonePalette.neutral, fallback: ScreenPhoneCard.incomingColor),
                        ScreenPhoneCard.incomingColor)
@@ -299,26 +394,39 @@ final class ScreenPhoneCardTests: XCTestCase {
         XCTAssertLessThanOrEqual(short.messages.last!.box.bottom, 1 + 1e-9)
     }
 
-    /// Telefonun ana ekranı sohbet değildir: kart kurulmaz, bileşenin yazıları kendi yerinde kalır, uygulama adı ("WhatUp")
-    /// çevrilmez. Önceden ana ekran sohbet kartı sayılıyor, "Hatırlatıcılar / 10 Bildirim / Ne haber!" telefonun yanında
-    /// tek blok oluyordu (X'teki bildirim).
-    func testHomeScreenIsTranslatedInPlaceWithoutACard() async throws {
+    /// Telefonun ana ekranı sohbet değildir; uygulama adı ("WhatUp") çevrilmez. Bileşen (başlık + sayaç: "Reminders /
+    /// 10 Notifications") telefonun boş tarafında tek kart olur (Sinan Bey, beta.100 3397: bileşen çevrilmiyordu): kalın
+    /// başlık, altında sayaç, kartın üstü bileşenin İngilizcesiyle aynı hizada; telefonun üstüne yazılmaz.
+    func testHomeScreenWidgetBecomesOneCardBesideThePhone() async throws {
         let vector = try XCTUnwrap(try vectors().cases.first { $0.name.hasPrefix("ana ekran: bildirim") })
         let reading = Reading(lines: vector.lines.map { TextLine($0.text, box: box($0.box)) })
         let phone = handset(vector.pose, vector.aspect)
         let groups = ScreenTranslation.groups(reading, wholeScreen: true, handset: phone)
         var items: [ScreenTranslation.Item] = []
         for group in groups {
-            let translated = ["Reminders": "Hatırlatıcılar", "10 Notifications": "10 Bildirim"][group.paragraphs[0]]!
-            if let item = ScreenTranslation.item(group, group.paragraphs.map(IconText.protect), [translated], keepUnchanged: true) {
+            let translated = group.paragraphs.map { ["Reminders": "Hatırlatıcılar", "10 Notifications": "10 Bildirim"][$0]! }
+            if let item = ScreenTranslation.item(group, group.paragraphs.map(IconText.protect), translated, keepUnchanged: true) {
                 items.append(item)
             }
         }
         let shown = ScreenTranslation.present(items, phone: phone)
-        XCTAssertEqual(shown.map(\.translation), ["Hatırlatıcılar", "10 Bildirim"])
-        XCTAssertFalse(shown.contains(where: ScreenPhoneCard.isBackdrop))
-        for (item, group) in zip(shown, groups) { XCTAssertEqual(item.box, group.box) }
-        XCTAssertTrue(shown.allSatisfy { $0.box.left >= phone.bounds.left && $0.box.right <= phone.bounds.right })
+        XCTAssertEqual(shown, ScreenTranslation.present(items, phone: phone), "aynı içerik birebir aynı çıktı")
+        let cards = shown.filter { $0.panel == .row }
+        XCTAssertEqual(cards.count, 1)
+        let widget = try XCTUnwrap(cards.first?.listRow)
+        XCTAssertTrue(widget.widget)
+        XCTAssertEqual(widget.name, "Hatırlatıcılar")
+        XCTAssertEqual(widget.preview, "10 Bildirim")
+        XCTAssertNotNil(widget.portraitSpot, "bileşenin simgesi kesilir")
+        let card = try XCTUnwrap(cards.first)
+        XCTAssertTrue(card.box.right <= phone.bounds.left + 1e-9 || card.box.left >= phone.bounds.right - 1e-9, "kart telefonun yanında")
+        let english = try XCTUnwrap(groups.first).box.top
+        XCTAssertEqual(card.box.top, ScreenPhoneCard.alignedTop(items[0], line: card.lineHeight), accuracy: 1e-9)
+        XCTAssertLessThan(abs(card.box.top - english), 0.03, "kart bileşenin hizasında")
+        XCTAssertEqual(SubtitleServer.json(card, phone: true)["panel"] as? String, "row")
+        let row = try XCTUnwrap(SubtitleServer.json(card, phone: true)["row"] as? [String: Any])
+        XCTAssertEqual(row["widget"] as? Bool, true)
+        XCTAssertEqual(row["name"] as? String, "Hatırlatıcılar")
     }
 
     /// Otomatik telefon panelinde (`GamePhoneText.groups`, satırların yeri düz ekranda) da ana ekranın uygulama adları ve

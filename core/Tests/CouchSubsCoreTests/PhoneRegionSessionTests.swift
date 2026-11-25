@@ -352,12 +352,13 @@ final class PhoneRegionSessionTests: XCTestCase {
         watcher.offer(a, areas: [], phone: pose)
         try await wait { !watcher.isBusy }
         let items = try XCTUnwrap(server.sent.last?.items)
-        XCTAssertEqual(items.map(\.panel), [.card, .title, .theirs, .mine])
-        XCTAssertEqual(items.map { SubtitleServer.json($0, phone: true)["panel"] as? String }, ["card", "title", "theirs", "mine"])
-        XCTAssertEqual(items.map(\.translation), [ScreenPhoneCard.backdropText, "Lucia", "Bugün yanıtla.", "Kamerayı aç."])
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402).
+        XCTAssertEqual(items.map(\.panel), [.card, .theirs, .mine])
+        XCTAssertEqual(items.map { SubtitleServer.json($0, phone: true)["panel"] as? String }, ["card", "theirs", "mine"])
+        XCTAssertEqual(items.map(\.translation), [ScreenPhoneCard.backdropText, "Bugün yanıtla.", "Kamerayı aç."])
         let calls = await translator.calls
         XCTAssertFalse(calls.contains("Lucia"), "kişinin adı çevrilmez")
-        XCTAssertEqual(server.sent.last?.text, "Lucia\nBugün yanıtla.\nKamerayı aç.")
+        XCTAssertEqual(server.sent.last?.text, "Bugün yanıtla.\nKamerayı aç.")
         let card = items[0].box, phone = pose.bounds
         XCTAssertTrue(card.left >= phone.right || card.right <= phone.left || card.top >= phone.bottom, "panel telefonun yanında")
         for item in items.dropFirst() {
@@ -365,12 +366,12 @@ final class PhoneRegionSessionTests: XCTestCase {
                           && item.box.top >= card.top - 1e-9 && item.box.bottom <= card.bottom + 1e-9)
         }
         // Balonlar telefondaki balonun renginde (deneme karesinin balonları gri), panel hizalı.
+        XCTAssertEqual(items[1].style?.background, "#C0C0C0")
         XCTAssertEqual(items[2].style?.background, "#C0C0C0")
-        XCTAssertEqual(items[3].style?.background, "#C0C0C0")
         XCTAssertTrue(items[0].aligned)
-        XCTAssertLessThan(items[2].box.left, items[3].box.left, "karşı taraf solda, oyuncu sağda")
-        XCTAssertLessThan(items[2].box.top, items[3].box.top)
-        XCTAssertGreaterThanOrEqual(items[2].lineHeight, ScreenPhoneCard.minLine - 1e-9)
+        XCTAssertLessThan(items[1].box.left, items[2].box.left, "karşı taraf solda, oyuncu sağda")
+        XCTAssertLessThan(items[1].box.top, items[2].box.top)
+        XCTAssertGreaterThanOrEqual(items[1].lineHeight, ScreenPhoneCard.minLine - 1e-9)
 
         // Balonların Üstünde: her çeviri kendi balonunun yerinde, adı aslıyla aynı olduğu için çizilmez.
         watcher.phonePanel = { PhonePanelOptions(enabled: false) }
@@ -416,15 +417,17 @@ final class PhoneRegionSessionTests: XCTestCase {
         }
         try await read(list("Suggested", 0))
         let shown = try XCTUnwrap(server.sent.last?.items)
-        let rows = shown.filter { $0.panel == .note }
-        XCTAssertEqual(rows.map(\.translation), ["Çevrildi: Suggested", "Cal", "Çevrildi: in your mailbox. You bailed", "Brian",
-                                                 "Çevrildi: Ok. There's some cash...", "Çevrildi: Messages", "Donnie", "Joey",
-                                                 "Çevrildi: Hey this is Joey...", "Shirley", "Çevrildi: Oh that's nice hon...",
-                                                 "Rusty Anchor"])
-        XCTAssertTrue(rows.allSatisfy { $0.look?.align == .left }, "liste sola yaslı, ortalı not değil")
-        XCTAssertEqual(rows.filter { $0.look?.bold == true }.map(\.translation),
-                       ["Çevrildi: Suggested", "Cal", "Brian", "Çevrildi: Messages", "Donnie", "Joey", "Shirley", "Rusty Anchor"])
-        XCTAssertEqual(zip(rows, rows.dropFirst()).filter { $0.box.top >= $1.box.top }.count, 0, "telefondaki sıra")
+        // Bölüm başlıkları küçük başlık (sola yaslı, kalın not); her kişi satırı tek kart (ad + önizleme; Sinan Bey, beta.100
+        // 3399). "…" ile ya da satır sonunda kesilmiş önizleme kesik çevrilir, "$" düşmez.
+        let notes = shown.filter { $0.panel == .note }
+        XCTAssertEqual(notes.map(\.translation), ["Çevrildi: Suggested", "Çevrildi: Messages"])
+        XCTAssertTrue(notes.allSatisfy { $0.look?.align == .left && $0.look?.bold == true }, "başlık sola yaslı, kalın")
+        let cards = shown.compactMap(\.listRow)
+        XCTAssertEqual(cards.map(\.name), ["Cal", "Brian", "Donnie", "Joey", "Shirley", "Rusty Anchor"])
+        XCTAssertEqual(cards.map(\.preview), ["Çevrildi: $ in your mailbox. You bailed...", "Çevrildi: Ok. There's some cash...", "",
+                                             "Çevrildi: Hey this is Joey...", "Çevrildi: Oh that's nice hon...", ""])
+        let rows = shown.filter { $0.panel == .note || $0.panel == .row }
+        XCTAssertEqual(zip(rows, rows.dropFirst()).filter { $0.box.bottom > $1.box.top + 1e-9 }.count, 0, "telefondaki sıra, üst üste binmez")
         let calls = await translator.calls
         let names: Set<String> = ["Cal", "Brian", "Joey", "Donnie", "Shirley", "Rusty Anchor"]
         XCTAssertFalse(calls.contains { names.contains($0) }, "adlar çevrilmez")
@@ -449,7 +452,7 @@ final class PhoneRegionSessionTests: XCTestCase {
         try await read(chat)
         XCTAssertGreaterThan(server.sent.count, sent)
         let after = try XCTUnwrap(server.sent.last?.items)
-        XCTAssertFalse(after.contains { $0.panel == .note && $0.look?.align == .left })
+        XCTAssertFalse(after.contains { $0.panel == .row || ($0.panel == .note && $0.look?.align == .left) })
     }
 
     /// Panelin yazısı altyazı boyutu ayarıyla büyür.

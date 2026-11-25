@@ -26,8 +26,11 @@ public static partial class OcrNoise
         {
             var token = tokens[index];
             // Kumanda simgesinin yeri (ButtonIcons.Marker) çöp değildir.
+            // Telefonda (keepIdentifiers) tek başına para simgesi mesajın parçasıdır ("$ in your mailbox"; beta.100'de
+            // listede "$" düşüyordu).
             if (token[0] == ButtonIcons.Marker || (keepIdentifiers &&
-                (GamePhoneText.ContainsIdentifier(token) || GamePhoneText.IsWrittenChatWord(token))))
+                (GamePhoneText.ContainsIdentifier(token) || GamePhoneText.IsWrittenChatWord(token)
+                 || (token.Length == 1 && char.GetUnicodeCategory(token[0]) == System.Globalization.UnicodeCategory.CurrencySymbol))))
             {
                 kept.Add(token);
                 continue;

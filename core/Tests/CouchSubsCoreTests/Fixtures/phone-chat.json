@@ -666,7 +666,7 @@
    ]
   },
   {
-   "name": "ana ekran: bildirim bileşeni yerinde, saat ve hava atlanır, uygulama adı çevrilmez",
+   "name": "ana ekran: bildirim bileşeni tek kart (başlık + sayaç), saat ve hava atlanır, uygulama adı çevrilmez",
    "pose": [
     0.78,
     0.17,
@@ -723,12 +723,8 @@
    ],
    "groups": [
     [
-     "home",
-     "Reminders"
-    ],
-    [
-     "home",
-     "10 Notifications"
+     "widget",
+     "Reminders\n10 Notifications"
     ]
    ]
   },
@@ -1289,7 +1285,7 @@
  ],
  "panels": [
   {
-   "name": "ana ekran: bildirim bileşeni yerinde, saat ve hava atlanır, uygulama adı çevrilmez",
+   "name": "ana ekran: bildirim bileşeni tek kart (başlık + sayaç), saat ve hava atlanır, uygulama adı çevrilmez",
    "lines": [
     {
      "text": "14:36",
@@ -1338,7 +1334,7 @@
     }
    ],
    "groups": [
-    "Reminders 10 Notifications"
+    "Reminders\n10 Notifications"
    ]
   },
   {

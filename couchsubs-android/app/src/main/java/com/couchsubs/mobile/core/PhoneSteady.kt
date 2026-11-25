@@ -277,7 +277,7 @@ object PhoneSteady {
         return a.zip(b).all { (x, y) ->
             x.panel == y.panel && x.translation == y.translation && x.surface == y.surface && x.look == y.look &&
                 x.icons == y.icons && x.bubble == y.bubble && x.lineHeight == y.lineHeight && x.aligned == y.aligned &&
-                ((!aligned && x.panel != null && x.panel != ScreenPhoneCard.PanelPart.CARD) || x.box == y.box)
+                x.listRow == y.listRow && ((!aligned && x.panel != null && x.panel != ScreenPhoneCard.PanelPart.CARD) || x.box == y.box)
         }
     }
 }

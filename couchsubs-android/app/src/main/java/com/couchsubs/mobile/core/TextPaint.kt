@@ -316,16 +316,19 @@ object TextPainter {
         return Box(minX, minY, maxX + 1, maxY + 1)
     }
 
-    /** Kişi resmini kareden keser: en çok [PORTRAIT_MAX] piksel kenarlı (en yakın nokta), opak PNG data: adresi. */
-    fun portraitImage(box: TextBox, width: Int, height: Int, color: (Int, Int) -> Int): String? {
+    /**
+     * Kişi resmini kareden keser: en çok [largest] piksel kenarlı (en yakın nokta), opak PNG data: adresi. [largest]:
+     * çıktının en uzun kenarı (telefon listesinin avatarı [PhoneListLook.AVATAR_MAX]); varsayılan [PORTRAIT_MAX].
+     */
+    fun portraitImage(box: TextBox, width: Int, height: Int, color: (Int, Int) -> Int, largest: Int = PORTRAIT_MAX): String? {
         val l = max(0, round(box.left * width))
         val t = max(0, round(box.top * height))
         val r = min(width, round(box.right * width))
         val b = min(height, round(box.bottom * height))
         if (r - l < 2 || b - t < 2) return null
         val side = max(r - l, b - t)
-        val ow = max(1, min(r - l, (r - l) * PORTRAIT_MAX / side))
-        val oh = max(1, min(b - t, (b - t) * PORTRAIT_MAX / side))
+        val ow = max(1, min(r - l, (r - l) * largest / side))
+        val oh = max(1, min(b - t, (b - t) * largest / side))
         val rgb = ByteArray(ow * oh * 3)
         for (j in 0 until oh) for (i in 0 until ow) {
             val c = color(l + i * (r - l) / ow, t + j * (b - t) / oh)

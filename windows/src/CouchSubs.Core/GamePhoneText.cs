@@ -179,6 +179,78 @@ internal static partial class GamePhoneText
         return word[start..end];
     }
 
+    /// <summary>
+    /// Önizleme satırın sağ kenarına bu kadar yakınsa (düz ekranda) ve cümle sonu yoksa telefon onu "…" koymadan kesmiştir
+    /// ("$ in your mailbox. You bailed": aslı "...You bailed me out again bro!").
+    /// </summary>
+    internal const double ClipEdge = 0.88;
+
+    /// <summary>
+    /// "…" olmadan kesilmiş önizlemenin çevrilecek kısmı: sözcükler kalır (son sözcük tam görünüyor), sondaki bağlaç/edat
+    /// atılır. Sinan Bey (beta.100, 3399): "$ in your mailbox. You bailed" bağlamsız çevrilip "Posta kutunda. Beni aradın"
+    /// oluyordu. Cümle sonuyla biten ya da tek sözcüklük önizleme kesik sayılmaz (null). Mac ile aynı.
+    /// </summary>
+    internal static string? ClippedInput(string text)
+    {
+        var value = text.Trim();
+        if (value.Length == 0 || ".!?…\"')".Contains(value[^1])) return null;
+        var words = value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (words.Count < 2) return null;
+        while (words.Count > 1 && DanglingWords.Contains(TrimPunctuation(words[^1].ToLowerInvariant()))) words.RemoveAt(words.Count - 1);
+        var core = string.Join(' ', words).TrimEnd(',', ';', ':', '-', '–', '—').Trim();
+        return core.Any(char.IsLetter) ? core : null;
+    }
+
+    /// <summary>Kesik önizlemenin motora giden hâli: sonuna "..." eklenir; motor metnin kesik olduğunu görür, sonunu tamamlamaz.</summary>
+    internal static string CutHint(string core) => core + "...";
+
+    /// <summary>Kaynağın başındaki para simgesi ("$ in your mailbox") çeviride düştüyse başa geri konur. Mac ile aynı.</summary>
+    internal static string KeepingLeadingSymbol(string source, string translation)
+    {
+        var value = source.Trim();
+        if (value.Length == 0 || char.GetUnicodeCategory(value[0]) != System.Globalization.UnicodeCategory.CurrencySymbol
+            || translation.Contains(value[0])) return translation;
+        var glued = value.Length > 1 && !char.IsWhiteSpace(value[1]);
+        return value[0] + (glued ? "" : " ") + translation.Trim();
+    }
+
+    /// <summary>
+    /// Sohbetten tam çevirisi bilinen mesajın kesik önizlemesi: önizlemenin (kesik ya da "…"sız kesilmiş) sadeleştirilmiş
+    /// hâliyle başlayan bilinen en kısa mesajın çevirisinin aynı oranda başı + "...". Uydurma değil, sohbette gösterilen
+    /// çevirinin kendisidir. Önizleme en az <see cref="PreviewLetters"/> harf olmalı; bulunmazsa null. Mac ile aynı.
+    /// </summary>
+    internal const int PreviewLetters = 8;
+    internal static string? KnownPreview(string preview, IReadOnlyDictionary<string, string> known)
+    {
+        var core = preview.Trim().TrimEnd('.', '…');
+        var words = TextMatch.Normalize(core).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // "…" ile kesilen önizlemenin son sözcüğü yarımdır ("Coa"): eşleşmeye girmez.
+        var head = string.Join(' ', IsCut(preview) && words.Length > 1 ? words[..^1] : words);
+        if (head.Count(char.IsLetter) < PreviewLetters) return null;
+        var best = known
+            .Where(pair =>
+            {
+                var full = TextMatch.Normalize(pair.Key);
+                return full.Length > head.Length + 2 && full.StartsWith(head, StringComparison.Ordinal);
+            })
+            .OrderBy(pair => pair.Key.Length).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Select(pair => (KeyValuePair<string, string>?)pair).FirstOrDefault();
+        if (best is not { } chosen) return null;
+        var ratio = head.Length / (double)Math.Max(1, TextMatch.Normalize(chosen.Key).Length);
+        var target = (int)Math.Ceiling(chosen.Value.Length * ratio);
+        var all = chosen.Value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        var taken = new List<string>();
+        var length = 0;
+        foreach (var word in all)
+        {
+            if (taken.Count > 0 && length + 1 + word.Length > target + 2) break;
+            length += (taken.Count == 0 ? 0 : 1) + word.Length;
+            taken.Add(word);
+        }
+        if (taken.Count >= all.Length) return null;
+        return CutTranslation(string.Join(' ', taken));
+    }
+
     /// <summary>Kesik önizlemenin çevirisi: sondaki noktalama atılıp "..." eklenir (telefondaki gibi kesik görünür). Mac ile aynı.</summary>
     internal static string CutTranslation(string translation) =>
         translation.Trim().TrimEnd('.', ',', ';', ':', '…', '–', '—', '-').Trim() + "...";
@@ -300,7 +372,62 @@ internal static partial class GamePhoneText
         Finish();
         var kept = groups.Count <= ScreenTranslation.MaxGroups ? groups : groups.GetRange(0, ScreenTranslation.MaxGroups);
         if (listed && flat && kept.Count > 0) return kept;
-        return Roles(kept, home);
+        var placed = Roles(kept, home);
+        return home ? Widgets(placed) : placed;
+    }
+
+    /// <summary>"Reminders 10 Notifications": bir-üç sözcüklük harfli başlık ve ardından sayaç; değilse null. Mac ile aynı.</summary>
+    internal static (string Title, string Counter)? WidgetParts(string text)
+    {
+        var words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        for (var count = 1; count <= 3 && count < words.Length; count++)
+        {
+            string title = string.Join(' ', words[..count]), counter = string.Join(' ', words[count..]);
+            if (PhoneChat.IsCounter(counter) && !title.Any(char.IsNumber) && title.Any(char.IsLetter)) return (title, counter);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Ana ekranda bileşen başlığı ve hemen altındaki sayaç ("Reminders" / "6 Notifications") tek grup olur: panelde tek kart
+    /// (<see cref="ScreenPhoneCard.Role.Widget"/>; "Ekranı çevir"de <see cref="PhoneChat.IsWidget"/>). Başlığın solunda simge
+    /// olduğundan ikisi ayrı blok okunuyordu ve bileşen çevrilmiyordu (Sinan Bey, beta.100 3397). Mac ile aynı.
+    /// </summary>
+    internal static IReadOnlyList<ScreenTranslation.Group> Widgets(IReadOnlyList<ScreenTranslation.Group> groups)
+    {
+        var result = new List<ScreenTranslation.Group>();
+        foreach (var group in groups)
+        {
+            var text = string.Join(' ', group.Paragraphs);
+            // Başlık ve sayaç tek satır grubu okunduysa ("Reminders 10 Notifications") ikiye ayrılır.
+            if (group.Phone is { Role: ScreenPhoneCard.Role.Home } home && group.Paragraphs.Count == 1 && WidgetParts(text) is { } split)
+            {
+                result.Add(group with
+                {
+                    Paragraphs = [split.Title, split.Counter],
+                    Icons = null,
+                    Phone = new ScreenPhoneCard.Placement(ScreenPhoneCard.Role.Widget, home.Spot),
+                });
+                continue;
+            }
+            if (PhoneChat.IsCounter(text) && group.Phone?.Spot is { } spot && result.Count > 0 && result[^1] is var last
+                && last.Phone?.Spot is { } above && last.Phone.Role == ScreenPhoneCard.Role.Home && last.Paragraphs.Count == 1
+                && !PhoneChat.IsCounter(last.Paragraphs[0])
+                && last.Paragraphs[0].Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length is >= 1 and <= 3
+                && spot.Top >= above.Top && spot.Top - above.Bottom < (above.Bottom - above.Top) * PhoneChat.HomeGap
+                && spot.Left <= above.Left + PhoneChat.LeftAlign && above.Left - spot.Left <= PhoneChat.WidgetIndent)
+            {
+                result[^1] = last with
+                {
+                    Paragraphs = [last.Paragraphs[0], text],
+                    Box = last.Box.Union(group.Box),
+                    Phone = new ScreenPhoneCard.Placement(ScreenPhoneCard.Role.Widget, above.Union(spot)),
+                };
+                continue;
+            }
+            result.Add(group);
+        }
+        return result;
     }
 
     /// <summary>

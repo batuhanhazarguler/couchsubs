@@ -20,6 +20,9 @@ internal class PhoneMemory {
     /** Yanda Panel'in kilitli telefon yeri ve yazı boyu ([PhonePanelSteady]). */
     val steady = PhonePanelSteady()
 
+    /** Telefon listesi kartlarının kesilmiş avatarları, rozetleri ve seçim çerçeveleri ([PhoneListLook]). */
+    val rows = PhoneListLook()
+
     /** Bilinen çevirilerin anlık kopyası. */
     val known: Map<String, String> @Synchronized get() = HashMap(translations)
 
@@ -42,5 +45,6 @@ internal class PhoneMemory {
         translations.clear()
         keys.clear()
         steady.forget()
+        rows.clear()
     }
 }

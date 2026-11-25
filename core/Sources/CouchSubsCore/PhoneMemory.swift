@@ -16,6 +16,8 @@ final class PhoneMemory {
     private var keys: [String] = []
     /// Yanda Panel'in kilitli telefon yeri ve yazı boyu (`PhonePanelSteady`).
     var steady = PhonePanelSteady()
+    /// Telefon listesi kartlarının kesilmiş avatarları, rozetleri ve seçim çerçeveleri (`PhoneListLook`).
+    let rows = PhoneListLook()
 
     init() {}
 
@@ -41,5 +43,6 @@ final class PhoneMemory {
         translations.removeAll()
         keys.removeAll()
         steady.forget()
+        rows.clear()
     }
 }

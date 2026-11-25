@@ -191,7 +191,9 @@ public static class ButtonIcons
         if (Names.Contains(core)) return true;
         if (core.Length != 1) return false;
         var c = core[0];
-        if (char.IsDigit(c) || c is 'a' or 'I' or '-' or '–' or '—' or '&') return false;
+        // Para simgesi ("$ in your mailbox") yazının kendisidir, kumanda simgesi değil (beta.100: listede "$" düşüyordu).
+        if (char.IsDigit(c) || char.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.CurrencySymbol
+            || c is 'a' or 'I' or '-' or '–' or '—' or '&') return false;
         return char.IsUpper(c) || c is 'o' or 'x' || !char.IsLetter(c);
     }
 

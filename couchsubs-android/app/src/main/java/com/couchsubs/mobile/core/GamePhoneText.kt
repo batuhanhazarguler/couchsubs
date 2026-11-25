@@ -231,6 +231,72 @@ object GamePhoneText {
         return if (core.any { it.isLetter() }) core else null
     }
 
+    /**
+     * Önizleme satırın sağ kenarına bu kadar yakınsa (düz ekranda) ve cümle sonu yoksa telefon onu "…" koymadan kesmiştir
+     * ("$ in your mailbox. You bailed": aslı "...You bailed me out again bro!").
+     */
+    const val CLIP_EDGE = 0.88
+
+    /**
+     * "…" olmadan kesilmiş önizlemenin çevrilecek kısmı: sözcükler kalır (son sözcük tam görünüyor), sondaki bağlaç/edat
+     * atılır. Sinan Bey (beta.100, 3399): "$ in your mailbox. You bailed" bağlamsız çevrilip "Posta kutunda. Beni aradın"
+     * oluyordu. Cümle sonuyla biten ya da tek sözcüklük önizleme kesik sayılmaz (null). iPhone ile aynı.
+     */
+    fun clippedInput(text: String): String? {
+        val value = text.trim()
+        val last = value.lastOrNull() ?: return null
+        if (last in ".!?…\"')") return null
+        val words = value.split(Regex("\\s+")).filter { it.isNotEmpty() }.toMutableList()
+        if (words.size < 2) return null
+        while (words.size > 1 && words.last().lowercase().trim(::isPunctuation) in danglingWords) words.removeAt(words.size - 1)
+        val core = words.joinToString(" ").trimEnd(',', ';', ':', '-', '–', '—').trim()
+        return if (core.any { it.isLetter() }) core else null
+    }
+
+    /** Kesik önizlemenin motora giden hâli: sonuna "..." eklenir; motor metnin kesik olduğunu görür, sonunu tamamlamaz. */
+    fun cutHint(core: String): String = "$core..."
+
+    /** Kaynağın başındaki para simgesi ("$ in your mailbox") çeviride düştüyse başa geri konur. */
+    fun keepingLeadingSymbol(source: String, translation: String): String {
+        val trimmed = source.trim()
+        val first = trimmed.firstOrNull() ?: return translation
+        if (Character.getType(first) != Character.CURRENCY_SYMBOL.toInt() || translation.contains(first)) return translation
+        val rest = trimmed.drop(1)
+        val glued = rest.isNotEmpty() && !rest[0].isWhitespace()
+        return first + (if (glued) "" else " ") + translation.trim()
+    }
+
+    /**
+     * Sohbetten tam çevirisi bilinen mesajın kesik önizlemesi: önizlemenin (kesik ya da "…"sız kesilmiş) sadeleştirilmiş
+     * hâliyle başlayan bilinen en kısa mesajın çevirisinin aynı oranda başı + "...". Uydurma değil, sohbette gösterilen
+     * çevirinin kendisidir. Önizleme en az [PREVIEW_LETTERS] harf olmalı; bulunmazsa null. iPhone ile aynı.
+     */
+    const val PREVIEW_LETTERS = 8
+
+    fun knownPreview(preview: String, known: Map<String, String>): String? {
+        val core = preview.trim().trimEnd('.', '…')
+        val words = TextMatch.normalize(core).split(' ').filter { it.isNotEmpty() }
+        // "…" ile kesilen önizlemenin son sözcüğü yarımdır ("Coa"): eşleşmeye girmez.
+        val head = (if (isCut(preview) && words.size > 1) words.dropLast(1) else words).joinToString(" ")
+        if (head.count { it.isLetter() } < PREVIEW_LETTERS) return null
+        val best = known.entries.filter { (key, _) ->
+            val full = TextMatch.normalize(key)
+            full.length > head.length + 2 && full.startsWith(head)
+        }.minWithOrNull(compareBy<Map.Entry<String, String>> { it.key.length }.thenBy { it.key }) ?: return null
+        val ratio = head.length.toDouble() / maxOf(1, TextMatch.normalize(best.key).length)
+        val target = kotlin.math.ceil(best.value.length * ratio).toInt()
+        val all = best.value.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val taken = mutableListOf<String>()
+        var length = 0
+        for (word in all) {
+            if (taken.isNotEmpty() && length + 1 + word.length > target + 2) break
+            length += (if (taken.isEmpty()) 0 else 1) + word.length
+            taken.add(word)
+        }
+        if (taken.size >= all.size) return null
+        return cutTranslation(taken.joinToString(" "))
+    }
+
     /** Kesik önizlemenin çevirisi: sondaki noktalama atılıp "..." eklenir (telefondaki gibi kesik görünür). */
     fun cutTranslation(translation: String): String =
         translation.trim().trimEnd('.', ',', ';', ':', '…', '–', '—', '-').trim() + "..."
@@ -278,7 +344,53 @@ object GamePhoneText {
         finish()
         val kept = groups.take(ScreenTranslation.MAX_GROUPS)
         if (listed && flat && kept.isNotEmpty()) return kept
-        return roles(kept, home)
+        val placed = roles(kept, home)
+        return if (home) widgets(placed) else placed
+    }
+
+    /** "Reminders 10 Notifications": bir-üç sözcüklük harfli başlık ve ardından sayaç; değilse null. */
+    internal fun widgetParts(text: String): Pair<String, String>? {
+        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        for (count in 1..3) {
+            if (count >= words.size) break
+            val title = words.take(count).joinToString(" ")
+            val counter = words.drop(count).joinToString(" ")
+            if (PhoneChat.isCounter(counter) && title.none { it.isDigit() } && title.any { it.isLetter() }) return title to counter
+        }
+        return null
+    }
+
+    /**
+     * Ana ekranda bileşen başlığı ve hemen altındaki sayaç ("Reminders" / "6 Notifications") tek grup olur: panelde tek
+     * kart ([ScreenPhoneCard.Role.WIDGET]; "Ekranı çevir"de [PhoneChat.isWidget]). Başlığın solunda simge olduğundan
+     * ikisi ayrı blok okunuyordu ve bileşen çevrilmiyordu (Sinan Bey, beta.100 3397). iPhone ile aynı.
+     */
+    internal fun widgets(groups: List<ScreenTranslation.Group>): List<ScreenTranslation.Group> {
+        val result = mutableListOf<ScreenTranslation.Group>()
+        for (group in groups) {
+            val text = group.paragraphs.joinToString(" ")
+            // Başlık ve sayaç tek satır grubu okunduysa ("Reminders 10 Notifications") ikiye ayrılır.
+            val split = if (group.phone?.role == ScreenPhoneCard.Role.HOME && group.paragraphs.size == 1) widgetParts(text) else null
+            if (split != null) {
+                result.add(group.copy(paragraphs = listOf(split.first, split.second), icons = null,
+                    phone = ScreenPhoneCard.Placement(ScreenPhoneCard.Role.WIDGET, group.phone!!.spot)))
+                continue
+            }
+            val spot = group.phone?.spot
+            val last = result.lastOrNull()
+            val above = last?.phone?.spot
+            if (PhoneChat.isCounter(text) && spot != null && last != null && above != null &&
+                last.phone?.role == ScreenPhoneCard.Role.HOME && last.paragraphs.size == 1 && !PhoneChat.isCounter(last.paragraphs[0]) &&
+                last.paragraphs[0].split(Regex("\\s+")).count { it.isNotEmpty() } in 1..3 &&
+                spot.top >= above.top && spot.top - above.bottom < (above.bottom - above.top) * PhoneChat.HOME_GAP &&
+                spot.left <= above.left + PhoneChat.LEFT_ALIGN && above.left - spot.left <= PhoneChat.WIDGET_INDENT) {
+                result[result.size - 1] = last.copy(paragraphs = listOf(last.paragraphs[0], text), box = last.box.union(group.box),
+                    phone = ScreenPhoneCard.Placement(ScreenPhoneCard.Role.WIDGET, above.union(spot)))
+                continue
+            }
+            result.add(group)
+        }
+        return result
     }
 
     /**

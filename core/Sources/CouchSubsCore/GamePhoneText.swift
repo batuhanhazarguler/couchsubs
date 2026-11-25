@@ -216,6 +216,69 @@ enum GamePhoneText {
         return core.contains(where: \.isLetter) ? core : nil
     }
 
+    /// Önizleme satırın sağ kenarına bu kadar yakınsa (düz ekranda) ve cümle sonu yoksa telefon onu "…" koymadan kesmiştir
+    /// ("$ in your mailbox. You bailed": aslı "...You bailed me out again bro!").
+    static let clipEdge = 0.88
+
+    /// "…" olmadan kesilmiş önizlemenin çevrilecek kısmı: sözcükler kalır (son sözcük tam görünüyor), sondaki bağlaç/edat
+    /// atılır. Sinan Bey (beta.100, 3399): "$ in your mailbox. You bailed" bağlamsız çevrilip "Posta kutunda. Beni aradın"
+    /// oluyordu. Cümle sonuyla biten ya da tek sözcüklük önizleme kesik sayılmaz (nil).
+    static func clippedInput(_ text: String) -> String? {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = value.last, !".!?…\"')".contains(last) else { return nil }
+        var words = value.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard words.count >= 2 else { return nil }
+        while words.count > 1, let last = words.last,
+              danglingWords.contains(last.lowercased().trimmingCharacters(in: .punctuationCharacters)) { words.removeLast() }
+        var core = words.joined(separator: " ")
+        while let last = core.last, ",;:-–—".contains(last) { core.removeLast() }
+        core = core.trimmingCharacters(in: .whitespaces)
+        return core.contains(where: \.isLetter) ? core : nil
+    }
+
+    /// Kesik önizlemenin motora giden hâli: sonuna "..." eklenir; motor metnin kesik olduğunu görür, sonunu tamamlamaz.
+    static func cutHint(_ core: String) -> String { core + "..." }
+
+    /// Kaynağın başındaki para simgesi ("$ in your mailbox") çeviride düştüyse başa geri konur.
+    static func keepingLeadingSymbol(_ source: String, _ translation: String) -> String {
+        guard let first = source.trimmingCharacters(in: .whitespaces).unicodeScalars.first,
+              first.properties.generalCategory == .currencySymbol,
+              !translation.unicodeScalars.contains(first) else { return translation }
+        let symbol = String(first)
+        let glued = source.trimmingCharacters(in: .whitespaces).dropFirst().first?.isWhitespace == false
+        return symbol + (glued ? "" : " ") + translation.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Sohbetten tam çevirisi bilinen mesajın kesik önizlemesi: önizlemenin (kesik ya da "…"sız kesilmiş) sadeleştirilmiş
+    /// hâliyle başlayan bilinen en kısa mesajın çevirisinin aynı oranda başı + "...". Uydurma değil, sohbette gösterilen
+    /// çevirinin kendisidir. Önizleme en az `previewLetters` harf olmalı; bulunmazsa nil.
+    static let previewLetters = 8
+    static func knownPreview(_ preview: String, in known: [String: String]) -> String? {
+        var core = preview.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = core.last, last == "." || last == "…" { core.removeLast() }
+        let words = TextMatch.normalize(core).split(separator: " ")
+        // "…" ile kesilen önizlemenin son sözcüğü yarımdır ("Coa"): eşleşmeye girmez.
+        let head = (isCut(preview) && words.count > 1 ? words.dropLast() : words[...]).joined(separator: " ")
+        guard head.filter(\.isLetter).count >= previewLetters else { return nil }
+        let candidates = known.filter { key, _ in
+            let full = TextMatch.normalize(key)
+            return full.count > head.count + 2 && (full.hasPrefix(head + " ") || full.hasPrefix(head))
+        }
+        guard let best = candidates.min(by: { a, b in
+            a.key.count != b.key.count ? a.key.count < b.key.count : a.key < b.key
+        }) else { return nil }
+        let ratio = Double(head.count) / Double(max(1, TextMatch.normalize(best.key).count))
+        let target = Int((Double(best.value.count) * ratio).rounded(.up))
+        var taken: [Substring] = [], length = 0
+        for word in best.value.split(whereSeparator: \.isWhitespace) {
+            if !taken.isEmpty, length + 1 + word.count > target + 2 { break }
+            length += (taken.isEmpty ? 0 : 1) + word.count
+            taken.append(word)
+        }
+        guard taken.count < best.value.split(whereSeparator: \.isWhitespace).count else { return nil }
+        return cutTranslation(taken.joined(separator: " "))
+    }
+
     /// Kesik önizlemenin çevirisi: sondaki noktalama atılıp "..." eklenir (telefondaki gibi kesik görünür).
     static func cutTranslation(_ translation: String) -> String {
         var value = translation.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -262,7 +325,53 @@ enum GamePhoneText {
         finish()
         let kept = Array(groups.prefix(ScreenTranslation.maxGroups))
         if listed, flat, !kept.isEmpty { return kept }
-        return roles(kept, home: home)
+        let placed = roles(kept, home: home)
+        return home ? widgets(placed) : placed
+    }
+
+    /// Ana ekranda bileşen başlığı ve hemen altındaki sayaç ("Reminders" / "6 Notifications") tek grup olur: panelde tek
+    /// kart (`ScreenPhoneCard.Role.widget`; "Ekranı çevir"de `PhoneChat.isWidget`). Başlığın solunda simge olduğundan
+    /// ikisi ayrı blok okunuyordu ve bileşen çevrilmiyordu (Sinan Bey, beta.100 3397).
+    /// "Reminders 10 Notifications": bir-üç sözcüklük harfli başlık ve ardından sayaç; değilse nil.
+    static func widgetParts(_ text: String) -> (title: String, counter: String)? {
+        let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+        for count in 1...3 where count < words.count {
+            let title = words[..<count].joined(separator: " "), counter = words[count...].joined(separator: " ")
+            if PhoneChat.isCounter(counter), !title.contains(where: \.isNumber), title.contains(where: \.isLetter) {
+                return (title, counter)
+            }
+        }
+        return nil
+    }
+
+    static func widgets(_ groups: [ScreenTranslation.Group]) -> [ScreenTranslation.Group] {
+        var result: [ScreenTranslation.Group] = []
+        for group in groups {
+            let text = group.paragraphs.joined(separator: " ")
+            // Başlık ve sayaç tek satır grubu okunduysa ("Reminders 10 Notifications") ikiye ayrılır.
+            if group.phone?.role == .home, group.paragraphs.count == 1, let split = widgetParts(text) {
+                var widget = group
+                widget.paragraphs = [split.title, split.counter]
+                widget.icons = nil
+                widget.phone = ScreenPhoneCard.Placement(role: .widget, spot: group.phone!.spot)
+                result.append(widget)
+                continue
+            }
+            if PhoneChat.isCounter(text), let spot = group.phone?.spot, let last = result.last, let above = last.phone?.spot,
+               last.phone?.role == .home, last.paragraphs.count == 1, !PhoneChat.isCounter(last.paragraphs[0]),
+               (1...3).contains(last.paragraphs[0].split(whereSeparator: \.isWhitespace).count),
+               spot.top >= above.top, spot.top - above.bottom < (above.bottom - above.top) * PhoneChat.homeGap,
+               spot.left <= above.left + PhoneChat.leftAlign, above.left - spot.left <= PhoneChat.widgetIndent {
+                var widget = last
+                widget.paragraphs = [last.paragraphs[0], text]
+                widget.box = last.box.union(group.box)
+                widget.phone = ScreenPhoneCard.Placement(role: .widget, spot: above.union(spot))
+                result[result.count - 1] = widget
+                continue
+            }
+            result.append(group)
+        }
+        return result
     }
 
     /// Sohbet panelinde her grubun rolü ("Ekranı çevir"in `PhoneChat` kuralları, düz ekrandaki yerinden): en üstteki

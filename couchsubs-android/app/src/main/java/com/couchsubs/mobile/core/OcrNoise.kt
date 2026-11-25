@@ -20,8 +20,12 @@ object OcrNoise {
         val tokens = line.split(Regex("\\s+")).filter { it.isNotEmpty() }
         for ((index, token) in tokens.withIndex()) {
             // Kumanda simgesinin yeri (ButtonIcons.MARKER) çöp değildir.
+            // Telefonda ([keepIdentifiers]) tek başına para simgesi mesajın parçasıdır ("$ in your mailbox"; beta.100'de
+            // listede "$" düşüyordu).
             if (token[0] == ButtonIcons.MARKER ||
-                (keepIdentifiers && (GamePhoneText.containsIdentifier(token) || GamePhoneText.isWrittenChatWord(token)))) {
+                (keepIdentifiers && (GamePhoneText.containsIdentifier(token) || GamePhoneText.isWrittenChatWord(token) ||
+                    (token.codePointCount(0, token.length) == 1 &&
+                        Character.getType(token.codePointAt(0)) == Character.CURRENCY_SYMBOL.toInt())))) {
                 kept.add(token)
                 continue
             }

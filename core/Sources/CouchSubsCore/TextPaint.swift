@@ -369,12 +369,14 @@ public enum TextPainter {
     }
 
     /// Kişi resmini kareden keser: en çok `portraitMax` piksel kenarlı (en yakın nokta örneklemesi), opak PNG data: adresi.
-    public static func portraitImage(_ box: TextBox, width: Int, height: Int, color: (Int, Int) -> RGB) -> String? {
+    /// `largest`: çıktının en uzun kenarı (telefon listesinin avatarı `ScreenPhoneCard.avatarMax`).
+    public static func portraitImage(_ box: TextBox, width: Int, height: Int, largest: Int = portraitMax,
+                                     color: (Int, Int) -> RGB) -> String? {
         let l = max(0, Int((box.left * Double(width)).rounded())), t = max(0, Int((box.top * Double(height)).rounded()))
         let r = min(width, Int((box.right * Double(width)).rounded())), b = min(height, Int((box.bottom * Double(height)).rounded()))
         guard r - l >= 2, b - t >= 2 else { return nil }
         let side = max(r - l, b - t)
-        let ow = max(1, min(r - l, (r - l) * portraitMax / side)), oh = max(1, min(b - t, (b - t) * portraitMax / side))
+        let ow = max(1, min(r - l, (r - l) * largest / side)), oh = max(1, min(b - t, (b - t) * largest / side))
         var pixels = [UInt8](repeating: 255, count: ow * oh * 4)
         for j in 0..<oh {
             for i in 0..<ow {

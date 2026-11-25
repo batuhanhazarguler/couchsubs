@@ -383,14 +383,18 @@ public static class TextPainter
         return (minX, minY, maxX + 1, maxY + 1);
     }
 
-    /// <summary>Kişi resmini kareden keser: en çok <see cref="PortraitMax"/> piksel kenarlı (en yakın nokta örneklemesi), opak PNG data: adresi.</summary>
-    public static string? PortraitImage(TextBox box, int width, int height, Func<int, int, (int R, int G, int B)> color)
+    /// <summary>
+    /// Kişi resmini kareden keser: en çok <paramref name="largest"/> (varsayılan <see cref="PortraitMax"/>; telefon
+    /// listesinin avatarı <see cref="PhoneListLook.AvatarMax"/>) piksel kenarlı (en yakın nokta örneklemesi), opak PNG data: adresi.
+    /// </summary>
+    public static string? PortraitImage(TextBox box, int width, int height, Func<int, int, (int R, int G, int B)> color,
+                                        int largest = PortraitMax)
     {
         int l = Math.Max(0, RoundHalfUp(box.Left * width)), t = Math.Max(0, RoundHalfUp(box.Top * height));
         int r = Math.Min(width, RoundHalfUp(box.Right * width)), b = Math.Min(height, RoundHalfUp(box.Bottom * height));
         if (r - l < 2 || b - t < 2) return null;
         var side = Math.Max(r - l, b - t);
-        int ow = Math.Max(1, Math.Min(r - l, (r - l) * PortraitMax / side)), oh = Math.Max(1, Math.Min(b - t, (b - t) * PortraitMax / side));
+        int ow = Math.Max(1, Math.Min(r - l, (r - l) * largest / side)), oh = Math.Max(1, Math.Min(b - t, (b - t) * largest / side));
         var pixels = new byte[ow * oh * 4];
         for (var j = 0; j < oh; j++)
             for (var i = 0; i < ow; i++)

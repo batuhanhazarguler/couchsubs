@@ -338,7 +338,7 @@ class GamePhoneTextTest {
             return Reading(lines)
         }
         val expected = listOf(
-            "Suggested" to HEADING, "Cal" to CONTACT, "in your mailbox. You bailed" to PREVIEW, "Brian" to CONTACT,
+            "Suggested" to HEADING, "Cal" to CONTACT, "$ in your mailbox. You bailed" to PREVIEW, "Brian" to CONTACT,
             "Ok. There's some cash in t..." to PREVIEW, "Messages" to HEADING, "Donnie" to CONTACT, "Joey" to CONTACT,
             "Hey this is Joey from Coa..." to PREVIEW, "Lucia (Yolanda phone)" to CONTACT,
             "Outside living better than..." to PREVIEW, "Shirley" to CONTACT, "Oh that's nice hon. aren't..." to PREVIEW,
@@ -366,6 +366,57 @@ class GamePhoneTextTest {
         assertNull(GamePhoneText.cutInput("Coa..."))
         assertEquals("Selam, ben Joey...", GamePhoneText.cutTranslation("Selam, ben Joey."))
         assertEquals("Dışarıda yaşamak daha iyi...", GamePhoneText.cutTranslation("Dışarıda yaşamak daha iyi"))
+    }
+
+    /**
+     * Sinan Bey (beta.100, 3399): "…" koymadan satır sonunda kesilen önizleme ("$ in your mailbox. You bailed") bağlamsız
+     * çevrilip uyduruluyordu ("Posta kutunda. Beni aradın"; "$" düşmüş). Sohbette tam çevirisi bilinen mesajın önizlemesi o
+     * çevirinin başı + "..."; bilinmiyorsa kesik metin "..." ipucuyla gider, sonu tamamlanmaz; baştaki "$" düşmez (iPhone
+     * ile aynı).
+     */
+    @Test
+    fun clippedPreviewUsesTheKnownChatTranslationOrStaysCut() {
+        assertEquals("$ in your mailbox. You bailed", GamePhoneText.clippedInput("$ in your mailbox. You bailed"))
+        assertEquals("Meet me", GamePhoneText.clippedInput("Meet me at the"))
+        assertNull(GamePhoneText.clippedInput("See you there."))
+        assertNull(GamePhoneText.clippedInput("Okay"))
+        assertEquals("Meet me...", GamePhoneText.cutHint("Meet me"))
+        assertEquals("$ Posta kutunda", GamePhoneText.keepingLeadingSymbol("$ in your mailbox", "Posta kutunda"))
+        assertEquals("$ posta kutunda", GamePhoneText.keepingLeadingSymbol("$ in your mailbox", "$ posta kutunda"))
+        assertEquals("Posta kutunda", GamePhoneText.keepingLeadingSymbol("in your mailbox", "Posta kutunda"))
+        val known = mapOf("$ in your mailbox. You bailed me out again bro! You got away right? Tell me you got away. LMK!" to
+            "$ posta kutunda. Beni yine kurtardın, kanka! Kaçtın, değil mi? Kaçtığını söyle bana. Haber ver!",
+            "I'm good. Thanks for the cash." to "İyiyim. Para için sağ ol.")
+        val preview = GamePhoneText.knownPreview("$ in your mailbox. You bailed", known)!!
+        assertTrue(preview, preview.startsWith("$ posta kutunda."))
+        assertTrue(preview, preview.endsWith("..."))
+        assertTrue(preview, preview.length < 50)
+        assertEquals("her seferinde aynı", preview, GamePhoneText.knownPreview("$ in your mailbox. You bailed", known))
+        // "…" ile kesik önizlemenin yarım sözcüğü eşleşmeye girmez.
+        assertNotNull(GamePhoneText.knownPreview("$ in your mailbox. You bai...", known))
+        assertNull("bilinmeyen mesaj uydurulmaz", GamePhoneText.knownPreview("Hey this is Joey from Coa...", known))
+        assertNull("çok kısa önizleme eşleşmez", GamePhoneText.knownPreview("I'm good", known))
+        // Para simgesi kumanda simgesi değildir; telefon yolunda tek başına "$" okuma çöpü sayılmaz.
+        assertFalse(ButtonIcons.isIconToken("$"))
+        assertEquals("$ in your mailbox", OcrNoise.clean("$ in your mailbox", keepIdentifiers = true))
+    }
+
+    /**
+     * Ana ekran bileşeni (Sinan Bey, beta.100 3397): başlık ve sayaç tek grup, iki parça ("Reminders", "6 Notifications");
+     * rolü WIDGET. Tek satır okunan "Reminders 6 Notifications" de ikiye ayrılır. Uygulama adı ("WhatUp") çevrilmez.
+     */
+    @Test
+    fun homeWidgetIsOneGroupWithTitleAndCounter() {
+        fun flat(text: String, left: Double, top: Double, right: Double): TextLine {
+            val box = TextBox(left, top, right, top + 0.028)
+            return TextLine(text, box, phoneBox = box)
+        }
+        val lines = listOf(flat("Reminders", 0.16, 0.12, 0.45), flat("6 Notifications", 0.05, 0.155, 0.5), flat("WhatUp", 0.38, 0.86, 0.62))
+        val groups = GamePhoneText.groups(Reading(lines))
+        assertEquals(listOf(listOf("Reminders", "6 Notifications")), groups.map { it.paragraphs })
+        assertEquals(ScreenPhoneCard.Role.WIDGET, groups.first().phone?.role)
+        assertEquals("6 Notifications", GamePhoneText.widgetParts("Reminders 6 Notifications")?.second)
+        assertNull(GamePhoneText.widgetParts("Call me 6 times"))
     }
 
     private companion object {
@@ -627,14 +678,18 @@ class PhoneRegionSessionTest {
             wait { !watcher.isBusy }
         }
         read(list("Suggested", 0.0))
-        val rows = server.sent.last().items.filter { it.panel == ScreenPhoneCard.PanelPart.NOTE }
-        assertEquals(listOf("Çevrildi: Suggested", "Cal", "Çevrildi: in your mailbox. You bailed", "Brian",
-            "Çevrildi: Ok. There's some cash...", "Çevrildi: Messages", "Donnie", "Joey", "Çevrildi: Hey this is Joey...",
-            "Shirley", "Çevrildi: Oh that's nice hon...", "Rusty Anchor"), rows.map { it.translation })
-        assertTrue("liste sola yaslı, ortalı not değil", rows.all { it.look?.align == "left" })
-        assertEquals(listOf("Çevrildi: Suggested", "Cal", "Brian", "Çevrildi: Messages", "Donnie", "Joey", "Shirley", "Rusty Anchor"),
-            rows.filter { it.look?.bold == true }.map { it.translation })
-        assertEquals("telefondaki sıra", 0, rows.zipWithNext().count { (a, b) -> a.box.top >= b.box.top })
+        // Bölüm başlıkları küçük başlık (sola yaslı, kalın not); her kişi satırı tek kart (ad + önizleme; Sinan Bey, beta.100
+        // 3399). "…" ile ya da satır sonunda kesilmiş önizleme kesik çevrilir, "$" düşmez (iPhone ile aynı).
+        val shown = server.sent.last().items
+        val notes = shown.filter { it.panel == ScreenPhoneCard.PanelPart.NOTE }
+        assertEquals(listOf("Çevrildi: Suggested", "Çevrildi: Messages"), notes.map { it.translation })
+        assertTrue("başlık sola yaslı, kalın", notes.all { it.look?.align == "left" && it.look?.bold == true })
+        val cards = shown.mapNotNull { it.listRow }
+        assertEquals(listOf("Cal", "Brian", "Donnie", "Joey", "Shirley", "Rusty Anchor"), cards.map { it.name })
+        assertEquals(listOf("Çevrildi: $ in your mailbox. You bailed...", "Çevrildi: Ok. There's some cash...", "",
+            "Çevrildi: Hey this is Joey...", "Çevrildi: Oh that's nice hon...", ""), cards.map { it.preview })
+        val rows = shown.filter { it.panel == ScreenPhoneCard.PanelPart.NOTE || it.panel == ScreenPhoneCard.PanelPart.ROW }
+        assertEquals("telefondaki sıra, üst üste binmez", 0, rows.zipWithNext().count { (a, b) -> a.box.bottom > b.box.top + 1e-9 })
         val names = setOf("Cal", "Brian", "Joey", "Donnie", "Shirley", "Rusty Anchor")
         assertFalse("adlar çevrilmez", translator.calls.any { it in names })
         assertFalse("yarım sözcük çeviriye gitmez", translator.calls.any { it.contains("Coa") })
@@ -656,7 +711,9 @@ class PhoneRegionSessionTest {
         assertEquals(sent, server.sent.size)
         read(chat)
         assertTrue(server.sent.size > sent)
-        assertFalse(server.sent.last().items.any { it.panel == ScreenPhoneCard.PanelPart.NOTE && it.look?.align == "left" })
+        assertFalse(server.sent.last().items.any {
+            it.panel == ScreenPhoneCard.PanelPart.ROW || (it.panel == ScreenPhoneCard.PanelPart.NOTE && it.look?.align == "left")
+        })
     }
 
     @Test

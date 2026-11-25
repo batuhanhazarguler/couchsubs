@@ -971,14 +971,17 @@ public partial class RegionWatcherTests
         }
         await Read(List("Suggested", 0));
         var shown = server.Blocks[^1]!;
-        var rows = shown.Where(item => item.Panel == ScreenPhoneCard.PanelPart.Note).ToList();
-        Assert.Equal(["TR: Suggested", "Cal", "TR: in your mailbox. You bailed", "Brian", "TR: Ok. There's some cash...",
-                      "TR: Messages", "Donnie", "Joey", "TR: Hey this is Joey...", "Shirley", "TR: Oh that's nice hon...",
-                      "Rusty Anchor"], rows.Select(item => item.Translation));
-        Assert.All(rows, item => Assert.Equal("left", item.Look?.Align)); // liste sola yaslı, ortalı not değil
-        Assert.Equal(["TR: Suggested", "Cal", "Brian", "TR: Messages", "Donnie", "Joey", "Shirley", "Rusty Anchor"],
-            rows.Where(item => item.Look?.Bold == true).Select(item => item.Translation));
-        Assert.Equal(0, rows.Zip(rows.Skip(1)).Count(pair => pair.First.Box.Top >= pair.Second.Box.Top)); // telefondaki sıra
+        // Bölüm başlıkları küçük başlık (sola yaslı, kalın not); her kişi satırı tek kart (ad + önizleme; Sinan Bey, beta.100
+        // 3399). "…" ile ya da satır sonunda kesilmiş önizleme kesik çevrilir, "$" düşmez (Mac ile aynı).
+        var notes = shown.Where(item => item.Panel == ScreenPhoneCard.PanelPart.Note).ToList();
+        Assert.Equal(["TR: Suggested", "TR: Messages"], notes.Select(item => item.Translation));
+        Assert.All(notes, item => Assert.True(item.Look?.Align == "left" && item.Look?.Bold == true)); // başlık sola yaslı, kalın
+        var cards = shown.Where(item => item.ListRow is not null).Select(item => item.ListRow!).ToList();
+        Assert.Equal(["Cal", "Brian", "Donnie", "Joey", "Shirley", "Rusty Anchor"], cards.Select(card => card.Name));
+        Assert.Equal(["TR: $ in your mailbox. You bailed...", "TR: Ok. There's some cash...", "", "TR: Hey this is Joey...",
+                      "TR: Oh that's nice hon...", ""], cards.Select(card => card.Preview));
+        var rows = shown.Where(item => item.Panel is ScreenPhoneCard.PanelPart.Note or ScreenPhoneCard.PanelPart.Row).ToList();
+        Assert.Equal(0, rows.Zip(rows.Skip(1)).Count(pair => pair.First.Box.Bottom > pair.Second.Box.Top + 1e-9)); // telefondaki sıra, üst üste binmez
         string[] names = ["Cal", "Brian", "Joey", "Donnie", "Shirley", "Rusty Anchor"];
         Assert.DoesNotContain(translator.Calls, call => names.Contains(call)); // adlar çevrilmez
         Assert.DoesNotContain(translator.Calls, call => call.Contains("Coa")); // yarım sözcük çeviriye gitmez
@@ -1001,7 +1004,8 @@ public partial class RegionWatcherTests
         await Read(chat);
         Assert.True(server.Sent.Count > sent);
         var after = server.Blocks[^1]!;
-        Assert.DoesNotContain(after, item => item.Panel == ScreenPhoneCard.PanelPart.Note && item.Look?.Align == "left");
+        Assert.DoesNotContain(after, item => item.Panel == ScreenPhoneCard.PanelPart.Row
+                                             || (item.Panel == ScreenPhoneCard.PanelPart.Note && item.Look?.Align == "left"));
     }
 
     [Theory]

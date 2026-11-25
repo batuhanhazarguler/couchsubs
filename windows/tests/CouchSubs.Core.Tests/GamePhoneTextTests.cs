@@ -144,7 +144,7 @@ public class GamePhoneTextTests
             Flat("Rusty Anchor", 0.88, 0.30, 0.62)]);
         (string Text, Role Role)[] expected =
         [
-            ("Suggested", Role.Heading), ("Cal", Role.Contact), ("in your mailbox. You bailed", Role.Preview),
+            ("Suggested", Role.Heading), ("Cal", Role.Contact), ("$ in your mailbox. You bailed", Role.Preview),
             ("Brian", Role.Contact), ("Ok. There's some cash in t...", Role.Preview), ("Messages", Role.Heading),
             ("Donnie", Role.Contact), ("Joey", Role.Contact), ("Hey this is Joey from Coa...", Role.Preview),
             ("Lucia (Yolanda phone)", Role.Contact), ("Outside living better than...", Role.Preview),

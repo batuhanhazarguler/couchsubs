@@ -220,7 +220,9 @@ public enum ButtonIcons {
         let core = trimming(trimming(trimming(text, brackets), punctuation, leading: false), brackets)
         if names.contains(core.uppercased()) { return true }
         guard core.utf16.count == 1, let c = core.unicodeScalars.first else { return false }
-        if c.properties.generalCategory == .decimalNumber || "aI-–—&".unicodeScalars.contains(c) { return false }
+        // Para simgesi ("$ in your mailbox") yazının kendisidir, kumanda simgesi değil (beta.100: listede "$" düşüyordu).
+        if c.properties.generalCategory == .decimalNumber || c.properties.generalCategory == .currencySymbol
+            || "aI-–—&".unicodeScalars.contains(c) { return false }
         return c.properties.generalCategory == .uppercaseLetter || c == "o" || c == "x" || !isLetter(c)
     }
 

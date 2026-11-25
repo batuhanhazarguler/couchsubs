@@ -104,6 +104,8 @@ public sealed partial class RegionWatcher
         public int PhoneEmpties;
         /// <summary>Telefonun okunduğu karenin eni / boyu (sohbet panelinin yeri için).</summary>
         public double PhoneAspect = 16.0 / 9;
+        /// <summary>Telefonun son okunduğu kare: liste kartlarının avatarı, rozeti ve seçim çerçevesi bundan kesilir (<see cref="PhoneListLook"/>).</summary>
+        public Frame? PhoneFrame;
         public Frame? LastReadCrop;
         public TextBox[] Lines = [];
         public long LastFullCheck;
@@ -1426,6 +1428,9 @@ public sealed partial class RegionWatcher
                     // Yanda Panel: mesajlar telefonun yanındaki sohbet panelinde; Balonların Üstünde: her biri kendi balonunda.
                     // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez (PhonePanelSteady).
                     var arranged = ArrangedPhone(blocks, placed?.Pose, state.PhoneAspect, options, line);
+                    // Liste kartlarının avatarı, rozeti ve seçim çerçevesi kareden (satır başına bir kez kesilip saklanır;
+                    // PhoneListLook; Mac ile aynı).
+                    if (state.PhoneFrame is { } phoneFrame) arranged = phoneMemory.Rows.Apply(arranged, phoneFrame);
                     if (options == state.SentPhoneOptions) arranged = PhoneSteady.SteadyCard(arranged, state.SentPhoneShown);
                     if (arranged.Any(item => item.Panel == ScreenPhoneCard.PanelPart.Card))
                     {

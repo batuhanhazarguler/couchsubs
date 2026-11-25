@@ -323,10 +323,17 @@ internal class PhoneRegionSession(
         }
         missing = missing.distinct()
         // Listede "…" ile kesilmiş önizleme kesik çevrilir, yarım sözcük uydurulmaz ([GamePhoneText.cutInput]).
+        // "…" koymadan satır sonunda kesilmiş önizleme de kesik çevrilir ([GamePhoneText.clippedInput]); motora "..." ile
+        // gider, sonu tamamlanmaz (Sinan Bey, beta.100 3399).
         val previews = groups.filter { it.phone?.role == ScreenPhoneCard.Role.PREVIEW }.flatMap { it.paragraphs }.toSet()
-        val cuts = missing.map { if (it in previews) GamePhoneText.cutInput(it) else null }
+        val clipped = groups.filter { it.phone?.role == ScreenPhoneCard.Role.PREVIEW && (it.phone?.spot?.right ?: 0.0) >= GamePhoneText.CLIP_EDGE }
+            .flatMap { it.paragraphs }.toSet()
+        val cuts = missing.map { source ->
+            if (source !in previews) null
+            else GamePhoneText.cutInput(source) ?: if (source in clipped) GamePhoneText.clippedInput(source) else null
+        }
         val inputs = missing.zip(cuts).map { (source, cut) ->
-            val text = IconText.protect(cut ?: source).text
+            val text = IconText.protect(cut?.let(GamePhoneText::cutHint) ?: source).text
             if (english) GamePhoneText.englishModelInput(text) else text
         }
         try {
@@ -344,7 +351,8 @@ internal class PhoneRegionSession(
                     note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
                     continue
                 }
-                val shown = if (cuts[index] == null) translated else GamePhoneText.cutTranslation(translated)
+                val shown = if (cuts[index] == null) translated
+                    else GamePhoneText.cutTranslation(GamePhoneText.keepingLeadingSymbol(source, translated))
                 remember(source, shown)
                 available[source] = shown
             }
@@ -488,8 +496,10 @@ internal class PhoneRegionSession(
                 continue
             }
             // Ekranda aynı yerde duran balonun daha bozuk okunuşu da yeniden çevrilmez ([PhoneSteady.shownTranslation]).
+            // Listedeki kesik önizlemenin tam mesajı sohbette çevrildiyse o çevirinin başı + "..." ([GamePhoneText.knownPreview]).
             val known = packLookup?.invoke(IconText.plain(text))?.text ?: memory.translation(text)
                 ?: (if (group.paragraphs.size == 1) PhoneSteady.shownTranslation(IconText.plain(text), group.phone?.spot, rendered) else null)
+                ?: (if (group.phone?.role == ScreenPhoneCard.Role.PREVIEW) GamePhoneText.knownPreview(IconText.plain(text), memory.known) else null)
                 ?: if (skipsTurkish && TurkishText.isSure(text)) text else null
             if (known != null) result[text] = known else result.remove(text)
         }
@@ -553,6 +563,9 @@ internal class PhoneRegionSession(
         sentOptions = options
         // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez ([PhonePanelSteady]); aynı görünen gönderi yinelenmez.
         var shown = arranged(items, placed?.pose, aspect, options, line)
+        // Liste kartlarının avatarı, rozeti ve seçim çerçevesi kareden (satır başına bir kez kesilip saklanır;
+        // [PhoneListLook]). Android'de yapışık çeviri yok: kutular her zaman karenin koordinatında.
+        capture?.let { shown = memory.rows.apply(shown, it.image) }
         if (sameOptions) shown = PhoneSteady.steadyCard(shown, sentShown)
         if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) {
             // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe; Mac ile aynı).

@@ -217,7 +217,8 @@ object ButtonIcons {
         if (core.uppercase() in names) return true
         if (core.length != 1) return false
         val c = core[0]
-        if (c.isDigit() || c == 'a' || c == 'I' || c == '-' || c == '–' || c == '—' || c == '&') return false
+        // Para simgesi ("$ in your mailbox") yazının kendisidir, kumanda simgesi değil (beta.100: listede "$" düşüyordu).
+        if (c.isDigit() || Character.getType(c) == Character.CURRENCY_SYMBOL.toInt() || c == 'a' || c == 'I' || c == '-' || c == '–' || c == '—' || c == '&') return false
         return c.isUpperCase() || c == 'o' || c == 'x' || !c.isLetter()
     }
 

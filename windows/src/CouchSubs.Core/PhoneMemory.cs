@@ -20,6 +20,8 @@ internal sealed class PhoneMemory
 
     /// <summary>Yanda Panel'in kilitli telefon yeri ve yazı boyu (<see cref="PhonePanelSteady"/>).</summary>
     internal PhonePanelSteady Steady { get; } = new();
+    /// <summary>Telefon listesi kartlarının kesilmiş avatarları, rozetleri ve seçim çerçeveleri (<see cref="PhoneListLook"/>).</summary>
+    internal PhoneListLook Rows { get; } = new();
 
     /// <summary>Bilinen çevirilerin anlık kopyası.</summary>
     internal IReadOnlyDictionary<string, string> Known
@@ -55,5 +57,6 @@ internal sealed class PhoneMemory
             keys.Clear();
         }
         Steady.Forget();
+        Rows.Clear();
     }
 }

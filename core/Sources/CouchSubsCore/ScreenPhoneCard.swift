@@ -37,8 +37,44 @@ public enum ScreenPhoneCard {
         case title
         /// Karşı tarafın mesajı (solda, açık zemin) ve oyuncunun mesajı (sağda, amber zemin).
         case theirs, mine
-        /// Ortalı kısa satır ("Bugün", saat), sohbet listesinin satırları ve bölüm başlığı.
+        /// Ortalı kısa satır ("Bugün", saat) ve sohbet listesinin bölüm başlığı.
         case note
+        /// Sohbet listesinin bir satırı ya da ana ekran bileşeni tek kartta (`ListRow`: avatar, kalın ad, altında önizleme,
+        /// rozet, seçili satır çerçevesi). TV uygulaması 0.9.109; eski TV öğeyi yerinde, ad ve önizleme iki satır çizer.
+        case row
+    }
+
+    /// Liste kartının içeriği (`PanelPart.row`; JSON `row`). Sinan Bey (beta.100, 3399): ad ve önizleme ayrı haplar
+    /// dağınıktı; telefondaki satırın Türkçe kopyası tek kartta. Avatar ve rozet oyundan kesilir (`rowPortrait`,
+    /// `rowBadge`; küçük PNG, aynı satırda bir kez kesilip saklanır), seçili satırın çerçevesi kareden okunur.
+    public struct ListRow: Equatable, Sendable {
+        /// Kalın ad (kişi adı çevrilmez; bileşen başlığı çevrilir). Boşsa yalnız önizleme.
+        public var name: String
+        /// Adın altındaki önizleme (çeviri; kesikse "..." ile biter). Boş olabilir (yalnız emoji önizleme).
+        public var preview: String
+        /// Oyundan kesilmiş avatar ya da bileşen simgesi (PNG data: adresi); yoksa nil.
+        public var avatar: String? = nil
+        /// Sağdaki rozet (gönder/konum simgesi; PNG data: adresi); yoksa nil.
+        public var badge: String? = nil
+        /// Seçili satırın çerçeve rengi (telefonda mavi); seçili değilse nil.
+        public var selected: String? = nil
+        /// Ana ekran bileşeni ("Hatırlatıcılar / 6 Bildirim").
+        public var widget = false
+        /// Karede avatarın, rozetin ve seçim çerçevesinin aranacağı yerler (kesmek için; gönderilmez).
+        public var portraitSpot: TextBox? = nil
+        public var badgeSpot: TextBox? = nil
+        public var frameSpot: TextBox? = nil
+
+        public init(name: String, preview: String) {
+            self.name = name
+            self.preview = preview
+        }
+
+        /// Görünüşü aynı mı (karedeki arama yerleri el titremesiyle oynar, karşılaştırmaya girmez; #1279).
+        public static func == (a: ListRow, b: ListRow) -> Bool {
+            a.name == b.name && a.preview == b.preview && a.avatar == b.avatar && a.badge == b.badge
+                && a.selected == b.selected && a.widget == b.widget
+        }
     }
 
     /// Kartın zemini: yazısı yalnız bölünmez boşluk olan öğe, kartın tamamını kaplar; balonlar üstüne çizilir.
@@ -82,8 +118,10 @@ public enum ScreenPhoneCard {
         case note
         /// Sohbet listesi: kişi adı (çevrilmez), son mesaj önizlemesi, bölüm başlığı ("Messages").
         case contact, preview, heading
-        /// Ana ekranın yazısı (bileşen, bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir.
+        /// Ana ekranın yazısı (bildirim): sohbet değildir, karta girmez; kendi yerinde, özgün stilinde çizilir.
         case home
+        /// Ana ekran bileşeni (başlık + sayaç: "Reminders / 6 Notifications"): panelde tek kart (`ListRow.widget`).
+        case widget
 
         /// Çevirmene gitmez, aslıyla gösterilir (ad).
         var keepsText: Bool { self == .header || self == .contact }
@@ -125,6 +163,13 @@ public enum ScreenPhoneCard {
             let dx = bottomX - topX, dy = bottomY - topY
             let t = 0.04 + 0.915 * v, side = (u - 0.5) * 0.52
             return (topX + dx * t + side * dy / aspect, topY + dy * t - side * dx * aspect * (0.52 + v * 0.30))
+        }
+
+        /// Düz ekrandaki kutunun karedeki sınır kutusu (dört köşesinden; eğik telefonda biraz geniştir).
+        func frameBox(_ box: TextBox) -> TextBox {
+            let corners = [point(box.left, box.top), point(box.right, box.top), point(box.left, box.bottom), point(box.right, box.bottom)]
+            return TextBox(left: corners.map(\.x).min()!, top: corners.map(\.y).min()!,
+                           right: corners.map(\.x).max()!, bottom: corners.map(\.y).max()!)
         }
 
         /// Karedeki noktanın düz ekrandaki yeri (Newton adımlarıyla; dönüşüm neredeyse doğrusal, dört adım yeter).
@@ -246,20 +291,39 @@ public enum ScreenPhoneCard {
         let pad = cardWidth * 0.05, padY = line * 0.4, spacing = line * bubbleSpacing
         let flat = { (align: TextLook.Align, bold: Bool) in TextLook(bold: bold, condensed: false, align: align, upper: false, flat: true) }
 
-        var body = onPhone
-        var header: ScreenTranslation.Item?
-        if let first = body.first, first.phone?.role == .header {
-            header = first
-            body.removeFirst()
-        }
-        let headerHeight = header == nil ? 0 : line * 1.4 + spacing
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402: "Cal" başlığı gereksiz); balonlar aynen kalır.
+        let body = onPhone.filter { $0.phone?.role != .header }
 
         // Her satırın panelde kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
-        // Not ve liste satırı da balon gibi dolgulu, koyu yarı saydam zeminde çizilir (oyunun üstünde okunsun).
+        // Sohbet listesinin satırı (ad + altındaki önizleme) ve ana ekran bileşeni tek kart olur (`listRow`).
         struct Row { var item: ScreenTranslation.Item; var width: Double; var height: Double; var side: TextLook.Align }
-        var rows: [Row] = body.map { item in
-            let role = item.phone!.role == .message ? (isOutgoing(item.style) ? .outgoing : .incoming) : item.phone!.role
-            let bubble = role == .incoming || role == .outgoing
+        var rows: [Row] = []
+        var index = 0
+        while index < body.count {
+            let item = body[index]
+            let role = item.phone!.role
+            index += 1
+            if role == .contact || role == .preview || role == .widget {
+                var name: ScreenTranslation.Item?, preview: ScreenTranslation.Item?
+                if role == .contact {
+                    name = item
+                    if index < body.count, body[index].phone?.role == .preview {
+                        preview = body[index]
+                        index += 1
+                    }
+                } else if role == .preview {
+                    preview = item
+                } else {
+                    name = item
+                }
+                if let made = listRow(name: name, preview: preview, widget: role == .widget, handset: handset,
+                                      line: line, width: cardWidth - 2 * pad) {
+                    rows.append(Row(item: made.item, width: cardWidth - 2 * pad, height: made.height, side: .left))
+                }
+                continue
+            }
+            let kind: Role = role == .message ? (isOutgoing(item.style) ? .outgoing : .incoming) : role
+            let bubble = kind == .incoming || kind == .outgoing
             let widest = (bubble ? bubbleShare : 1) * cardWidth - (bubble ? 0 : 2 * pad)
             let inner = widest - 2 * pad
             let lines = wrap(item.translation, perLine: Int(inner * handset.aspect / (line * charWidth)))
@@ -268,47 +332,38 @@ public enum ScreenPhoneCard {
             var placed = item
             placed.unchanged = false
             placed.lineHeight = line
-            switch role {
+            switch kind {
             case .outgoing:
                 placed.style = bubbleColor(item.style, fallback: outgoingColor)
                 placed.panel = .mine
             case .incoming:
                 placed.style = bubbleColor(item.style, fallback: incomingColor)
                 placed.panel = .theirs
-            case .note, .heading:
-                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı.
+            default:
+                // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın küçük başlık, sola yaslı; not ortalı.
                 placed.style = noteColor
                 placed.panel = .note
-            default:
-                placed.style = cardColor
-                placed.panel = .note
             }
-            let side: TextLook.Align = role == .outgoing ? .right : role == .note ? .center : .left
-            placed.look = flat(side, role == .contact || role == .heading)
-            return Row(item: placed, width: width, height: Double(lines.count) * line * lineSpacing + line * bubblePadding, side: side)
+            let side: TextLook.Align = kind == .outgoing ? .right : kind == .note ? .center : .left
+            placed.look = flat(side, kind == .heading)
+            rows.append(Row(item: placed, width: width, height: Double(lines.count) * line * lineSpacing + line * bubblePadding, side: side))
         }
-        // Sohbet listesinde önizleme kişi adının hemen altındadır (`listGap`); öbür satırlar arasında `spacing` kalır.
-        func rowGap(_ index: Int) -> Double {
-            index > 0 && rows[index].item.phone?.role == .preview && rows[index - 1].item.phone?.role == .contact
-                ? line * listGap : spacing
-        }
+        guard !rows.isEmpty else { return items }
         let limit = 1 - screenMargin
-        // Kişi adı panelin üstünde, balonların hizasında küçük başlık: telefondaki yerinde, telefonun üstünden yukarı çıkmaz.
-        let titleTop = header.map { max(screenMargin, min(alignedTop($0, line: line), card.top)) }
-        let bodyTop = titleTop.map { $0 + line * (titleHeight + titleGap) } ?? screenMargin
+        let bodyTop = screenMargin
         // Her balon kendi İngilizce balonunun yüksekliğinde; çakışan balon üsttekinin altına en az kaydırmayla itilir. Panel
         // ekranın alt kenar payını aşarsa satırlar alttan yukarı itilir (yine en az kaydırmayla); yukarıda da yer kalmazsa en
         // eski (en üstteki) satırlar düşer, son mesajlar görünür kalır. Tek kalan çok uzun mesaj ekranın üst payından başlar.
         func alignedTops() -> [Double] {
             var tops: [Double] = []
             for (index, row) in rows.enumerated() {
-                let below = index == 0 ? bodyTop : tops[index - 1] + rows[index - 1].height + rowGap(index)
+                let below = index == 0 ? bodyTop : tops[index - 1] + rows[index - 1].height + spacing
                 tops.append(max(alignedTop(row.item, line: line), below))
             }
             var floor = limit
             for index in rows.indices.reversed() {
                 tops[index] = min(tops[index], floor - rows[index].height)
-                floor = tops[index] - rowGap(index)
+                floor = tops[index] - spacing
             }
             return tops
         }
@@ -318,10 +373,10 @@ public enum ScreenPhoneCard {
             tops = alignedTops()
         }
         if let first = tops.first, first < bodyTop { tops[0] = bodyTop }
-        let contentTop = min(titleTop ?? card.top, tops.first ?? card.top)
+        let contentTop = tops.first ?? card.top
         let contentBottom = rows.indices.last.map { tops[$0] + rows[$0].height } ?? card.bottom
-        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, başlık, aralıklar) da sığar.
-        let flow = 2 * padY + headerHeight + rows.reduce(0) { $0 + $1.height } + rows.indices.dropFirst().reduce(0) { $0 + rowGap($1) }
+        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, aralıklar) da sığar.
+        let flow = 2 * padY + rows.reduce(0) { $0 + $1.height } + Double(max(0, rows.count - 1)) * spacing
         card.top = max(screenMargin, min(card.top, contentTop))
         card.bottom = min(limit, max(card.bottom, contentBottom + padY, card.top + flow))
 
@@ -340,15 +395,6 @@ public enum ScreenPhoneCard {
         backdrop.aligned = true
         result.append(backdrop)
 
-        if var header, let titleTop {
-            header.unchanged = false
-            header.box = TextBox(left: card.left + pad, top: titleTop, right: card.right - pad, bottom: titleTop + line * titleHeight)
-            header.lineHeight = line
-            header.style = cardColor
-            header.look = flat(.left, true)
-            header.panel = .title
-            result.append(header)
-        }
         for (index, row) in rows.enumerated() {
             var placed = row.item
             let left = row.side == .right ? card.right - pad - row.width
@@ -357,6 +403,72 @@ public enum ScreenPhoneCard {
             result.append(placed)
         }
         return result
+    }
+
+    /// Liste kartının rengi okunamadıysa: GTA 6 telefonunun açık satır kartı.
+    static let rowColor = PhoneTextStyle(background: "#F4F1EC", foreground: "#17181B")
+    /// Liste kartında avatarın çapı, avatarla yazı arası ve kartın iç dolgusu (satır yüksekliğine oranla).
+    public static let avatarLines = 2.2, avatarGap = 0.5, rowPadding = 0.45
+
+    /// Liste satırını (ad + önizleme) ya da ana ekran bileşenini tek kart yapar: kartın üstü adın İngilizcesiyle aynı
+    /// hizada, boyu Türkçenin satır sayısına ve telefondaki satırın boyuna göre (hangisi büyükse; kartlar arası boşluk
+    /// telefondakiyle orantılı kalır). Kart telefonun satır kartı renginde (önizlemenin örneklenen zemini). Avatarın,
+    /// rozetin ve seçim çerçevesinin karedeki yeri `ListRow`'a yazılır; kesmek çağıranın işi (`withRowImages`).
+    static func listRow(name: ScreenTranslation.Item?, preview: ScreenTranslation.Item?, widget: Bool, handset: Handset,
+                        line: Double, width: Double) -> (item: ScreenTranslation.Item, height: Double)? {
+        guard let first = name ?? preview else { return nil }
+        let title: String, below: String
+        if widget {
+            let parts = first.translation.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            title = parts[0]
+            below = parts.count > 1 ? parts[1] : ""
+        } else {
+            title = name?.translation ?? ""
+            below = preview?.translation ?? ""
+        }
+        var row = ListRow(name: title, preview: below)
+        row.widget = widget
+        let inset = rowPadding * line / handset.aspect
+        let inner = width - 2 * inset - (avatarLines + avatarGap) * line / handset.aspect
+        let wrapped = below.isEmpty ? 0 : wrap(below, perLine: Int(inner * handset.aspect / (line * charWidth))).count
+        let lines = (title.isEmpty ? 0 : 1) + wrapped
+        let needed = max(Double(max(1, lines)) * line * lineSpacing, avatarLines * line) + 2 * rowPadding * line
+        // Telefondaki satırın boyu (adın üstünden önizlemenin altına, dolguyla).
+        let last = preview ?? first
+        let original = last.box.bottom - first.box.top + line * bubblePadding
+        // Karedeki yerler (düz ekrandan): avatar adın solunda, ad ve önizleme bloğunun ortasında; rozet satırın sağ ucunda,
+        // ad hizasında; seçim çerçevesi satırın üst kenarı (adın biraz üstü).
+        if let top = first.phone?.spot, let bottom = last.phone?.spot {
+            let shape = Handset.screenShape
+            if widget {
+                // Bileşenin simgesi başlığın solunda (sayaç satırının sol hizasında), başlık satırı boyunda.
+                let size = (top.bottom - top.top) * 0.5
+                row.portraitSpot = handset.frameBox(TextBox(left: top.left - size * 0.1 / shape, top: top.top - size * 0.1,
+                                                            right: top.left + size * 1.1 / shape, bottom: top.top + size * 1.1))
+            } else {
+                let block = max(1e-4, bottom.bottom - top.top)
+                let center = (top.top + bottom.bottom) / 2
+                let size = block * 1.35
+                let right = min(top.left, bottom.left) - block * 0.1 / shape
+                row.portraitSpot = handset.frameBox(TextBox(left: right - size / shape, top: center - size / 2,
+                                                            right: right, bottom: center + size / 2))
+                let nameCenter = (top.top + top.bottom) / 2, badge = block * 0.62
+                row.badgeSpot = handset.frameBox(TextBox(left: 0.985 - badge / shape, top: nameCenter - badge / 2,
+                                                         right: 0.985, bottom: nameCenter + badge / 2))
+                row.frameSpot = handset.frameBox(TextBox(left: max(0.25, top.left), top: top.top - block * 0.6,
+                                                         right: 0.8, bottom: top.top - block * 0.05))
+            }
+        }
+        var item = first
+        item.source = widget ? first.source : [name?.source, preview?.source].compactMap { $0 }.joined(separator: "\n")
+        item.translation = [title, below].filter { !$0.isEmpty }.joined(separator: "\n")
+        item.unchanged = false
+        item.lineHeight = line
+        item.style = bubbleColor(preview?.style ?? first.style, fallback: widget ? cardColor : rowColor)
+        item.look = TextLook(bold: false, condensed: false, align: .left, upper: false, flat: true)
+        item.panel = .row
+        item.listRow = row
+        return (item, max(needed, original))
     }
 
     /// Hizalı panelde satırın istenen üst kenarı: Türkçe yazının üstü İngilizce yazının üstünde (`box`, karede); balon üst
@@ -484,15 +596,18 @@ public enum ScreenPhoneCard {
             if item.panel == .theirs { item.style = bubbleColor(item.style, fallback: incomingColor) }
             item.lineHeight = line
             let widest = (bubble ? bubbleShare : 1) * column
-            let lines = wrap(item.translation, perLine: Int((widest - 2 * padX) * aspect / (line * charWidth)))
+            // Liste kartında yazı avatarın sağında; kart en az avatar boyunda.
+            let avatar = item.panel == .row ? (avatarLines + avatarGap + 2 * rowPadding) * line / aspect : 0
+            let lines = wrap(item.translation, perLine: Int((widest - 2 * padX - avatar) * aspect / (line * charWidth)))
             // Telefondaki aralık satır yüksekliğine oranla korunur (önizleme kişi adının hemen altında kalır).
             var gap = bubbleSpacing
             if index > 0 {
                 let previous = panel.messages[index - 1]
                 gap = min(stackedGapMax, max(0, (source.box.top - previous.box.bottom) / max(1e-9, source.lineHeight)))
             }
-            return Row(item: item, width: widest, height: Double(lines.count) * line * lineSpacing + line * bubblePadding,
-                       gap: gap * line)
+            var height = Double(lines.count) * line * lineSpacing + line * bubblePadding
+            if item.panel == .row { height = max(Double(lines.count) * line * lineSpacing, avatarLines * line) + 2 * rowPadding * line }
+            return Row(item: item, width: widest, height: height, gap: gap * line)
         }
         // Sığmazsa en eski mesajlar düşer; tek kalan çok uzun mesaj yine çizilir (aşağıda kırpılır).
         var first = 0

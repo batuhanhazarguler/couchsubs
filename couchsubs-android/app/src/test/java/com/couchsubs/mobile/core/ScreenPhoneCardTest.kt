@@ -127,24 +127,21 @@ class ScreenPhoneCardTest {
             item("On my way", "Yoldayım", ScreenPhoneCard.Role.OUTGOING, 0.3, 0.6, 0.93),
         ), phone)
         assertEquals("Arabayı bul", laid[0].translation)
-        assertEquals(5, laid.size)
+        // Sohbetin üstündeki kişi adı ("Brian") çizilmez (Sinan Bey, beta.100 3400/3402; iPhone ile aynı).
+        assertEquals(4, laid.size)
+        assertFalse(laid.any { it.translation == "Brian" })
         val backdrop = laid[1]
         assertTrue(ScreenPhoneCard.isBackdrop(backdrop))
         assertEquals(phone.bounds.top, backdrop.box.top, 0.0)
         assertEquals(phone.bounds.bottom, backdrop.box.bottom, 0.0)
         assertTrue(backdrop.box.right < phone.bounds.left)
         val width = backdrop.box.right - backdrop.box.left
-        // Kişi adı çevrilmese de kartın başlığıdır: ortalı, kalın; yazı TV'de okunacak boyda.
-        assertEquals("Brian", laid[2].translation)
-        // Kişi adı panelin başlığı: balonların hizasında (sola yaslı), kalın (Mac ile aynı).
-        assertEquals("left", laid[2].look?.align)
-        assertEquals(true, laid[2].look?.bold)
         assertEquals(ScreenPhoneCard.MIN_LINE, laid[2].lineHeight, 0.0)
-        assertEquals(ScreenPhoneCard.INCOMING, laid[3].surface)
-        assertEquals(backdrop.box.left + width * 0.05, laid[3].box.left, 1e-9)
-        assertEquals(ScreenPhoneCard.OUTGOING, laid[4].surface)
-        assertEquals("right", laid[4].look?.align)
-        assertEquals(backdrop.box.right - width * 0.05, laid[4].box.right, 1e-9)
+        assertEquals(ScreenPhoneCard.INCOMING, laid[2].surface)
+        assertEquals(backdrop.box.left + width * 0.05, laid[2].box.left, 1e-9)
+        assertEquals(ScreenPhoneCard.OUTGOING, laid[3].surface)
+        assertEquals("right", laid[3].look?.align)
+        assertEquals(backdrop.box.right - width * 0.05, laid[3].box.right, 1e-9)
         // Satırlar üst üste binmez ve kartın içinde kalır.
         for (i in 2 until laid.size - 1) assertTrue(laid[i].box.bottom <= laid[i + 1].box.top)
         assertTrue(laid.drop(2).all {
@@ -266,8 +263,9 @@ class ScreenPhoneCardTest {
         assertEquals(ScreenPhoneCard.OUTGOING, rows[3].surface)
         assertTrue(rows[0].box.left < rows[1].box.left)
         assertEquals(rows[1].box.right, rows[3].box.right, 1e-9)
-        assertEquals(rows[0].box.left, panel.title!!.box.left, 1e-9)
-        assertTrue(panel.title!!.box.bottom < rows[0].box.top)
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402); balonlar hizalı kalır.
+        assertNull(panel.title)
+        assertFalse(laid.any { it.panel == ScreenPhoneCard.PanelPart.TITLE || it.translation == header.translation })
         assertEquals(ScreenPhoneCard.INCOMING, ScreenPhoneCard.bubbleColor(GamePhonePalette.neutral, ScreenPhoneCard.INCOMING))
         assertEquals("#17181B", ScreenPhoneCard.bubbleColor(TextSurface("#F0E8E0", "#E8E0D8"), ScreenPhoneCard.INCOMING).foreground)
     }
@@ -285,28 +283,51 @@ class ScreenPhoneCardTest {
         assertEquals(TextSurface("#1E6FE0", "#FFFFFF"), laid[1].surface)
         assertEquals(ScreenPhoneCard.PanelPart.THEIRS, laid[2].panel)
         assertEquals(TextSurface("#E5E5EA", "#000000"), laid[2].surface)
-        assertEquals(true, laid[3].look?.bold)
+        // Liste satırı (ad + önizleme) tek kart: sola yaslı, telefonun satır kartı renginde (örnek yoksa yedek).
+        assertEquals(4, laid.size)
+        assertEquals(ScreenPhoneCard.PanelPart.ROW, laid[3].panel)
         assertEquals("left", laid[3].look?.align)
-        assertEquals(ScreenPhoneCard.CARD, laid[4].surface)
+        assertEquals("Lucia", laid[3].listRow?.name)
+        assertEquals("Geliyor musun?", laid[3].listRow?.preview)
+        assertEquals("Lucia\nGeliyor musun?", laid[3].translation)
+        assertEquals(ScreenPhoneCard.ROW_COLOR, laid[3].surface)
     }
 
     /**
-     * Telefonun ana ekranı sohbet değildir: kart kurulmaz, bileşenin yazıları kendi yerinde kalır, uygulama adı ("WhatUp")
-     * çevrilmez. Önceden ana ekran sohbet kartı sayılıyor, çeviri telefonun yanında tek blok oluyordu (X'teki bildirim).
+     * Telefonun ana ekranı sohbet değildir; uygulama adı ("WhatUp") çevrilmez. Bileşen (başlık + sayaç: "Reminders /
+     * 10 Notifications") telefonun boş tarafında tek kart olur (Sinan Bey, beta.100 3397: bileşen çevrilmiyordu): kalın
+     * başlık, altında sayaç, kartın üstü bileşenin İngilizcesiyle aynı hizada; telefonun üstüne yazılmaz (iPhone ile aynı).
      */
     @Test
-    fun homeScreenIsTranslatedInPlaceWithoutACard() {
+    fun homeScreenWidgetBecomesOneCardBesideThePhone() {
         val cases = root.getJSONArray("cases")
         val vector = (0 until cases.length()).map { cases.getJSONObject(it) }.first { it.getString("name").startsWith("ana ekran: bildirim") }
         val phone = handset(doubles(vector.getJSONArray("pose")), vector.getDouble("aspect"))
         val groups = caseGroups(vector)
         val words = mapOf("Reminders" to "Hatırlatıcılar", "10 Notifications" to "10 Bildirim")
-        val items = groups.map { ScreenTranslation.Item(it.paragraphs[0], words.getValue(it.paragraphs[0]), it.box, it.lineHeight, phone = it.phone) }
+        val items = groups.mapNotNull { group ->
+            ScreenTranslation.item(group, group.paragraphs.map(IconText::protect), group.paragraphs.map(words::getValue), keepUnchanged = true)
+        }
         val shown = ScreenTranslation.present(items, phone)
-        assertEquals(listOf("Hatırlatıcılar", "10 Bildirim"), shown.map { it.translation })
-        assertTrue(shown.none(ScreenPhoneCard::isBackdrop))
-        assertEquals(groups.map { it.box }, shown.map { it.box })
-        assertTrue(shown.all { it.box.left >= phone.bounds.left && it.box.right <= phone.bounds.right })
+        assertEquals("aynı içerik birebir aynı çıktı", shown, ScreenTranslation.present(items, phone))
+        val cards = shown.filter { it.panel == ScreenPhoneCard.PanelPart.ROW }
+        assertEquals(1, cards.size)
+        val widget = cards[0].listRow!!
+        assertTrue(widget.widget)
+        assertEquals("Hatırlatıcılar", widget.name)
+        assertEquals("10 Bildirim", widget.preview)
+        assertTrue("bileşenin simgesi kesilir", widget.portraitSpot != null)
+        val card = cards[0]
+        assertTrue("kart telefonun yanında", card.box.right <= phone.bounds.left + 1e-9 || card.box.left >= phone.bounds.right - 1e-9)
+        val english = groups.first().box.top
+        assertEquals(ScreenPhoneCard.alignedTop(items[0], card.lineHeight), card.box.top, 1e-9)
+        assertTrue("kart bileşenin hizasında", kotlin.math.abs(card.box.top - english) < 0.03)
+        val json = JSONObject(SubtitleServer.screenFrame(listOf(card), 1000).substringAfter("data: ").trim())
+            .getJSONArray("items").getJSONObject(0)
+        assertEquals("row", json.getString("panel"))
+        val row = json.getJSONObject("row")
+        assertEquals(true, row.getBoolean("widget"))
+        assertEquals("Hatırlatıcılar", row.getString("name"))
     }
 
     /**
@@ -526,15 +547,16 @@ class ScreenPhoneCardTest {
         )
         val pose = GamePhoneGeometry.Pose(upright[0], upright[1], upright[2], upright[3])
         val panel = PhoneRegionSession.arranged(items, pose, 16.0 / 9, PhonePanelOptions())
-        assertEquals(listOf(ScreenPhoneCard.PanelPart.CARD, ScreenPhoneCard.PanelPart.TITLE, ScreenPhoneCard.PanelPart.THEIRS,
-            ScreenPhoneCard.PanelPart.MINE), panel.map { it.panel })
+        // Sohbetin üstündeki kişi adı çizilmez (Sinan Bey, beta.100 3400/3402).
+        assertEquals(listOf(ScreenPhoneCard.PanelPart.CARD, ScreenPhoneCard.PanelPart.THEIRS, ScreenPhoneCard.PanelPart.MINE),
+            panel.map { it.panel })
         val card = panel[0].box
         assertTrue(card.right <= pose.bounds.left || card.left >= pose.bounds.right)
         // Örneklenmiş renk yok: yedek renkler; panel hizalı.
-        assertEquals(ScreenPhoneCard.INCOMING, panel[2].surface)
-        assertEquals(ScreenPhoneCard.OUTGOING, panel[3].surface)
+        assertEquals(ScreenPhoneCard.INCOMING, panel[1].surface)
+        assertEquals(ScreenPhoneCard.OUTGOING, panel[2].surface)
         assertTrue(panel[0].aligned)
-        assertTrue(panel[2].box.left < panel[3].box.left && panel[2].box.top < panel[3].box.top)
+        assertTrue(panel[1].box.left < panel[2].box.left && panel[1].box.top < panel[2].box.top)
         assertEquals("card", ScreenPhoneCard.PanelPart.CARD.wire)
 
         val bubbles = PhoneRegionSession.arranged(items, pose, 16.0 / 9, PhonePanelOptions(enabled = false))

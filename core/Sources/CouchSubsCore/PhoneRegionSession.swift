@@ -349,10 +349,17 @@ final class PhoneRegionSession {
         var unique: Set<String> = []
         missing = missing.filter { unique.insert($0).inserted }
         // Listede "…" ile kesilmiş önizleme kesik çevrilir, yarım sözcük uydurulmaz (`GamePhoneText.cutInput`).
+        // "…" koymadan satır sonunda kesilmiş önizleme de kesik çevrilir (`GamePhoneText.clippedInput`); motora "..." ile
+        // gider, sonu tamamlanmaz (Sinan Bey, beta.100 3399).
         let previews = Set(groups.filter { $0.phone?.role == .preview }.flatMap(\.paragraphs))
-        let cuts = missing.map { previews.contains($0) ? GamePhoneText.cutInput($0) : nil }
+        let clipped = Set(groups.filter { $0.phone?.role == .preview && ($0.phone?.spot.right ?? 0) >= GamePhoneText.clipEdge }
+            .flatMap(\.paragraphs))
+        let cuts = missing.map { source -> String? in
+            guard previews.contains(source) else { return nil }
+            return GamePhoneText.cutInput(source) ?? (clipped.contains(source) ? GamePhoneText.clippedInput(source) : nil)
+        }
         let inputs = zip(missing, cuts).map { source, cut in
-            let text = IconText.protect(cut ?? source).text
+            let text = IconText.protect(cut.map(GamePhoneText.cutHint) ?? source).text
             return english ? GamePhoneText.englishModelInput(text) : text
         }
         do {
@@ -368,7 +375,8 @@ final class PhoneRegionSession {
                     note("PhoneSession", "motor boş çeviri döndü, gösterilmedi", source)
                     continue
                 }
-                let shown = cuts[index] == nil ? translated : GamePhoneText.cutTranslation(translated)
+                let shown = cuts[index] == nil ? translated
+                    : GamePhoneText.cutTranslation(GamePhoneText.keepingLeadingSymbol(source, translated))
                 remember(source, shown)
                 available[source] = shown
             }
@@ -566,9 +574,11 @@ final class PhoneRegionSession {
                     continue
                 }
                 // Ekranda aynı yerde duran balonun daha bozuk okunuşu da yeniden çevrilmez (`PhoneSteady.shownTranslation`).
+                // Listedeki kesik önizlemenin tam mesajı sohbette çevrildiyse o çevirinin başı + "..." (`knownPreview`).
                 let known = packLookup?(IconText.plain(text))?.text ?? memory.translation(of: text)
                     ?? (group.paragraphs.count == 1
                         ? PhoneSteady.shownTranslation(of: IconText.plain(text), at: group.phone?.spot, in: rendered) : nil)
+                    ?? (group.phone?.role == .preview ? GamePhoneText.knownPreview(IconText.plain(text), in: memory.known) : nil)
                 result[text] = known ?? ((skipsTurkish && TurkishText.isSure(text)) ? text : nil)
             }
         }
@@ -636,6 +646,9 @@ final class PhoneRegionSession {
         // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez (`PhonePanelSteady`); TV'de aynı görünen gönderi
         // yinelenmez.
         var shown = Self.arranged(items, pose: placed?.pose, frameSize: frameSize, options: options, line: line)
+        // Liste kartlarının avatarı, rozeti ve seçim çerçevesi kareden (satır başına bir kez kesilip saklanır;
+        // `PhoneListLook`). Yapışık çeviride kutular başvuru koordinatında olduğundan kesilmez.
+        if sentAnchor == nil, let frame = latest?.frame { shown = memory.rows.apply(shown, frame: frame) }
         if sameOptions { shown = PhoneSteady.steadyCard(shown, previous: sentShown) }
         if sameOptions, PhoneSteady.samePicture(shown, sentShown) {
             // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe).

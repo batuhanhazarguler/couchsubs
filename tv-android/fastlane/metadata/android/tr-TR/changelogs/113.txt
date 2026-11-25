@@ -1,0 +1,1 @@
+0.9.110: GTA 6 telefonunun Mesajlar listesi tek kartlarla çiziliyor (avatar, ad, önizleme, rozet, seçili satır); ana ekran bileşeni de kart.
