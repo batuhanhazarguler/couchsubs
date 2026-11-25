@@ -363,9 +363,13 @@ public final class SubtitlePipeline {
         }
         let cleaned = seen.withoutButtonPrompts().withoutOcrNoise().joiningRows()
         // Kamerayla kayan yazı (plaka, tabela, dükkân adı) altyazı değildir (`SceneMotion`, GitHub #1259).
-        let rows = sceneMotion.filter(stickyRows.filter(cleaned, at: now()), in: place, at: now())
+        let moving = sceneMotion.filter(stickyRows.filter(cleaned, at: now()), in: place, at: now())
         for row in stickyRows.newlySticky { log("sabit satır: \(SubtitleLog.excerpt(row)) görev/HUD yazısı sayıldı, çevrilmiyor") }
         for line in sceneMotion.removed { logSceneText(line.text, SceneMotion.reason) }
+        // Hareketsiz ürün/ambalaj yazısı (bira kutusu, süt kartonu) altyazı değildir (`PackageText`, Sinan Bey beta.101).
+        let packaged = PackageText.filter(moving, in: place, look: PackageText.sampler(area))
+        for line in packaged.removed { logSceneText(line.text, PackageText.reason) }
+        let rows = packaged.kept
         if mission.observe(stickyRows.removed, area: place, at: now()) {
             log(mission.region == nil ? "görev satırı kalktı" : "görev satırı kendi yerinde gösteriliyor")
             onMissionChanged?(mission.region)

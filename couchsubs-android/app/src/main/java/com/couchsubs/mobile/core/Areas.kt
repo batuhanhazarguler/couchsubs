@@ -1272,7 +1272,11 @@ class RegionWatcher(
             val aspect = (area.region.right - area.region.left) * 16 / maxOf(1e-6, (area.region.bottom - area.region.top) * 9)
             Reading(joinedPieces(own.lines, aspect).filter { !area.menu || !cutAtAreaEdge(it, area.region) })
         }
-        val text = if (area.auto) AutoText.clean(pieced, area.menu) else own
+        // Otomatik alanda ürün/ambalaj yazısı (bira kutusu, süt kartonu; sahnede, desenli zeminde) ekran yazısı değildir
+        // ([PackageText], Sinan Bey beta.101: buzdolabındaki ambalajların yazıları ürünlerin üstüne çiziliyordu).
+        val unpacked = if (area.auto && area.id != GameAreaPresets.PHONE_ID)
+            PackageText.filter(pieced, area.region.box, PackageText.sampler(crop.frame, crop.color)).first else pieced
+        val text = if (area.auto) AutoText.clean(unpacked, area.menu) else own
         val preset = GameAreaPresets.isPreset(area.id)
         var candidate = candidate(text, area.region, crop.frame, keepPrompts = area.menu, auto = area.auto, styled = preset,
             color = crop.color)

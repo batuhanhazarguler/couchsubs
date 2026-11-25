@@ -1,0 +1,811 @@
+{
+ "comment": "Ürün/ambalaj/etiket yazısı (sahnede, desenli zeminde ya da eğik) ekran yazısı ve altyazı sayılmaz (PackageText; Sinan Bey beta.101). Mac PackageTextTests.swift, Windows PackageTextTests.cs ve Android PackageTextTest.kt aynı dosyayı okur. shapes: marka biçimi. products: çevrilmeyen ürün/marka adı (ScreenTranslation.keepsNames). cases: satır kutuları alana oranlı, area alanın karedeki yeri; look her satırın görüntüden ölçülen görünüşü (null: görüntü yok); kept: kalan satırlar. pixels: sentetik görüntü (W×H). Nokta (x, y) rengi: box ya da others kutularından birinin içindeyse (x ≥ floor(l·W), x < ceil(r·W), y ≥ floor(t·H), y < ceil(b·H)), y kutunun dikeyde %15–%85'inde (y ≥ t·H + 0,15·h, y < t·H + 0,85·h; h = (b − t)·H) ve (x / 2) % 2 == 0 ise ink; değilse zemin: flat → a; checker → ((x / period) + (y / period)) % 2 == 0 ? a : b; gradient → her kanal a + (b − a)·x / (W − 1) (tam sayı bölme).",
+ "shapes": [
+  {
+   "text": "HARBOR LAGER",
+   "brand": true
+  },
+  {
+   "text": "Glacier Water",
+   "brand": true
+  },
+  {
+   "text": "Whole Juice!",
+   "brand": true
+  },
+  {
+   "text": "NORTHWIND",
+   "brand": true
+  },
+  {
+   "text": "Jason!",
+   "brand": false
+  },
+  {
+   "text": "Follow the car.",
+   "brand": false
+  },
+  {
+   "text": "Fresh produce delivered daily",
+   "brand": false
+  },
+  {
+   "text": "R2 Aim",
+   "brand": false
+  },
+  {
+   "text": "Press X to Open",
+   "brand": false
+  },
+  {
+   "text": "Lucia: Come On",
+   "brand": false
+  },
+  {
+   "text": "- Over Here",
+   "brand": false
+  },
+  {
+   "text": "Big Bold Fresh Taste",
+   "brand": false
+  },
+  {
+   "text": "Settings",
+   "brand": false
+  },
+  {
+   "text": "Let's go",
+   "brand": false
+  }
+ ],
+ "products": [
+  {
+   "text": "HARBOR LAGER",
+   "keep": true
+  },
+  {
+   "text": "Glacier Water",
+   "keep": true
+  },
+  {
+   "text": "VANILLA SHAKE",
+   "keep": true
+  },
+  {
+   "text": "SUNNY COLA!",
+   "keep": true
+  },
+  {
+   "text": "NORTHWIND ROOT BEER",
+   "keep": true
+  },
+  {
+   "text": "DRINK WATER",
+   "keep": false
+  },
+  {
+   "text": "GLASS OF WATER",
+   "keep": false
+  },
+  {
+   "text": "BEER",
+   "keep": false
+  },
+  {
+   "text": "TAKE BEER",
+   "keep": false
+  },
+  {
+   "text": "cold beer",
+   "keep": false
+  },
+  {
+   "text": "HARBOR LAGER 2",
+   "keep": false
+  },
+  {
+   "text": "Open the Fridge",
+   "keep": false
+  }
+ ],
+ "cases": [
+  {
+   "name": "ambalaj: büyük harfli marka, desenli zemin, sahnenin ışığını alan yazı",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "HARBOR LAGER",
+     "box": [
+      0.4,
+      0.5,
+      0.52,
+      0.53
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": []
+  },
+  {
+   "name": "ambalaj: Baş Harfli, ünlemli",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Whole Juice!",
+     "box": [
+      0.55,
+      0.6,
+      0.65,
+      0.63
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": []
+  },
+  {
+   "name": "ambalaj: eğik taban çizgisi (perspektif), düz zemin",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "SUNNY COLA",
+     "box": [
+      0.4,
+      0.5,
+      0.5,
+      0.535
+     ],
+     "words": [
+      {
+       "text": "SUNNY",
+       "box": [
+        0.4,
+        0.5,
+        0.45,
+        0.52
+       ]
+      },
+      {
+       "text": "COLA",
+       "box": [
+        0.46,
+        0.515,
+        0.5,
+        0.535
+       ]
+      }
+     ]
+    }
+   ],
+   "look": {
+    "textured": false,
+    "uiInk": false
+   },
+   "kept": []
+  },
+  {
+   "name": "ambalaj alanın içinde: alan karede ortada",
+   "area": [
+    0.3,
+    0.3,
+    0.7,
+    0.7
+   ],
+   "lines": [
+    {
+     "text": "GLACIER WATER",
+     "box": [
+      0.3,
+      0.4,
+      0.6,
+      0.46
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": []
+  },
+  {
+   "name": "menü etiketi: desenli zeminde beyaz arayüz yazısı kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Online Lobby",
+     "box": [
+      0.4,
+      0.4,
+      0.55,
+      0.43
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": true
+   },
+   "kept": [
+    "Online Lobby"
+   ]
+  },
+  {
+   "name": "menü: bulanık düz zeminde renkli etiket kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "GRAND LEGACY",
+     "box": [
+      0.4,
+      0.4,
+      0.55,
+      0.43
+     ]
+    }
+   ],
+   "look": {
+    "textured": false,
+    "uiInk": false
+   },
+   "kept": [
+    "GRAND LEGACY"
+   ]
+  },
+  {
+   "name": "istem: tuş ipucu kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "R2 Aim",
+     "box": [
+      0.45,
+      0.55,
+      0.52,
+      0.58
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "R2 Aim"
+   ]
+  },
+  {
+   "name": "istem: tuş simgeli satır kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "￼ OPEN",
+     "box": [
+      0.45,
+      0.55,
+      0.52,
+      0.58
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "￼ OPEN"
+   ]
+  },
+  {
+   "name": "görev cümlesi kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Follow the car.",
+     "box": [
+      0.4,
+      0.7,
+      0.6,
+      0.73
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "Follow the car."
+   ]
+  },
+  {
+   "name": "bildirim: kutulu, beyaz yazı kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "New Message Received",
+     "box": [
+      0.7,
+      0.2,
+      0.88,
+      0.23
+     ]
+    }
+   ],
+   "look": {
+    "textured": false,
+    "uiInk": true
+   },
+   "kept": [
+    "New Message Received"
+   ]
+  },
+  {
+   "name": "telefon ekranı yazısı (arayüz mürekkebi) kalır",
+   "area": [
+    0.6,
+    0.25,
+    0.85,
+    0.85
+   ],
+   "lines": [
+    {
+     "text": "Messages",
+     "box": [
+      0.1,
+      0.05,
+      0.5,
+      0.09
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": true
+   },
+   "kept": [
+    "Messages"
+   ]
+  },
+  {
+   "name": "HUD köşesi: sol üstteki kısa yazı kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Vice Beach",
+     "box": [
+      0.02,
+      0.03,
+      0.12,
+      0.06
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "Vice Beach"
+   ]
+  },
+  {
+   "name": "büyük başlık kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "GONE FISHING",
+     "box": [
+      0.3,
+      0.4,
+      0.7,
+      0.48
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "GONE FISHING"
+   ]
+  },
+  {
+   "name": "altyazı şeridi: alttaki kısa satır kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Come On!",
+     "box": [
+      0.45,
+      0.86,
+      0.55,
+      0.89
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "Come On!"
+   ]
+  },
+  {
+   "name": "uzun küçük harfli yazı kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "Fresh produce delivered daily",
+     "box": [
+      0.4,
+      0.5,
+      0.62,
+      0.53
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "Fresh produce delivered daily"
+   ]
+  },
+  {
+   "name": "görüntü yoksa hiçbir şey atılmaz",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "HARBOR LAGER",
+     "box": [
+      0.4,
+      0.5,
+      0.52,
+      0.53
+     ]
+    }
+   ],
+   "look": null,
+   "kept": [
+    "HARBOR LAGER"
+   ]
+  },
+  {
+   "name": "desensiz düz zeminde yatay etiket kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "HARBOR LAGER",
+     "box": [
+      0.4,
+      0.5,
+      0.52,
+      0.53
+     ]
+    }
+   ],
+   "look": {
+    "textured": false,
+    "uiInk": false
+   },
+   "kept": [
+    "HARBOR LAGER"
+   ]
+  },
+  {
+   "name": "ambalaj ve görev birlikte: yalnız görev kalır",
+   "area": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "lines": [
+    {
+     "text": "HARBOR LAGER",
+     "box": [
+      0.4,
+      0.4,
+      0.52,
+      0.43
+     ]
+    },
+    {
+     "text": "Grab a drink for Jason.",
+     "box": [
+      0.35,
+      0.7,
+      0.65,
+      0.73
+     ]
+    }
+   ],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   },
+   "kept": [
+    "Grab a drink for Jason."
+   ]
+  }
+ ],
+ "pixels": [
+  {
+   "name": "düz koyu panel, beyaz yazı",
+   "size": [
+    400,
+    200
+   ],
+   "ground": {
+    "kind": "flat",
+    "a": [
+     20,
+     20,
+     24
+    ],
+    "b": [
+     20,
+     20,
+     24
+    ],
+    "period": 1
+   },
+   "ink": [
+    250,
+    250,
+    250
+   ],
+   "box": [
+    0.25,
+    0.45,
+    0.75,
+    0.55
+   ],
+   "others": [],
+   "look": {
+    "textured": false,
+    "uiInk": true
+   }
+  },
+  {
+   "name": "desenli zemin, mavi ışık alan yazı",
+   "size": [
+    400,
+    200
+   ],
+   "ground": {
+    "kind": "checker",
+    "a": [
+     40,
+     60,
+     160
+    ],
+    "b": [
+     120,
+     150,
+     230
+    ],
+    "period": 5
+   },
+   "ink": [
+    150,
+    200,
+    255
+   ],
+   "box": [
+    0.25,
+    0.45,
+    0.75,
+    0.55
+   ],
+   "others": [],
+   "look": {
+    "textured": true,
+    "uiInk": false
+   }
+  },
+  {
+   "name": "yumuşak degrade (bulanık menü), sarı yazı",
+   "size": [
+    400,
+    200
+   ],
+   "ground": {
+    "kind": "gradient",
+    "a": [
+     30,
+     40,
+     90
+    ],
+    "b": [
+     60,
+     80,
+     140
+    ],
+    "period": 1
+   },
+   "ink": [
+    230,
+    180,
+    40
+   ],
+   "box": [
+    0.25,
+    0.45,
+    0.75,
+    0.55
+   ],
+   "others": [],
+   "look": {
+    "textured": false,
+    "uiInk": false
+   }
+  },
+  {
+   "name": "desenli zemin, beyaz arayüz yazısı",
+   "size": [
+    400,
+    200
+   ],
+   "ground": {
+    "kind": "checker",
+    "a": [
+     40,
+     60,
+     160
+    ],
+    "b": [
+     120,
+     150,
+     230
+    ],
+    "period": 5
+   },
+   "ink": [
+    250,
+    250,
+    250
+   ],
+   "box": [
+    0.25,
+    0.45,
+    0.75,
+    0.55
+   ],
+   "others": [],
+   "look": {
+    "textured": true,
+    "uiInk": true
+   }
+  },
+  {
+   "name": "üstteki komşu satır şeridi örtüyor: desen sayılmaz",
+   "size": [
+    400,
+    200
+   ],
+   "ground": {
+    "kind": "flat",
+    "a": [
+     30,
+     40,
+     90
+    ],
+    "b": [
+     30,
+     40,
+     90
+    ],
+    "period": 1
+   },
+   "ink": [
+    150,
+    200,
+    255
+   ],
+   "box": [
+    0.25,
+    0.45,
+    0.75,
+    0.55
+   ],
+   "others": [
+    [
+     0.25,
+     0.36,
+     0.75,
+     0.44
+    ]
+   ],
+   "look": {
+    "textured": false,
+    "uiInk": false
+   }
+  }
+ ]
+}

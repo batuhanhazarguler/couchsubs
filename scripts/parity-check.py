@@ -214,6 +214,27 @@ CAPABILITIES = {
         ("windows", _WIN + "SubtitlePipeline.cs", r"sceneMotion\.Filter\("),
         ("android", _DROID + "SubtitlePipeline.kt", r"sceneMotion\.filter\("),
     ],
+    # Sinan Bey beta.101: hareketsiz ürün/ambalaj yazısı (bira kutusu, süt kartonu) altyazı ve ekran yazısı sayılmaz.
+    "Ürün/ambalaj yazısını altyazıdan çıkarma (PackageText)": [
+        ("mac", _CORE + "Pipeline/SubtitlePipeline.swift", r"PackageText\.filter\("),
+        ("windows", _WIN + "SubtitlePipeline.cs", r"PackageText\.Filter\("),
+        ("android", _DROID + "SubtitlePipeline.kt", r"PackageText\.filter\("),
+    ],
+    "Ürün/ambalaj yazısını otomatik ekran yazısından çıkarma (PackageText)": [
+        ("mac", _CORE + "RegionWatcher.swift", r"PackageText\.filter\("),
+        ("windows", _WIN + "RegionWatcher.cs", r"PackageText\.Filter\("),
+        ("android", _DROID + "Areas.kt", r"PackageText\.filter\("),
+    ],
+    "Ürün/marka adı çevrilmez (isProductName)": [
+        ("mac", _CORE + "ScreenTranslation.swift", r"isProductName\(plain\)"),
+        ("windows", _WIN + "ScreenTranslation.cs", r"IsProductName\(plain\)"),
+        ("android", _DROID + "ScreenTranslation.kt", r"isProductName\(plain\)"),
+    ],
+    "Ortak deneme dosyası package-text.json": [
+        ("mac", _CORE_TESTS + "PackageTextTests.swift", r"package-text\.json"),
+        ("windows", _WIN_TESTS + "PackageTextTests.cs", r"package-text\.json"),
+        ("android", _DROID_TESTS + "PackageTextTest.kt", r"package-text\.json"),
+    ],
     "Ortak deneme dosyası scene-motion.json": [
         ("mac", _CORE_TESTS + "SceneMotionTests.swift", r"scene-motion\.json"),
         ("windows", _WIN_TESTS + "SceneMotionTests.cs", r"scene-motion\.json"),

@@ -641,7 +641,7 @@ public enum ScreenTranslation {
     /// (BÜYÜK HARFLİ yazıda tek sözcüklük), büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
     public static func keepsNames(_ text: String) -> Bool {
         let plain = IconText.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
-        if isTitleMark(plain) || isPlaceName(plain) { return true }
+        if isTitleMark(plain) || isPlaceName(plain) || isProductName(plain) { return true }
         let parts = plain.components(separatedBy: " & ")
         guard parts.count >= 2 else { return false }
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.
@@ -665,6 +665,28 @@ public enum ScreenTranslation {
               words.dropFirst().allSatisfy({ $0.first?.isUppercase == true }) else { return false }
         return words.count >= 2 && (placeWords.contains(words.last!) || placeWords.contains(words.first!))
     }
+
+    /// Ürün/marka adı ("HARBOR LAGER", "Glacier Water", "VANILLA SHAKE"): iki-üç sözcük, yalnız harf, her sözcük büyük
+    /// harfle başlar, son sözcük ürün türü (içecek, atıştırmalık), hiçbiri eylem ya da bağlaç/edat değil ("DRINK WATER",
+    /// "GLASS OF WATER" ad değildir). Çevrilmez; etkileşim listesinde de olduğu gibi kalır (Sinan Bey beta.101: listede
+    /// marka yarım çevriliyor, kimi satır çevrilmiyordu; liste tutarsızdı). Windows ve Android aynı.
+    static func isProductName(_ text: String) -> Bool {
+        var body = text
+        if let last = body.last, "!?".contains(last) { body.removeLast() }
+        let words = body.split(separator: " ").map(String.init)
+        guard (2...3).contains(words.count),
+              words.allSatisfy({ word in
+                  word.contains(where: \.isLetter) && word.allSatisfy { $0.isLetter || "'’-&".contains($0) }
+                      && word.first(where: \.isLetter)?.isUppercase == true
+              }) else { return false }
+        let upper = words.map { $0.uppercased(with: Locale(identifier: "en_US_POSIX")) }
+        return productWords.contains(upper.last!) && !upper.contains(where: { productStops.contains($0) })
+    }
+
+    private static let productWords: Set<String> = ["BEER", "LAGER", "ALE", "STOUT", "CIDER", "WINE", "VODKA", "WHISKEY", "WHISKY", "RUM", "GIN", "TEQUILA", "BOURBON", "WATER", "SODA", "COLA", "POP", "JUICE", "LEMONADE", "SHAKE", "SMOOTHIE", "MILK", "COFFEE", "TEA", "CHIPS", "CRISPS", "CEREAL"]
+
+    /// Ürün adında geçmeyen sözcükler: eylemler ve bağlaç/edat/belirteçler.
+    private static let productStops: Set<String> = ["DRINK", "TAKE", "EAT", "OPEN", "CLOSE", "BUY", "SELL", "GRAB", "USE", "PICK", "GET", "PUT", "DROP", "GIVE", "POUR", "SIP", "CHUG", "ORDER", "MAKE", "COOK", "CHECK", "LOOK", "INSPECT", "EXAMINE", "STEAL", "THROW", "SHARE", "OFFER", "FILL", "A", "AN", "THE", "OF", "SOME", "MORE", "NO", "AND", "OR", "WITH", "TO", "FOR", "YOUR", "MY", "ANY"]
 
     private static let placeWords: Set<String> = ["Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore"]
 

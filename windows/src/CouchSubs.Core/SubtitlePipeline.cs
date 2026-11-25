@@ -466,6 +466,10 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
             // Kamerayla kayan yazı (plaka, tabela, dükkân adı) altyazı değildir (SceneMotion, GitHub #1259).
             rows = sceneMotion.Filter(rows, area, now());
             foreach (var line in sceneMotion.Removed) LogSceneText(line.Text, SceneMotion.Reason);
+            // Hareketsiz ürün/ambalaj yazısı (bira kutusu, süt kartonu) altyazı değildir (PackageText, Sinan Bey beta.101).
+            var packaged = PackageText.Filter(rows, area, PackageText.Sampler(cropped));
+            rows = packaged.Kept;
+            foreach (var line in packaged.Removed) LogSceneText(line.Text, PackageText.Reason);
             missionMoved = mission.Observe(stickyRows.Removed, area, now());
             missionRegion = mission.Region;
             foreach (var dropped in mission.Dropped)

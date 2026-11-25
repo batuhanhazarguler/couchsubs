@@ -319,10 +319,12 @@ class SubtitlePipeline(
     /**
      * Bir karenin okuması ve okunan alanın karedeki yeri. [signature]: bölgenin izi ([RegionSignature.of]); okuma boş
      * dönse de satırın yeri değişmediyse satır silinmez (parlak zemin). [darkInk]: okunan alanın görüntüsünde satır kutusu
-     * açık zeminde koyu yazı mı ([InkTone.sampler]; kâğıt ilan altyazı değildir, GitHub #1124).
+     * açık zeminde koyu yazı mı ([InkTone.sampler]; kâğıt ilan altyazı değildir, GitHub #1124). [packageLook]: satırın
+     * görünüşü ([PackageText.sampler]; ürün/ambalaj yazısı altyazı değildir).
      */
     fun process(raw: Reading, area: TextBox, signature: ByteArray? = null, capturedAt: Long? = null, ocrMs: Int? = null,
-                phone: ScreenPhoneCard.Handset? = null, reused: Boolean = false, darkInk: ((TextBox) -> Boolean)? = null) {
+                phone: ScreenPhoneCard.Handset? = null, reused: Boolean = false, darkInk: ((TextBox) -> Boolean)? = null,
+                packageLook: ((TextBox, List<TextBox>) -> PackageText.Look?)? = null) {
         frameAt = capturedAt
         frameOcrMs = ocrMs
         synchronized(lock) {
@@ -368,8 +370,11 @@ class SubtitlePipeline(
         var filteredRows = Reading(emptyList())
         val reading = synchronized(lock) {
             // Kamerayla kayan yazı (plaka, tabela, dükkân adı) altyazı değildir ([SceneMotion], GitHub #1259).
-            val filtered = sceneMotion.filter(stickyRows.filter(rows, now()), area, now())
+            val moving = sceneMotion.filter(stickyRows.filter(rows, now()), area, now())
             for (line in sceneMotion.removed) logSceneText(line.text, SceneMotion.REASON)
+            // Hareketsiz ürün/ambalaj yazısı (bira kutusu, süt kartonu) altyazı değildir ([PackageText], Sinan Bey beta.101).
+            val (filtered, packaged) = PackageText.filter(moving, area, packageLook)
+            for (line in packaged) logSceneText(line.text, PackageText.REASON)
             filteredRows = filtered
             if (mission.observe(stickyRows.removed, area, now())) {
                 missionChanged = true

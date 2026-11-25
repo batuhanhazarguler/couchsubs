@@ -830,7 +830,12 @@ public sealed partial class RegionWatcher
         // Menü şeridinin sekmeleri tek satır okunsa da ayrı satırlardır (#859); kutular alana oranlı.
         var aspect = (region.Right - region.Left) * 16 / Math.Max(1e-6, (region.Bottom - region.Top) * 9);
         // Otomatik alanda (menü, kontrol şeması) tuşlu etiketler ("HOLSTER (L1)", "SELECT (✕)") yazının kendisidir, atılmaz.
-        var cleaned = (auto ? marked : marked.WithoutButtonPrompts()).WithoutOcrNoise(phone).Lines;
+        // Otomatik alanda ürün/ambalaj yazısı (bira kutusu, süt kartonu; sahnede, desenli zeminde) ekran yazısı değildir
+        // (PackageText, Sinan Bey beta.101: buzdolabındaki ambalajların yazıları ürünlerin üstüne çiziliyordu).
+        var unpacked = (auto ? marked : marked.WithoutButtonPrompts()).WithoutOcrNoise(phone);
+        var cleaned = (auto && !phone && kind != ScreenTextKind.Phone
+            ? PackageText.Filter(unpacked, new TextBox(region.Left, region.Top, region.Right, region.Bottom), PackageText.Sampler(frame)).Kept
+            : unpacked).Lines;
         // Otomatik alanda aynı satırın yan yana okunan parçaları (simgeden, renkli addan bölünen cümle) tek satırdır.
         var lines = (auto && !phone ? JoinedPieces(cleaned, aspect) : cleaned)
             .SelectMany(line => phone ? [line] : ScreenTranslation.MenuPieces(line, aspect, frame))

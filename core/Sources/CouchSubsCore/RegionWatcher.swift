@@ -605,7 +605,12 @@ public final class RegionWatcher {
         let marked = reading.withButtonIcons(frame: frame, monochrome: auto)
         // Menü şeridinin sekmeleri tek satır okunsa da ayrı satırlardır (#859); kutular alana oranlı.
         let aspect = (region.right - region.left) * 16 / max(1e-6, (region.bottom - region.top) * 9)
-        let cleaned = (auto ? marked : marked.withoutButtonPrompts()).withoutOcrNoise().lines
+        // Otomatik alanda ürün/ambalaj yazısı (bira kutusu, süt kartonu; sahnede, desenli zeminde) ekran yazısı değildir
+        // (`PackageText`, Sinan Bey beta.101: buzdolabındaki ambalajların yazıları ürünlerin üstüne çiziliyordu).
+        let place = TextBox(left: region.left, top: region.top, right: region.right, bottom: region.bottom)
+        let unpacked = (auto ? marked : marked.withoutButtonPrompts()).withoutOcrNoise()
+        let cleaned = (auto && kind != .phone ? PackageText.filter(unpacked, in: place, look: frame.map(PackageText.sampler)).kept
+            : unpacked).lines
         // Otomatik alanda aynı satırın yan yana okunan parçaları (simgeden, renkli addan bölünen cümle) tek satırdır.
         let read = (auto ? joinedPieces(cleaned, aspect: aspect) : cleaned)
             .flatMap { ScreenTranslation.menuPieces($0, aspect: aspect, frame: frame) }
@@ -621,7 +626,6 @@ public final class RegionWatcher {
         let lines = ScreenTranslation.withoutDuplicateLines(read.map(ScreenTranslation.withoutEdgeMarks)
             .map(ScreenTranslation.withoutEdgeIcons))
         var paragraphs = ScreenTranslation.paragraphs(lines)
-        let place = TextBox(left: region.left, top: region.top, right: region.right, bottom: region.bottom)
         let boxes = lines.compactMap(\.box)
         let box = boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }?.placed(in: place)
         let height = region.bottom - region.top

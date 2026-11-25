@@ -1410,7 +1410,8 @@ class TranslationService : Service() {
             current.process(result, area.box,
                 com.couchsubs.mobile.core.RegionSignature.of(pixels.nv21, pixels.width, pixels.height),
                 capturedAt, ocrMs, phone, reused = reused,
-                darkInk = com.couchsubs.mobile.core.InkTone.sampler(pixels.gray))
+                darkInk = com.couchsubs.mobile.core.InkTone.sampler(pixels.gray),
+                packageLook = com.couchsubs.mobile.core.PackageText.sampler(pixels.gray, pixels.color))
         } catch (error: java.util.concurrent.TimeoutException) {
             pipeline?.noteReadFailure(error)
             // Okuma süresinde bitmedi: takılan tanıyıcı bırakılır, sonraki kare yenisiyle okunur (yoksa yeni okuma da

@@ -732,10 +732,30 @@ public static class ScreenTranslation
 
     private static readonly HashSet<string> PlaceWords = new() { "Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore" };
 
+    /// <summary>
+    /// Ürün/marka adı ("HARBOR LAGER", "Glacier Water", "VANILLA SHAKE"): iki-üç sözcük, yalnız harf, her sözcük büyük harfle
+    /// başlar, son sözcük ürün türü, hiçbiri eylem ya da bağlaç/edat değil. Çevrilmez; etkileşim listesinde de olduğu gibi
+    /// kalır (Sinan Bey beta.101; Mac/Android ile aynı).
+    /// </summary>
+    public static bool IsProductName(string text)
+    {
+        var body = text.Length > 0 && "!?".Contains(text[^1]) ? text[..^1] : text;
+        var words = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2 || words.Length > 3) return false;
+        if (!words.All(w => w.Any(char.IsLetter) && w.All(c => char.IsLetter(c) || "'’-&".Contains(c))
+                            && char.IsUpper(w.First(char.IsLetter)))) return false;
+        var upper = words.Select(w => w.ToUpperInvariant()).ToList();
+        return ProductWords.Contains(upper[^1]) && !upper.Any(ProductStops.Contains);
+    }
+
+    private static readonly HashSet<string> ProductWords = ["BEER", "LAGER", "ALE", "STOUT", "CIDER", "WINE", "VODKA", "WHISKEY", "WHISKY", "RUM", "GIN", "TEQUILA", "BOURBON", "WATER", "SODA", "COLA", "POP", "JUICE", "LEMONADE", "SHAKE", "SMOOTHIE", "MILK", "COFFEE", "TEA", "CHIPS", "CRISPS", "CEREAL"];
+
+    private static readonly HashSet<string> ProductStops = ["DRINK", "TAKE", "EAT", "OPEN", "CLOSE", "BUY", "SELL", "GRAB", "USE", "PICK", "GET", "PUT", "DROP", "GIVE", "POUR", "SIP", "CHUG", "ORDER", "MAKE", "COOK", "CHECK", "LOOK", "INSPECT", "EXAMINE", "STEAL", "THROW", "SHARE", "OFFER", "FILL", "A", "AN", "THE", "OF", "SOME", "MORE", "NO", "AND", "OR", "WITH", "TO", "FOR", "YOUR", "MY", "ANY"];
+
     public static bool KeepsNames(string text)
     {
         var plain = IconText.Plain(text).Trim();
-        if (IsTitleMark(plain) || IsPlaceName(plain)) return true;
+        if (IsTitleMark(plain) || IsPlaceName(plain) || IsProductName(plain)) return true;
         var parts = plain.Split(" & ");
         if (parts.Length < 2) return false;
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.

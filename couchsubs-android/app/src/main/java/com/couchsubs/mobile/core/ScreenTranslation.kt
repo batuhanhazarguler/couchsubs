@@ -682,9 +682,27 @@ object ScreenTranslation {
 
     private val placeWords = setOf("Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore")
 
+    /**
+     * Ürün/marka adı ("HARBOR LAGER", "Glacier Water", "VANILLA SHAKE"): iki-üç sözcük, yalnız harf, her sözcük büyük harfle
+     * başlar, son sözcük ürün türü, hiçbiri eylem ya da bağlaç/edat değil. Çevrilmez; etkileşim listesinde de olduğu gibi
+     * kalır (Sinan Bey beta.101; Mac/Windows ile aynı).
+     */
+    fun isProductName(text: String): Boolean {
+        val body = if (text.isNotEmpty() && text.last() in "!?") text.dropLast(1) else text
+        val words = body.split(' ').filter { it.isNotEmpty() }
+        if (words.size !in 2..3) return false
+        if (!words.all { w -> w.any { it.isLetter() } && w.all { it.isLetter() || it in "'’-&" } && w.first { it.isLetter() }.isUpperCase() }) return false
+        val upper = words.map { it.uppercase(java.util.Locale.ROOT) }
+        return upper.last() in productWords && upper.none { it in productStops }
+    }
+
+    private val productWords = setOf("BEER", "LAGER", "ALE", "STOUT", "CIDER", "WINE", "VODKA", "WHISKEY", "WHISKY", "RUM", "GIN", "TEQUILA", "BOURBON", "WATER", "SODA", "COLA", "POP", "JUICE", "LEMONADE", "SHAKE", "SMOOTHIE", "MILK", "COFFEE", "TEA", "CHIPS", "CRISPS", "CEREAL")
+
+    private val productStops = setOf("DRINK", "TAKE", "EAT", "OPEN", "CLOSE", "BUY", "SELL", "GRAB", "USE", "PICK", "GET", "PUT", "DROP", "GIVE", "POUR", "SIP", "CHUG", "ORDER", "MAKE", "COOK", "CHECK", "LOOK", "INSPECT", "EXAMINE", "STEAL", "THROW", "SHARE", "OFFER", "FILL", "A", "AN", "THE", "OF", "SOME", "MORE", "NO", "AND", "OR", "WITH", "TO", "FOR", "YOUR", "MY", "ANY")
+
     fun keepsNames(text: String): Boolean {
         val plain = IconText.plain(text).trim()
-        if (isTitleMark(plain) || isPlaceName(plain)) return true
+        if (isTitleMark(plain) || isPlaceName(plain) || isProductName(plain)) return true
         val parts = plain.split(" & ")
         if (parts.size < 2) return false
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.
