@@ -4,7 +4,8 @@
 //    ve genişlik de temizlenir);
 //  - ekran yazısı yolunda okunan kısa replik ("Ne?", "Yoldan çık.", "Lucia: Evet.") bilgisayar özgün yazıyı dar ölçse de
 //    dar aileyle çizilmez ve sıkışmaz; menü etiketi eskisi gibi dar aileyle çizilir;
-//  - Android TV'de ekran yazısı hiç dar aile almaz (dar Roboto aynı sayfadaki altyazıya geçiyordu).
+//  - Android TV'de sistem yazı tipi hiç dar geçmez (dar Roboto aynı sayfadaki altyazıya geçiyordu); birebir çizimde
+//    yalnız gömülü ayrı dar aile (0.9.109).
 // node --test scripts/tv-short-dialogue.test.js — tarayıcı yolu: COUCHSUBS_TEST_BROWSER.
 'use strict';
 const test = require('node:test');
@@ -126,10 +127,15 @@ test('ekran yazısı yolundaki kısa replik dar aile almaz ve sıkışmaz; menü
   assert.ok(narrow(exactLabel.family), JSON.stringify(exactLabel));
 });
 
-test('Android TV: ekran yazısı hiç dar aile almaz', { skip: !browser && 'Chromium bulunamadı' }, () => {
+// Android TV (0.9.109): sistemin Roboto'su hiç dar genişliğe geçmez (fontStretch yok, Roboto Condensed yok). Birebir
+// çizimdeki menü/kutu yazısı yalnız gömülü ayrı aileyi ("CouchSubs Condensed", Barlow Condensed) alır; konuşma satırı hiç.
+test('Android TV: sistem yazı tipi dar geçmez; birebir çizimde yalnız gömülü dar aile', { skip: !browser && 'Chromium bulunamadı' }, () => {
   const { screen } = render(true);
+  const [ne, cik, lucia, label, exactNe, exactLabel] = screen;
   for (const line of screen) {
-    assert.ok(!narrow(line.family), JSON.stringify(line));
     assert.notEqual(line.stretch, '75%', JSON.stringify(line));
+    assert.ok(!/Roboto Condensed|Narrow/i.test(line.family), JSON.stringify(line));
   }
+  for (const line of [ne, cik, lucia, label, exactNe]) assert.ok(!narrow(line.family), JSON.stringify(line));
+  assert.ok(/CouchSubs Condensed/.test(exactLabel.family), JSON.stringify(exactLabel));
 });
