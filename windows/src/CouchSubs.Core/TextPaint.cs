@@ -82,10 +82,15 @@ public static class TextPainter
     /// <summary>Simge sanılıp yazı olarak okunan karakterler (GTA 6 menü simgesi "I", "II"; tuş simgeleri).</summary>
     private const string IconGlyphs = "I|l![]()©®@○◯●□■△▲✕✖×◎⊗⊙";
 
-    /// <summary>Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1).</summary>
+    /// <summary>
+    /// Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar ve harfi/rakamı olmayan parçalar sayılmaz
+    /// ("I Map" → 1, "SELECT ⊗" → 1, "- SMASH 'N' GRABS" → 3, "• Objective" → 1). Menü simgesi (yön tuşu, renkli nokta)
+    /// "-", "•", "+" diye okununca sözcük sayılıyor, simge bulunmuyordu: kutu simgenin üstüne çiziliyordu (#1268, #1270;
+    /// Mac ile aynı).
+    /// </summary>
     public static int WordCount(string text) =>
         IconText.Plain(text).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-            .Count(token => !(token.Length <= 2 && token.All(c => IconGlyphs.Contains(c))));
+            .Count(token => !(token.Length <= 2 && token.All(c => IconGlyphs.Contains(c))) && token.Any(char.IsLetterOrDigit));
 
     /// <summary>
     /// Kutunun ([l, r), piksel) ucundaki simge: harf sütunları (<paramref name="ink"/>) <see cref="IconGapLines"/> satırdan

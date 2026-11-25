@@ -204,6 +204,13 @@ public final class SubtitleServer: @unchecked Sendable {
     private var regionTimer: DispatchSourceTimer?
     /// Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri).
     var regionRefreshInterval: TimeInterval = 5
+    /// Ek alanların okuma turunun (`RegionWatcher.pass`) en son döndüğü an (`regionsAlive`; sunucunun kuyruğunda).
+    private var regionAliveAt: Int?
+    /// Okuma turu bu kadar süredir dönmüyorsa (uygulama donmuş, tur takılmış) gösterilen alanlar TV'de yenilenmez ve yeni
+    /// bağlanan TV'ye yinelenmez: TV onları 15 sn'lik ömrü dolunca kendisi kaldırır. Yenileme kendi zamanlayıcısıyla
+    /// döndüğü için uygulama donsa da sürüyor, son çeviri ("ARKANA BAK") TV'de sonsuza dek kalıyordu (#1271). En uzun tur
+    /// (okuma + 8 sn'lik çeviri sınırı, yavaşlatılmış aralık) bunun altında kalır. Windows ve Android aynı.
+    public static let regionAliveMs = 20_000
     /// `GET` ile verilen dosyalar: dublaj sesleri ve seslendirme modelinin ses örnekleri.
     private var files: [String: (data: Data, type: String)] = [:]
     private var speechPaths: [String] = []
@@ -1186,7 +1193,8 @@ public final class SubtitleServer: @unchecked Sendable {
     /// kopukken kaçan temizleme komutları), sonra her alanın son `region` olayı `keep` bayrağıyla (TV'de duran aynı alan
     /// yeniden çizilmez). Sunucunun kuyruğunda.
     func regionReplay(tv: Bool) -> String {
-        let live = tv ? liveRegions.sorted { $0.key < $1.key } : []
+        let fresh = Self.keepsRegions(aliveAt: regionAliveAt, now: Self.uptimeMs())
+        let live = tv && fresh ? liveRegions.sorted { $0.key < $1.key } : []
         var frames = Self.frame(event: "region-sync", json: ["ids": live.map(\.key)])
         for (_, json) in live {
             var kept = json
@@ -1202,12 +1210,23 @@ public final class SubtitleServer: @unchecked Sendable {
     /// Gösterilen ek alanları (telefon kartı hariç) `keep` bayrağıyla yeniden gönderir: TV'de sahnede kalan yazının
     /// çevirisi 15 sn'lik ömrü dolup kalkmasın. Sunucunun kuyruğunda.
     func refreshRegions() {
-        guard tvEnabled || !viewers.isEmpty else { return }
+        guard tvEnabled || !viewers.isEmpty, Self.keepsRegions(aliveAt: regionAliveAt, now: Self.uptimeMs()) else { return }
         for (id, json) in liveRegions.sorted(by: { $0.key < $1.key }) where id != "game-phone" {
             var kept = json
             kept["keep"] = true
             sendToAll(Data(Self.frame(event: "region", json: kept).utf8), includingTVs: tvEnabled)
         }
+    }
+
+    /// Ek alanların okuma turu döndü (`RegionSending.regionsAlive`).
+    public func regionsAlive() {
+        let now = Self.uptimeMs()
+        queue.async { self.regionAliveAt = now }
+    }
+
+    /// Gösterilen alanlar yenilenir mi: tur hiç bildirilmediyse (eski akış) ya da en son `regionAliveMs` içinde döndüyse.
+    static func keepsRegions(aliveAt: Int?, now: Int) -> Bool {
+        aliveAt.map { now - $0 <= regionAliveMs } ?? true
     }
 
     private func startPing() {

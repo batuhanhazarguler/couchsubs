@@ -21,6 +21,12 @@ public interface IRegionSender
                     IReadOnlyList<ScreenTranslation.Item>? blocks) =>
         SendRegion(id, text, box, lineHeight, icons);
     void ClearRegions();
+
+    /// <summary>
+    /// Okuma turu sürüyor (her tur başında ve her alandan sonra): gösterilen alanlar yalnız tur dönerken TV'de yenilenir
+    /// (<see cref="SubtitleServer.RegionAliveMs"/>). Turu bilmeyen gönderici yok sayar.
+    /// </summary>
+    void RegionsAlive() { }
 }
 
 /// <summary>Sürekli okunan ek alan (görev yazısı, telefon mesajı, bildirim).</summary>
@@ -350,6 +356,20 @@ public sealed partial class RegionWatcher
     private async Task PassAsync(Frame frame, IReadOnlyList<WatchedArea> all, int started, bool regularDue, bool confirmOnly, bool phoneDue)
     {
         if (Volatile.Read(ref session) != started) return;
+        // Tur dönüyor: TV'deki alanlar yenilenebilir (#1271). Tur takılırsa (donma) yenileme durur, TV alanları kendisi kaldırır.
+        server.RegionsAlive();
+        try
+        {
+            await PassAreasAsync(frame, all, started, regularDue, confirmOnly, phoneDue).ConfigureAwait(false);
+        }
+        finally
+        {
+            server.RegionsAlive();
+        }
+    }
+
+    private async Task PassAreasAsync(Frame frame, IReadOnlyList<WatchedArea> all, int started, bool regularDue, bool confirmOnly, bool phoneDue)
+    {
         // Ayarlar'da kapalı türün alanı (menü, hazır yardım/mesaj alanı, görev satırı) okunmaz; kutusu kalkar.
         var areas = Allows is { } allows ? [.. all.Where(area => ScreenTextKinds.Reads(area, allows))] : all;
         var map = states;
@@ -373,6 +393,7 @@ public sealed partial class RegionWatcher
             }
             else if ((regularDue || confirmOnly) && (current is null || current.Value.Areas.Contains(area)))
                 await VisitAsync(area, current?.Frame ?? frame, map, started, confirmOnly).ConfigureAwait(false);
+            server.RegionsAlive();
             if (Volatile.Read(ref session) != started) return;
         }
     }

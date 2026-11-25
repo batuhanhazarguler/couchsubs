@@ -49,6 +49,13 @@ public sealed class ScreenTextDetector
     private const int MaskChange = 24;
     /// <summary>Yazı benzeri karo: parlak nokta sayısı bu aralıkta ve koyu nokta en az bu kadar (144'te 6..72, 36).</summary>
     private const int BrightMin = 24, BrightMax = 288, DarkMin = 144;
+
+    /// <summary>
+    /// Kontur yazı karosu (576 noktada): açık harf noktaları ve koyu kontur noktaları ikisi de 24..288; geri kalanı orta ton
+    /// (açık harita, yarı saydam kartın haritaya binen yanı). Yalnız menüde (açık sahne yazı sanılmasın). Mac ile aynı.
+    /// </summary>
+    internal static bool Outlined(int bright, int dark) =>
+        bright is >= BrightMin and <= BrightMax && dark is >= BrightMin and <= BrightMax;
     private const double MaxShare = 0.35;
     private const double KeepOverlap = 0.30;
 
@@ -178,8 +185,13 @@ public sealed class ScreenTextDetector
                     // Menüde açık zeminde koyu yazı da (seçili menü satırı: açık degrade şerit, koyu "Map"; #1267). Seçili satır
                     // aday olmuyor, alan onu dışarıda bırakıyordu: "Map" seçim kayana dek çevrilmiyordu. Menü dışında açık sahne
                     // (gökyüzü, kar) yazı sanılmasın diye yalnız menüde (Mac ile aynı).
+                    // Menüde kontur yazı da (#1268): GTA 6 haritasının tuş listesi ("2D VIEW", "ADD MARKER") ve görev satırı
+                    // doğrudan açık, desenli haritanın üstünde beyaz harf + koyu kontur; yarı saydam kartın haritaya binen
+                    // yarısı da yalnız orta tonda. Tuş listesinden yalnız hazır alana düşen "RECENTER" çevriliyor, kartın
+                    // yazısı kartın ortasında kesiliyordu (Mac ile aynı).
                     var textLike = (bright is >= BrightMin and <= BrightMax && dark >= DarkMin)
-                        || (menu && dark is >= BrightMin and <= BrightMax && bright >= DarkMin);
+                        || (menu && dark is >= BrightMin and <= BrightMax && bright >= DarkMin)
+                        || (menu && Outlined(bright, dark));
                     anywhere[index] = textLike && now - tile.StableSince >= StableMs && !tile.IsRejected && !Excluded(column, row, excluded);
                     candidate[index] = anywhere[index] && (subtitle is not { } area || !Excluded(column, row, [area]));
                 }

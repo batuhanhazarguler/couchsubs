@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import CoreGraphics
+import ImageIO
 import XCTest
 @testable import CouchSubsCore
 
@@ -210,5 +211,32 @@ final class ScreenTextDetectorTests: XCTestCase {
         for text in ["Go to the Saloon.", "Follow Paulie to the car.", "Lamar has sent you a message.", "Press ✕ to open the map."] {
             XCTAssertFalse(ScreenTextNoise.isNoise(text), text)
         }
+    }
+
+    /// #1268, gerçek kare (testdata/frames/gta6-harita-kart.jpg): desenli açık haritanın üstündeki tuş listesi (RECENTER,
+    /// 2D VIEW, ADD MARKER, SET DESTINATION, EXIT; beyaz harf, koyu kontur) menüde bir alan olur. Eskiden karolarında ne
+    /// koyu zemin ne açık zemin yetiyordu; liste hiç okunmuyordu. Kart ve üst şerit eskisi gibi bulunur.
+    func testOutlinedMapHintsOnARealMapFrameAreFound() throws {
+        let url = ScreenFitTests.directory.appendingPathComponent("gta6-harita-kart.jpg")
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
+        let frame = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        let detector = ScreenTextDetector()
+        for now in stride(from: 0, through: 2000, by: 100) { detector.sample(frame, now: now, excluded: []) }
+        XCTAssertTrue(detector.inMenu)
+        func holds(_ left: Double, _ top: Double, _ right: Double, _ bottom: Double) -> Bool {
+            detector.areas.contains { a in
+                a.region.left <= left && a.region.right >= right && a.region.top <= top && a.region.bottom >= bottom
+            }
+        }
+        XCTAssertTrue(holds(0.84, 0.70, 0.98, 0.97), "tuş listesi: \(detector.areas.map(\.region))")
+        XCTAssertTrue(holds(0.54, 0.38, 0.81, 0.62), "harita kartı")
+        XCTAssertLessThanOrEqual(detector.areas.count, ScreenTextDetector.menuMaxAreas)
+    }
+
+    func testOutlinedTileRule() {
+        XCTAssertTrue(ScreenTextDetector.outlined(bright: 48, dark: 74))
+        XCTAssertFalse(ScreenTextDetector.outlined(bright: 8, dark: 71), "harfsiz kontur")
+        XCTAssertFalse(ScreenTextDetector.outlined(bright: 0, dark: 576), "düz koyu zemin")
+        XCTAssertFalse(ScreenTextDetector.outlined(bright: 400, dark: 100), "açık sahne")
     }
 }

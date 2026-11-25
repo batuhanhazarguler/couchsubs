@@ -234,6 +234,25 @@ final class TextPaintTests: XCTestCase {
         for text in ["Map", "VIEW", "Grand prize", "I told you"] { XCTAssertFalse(ScreenTranslation.keepsNames(text), text) }
     }
 
+    /// #1268, #1270: harfi/rakamı olmayan parça (yön tuşu simgesinin "-" okunuşu, renkli nokta "•") sözcük sayılmaz; simge
+    /// kutunun ucunda bulunur, kutu simgenin üstüne çizilmez.
+    func testLetterlessTokensAreNotWords() {
+        XCTAssertEqual(TextPainter.words("- SMASH 'N' GRABS"), 3)
+        XCTAssertEqual(TextPainter.words("• Objective"), 1)
+        XCTAssertEqual(TextPainter.words("+ CLUBS"), 1)
+        XCTAssertEqual(TextPainter.words("Buck's Jewelry & Pawn"), 3)
+        XCTAssertEqual(TextPainter.words("I Map"), 1)
+        XCTAssertEqual(TextPainter.words("2D VIEW"), 2)
+        XCTAssertEqual(TextPainter.words("$1,000 - $10,000"), 2)
+        // Simge parçası + üç sözcük: dört parça, soldaki simge bulunur.
+        let line = 20.0
+        let spans: [(Int, Int)] = [(0, 20), (28, 90), (98, 112), (120, 180)]
+        let found = TextPainter.iconSpans(l: 0, r: 180, line: line, words: TextPainter.words("- SMASH 'N' GRABS"),
+                                          align: .left) { x in spans.contains { x >= $0.0 && x < $0.1 } }
+        XCTAssertNotNil(found.left)
+        XCTAssertEqual(found.textLeft, 28)
+    }
+
     /// #1255: kare dışına taşan kutu (sol, sağ, üst, alt) boş alan taramasını sonsuz döngüye sokmaz; ölçüm biter ve
     /// kutular kareye kırpılır. Nokta okuması `GamePhonePixels.offset` gibi kenara sabitlenir; sayaç bütçeyi aşarsa
     /// (eski kodda sonsuz döngü) farklı renk döner ki deneme takılmasın, sonra bütçe aşımı hata sayılır.

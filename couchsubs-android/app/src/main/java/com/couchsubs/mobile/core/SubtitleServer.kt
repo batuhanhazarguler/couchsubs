@@ -152,6 +152,18 @@ class SubtitleServer(
         const val GAME_PHONE_ID = "game-phone"
 
         /**
+         * Okuma turu bu kadar süredir dönmüyorsa (uygulama donmuş, tur takılmış) gösterilen alanlar TV'de yenilenmez ve
+         * yeni bağlanan TV'ye yinelenmez: TV onları 15 sn'lik ömrü dolunca kendisi kaldırır. Yenileme kendi zamanlayıcısıyla
+         * döndüğü için uygulama donsa da sürüyor, son çeviri TV'de sonsuza dek kalıyordu (#1271; Mac/iPhone, Windows aynı).
+         */
+        const val REGION_ALIVE_MS = 20_000L
+
+        /** Gösterilen alanlar yenilenir mi: tur hiç bildirilmediyse (eski akış) ya da en son [REGION_ALIVE_MS] içinde döndüyse. */
+        fun keepsRegions(aliveAt: Long, now: Long): Boolean = aliveAt < 0 || now - aliveAt <= REGION_ALIVE_MS
+
+        private fun uptimeMs(): Long = System.nanoTime() / 1_000_000
+
+        /**
          * Eski TV uygulamaları (0.9.7'den önce) `clear` gelir gelmez satırı kaldırır. Oyundaki satır ekrandan ~1 sn'de
          * kalkınca çevirisi TV'de yalnız bir an görünüyordu: "TV'de test et" yazısı (8 sn, `clear` yok) görünüyor, oyun
          * altyazıları hiç görünmüyordu. Yeni TV uygulaması satırı kendisi `min(5000, 2000 + 60 × harf)` ms tutar
@@ -408,6 +420,16 @@ class SubtitleServer(
 
     /** [liveRegions]'ın yenilenme aralığı; [start]'tan önce ayarlanır (testler kısaltır). */
     internal var regionRefreshMs = REGION_REFRESH_MS
+
+    /** Ek alanların okuma turunun en son döndüğü an ([regionsAlive]; -1: hiç bildirilmedi). */
+    @Volatile private var regionAliveAt = -1L
+
+    /** Ek alanların okuma turu döndü ([RegionSender.regionsAlive]). */
+    override fun regionsAlive() {
+        regionAliveAt = uptimeMs()
+    }
+
+    private fun regionsFresh(): Boolean = keepsRegions(regionAliveAt, uptimeMs())
 
     /** "Ekran yazılarını altyazıdan ayır" (bkz. [styleFrame]); değişince [sendStyle] yeniden çağrılmalı. */
     @Volatile var setApart: Boolean = true
@@ -933,7 +955,7 @@ class SubtitleServer(
      * yeniden çizilmez). [lock] tutulurken çağrılır.
      */
     private fun regionReplay(tv: Boolean): String {
-        val live = if (tv) liveRegions.entries.sortedBy { it.key } else emptyList()
+        val live = if (tv && regionsFresh()) liveRegions.entries.sortedBy { it.key } else emptyList()
         val out = StringBuilder(frame("region-sync", mapOf("ids" to live.map { it.key })))
         for ((_, json) in live) out.append(keptFrame(json))
         return out.toString()
@@ -944,6 +966,7 @@ class SubtitleServer(
      * 15 sn'lik ömrü dolup kalkmasın. Telefon kartı kendi okumasıyla sık güncellenir.
      */
     internal fun refreshRegions() {
+        if (!regionsFresh()) return
         synchronized(lock) {
             for ((id, json) in liveRegions.entries.sortedBy { it.key }) {
                 if (id != GAME_PHONE_ID) broadcast(keptFrame(json), subtitle = true)

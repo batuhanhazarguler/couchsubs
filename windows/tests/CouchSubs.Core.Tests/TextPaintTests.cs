@@ -230,6 +230,27 @@ public class TextPaintTests
     }
 
     /// <summary>
+    /// #1268, #1270: harfi/rakamı olmayan parça (yön tuşu simgesinin "-" okunuşu, renkli nokta "•") sözcük sayılmaz; simge
+    /// kutunun ucunda bulunur, kutu simgenin üstüne çizilmez (Mac ile aynı).
+    /// </summary>
+    [Fact]
+    public void HarfsizParcaSozcukSayilmaz()
+    {
+        Assert.Equal(3, TextPainter.WordCount("- SMASH 'N' GRABS"));
+        Assert.Equal(1, TextPainter.WordCount("• Objective"));
+        Assert.Equal(1, TextPainter.WordCount("+ CLUBS"));
+        Assert.Equal(3, TextPainter.WordCount("Buck's Jewelry & Pawn"));
+        Assert.Equal(1, TextPainter.WordCount("I Map"));
+        Assert.Equal(2, TextPainter.WordCount("2D VIEW"));
+        Assert.Equal(2, TextPainter.WordCount("$1,000 - $10,000"));
+        (int L, int R)[] spans = [(0, 20), (28, 90), (98, 112), (120, 180)];
+        var found = TextPainter.IconSpans(0, 180, 20.0, TextPainter.WordCount("- SMASH 'N' GRABS"), "left",
+            x => spans.Any(s => x >= s.L && x < s.R));
+        Assert.NotNull(found.Left);
+        Assert.Equal(28, found.TextLeft);
+    }
+
+    /// <summary>
     /// #1255: kare dışına taşan kutu (sol, sağ, üst, alt) boş alan taramasını sonsuz döngüye sokmaz; ölçüm biter ve kutular
     /// kareye kırpılır. Nokta okuması kenara sabitlenir; sayaç bütçeyi aşarsa (eski kodda sonsuz döngü) farklı renk döner ki
     /// deneme takılmasın, sonra bütçe aşımı hata sayılır.

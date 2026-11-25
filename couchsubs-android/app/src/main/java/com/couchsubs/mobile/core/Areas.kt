@@ -275,6 +275,12 @@ interface RegionSender {
     ) = sendRegion(id, text, box, lineHeight, icons)
 
     fun clearRegions()
+
+    /**
+     * Okuma turu sürüyor (her tur başında ve her alandan sonra): gösterilen alanlar yalnız tur dönerken TV'de yenilenir
+     * ([SubtitleServer.REGION_ALIVE_MS]). Turu bilmeyen gönderici yok sayar.
+     */
+    fun regionsAlive() {}
 }
 
 /**
@@ -991,9 +997,16 @@ class RegionWatcher(
                 states.remove(id)
             }
         }
-        for ((area, crop) in crops) {
-            if (started != session) return
-            visit(area, crop, started)
+        // Tur dönüyor: TV'deki alanlar yenilenebilir (#1271). Tur takılırsa (donma) yenileme durur, TV alanları kendisi kaldırır.
+        sender.regionsAlive()
+        try {
+            for ((area, crop) in crops) {
+                if (started != session) return
+                visit(area, crop, started)
+                sender.regionsAlive()
+            }
+        } finally {
+            sender.regionsAlive()
         }
     }
 

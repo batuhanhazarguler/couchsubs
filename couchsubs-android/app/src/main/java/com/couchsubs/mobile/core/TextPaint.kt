@@ -102,10 +102,15 @@ object TextPainter {
     /** Simge sanılıp yazı olarak okunan karakterler (GTA 6 menü simgesi "I", "II"; tuş simgeleri). */
     private const val ICON_GLYPHS = "I|l![]()©®@○◯●□■△▲✕✖×◎⊗⊙"
 
-    /** Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1). */
+    /**
+     * Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar ve harfi/rakamı olmayan parçalar sayılmaz
+     * ("I Map" → 1, "SELECT ⊗" → 1, "- SMASH 'N' GRABS" → 3, "• Objective" → 1). Menü simgesi (yön tuşu, renkli nokta)
+     * "-", "•", "+" diye okununca sözcük sayılıyor, simge bulunmuyordu: kutu simgenin üstüne çiziliyordu (#1268, #1270;
+     * Mac/iPhone, Windows ile aynı).
+     */
     fun words(text: String): Int =
         IconText.plain(text).split(Regex("\\s+")).filter { it.isNotEmpty() }
-            .count { token -> !(token.length <= 2 && token.all { it in ICON_GLYPHS }) }
+            .count { token -> !(token.length <= 2 && token.all { it in ICON_GLYPHS }) && token.any { it.isLetterOrDigit() } }
 
     /** Simge parçası: [l, r) piksel sütunları. */
     data class Span(val l: Int, val r: Int)

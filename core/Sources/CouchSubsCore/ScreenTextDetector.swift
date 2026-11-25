@@ -151,8 +151,13 @@ public final class ScreenTextDetector: @unchecked Sendable {
                     // Menüde açık zeminde koyu yazı da (seçili menü satırı: açık degrade şerit, koyu "Map"; #1267). Seçili
                     // satır aday olmuyor, alan onu dışarıda bırakıyordu: "Map" seçim kayana dek çevrilmiyordu. Menü dışında
                     // açık sahne (gökyüzü, kar) yazı sanılmasın diye yalnız menüde.
+                    // Menüde kontur yazı da (#1268): GTA 6 haritasının tuş listesi ("2D VIEW", "ADD MARKER") ve görev satırı
+                    // doğrudan açık, desenli haritanın üstünde beyaz harf + koyu kontur; yarı saydam kartın haritaya binen
+                    // yarısı da yalnız orta tonda. Karoda ne yeterince koyu zemin ne açık zemin var; tuş listesinden yalnız
+                    // hazır alana düşen "RECENTER" çevriliyor, kartın yazısı kartın ortasında kesiliyordu (kesik okuma).
                     let textLike = ((24...288).contains(bright) && dark >= 144)
                         || (menu && (24...288).contains(dark) && bright >= 144)
+                        || (menu && Self.outlined(bright: bright, dark: dark))
                     candidate[index] = textLike && now - tile.stableSince >= Self.stableMs && !tile.isRejected
                         // Menü durumunda altyazı alanı dışlanmaz (menü satırları orada da olabilir).
                         && (menu || !Self.excluded(column, row, excluded))
@@ -260,6 +265,13 @@ public final class ScreenTextDetector: @unchecked Sendable {
             }
         }
         return result
+    }
+
+    /// Kontur yazı karosu (576 noktada): açık harf noktaları ve koyu kontur noktaları ikisi de `outlineMin`..288; geri
+    /// kalanı orta ton (açık harita, yarı saydam kartın haritaya binen yanı). Yalnız menüde (açık sahne yazı sanılmasın).
+    static let outlineMin = 24
+    static func outlined(bright: Int, dark: Int) -> Bool {
+        (outlineMin...288).contains(bright) && (outlineMin...288).contains(dark)
     }
 
     private static func excluded(_ column: Int, _ row: Int, _ regions: [CropRegion]) -> Bool {

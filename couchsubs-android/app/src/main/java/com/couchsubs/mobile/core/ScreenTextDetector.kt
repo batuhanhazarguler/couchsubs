@@ -24,6 +24,12 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         const val MIN_BRIGHT = 24
         const val MAX_BRIGHT = 288
         const val MIN_DARK = 144
+
+        /**
+         * Kontur yazı karosu (576 noktada): açık harf noktaları ve koyu kontur noktaları ikisi de 24..288; geri kalanı orta
+         * ton (açık harita, yarı saydam kartın haritaya binen yanı). Yalnız menüde (açık sahne yazı sanılmasın).
+         */
+        fun outlined(bright: Int, dark: Int): Boolean = bright in MIN_BRIGHT..MAX_BRIGHT && dark in MIN_BRIGHT..MAX_BRIGHT
         /** Karo değişti sayılan en küçük fark (576 noktanın; 12×12'deki 6'nın dört katı). */
         const val HAMMING = 24
         const val STABLE_MS = 300L
@@ -208,7 +214,10 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
             // Koyu zeminde açık yazı ya da tersi: açık zeminde koyu yazı (menüde seçili satır).
             val dark = sample.dark[index]
             val normal = bright in MIN_BRIGHT..MAX_BRIGHT && dark >= MIN_DARK
-            val textLike = normal || (dark in MIN_BRIGHT..MAX_BRIGHT && bright >= MIN_DARK)
+            // Menüde kontur yazı da (#1268): GTA 6 haritasının tuş listesi ("2D VIEW", "ADD MARKER") ve görev satırı doğrudan
+            // açık, desenli haritanın üstünde beyaz harf + koyu kontur; yarı saydam kartın haritaya binen yarısı da yalnız orta
+            // tonda (Mac/iPhone, Windows ile aynı).
+            val textLike = normal || (dark in MIN_BRIGHT..MAX_BRIGHT && bright >= MIN_DARK) || (menu && outlined(bright, dark))
             inverse[index] = !normal
             if (!textLike || now - tile.stableSince < STABLE_MS || tile.rejected != null) continue
             val x = (index % COLUMNS + 0.5) / COLUMNS

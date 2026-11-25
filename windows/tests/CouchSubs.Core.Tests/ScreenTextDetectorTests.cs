@@ -202,4 +202,17 @@ public class ScreenTextDetectorTests(ITestOutputHelper output)
                                                      (new ScreenTextDetector.Cells(8, 1, 8, 1), [32 + 8])]);
         Assert.Equal(2, narrow.Count);
     }
+
+    /// <summary>
+    /// #1268: menüde kontur yazı karosu (açık harf + koyu kontur, geri kalanı orta ton; GTA 6 haritasının tuş listesi) aday
+    /// olur. Gerçek kare denemesi Mac'te (gta6-harita-kart.jpg) ve Android'de.
+    /// </summary>
+    [Fact]
+    public void KonturYaziKarosu()
+    {
+        Assert.True(ScreenTextDetector.Outlined(48, 74));
+        Assert.False(ScreenTextDetector.Outlined(8, 71));
+        Assert.False(ScreenTextDetector.Outlined(0, 576));
+        Assert.False(ScreenTextDetector.Outlined(400, 100));
+    }
 }

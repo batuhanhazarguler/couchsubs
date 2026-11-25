@@ -90,10 +90,14 @@ public enum TextPainter {
     static let iconGlyphs: Set<Character> = ["I", "|", "l", "!", "[", "]", "(", ")", "©", "®", "@", "○", "◯", "●", "□",
                                              "■", "△", "▲", "✕", "✖", "×", "◎", "⊗", "⊙"]
 
-    /// Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar sayılmaz ("I Map" → 1, "SELECT ⊗" → 1).
+    /// Okunan yazının sözcük sayısı: simge sanılan bir iki karakterlik parçalar ve harfi/rakamı olmayan parçalar sayılmaz
+    /// ("I Map" → 1, "SELECT ⊗" → 1, "- SMASH 'N' GRABS" → 3, "• Objective" → 1). Menü simgesi (yön tuşu, renkli nokta)
+    /// "-", "•", "+" diye okununca sözcük sayılıyor, parça sayısı sözcükten fazla çıkmıyor, simge bulunmuyordu: kutu
+    /// simgenin üstüne çiziliyordu (#1268, #1270).
     public static func words(_ text: String) -> Int {
         IconText.plain(text).split(whereSeparator: \.isWhitespace).filter { token in
             !(token.count <= 2 && token.allSatisfy { iconGlyphs.contains($0) })
+                && token.contains { $0.isLetter || $0.isNumber }
         }.count
     }
 

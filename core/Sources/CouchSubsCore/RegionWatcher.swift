@@ -19,9 +19,14 @@ public protocol RegionSending: AnyObject {
     func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?,
                     blocks: [ScreenTranslation.Item]?, anchor: AnchorPose?)
     func clearRegions()
+    /// Okuma turu sürüyor (her tur başında ve her alandan sonra): gösterilen alanlar yalnız tur dönerken TV'de yenilenir
+    /// (`SubtitleServer.regionAliveMs`). Turu bilmeyen gönderici yok sayar.
+    func regionsAlive()
 }
 
 extension RegionSending {
+    public func regionsAlive() {}
+
     public func sendRegion(id: String, text: String, box: TextBox?, lineHeight: Double?, icons: [IconPlacement]?) {
         sendRegion(id: id, text: text, box: box, lineHeight: lineHeight)
     }
@@ -290,6 +295,9 @@ public final class RegionWatcher {
     public func pass(_ frame: CGImage, areas all: [ExtraArea]) async {
         let started = session
         passes += 1
+        // Tur dönüyor: TV'deki alanlar yenilenebilir (#1271). Tur takılırsa (donma) yenileme durur, TV alanları kendisi kaldırır.
+        server.regionsAlive()
+        defer { server.regionsAlive() }
         // Ayarlar'da kapalı türün alanı (menü, hazır yardım/mesaj alanı, görev satırı) okunmaz; kutusu kalkar.
         let areas = all.filter { area in ScreenTextKind.reads(area, allows: allows) }
         let ids = Set(areas.map(\.id))
@@ -300,6 +308,7 @@ public final class RegionWatcher {
         for area in areas {
             guard session == started else { return }
             await visit(area, frame: frame, session: started)
+            server.regionsAlive()
         }
     }
 

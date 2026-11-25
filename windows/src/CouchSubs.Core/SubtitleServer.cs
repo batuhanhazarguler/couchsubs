@@ -275,6 +275,23 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     private Timer? regionTimer;
     /// <summary>Gösterilen ek alanların TV'de yenilenme aralığı (TV'deki 15 sn'lik ömrün üçte biri).</summary>
     internal TimeSpan RegionRefreshInterval { get; set; } = TimeSpan.FromSeconds(5);
+    /// <summary>Ek alanların okuma turunun en son döndüğü an (<see cref="RegionsAlive"/>; Environment.TickCount64).</summary>
+    private long regionAliveAt = -1;
+
+    /// <summary>
+    /// Okuma turu bu kadar süredir dönmüyorsa (uygulama donmuş, tur takılmış) gösterilen alanlar TV'de yenilenmez ve yeni
+    /// bağlanan TV'ye yinelenmez: TV onları 15 sn'lik ömrü dolunca kendisi kaldırır. Yenileme kendi zamanlayıcısıyla döndüğü
+    /// için uygulama donsa da sürüyor, son çeviri TV'de sonsuza dek kalıyordu (#1271). Mac ve Android ile aynı.
+    /// </summary>
+    public const int RegionAliveMs = 20_000;
+
+    /// <summary>Ek alanların okuma turu döndü (<see cref="IRegionSender.RegionsAlive"/>).</summary>
+    public void RegionsAlive() => Interlocked.Exchange(ref regionAliveAt, Environment.TickCount64);
+
+    /// <summary>Gösterilen alanlar yenilenir mi: tur hiç bildirilmediyse (eski akış) ya da en son <see cref="RegionAliveMs"/> içinde döndüyse.</summary>
+    internal static bool KeepsRegions(long aliveAt, long now) => aliveAt < 0 || now - aliveAt <= RegionAliveMs;
+
+    private bool RegionsFresh() => KeepsRegions(Interlocked.Read(ref regionAliveAt), Environment.TickCount64);
     /// <summary>GET ile verilen dosyalar: dublaj sesleri ve seslendirme modelinin ses örnekleri.</summary>
     private readonly Dictionary<string, (byte[] Data, string Type)> files = new(StringComparer.Ordinal);
     private readonly Queue<string> speechPaths = new();
@@ -1060,7 +1077,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// </summary>
     private string RegionReplay(bool tv)
     {
-        var live = tv ? liveRegions.ToList() : [];
+        var live = tv && RegionsFresh() ? liveRegions.ToList() : [];
         var frames = new StringBuilder(Frame("region-sync", new SortedDictionary<string, object> { ["ids"] = live.Select(r => r.Key).ToList() }));
         foreach (var (_, data) in live) frames.Append(Frame("region", Kept(data)));
         return frames.ToString();
@@ -1075,6 +1092,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     /// </summary>
     internal void RefreshRegions()
     {
+        if (!RegionsFresh()) return;
         List<SortedDictionary<string, object>> live;
         lock (gate) live = [.. liveRegions.Where(r => r.Key != "game-phone").Select(r => Kept(r.Value))];
         foreach (var data in live) Broadcast(Frame("region", data), subtitle: true);
