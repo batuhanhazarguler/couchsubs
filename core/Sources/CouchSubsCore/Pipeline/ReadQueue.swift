@@ -326,9 +326,14 @@ public final class ReadQueue: @unchecked Sendable {
     /// isabetli düzeyde okuyorsa (Mac: ayrı süreç) yedek kalıcı okuyucudur; altyazı tam kalitede gelir, uyarı gösterilmez.
     /// Uygulamayı yeniden açmak gerekmez: yedek takılırsa öldürülüp yenisi açılır (#1307).
     public var showsRescueNotice: Bool {
-        let (rescuing, parked, rescuer) = lock.withLock { (isRescuingLocked, parked, _rescuer) }
+        lock.lock()
+        let rescuing = isRescuingLocked
+        let isParked = parked
+        let rescuer = _rescuer
+        lock.unlock()
         guard rescuing else { return false }
-        return !(parked && rescuer?.isFullQuality == true)
+        guard isParked, let rescuer else { return true }
+        return !rescuer.isFullQuality
     }
 
     /// Takılıyken (ya da yeniden kurulan okuyucu sınanırken) okumalar yedekten mi geliyor.
