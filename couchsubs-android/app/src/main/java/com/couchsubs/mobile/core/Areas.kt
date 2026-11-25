@@ -767,6 +767,126 @@ class RegionWatcher(
             }
         }
 
+        /**
+         * Liste kaydı (Sinan Bey beta.100 3381, 3383): gösterilen bir kutunun yazısı yeni okumada satır yüksekliğinin en az
+         * yarısı kadar başka yerde, ya da kutunun yerinde (satırının en az yarısı örtüşen) başka bir yazı var. Okuma
+         * oynamaları (benzer okuma, eksik okuma) aynı yazı sayılır. Mac/iPhone ve Windows aynı kuralı uygular.
+         */
+        internal fun listMoved(rendered: List<ScreenTranslation.Item>, current: List<Pair<TextBox, String>>): Boolean {
+            fun same(a: String, b: String): Boolean {
+                val x = IconText.plain(a).replace('\n', ' ')
+                val y = IconText.plain(b).replace('\n', ' ')
+                return matches(textKey(listOf(x)), textKey(listOf(y))) || isPartOf(x, y) || isPartOf(y, x)
+            }
+            fun rows(a: TextBox, b: TextBox) =
+                maxOf(0.0, minOf(a.bottom, b.bottom) - maxOf(a.top, b.top)) / maxOf(1e-9, minOf(a.bottom - a.top, b.bottom - b.top))
+            return rendered.any { item ->
+                val source = item.source
+                if (source.none { it.isLetter() }) return@any false
+                val height = item.box.bottom - item.box.top
+                val found = current.filter {
+                    same(it.second, source) && minOf(it.first.right, item.box.right) > maxOf(it.first.left, item.box.left)
+                }
+                val nearest = found.minByOrNull { kotlin.math.abs(it.first.top - item.box.top) }
+                if (nearest != null) {
+                    val line = minOf(height, nearest.first.bottom - nearest.first.top) / maxOf(1, item.rows)
+                    return@any kotlin.math.abs(nearest.first.top - item.box.top) >= 0.5 * line
+                }
+                current.any { (box, text) ->
+                    rows(box, item.box) >= 0.5 && minOf(box.right, item.box.right) > maxOf(box.left, item.box.left) &&
+                        !same(text, source)
+                }
+            }
+        }
+
+        /** Adayın blokları: karedeki yeri ve yazısı (bloğun parçaları birleşik). */
+        internal fun blockTexts(candidate: Candidate): List<Pair<TextBox, String>> =
+            candidate.blocks.orEmpty().map { block ->
+                val end = minOf(candidate.paragraphs.size, block.start + block.count)
+                block.box to (if (block.start < end) candidate.paragraphs.subList(block.start, end).joinToString(" ") else "")
+            }
+
+        /** [cutAtAreaEdge] payı (karo genişliği cinsinden). */
+        const val AREA_EDGE_TILES = 0.25
+
+        /**
+         * Menüdeki otomatik alanın sol ya da sağ kenarına (karenin kenarı değilse) [AREA_EDGE_TILES] karodan yakın değen
+         * satır alanın dışına taşıyor: uzun satırın bir parçasıdır. Sinan Bey beta.100 (3381-3383): yarım okunan satırın
+         * kalan parçası ayrı blok sanılıp yanına küçük kutuyla çevriliyordu ("Delik", "bunun bedelini ödemek!"). Kesik
+         * satır çevrilmez; bütün okunduğu alanda çevrilir (Mac/iPhone, Windows ile aynı).
+         */
+        internal fun cutAtAreaEdge(line: TextLine, region: CropRegion): Boolean {
+            val box = line.box ?: return false
+            val width = region.right - region.left
+            if (width <= 0) return false
+            val margin = AREA_EDGE_TILES / ScreenTextDetector.COLUMNS / width
+            return (region.left > 0.001 && box.left <= margin) || (region.right < 0.999 && box.right >= 1 - margin)
+        }
+
+        /** [joinedPieces]: parçalar arası boşluk (satır yüksekliğine oranla); satır içi simge ve iki yanındaki boşluklar sığar. */
+        const val PIECE_GAP = 2.5
+
+        /**
+         * Aynı satırda yan yana okunan parçalar (dikeyde küçüğün %60'ı örtüşür, yazı boyları 1,3 kattan az farklı, aradaki
+         * boşluk satır yüksekliğinin en çok [PIECE_GAP] katı) soldan sağa tek satır olur; en az birinde küçük harf olmalı
+         * (BÜYÜK HARFLİ sekmeler ve tuş etiketleri ayrı kalır). Yazı tanıma uzun satırı satır içi simgeden ya da renkli konuşan
+         * adından bölüyor, parçalar ayrı blok olup ayrı ayrı çevriliyordu (Sinan Bey beta.100 3380). [aspect]: alanın
+         * genişlik/yükseklik oranı (Mac/iPhone, Windows ile aynı).
+         */
+        internal fun joinedPieces(lines: List<TextLine>, aspect: Double): List<TextLine> {
+            if (lines.size < 2 || lines.any { it.box == null }) return lines
+            val rows = mutableListOf<TextLine>()
+            for (line in lines.sortedBy { it.box!!.left }) {
+                val box = line.box!!
+                val index = rows.indexOfFirst { pieceOf(box, line.text, it, aspect) }
+                if (index < 0) {
+                    rows.add(line)
+                    continue
+                }
+                val row = rows[index]
+                val words = if (row.words != null && line.words != null) row.words + line.words else null
+                val icons = (row.icons.orEmpty() + line.icons.orEmpty()).ifEmpty { null }
+                val confidence = listOfNotNull(row.confidence, line.confidence).minOrNull()
+                rows[index] = row.copy(text = row.text + " " + line.text, box = row.box!!.union(box), words = words, icons = icons,
+                    confidence = confidence)
+            }
+            return if (rows.size == lines.size) lines else rows.sortedWith(compareBy({ it.box!!.top }, { it.box!!.left }))
+        }
+
+        private fun pieceOf(next: TextBox, text: String, row: TextLine, aspect: Double): Boolean {
+            val box = row.box!!
+            val a = next.bottom - next.top
+            val b = box.bottom - box.top
+            if (minOf(a, b) <= 0 || maxOf(a, b) > 1.3 * minOf(a, b)) return false
+            if (minOf(next.bottom, box.bottom) - maxOf(next.top, box.top) < 0.6 * minOf(a, b)) return false
+            if (text.none { it.isLowerCase() } && row.text.none { it.isLowerCase() }) return false
+            val gap = (next.left - box.right) * aspect
+            return gap >= -0.5 * maxOf(a, b) && gap <= PIECE_GAP * maxOf(a, b)
+        }
+
+        /**
+         * Etiketin başında çevrilmeyecek kısım (ardındaki boşluk dahil): konuşan adı ("Staff Member: ", ardı cümleyse) ya
+         * da BÜYÜK HARFLİ yazıda yalnız özel adlardan oluşan baş ("JASON & LUCIA " + "MAP"; [ScreenTranslation.keepsNames]).
+         * Ardında harfli yazı kalmalı. Ayar satırı ("Subtitles: On") bütün çevrilir (Mac/iPhone, Windows ile aynı).
+         */
+        internal fun keptHead(text: String): String? {
+            SpeakerPrefix.split(text)?.let { speaker ->
+                val sentence = SubtitleStabilizer.endsSentence(speaker.body) ||
+                    speaker.body.split(' ', '\t').filter { it.isNotEmpty() }.size >= 3
+                val at = text.lastIndexOf(speaker.body)
+                if (sentence && at > 0 && text.substring(at + speaker.body.length).isBlank()) return text.substring(0, at)
+            }
+            if (!text.contains(" & ") || !TextStyleSampler.isUpper(text)) return null
+            val words = text.split(" ")
+            if (words.size < 4) return null
+            for (end in words.size - 1 downTo 3) {
+                val head = words.subList(0, end).joinToString(" ")
+                val tail = words.subList(end, words.size).joinToString(" ")
+                if (tail.any { it.isLetter() } && ScreenTranslation.keepsNames(head)) return "$head "
+            }
+            return null
+        }
+
         /** Gösterilen ya da okunan blokların yeri ve zemini ([selectionMoved] için). */
         private fun grounds(blocks: List<Block>?, styles: List<TextStyleSampler.Style?>?): List<Pair<TextBox, String>> =
             blocks.orEmpty().mapIndexedNotNull { i, block -> styles?.getOrNull(i)?.let { block.box to it.surface.background } }
@@ -1129,7 +1249,13 @@ class RegionWatcher(
         val geometry = (area.auto || GameAreaPresets.isPreset(area.id)) && !area.menu && area.id != MissionLine.AREA_ID &&
             !ScreenNotices.isNotice(area.id)
         val own = subtitleEcho?.filter(reading, area.region.box, geometry) ?: reading
-        val text = if (area.auto) AutoText.clean(own, area.menu) else own
+        // Otomatik alanda aynı satırın yan yana okunan parçaları tek satırdır; menüde alanın kenarında kesik satır çevrilmez
+        // ([joinedPieces], [cutAtAreaEdge]; Sinan Bey beta.100 3380-3383).
+        val pieced = if (!area.auto) own else {
+            val aspect = (area.region.right - area.region.left) * 16 / maxOf(1e-6, (area.region.bottom - area.region.top) * 9)
+            Reading(joinedPieces(own.lines, aspect).filter { !area.menu || !cutAtAreaEdge(it, area.region) })
+        }
+        val text = if (area.auto) AutoText.clean(pieced, area.menu) else own
         val preset = GameAreaPresets.isPreset(area.id)
         var candidate = candidate(text, area.region, crop.frame, keepPrompts = area.menu, auto = area.auto, styled = preset,
             color = crop.color)
@@ -1183,8 +1309,12 @@ class RegionWatcher(
             // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o
             // satırın eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen kalkar;
             // yeni okuma her zamanki gibi çizilir (Mac ve Windows ile aynı).
+            // Liste kaydı (Sinan Bey beta.100 3381, 3383): menüde liste kayınca eski kutular eski yerinde başka satırın
+            // üstünde kalıyordu; yazının bir kısmı hâlâ göründüğü için kararsız okuma da kaldırmıyordu. Gösterilen bir satır
+            // başka yerde okunuyor ya da yerinde başka yazı var: eski kutular hemen kalkar.
             if (!state.renderedText.isNullOrEmpty() &&
-                selectionMoved(grounds(state.renderedLayout, state.renderedStyles), grounds(candidate.blocks, candidate.styles))
+                (selectionMoved(grounds(state.renderedLayout, state.renderedStyles), grounds(candidate.blocks, candidate.styles)) ||
+                    (area.menu && listMoved(state.renderedBlocks.orEmpty().map { it.second }, blockTexts(candidate))))
             ) {
                 state.shown = ""
                 state.shownText = ""
@@ -1533,9 +1663,16 @@ class RegionWatcher(
     private fun translateAuto(paragraphs: List<String>, engine: TextTranslator, started: Int): List<String> {
         val prepared = paragraphs.map { IconText.protect(it) }
         class Piece(val text: String, val names: List<String>, var result: String? = null)
+        // Baştaki konuşan adı ("Staff Member: 'Sup?") ve özel ad ("JASON & LUCIA MAP", sekmeler tek parça okununca)
+        // çevrilmez, olduğu gibi kalır; yalnız ardındaki yazı çevrilir ([keptHead]; Sinan Bey beta.100 3380).
+        val heads = mutableMapOf<Piece, String>()
         val pieces = prepared.map { protected ->
             protected.text.split(" / ").map { part ->
-                Piece(part, protected.names.filter { part.contains(it) }.sortedBy { part.indexOf(it) })
+                val head = keptHead(part)
+                val rest = if (head != null) part.substring(head.length) else part
+                Piece(rest, protected.names.filter { rest.contains(it) }.sortedBy { rest.indexOf(it) }).also { piece ->
+                    if (head != null) heads[piece] = head
+                }
             }
         }
         val missing = mutableListOf<Piece>()
@@ -1569,7 +1706,7 @@ class RegionWatcher(
             }
             missing.forEach { it.result = found[it.text] ?: it.text }
         }
-        return pieces.map { parts -> parts.joinToString(" / ") { it.result!! } }
+        return pieces.map { parts -> parts.joinToString(" / ") { (heads[it] ?: "") + it.result!! } }
     }
 
     /** Çeviri durdu: süren tur bırakılır, TV'deki ek alan kutuları kalkar. */

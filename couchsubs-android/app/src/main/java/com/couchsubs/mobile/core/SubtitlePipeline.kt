@@ -161,6 +161,13 @@ class SubtitlePipeline(
      * ([ScreenTextDetector.noteDialogue]): konuşma sürerken menü sayılmaz (#1240). Mac/iPhone ve Windows aynı.
      */
     @Volatile var onDialogue: (() -> Unit)? = null
+
+    /**
+     * Altyazı alanında menünün geçmiş listesi okundu ([Reading.isHistoryList]; her okumada). Uygulama ekran yazısı
+     * dedektörüne ([ScreenTextDetector.noteList]) ve menü göndericisine ([MenuHeldSender.forget]) bildirir: liste ekranda
+     * durdukça menü sürer, listeden bekletilen satır menü kapanınca altyazı olarak gönderilmez. Mac/iPhone ve Windows aynı.
+     */
+    @Volatile var onList: (() -> Unit)? = null
     /**
      * Doğruysa bu karede okunan blok [echo]'ya kaydedilmez: ekranda menü var, altyazı bekletiliyor; okunan menü satırları
      * altyazı sayılmaz (yoksa menünün kendi çevirisi metin eşleşmesiyle atılırdı). Windows: EchoPaused.
@@ -349,6 +356,11 @@ class SubtitlePipeline(
                 "yok sayıldı (görüntü kaynağı CouchSubs'ın OBS katmanını da içeriyor; OBS'te Kaynak projektörünü seçin)")
         }
         val rows = seen.withoutButtonPrompts().withoutOcrNoise().joiningRows()
+        // Menünün geçmiş listesi ([Reading.isHistoryList]; sabit satır süzgecinden önce: liste bir satır kayınca yalnız yeni
+        // satır "sabit değil" kalıp altyazı seçiliyordu): hiçbir satırı altyazı olmaz, konuşan adlı satırı menü durumunu
+        // bitirmez, bekçi de listeden satır çevirmez.
+        val listed = rows.isHistoryList
+        if (listed) onList?.invoke()
         var missionChanged = false
         var missionRegion: CropRegion? = null
         var noticesChanged = false
@@ -373,7 +385,8 @@ class SubtitlePipeline(
             // Açık zemindeki koyu yazı (duvardaki kâğıt ilan) altyazı değildir ([InkTone], GitHub #1124); oyunun altyazısı
             // koyu yazıysa ([DarkInkStyle]) renge bakılmaz.
             val darkBlocks = mutableListOf<Reading>()
-            filtered.subtitleBlock(area, subtitleBand, notices = { block ->
+            if (listed) logSceneText(rows.text, Reading.LIST_REASON)
+            (if (listed) Reading.Empty else filtered).subtitleBlock(area, subtitleBand, notices = { block ->
                 edge.add(Reading(block.lines.map { it.copy(box = it.box?.placedIn(area)) }))
             }, age = { stickyRows.unchangedMs(it, readAt) }, stale = { block -> staleTexts += block.lines.map { it.text } },
                 darkInk = if (darkInkStyle.isGameStyle) null else darkInk) { block, reason ->
@@ -495,6 +508,11 @@ class SubtitlePipeline(
             result
         }
         val forced = synchronized(lock) {
+            // Menü listesi okunurken bekçi saymaz: listenin bir satırı 10 sn sonra süzgeçleri atlayıp altyazı olmasın.
+            if (listed) {
+                silence = SilenceWatch()
+                return@synchronized null
+            }
             watchSilence(raw, listOf("kendi altyazısı" to ownLines, "telefon yazısı" to seen.lines,
                 "kumanda ipucu ya da okuma gürültüsü" to rows.lines, "sabit satır (görev/HUD)" to filteredRows.lines,
                 "altyazı bloğu seçilmedi (sahne yazısı, menü ya da başka blok)" to reading.lines), area)

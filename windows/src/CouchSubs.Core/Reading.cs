@@ -257,6 +257,12 @@ public sealed class Reading
                                  Action<Reading>? stale = null, Func<TextBox, bool>? darkInk = null)
     {
         if (Lines.Count == 0 || Lines.Any(line => line.Box is null)) return IsActionLabel ? Empty : this;
+        // Menünün konuşma/yardım geçmişi listesi (IsHistoryList) altyazı değildir: hiçbir satırı altyazı seçilmez.
+        if (IsHistoryList)
+        {
+            dropped?.Invoke(this, ListReason);
+            return Empty;
+        }
         var blocks = new List<List<TextLine>>();
         foreach (var line in Lines.OrderBy(line => line.Box!.Value.Top))
         {
@@ -474,6 +480,63 @@ public sealed class Reading
 
     /// <summary>Menü satırlarının sol ya da sağ kenarı bu kadar içinde hizalı (okunan alana oranla).</summary>
     internal const double MenuEdge = 0.012;
+
+    /// <summary>Menü listesi sayılıp atılan okumanın günlük nedeni (<see cref="IsHistoryList"/>).</summary>
+    public const string ListReason = "menü listesi (eşit aralıklı satırlar), altyazı değil";
+    /// <summary>Liste satırlarının aralığı satır yüksekliğinin en az bu katı (altyazının satırları bitişiktir).</summary>
+    internal const double ListPitch = 1.8;
+    /// <summary>Aralık bundan büyükse ayrı yazılardır.</summary>
+    internal const double ListMaxPitch = 4.0;
+    /// <summary>Ardışık aralıklar en çok bu oranda farklı.</summary>
+    internal const double ListSpread = 1.3;
+
+    /// <summary>
+    /// Okuma menünün geçmiş listesi mi (GTA 6 duraklatma menüsü "Map Özeti": diyalog/yardım/görev geçmişi). Sinan Bey
+    /// beta.100 (3380-3383): listenin konuşan adlı satırlarından biri her karede altyazı sanılıp altta siyah kutuda
+    /// gösteriliyor, konuşan adı yüzünden menü durumu da bitiyordu (#1240). Liste: yatayda üst üste duran (aynı sütun),
+    /// aralarında boşluk olan (<see cref="ListPitch"/>..<see cref="ListMaxPitch"/> satır boyu) ve eşit aralıklı
+    /// (<see cref="ListSpread"/>) en az üç satır; ya da konuşan adıyla başlayan, sol kenarları hizalı
+    /// (<see cref="MenuEdge"/>) iki satır (Mac/iPhone: Reading.isHistoryList, Android: Reading.isHistoryList).
+    /// </summary>
+    public bool IsHistoryList
+    {
+        get
+        {
+            var rows = Lines.Where(line => line.Box is not null && line.Text.Any(char.IsLetter))
+                .OrderBy(line => line.Box!.Value.Top).ToList();
+            if (rows.Count < 2) return false;
+            var heights = rows.Select(line => line.Box!.Value.Bottom - line.Box!.Value.Top).OrderBy(h => h).ToList();
+            var height = heights[heights.Count / 2];
+            if (height <= 0) return false;
+            static bool Column(TextBox a, TextBox b)
+            {
+                var overlap = Math.Min(a.Right, b.Right) - Math.Max(a.Left, b.Left);
+                return overlap > 0 && overlap >= 0.5 * Math.Min(a.Right - a.Left, b.Right - b.Left);
+            }
+            for (var start = 0; start < rows.Count; start++)
+            {
+                var run = new List<int> { start };
+                double? first = null;
+                while (true)
+                {
+                    var current = run[^1];
+                    var next = -1;
+                    for (var j = current + 1; j < rows.Count; j++)
+                        if (Column(rows[current].Box!.Value, rows[j].Box!.Value)) { next = j; break; }
+                    if (next < 0) break;
+                    var pitch = rows[next].Box!.Value.Top - rows[current].Box!.Value.Top;
+                    if (pitch < ListPitch * height || pitch > ListMaxPitch * height) break;
+                    if (first is { } f && Math.Max(pitch, f) > ListSpread * Math.Min(pitch, f)) break;
+                    first ??= pitch;
+                    run.Add(next);
+                }
+                if (run.Count >= 3) return true;
+                if (run.Count == 2 && run.All(index => SpeakerPrefix.Parse(rows[index].Text) is not null)
+                    && Math.Abs(rows[run[0]].Box!.Value.Left - rows[run[1]].Box!.Value.Left) <= MenuEdge) return true;
+            }
+            return false;
+        }
+    }
 
     /// <summary>Tek başına okunan etkileşim/HUD etiketi (GTA 6: "SIT", "• ADD TO TRUNK").</summary>
     internal bool IsActionLabel => Lines.Count == 1 && ButtonPrompts.IsActionLabel(Lines[0].Text);

@@ -99,6 +99,26 @@ CAPABILITIES = {
         ("windows", _WIN_TESTS + "UiCommandsTests.cs", r"ui-commands\.json"),
         ("android", _DROID_TESTS + "UiCommandsTest.kt", r"ui-commands\.json"),
     ],
+    # Sinan Bey beta.100 (3380-3383): menünün geçmiş listesi altyazı sanılmaz, satır parçaları birleşir, kesik satır
+    # çevrilmez, liste kayınca eski kutular kalkar; her platformun altyazı hattında ve ekran yazısında olmalı.
+    "Menü geçmiş listesi (IsHistoryList, JoinedPieces, CutAtAreaEdge, ListMoved, NoteList)": [
+        ("mac", _CORE + "Reading.swift", r"public var isHistoryList"),
+        ("mac", _CORE + "RegionWatcher.swift", r"static func listMoved\("),
+        ("mac", _CORE + "ScreenTextDetector.swift", r"public func noteList\("),
+        ("mac", "mac/CouchSubs/AppModel.swift", r"pipeline\.onList"),
+        ("mac", "couchsubs-ios/CouchSubs/PhoneModel.swift", r"pipeline\.onList"),
+        ("windows", _WIN + "Reading.cs", r"public bool IsHistoryList"),
+        ("windows", _WIN + "RegionWatcher.cs", r"static bool ListMoved\("),
+        ("windows", _WIN + "ScreenTextDetector.cs", r"public void NoteList\("),
+        ("windows", "windows/src/CouchSubs.Shell/AppController.cs", r"ListRead ="),
+        ("android", _DROID + "Reading.kt", r"val isHistoryList"),
+        ("android", _DROID + "Areas.kt", r"fun listMoved\("),
+        ("android", _DROID + "ScreenTextDetector.kt", r"fun noteList\("),
+        ("android", "couchsubs-android/app/src/main/java/com/couchsubs/mobile/service/TranslationService.kt", r"onList ="),
+        ("mac", _CORE_TESTS + "MenuListTests.swift", r"menu-list\.json"),
+        ("windows", _WIN_TESTS + "MenuListTests.cs", r"menu-list\.json"),
+        ("android", _DROID_TESTS + "MenuListTest.kt", r"menu-list\.json"),
+    ],
     "Ortak deneme dosyası screen-menu.json": [
         ("mac", _CORE_TESTS + "ScreenMenuBarTests.swift", r"screen-menu\.json"),
         ("windows", _WIN_TESTS + "ScreenMenuBarTests.cs", r"screen-menu\.json"),

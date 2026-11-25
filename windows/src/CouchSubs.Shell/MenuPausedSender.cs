@@ -63,6 +63,19 @@ public sealed class MenuPausedSender(ISubtitleSender inner, Func<bool> inMenu, A
 
     public void Clear() => inner.Clear();
 
+    /// <summary>
+    /// Altyazı alanında menünün geçmiş listesi okundu (SubtitlePipeline.ListRead): menü sırasında bekletilen satırlar
+    /// listenin satırlarıdır (kaydırırken tek satır okunabiliyor), menü kapanınca altyazı olarak gönderilmez.
+    /// </summary>
+    public void Forget()
+    {
+        lock (gate)
+        {
+            foreach (var line in held) drops.Note("Menü", "menü listesinin satırı, gönderilmedi", line.Text);
+            held.Clear();
+        }
+    }
+
     private (bool Menu, List<Held> Release) Observe()
     {
         var menu = inMenu();

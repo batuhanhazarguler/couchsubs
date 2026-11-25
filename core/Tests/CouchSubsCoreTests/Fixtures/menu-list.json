@@ -1,0 +1,187 @@
+{
+  "about": "Duraklatma menüsünün konuşma/yardım geçmişi listesi (Sinan Bey beta.100, 3380-3383). Mac MenuListTests.swift, Windows MenuListTests.cs ve Android MenuListTest.kt aynı dosyayı okur. Yazılar uydurmadır (oyun metni değil). Kutular [sol, üst, sağ, alt], okunan alana oranla.",
+  "lists": [
+    {
+      "name": "eşit aralıklı dört geçmiş satırı: liste",
+      "list": true,
+      "lines": [
+        { "text": "Clerk: Need a hand with anything?", "box": [0.30, 0.05, 0.62, 0.11] },
+        { "text": "Driver: Watch the road, pal!", "box": [0.30, 0.20, 0.58, 0.26] },
+        { "text": "Neighbor: You lost or something?", "box": [0.30, 0.35, 0.61, 0.41] },
+        { "text": "Clerk: Take it easy.", "box": [0.30, 0.50, 0.50, 0.56] }
+      ]
+    },
+    {
+      "name": "konuşan adlı, sol kenarı hizalı, aralıklı iki satır: liste",
+      "list": true,
+      "lines": [
+        { "text": "Clerk: Shopping today?", "box": [0.30, 0.10, 0.52, 0.16] },
+        { "text": "Clerk: Fine, whatever.", "box": [0.305, 0.25, 0.50, 0.31] }
+      ]
+    },
+    {
+      "name": "konuşan adsız üç satır da eşit aralıklıysa liste (yardım geçmişi)",
+      "list": true,
+      "lines": [
+        { "text": "Pick a new jacket", "box": [0.30, 0.05, 0.45, 0.11] },
+        { "text": "Leave when you are ready", "box": [0.30, 0.20, 0.52, 0.26] },
+        { "text": "Wanted level drops if nobody sees you", "box": [0.30, 0.35, 0.66, 0.41] }
+      ]
+    },
+    {
+      "name": "iki satırlı altyazı (bitişik satırlar): liste değil",
+      "list": false,
+      "lines": [
+        { "text": "Mara: I told you to wait by the car,", "box": [0.20, 0.70, 0.80, 0.78] },
+        { "text": "not to wander off on your own.", "box": [0.26, 0.80, 0.74, 0.88] }
+      ]
+    },
+    {
+      "name": "altyazı ve altında görev satırı: liste değil",
+      "list": false,
+      "lines": [
+        { "text": "Mara: Get in, we're late.", "box": [0.32, 0.62, 0.68, 0.70] },
+        { "text": "Drive to the marina.", "box": [0.38, 0.75, 0.62, 0.82] }
+      ]
+    },
+    {
+      "name": "eski çeviri ve yeni altyazı ortalı, farklı genişlikte: liste değil",
+      "list": false,
+      "lines": [
+        { "text": "Mara: Bir su daha alabilir miyim?", "box": [0.28, 0.40, 0.72, 0.47] },
+        { "text": "Teo: You can stare at it all day.", "box": [0.31, 0.60, 0.69, 0.67] }
+      ]
+    },
+    {
+      "name": "üç ayrı sütundaki yazılar: liste değil",
+      "list": false,
+      "lines": [
+        { "text": "Ammo low", "box": [0.02, 0.05, 0.12, 0.11] },
+        { "text": "Mara: Over here, quick!", "box": [0.40, 0.20, 0.62, 0.26] },
+        { "text": "Signal lost", "box": [0.85, 0.35, 0.97, 0.41] }
+      ]
+    },
+    {
+      "name": "tek konuşma satırı: liste değil",
+      "list": false,
+      "lines": [
+        { "text": "Mara: Over here, quick!", "box": [0.40, 0.80, 0.62, 0.87] }
+      ]
+    }
+  ],
+  "pieces": [
+    {
+      "name": "satır içi simgeden bölünen cümle tek satır",
+      "aspect": 3.0,
+      "lines": [
+        { "text": "Cops lose interest after a while. Open the map", "box": [0.05, 0.40, 0.60, 0.50] },
+        { "text": "to see where they still look.", "box": [0.66, 0.40, 0.98, 0.50] }
+      ],
+      "expected": ["Cops lose interest after a while. Open the map to see where they still look."]
+    },
+    {
+      "name": "renkli konuşan adı ayrı okununca tek satır",
+      "aspect": 3.0,
+      "lines": [
+        { "text": "Clerk:", "box": [0.20, 0.40, 0.30, 0.50] },
+        { "text": "Need a hand with anything?", "box": [0.31, 0.40, 0.70, 0.50] }
+      ],
+      "expected": ["Clerk: Need a hand with anything?"]
+    },
+    {
+      "name": "BÜYÜK HARFLİ sekmeler ayrı kalır",
+      "aspect": 3.0,
+      "lines": [
+        { "text": "STATS", "box": [0.20, 0.40, 0.30, 0.50] },
+        { "text": "HISTORY", "box": [0.36, 0.40, 0.50, 0.50] }
+      ],
+      "expected": ["STATS", "HISTORY"]
+    },
+    {
+      "name": "uzaktaki iki sütun ayrı kalır",
+      "aspect": 3.0,
+      "lines": [
+        { "text": "Subtitles", "box": [0.05, 0.40, 0.20, 0.50] },
+        { "text": "Always on", "box": [0.80, 0.40, 0.95, 0.50] }
+      ],
+      "expected": ["Subtitles", "Always on"]
+    },
+    {
+      "name": "alt alta satırlar birleşmez",
+      "aspect": 3.0,
+      "lines": [
+        { "text": "Clerk: Need a hand?", "box": [0.20, 0.20, 0.50, 0.30] },
+        { "text": "Driver: Move it!", "box": [0.20, 0.45, 0.45, 0.55] }
+      ],
+      "expected": ["Clerk: Need a hand?", "Driver: Move it!"]
+    }
+  ],
+  "cuts": [
+    { "name": "alanın sağ kenarında kesik satır", "region": [0.40, 0.30, 0.70, 0.40], "box": [0.10, 0.40, 0.999, 0.55], "cut": true },
+    { "name": "alanın sol kenarında başlayan kesik satır", "region": [0.40, 0.30, 0.70, 0.40], "box": [0.0, 0.40, 0.60, 0.55], "cut": true },
+    { "name": "kenara bir karo payla duran satır", "region": [0.40, 0.30, 0.70, 0.40], "box": [0.10, 0.40, 0.90, 0.55], "cut": false },
+    { "name": "karenin kenarındaki alan: kenar kesik sayılmaz", "region": [0.0, 0.30, 0.30, 0.40], "box": [0.0, 0.40, 0.60, 0.55], "cut": false }
+  ],
+  "labels": [
+    { "text": "Clerk: Need a hand?", "prefix": "Clerk: ", "core": "Need a hand?" },
+    { "text": "Shop Owner: Take your time.", "prefix": "Shop Owner: ", "core": "Take your time." },
+    { "text": "JASON & LUCIA MAP", "prefix": "JASON & LUCIA ", "core": "MAP" },
+    { "text": "JASON & LUCIA", "prefix": "", "core": "JASON & LUCIA" },
+    { "text": "Subtitles: On", "prefix": "", "core": "Subtitles: On" },
+    { "text": "Meet Jason & Lucia at the dock", "prefix": "", "core": "Meet Jason & Lucia at the dock" }
+  ],
+  "scrolls": [
+    {
+      "name": "liste bir satır kaydı: gösterilen satır başka yerde",
+      "moved": true,
+      "rendered": [
+        { "source": "Clerk: Need a hand?", "box": [0.40, 0.50, 0.60, 0.53] },
+        { "source": "Driver: Move it!", "box": [0.40, 0.55, 0.58, 0.58] }
+      ],
+      "current": [
+        { "text": "Clerk: Need a hand?", "box": [0.40, 0.45, 0.60, 0.48] },
+        { "text": "Driver: Move it!", "box": [0.40, 0.50, 0.58, 0.53] }
+      ]
+    },
+    {
+      "name": "kutunun yerinde başka satır",
+      "moved": true,
+      "rendered": [
+        { "source": "Leave when you are ready", "box": [0.40, 0.50, 0.60, 0.53] }
+      ],
+      "current": [
+        { "text": "Neighbor: You lost or something?", "box": [0.40, 0.50, 0.62, 0.53] }
+      ]
+    },
+    {
+      "name": "yerinde duran yazının küçük oynaması kayma değil",
+      "moved": false,
+      "rendered": [
+        { "source": "Clerk: Need a hand?", "box": [0.40, 0.50, 0.60, 0.53] }
+      ],
+      "current": [
+        { "text": "Clerk: Need a hand?", "box": [0.40, 0.502, 0.60, 0.532] }
+      ]
+    },
+    {
+      "name": "aynı yerde benzer (eksik) okuma kayma değil",
+      "moved": false,
+      "rendered": [
+        { "source": "Neighbor: You lost or something?", "box": [0.40, 0.50, 0.62, 0.53] }
+      ],
+      "current": [
+        { "text": "Neighbor: You lost or somethin", "box": [0.40, 0.50, 0.61, 0.53] }
+      ]
+    },
+    {
+      "name": "gösterilen satır okunmadı, yerinde yazı yok: karar yok",
+      "moved": false,
+      "rendered": [
+        { "source": "Clerk: Need a hand?", "box": [0.40, 0.50, 0.60, 0.53] }
+      ],
+      "current": [
+        { "text": "Driver: Move it!", "box": [0.40, 0.70, 0.58, 0.73] }
+      ]
+    }
+  ]
+}

@@ -260,6 +260,8 @@ public sealed class ScreenTextDetector
     {
         lock (gate)
         {
+            // Menünün geçmiş listesi az önce okundu: konuşan adlı satır listenin satırıdır (kaydırırken tek satır okunabilir).
+            if (listAt is { } listed && now - listed <= ListMs) return;
             dialogueAt = now;
             if (!menu) return;
             menu = false;
@@ -272,6 +274,21 @@ public sealed class ScreenTextDetector
     /// <summary>Konuşma satırı okunduktan sonra bu kadar süre menü durumu açılmaz.</summary>
     public const int DialogueMs = 1500;
     private long? dialogueAt;
+
+    /// <summary>Menü listesi okunduktan sonra bu kadar süre konuşan adlı satır menüyü bitirmez, menü de süresi dolmuş sayılmaz.</summary>
+    public const int ListMs = 1500;
+    private long? listAt;
+
+    /// <summary>
+    /// Altyazı alanında menünün geçmiş listesi okundu (Reading.IsHistoryList, Sinan Bey beta.100 3380-3383): ekranda menü
+    /// vardır. Menü durumu liste durdukça sürer (<see cref="MenuLifeMs"/> dolmaz; listeye bakarken menü bitip satırlar dünya
+    /// yazısı sayılıyor, kimi satır çevrilmiyordu) ve <see cref="ListMs"/> boyunca konuşan adlı satır
+    /// (<see cref="NoteDialogue"/>) menüyü bitirmez (Mac/iPhone, Android ile aynı).
+    /// </summary>
+    public void NoteList(long now)
+    {
+        lock (gate) listAt = now;
+    }
 
     /// <summary>Çeviri durdu ya da oturum sıfırlandı: alanlar ve karo durumu silinir.</summary>
     public void Reset()
@@ -287,6 +304,7 @@ public sealed class ScreenTextDetector
             menuAnchors = [];
             menuFloor = null;
             dialogueAt = null;
+            listAt = null;
         }
     }
 
@@ -525,6 +543,8 @@ public sealed class ScreenTextDetector
             // Menüde bir şey değişmeden (gezinme, seçim) MenuLifeMs geçti: menü sayılmaz, altyazı yeniden gösterilir. Aynı
             // yazılar yeniden menü sayılmaz; menü ancak sonradan beliren yazılarla yeniden açılır (menuFloor).
             var activity = menuAnchors.Count == 0 ? menuEnteredAt : menuAnchors.Max(index => tiles[index].StableSince);
+            // Menünün geçmiş listesi altyazı alanında okunuyor (NoteList): menü yerinde, süresi dolmaz.
+            if (listAt is { } listed && now - listed <= ListMs) activity = Math.Max(activity, listed);
             if (now - Math.Max(activity, menuEnteredAt) <= MenuLifeMs) return true;
             menuFloor = now;
             menuExpired = true;

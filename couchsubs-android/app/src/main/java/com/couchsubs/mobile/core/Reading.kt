@@ -68,6 +68,14 @@ class Reading(lines: List<TextLine>) {
 
         /** [isMenu]: menü satırlarının sol ya da sağ kenarı bu kadar içinde hizalı (okunan alana oranla). */
         const val MENU_EDGE = 0.012
+        /** Menü listesi sayılıp atılan okumanın günlük nedeni ([isHistoryList]). */
+        const val LIST_REASON = "menü listesi (eşit aralıklı satırlar), altyazı değil"
+        /** Liste satırlarının aralığı satır yüksekliğinin en az bu katı (altyazının satırları bitişiktir). */
+        const val LIST_PITCH = 1.8
+        /** Aralık bundan büyükse ayrı yazılardır. */
+        const val LIST_MAX_PITCH = 4.0
+        /** Ardışık aralıklar en çok bu oranda farklı. */
+        const val LIST_SPREAD = 1.3
 
         /**
          * Ortalı blok bu kadar süredir hiç değişmediyse ve yanında ondan en az [StickyRows.YOUNGER_BY_MS] daha yeni (kırıntı
@@ -287,6 +295,11 @@ class Reading(lines: List<TextLine>) {
         dropped: ((Reading, String) -> Unit)? = null,
     ): Reading {
         if (lines.isEmpty() || lines.any { it.box == null }) return if (isActionLabel) Empty else this
+        // Menünün konuşma/yardım geçmişi listesi ([isHistoryList]) altyazı değildir: hiçbir satırı altyazı seçilmez.
+        if (isHistoryList) {
+            dropped?.invoke(this, LIST_REASON)
+            return Empty
+        }
         val blocks = mutableListOf<MutableList<TextLine>>()
         for (line in lines.sortedBy { it.box!!.top }) {
             val placed = line.box!!.placedIn(area)
@@ -438,6 +451,45 @@ class Reading(lines: List<TextLine>) {
             if (boxes.size != lines.size) return true
             fun aligned(edges: List<Double>) = edges.max() - edges.min() <= MENU_EDGE
             return aligned(boxes.map { it.left }) || aligned(boxes.map { it.right })
+        }
+
+    /**
+     * Okuma menünün geçmiş listesi mi (GTA 6 duraklatma menüsü "Map Özeti": diyalog/yardım/görev geçmişi). Sinan Bey
+     * beta.100 (3380-3383): listenin konuşan adlı satırlarından biri her karede altyazı sanılıp altta siyah kutuda
+     * gösteriliyor, konuşan adı yüzünden menü durumu da bitiyordu (#1240). Liste: yatayda üst üste duran (aynı sütun),
+     * aralarında boşluk olan ([LIST_PITCH]..[LIST_MAX_PITCH] satır boyu) ve eşit aralıklı ([LIST_SPREAD]) en az üç satır;
+     * ya da konuşan adıyla başlayan, sol kenarları hizalı ([MENU_EDGE]) iki satır (Mac/iPhone: Reading.isHistoryList,
+     * Windows: Reading.IsHistoryList).
+     */
+    val isHistoryList: Boolean
+        get() {
+            val rows = lines.filter { it.box != null && it.text.any(Char::isLetter) }.sortedBy { it.box!!.top }
+            if (rows.size < 2) return false
+            val heights = rows.map { it.box!!.bottom - it.box!!.top }.sorted()
+            val height = heights[heights.size / 2]
+            if (height <= 0) return false
+            fun column(a: TextBox, b: TextBox): Boolean {
+                val overlap = minOf(a.right, b.right) - maxOf(a.left, b.left)
+                return overlap > 0 && overlap >= 0.5 * minOf(a.right - a.left, b.right - b.left)
+            }
+            for (start in rows.indices) {
+                val run = mutableListOf(start)
+                var first: Double? = null
+                while (true) {
+                    val current = run.last()
+                    val next = (current + 1 until rows.size).firstOrNull { column(rows[current].box!!, rows[it].box!!) } ?: break
+                    val pitch = rows[next].box!!.top - rows[current].box!!.top
+                    if (pitch < LIST_PITCH * height || pitch > LIST_MAX_PITCH * height) break
+                    val f = first
+                    if (f != null && maxOf(pitch, f) > LIST_SPREAD * minOf(pitch, f)) break
+                    if (f == null) first = pitch
+                    run.add(next)
+                }
+                if (run.size >= 3) return true
+                if (run.size == 2 && run.all { SpeakerPrefix.split(rows[it].text) != null } &&
+                    kotlin.math.abs(rows[run[0]].box!!.left - rows[run[1]].box!!.left) <= MENU_EDGE) return true
+            }
+            return false
         }
 
     /** Tek başına okunan etkileşim/HUD etiketi (GTA 6: "SIT", "• ADD TO TRUNK"). */

@@ -3733,6 +3733,12 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             Echo = SubtitleEcho,
             EchoPaused = sender.Poll,
             DialogueRead = () => Volatile.Read(ref screenText)?.NoteDialogue(Environment.TickCount64),
+            // Altyazı alanında menünün geçmiş listesi okundu: menü sürer, listeden bekletilen satır gönderilmez.
+            ListRead = () =>
+            {
+                Volatile.Read(ref screenText)?.NoteList(Environment.TickCount64);
+                sender.Forget();
+            },
             // Telefon ayarı kapalıyken de GTA 6'da telefon aranır (#1282; yalnız bulmak için, okunmaz, çevrilmez).
             FindsPhone = GameName.Key(gameSense.Current?.Name) == "gta 6",
         };

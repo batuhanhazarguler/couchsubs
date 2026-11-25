@@ -124,4 +124,22 @@ public class MenuPausedSenderTests
         sender.Poll();
         Assert.Equal(["Bir", "İki"], sink.Sent);
     }
+
+    /// <summary>Menünün geçmiş listesi okununca (ListRead) menüde bekletilen satır menü kapanınca altyazı olarak gönderilmez.</summary>
+    [Fact]
+    public void ListLinesHeldDuringTheMenuAreNotSentAfterIt()
+    {
+        var sink = new Sink();
+        var menu = true;
+        long time = 0;
+        var sender = new MenuPausedSender(sink, () => menu, _ => { }, () => time);
+        Assert.True(sender.Poll());
+        time = 1000;
+        sender.SendSubtitle("Clerk: Take it easy.");
+        sender.Forget();
+        menu = false;
+        time = 2000;
+        sender.Poll();
+        Assert.Empty(sink.Sent);
+    }
 }

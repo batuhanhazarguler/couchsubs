@@ -816,6 +816,11 @@ class TranslationService : Service() {
         pipeline =SubtitlePipeline(translator, held).apply {
             // Altyazı alanında konuşan adıyla satır okundu: ekranda menü yok (#1240).
             onDialogue = { detector.noteDialogue() }
+            // Altyazı alanında menünün geçmiş listesi okundu: menü sürer, listeden bekletilen satır gönderilmez.
+            onList = {
+                detector.noteList()
+                held.forget()
+            }
             echoPaused = { detector.menu }
             // Yarım ya da bozuk okuma hemen çevrilmez; aynı satırın en iyi okuması çevrilir (Windows ve iPhone ile aynı).
             holdReadings = true

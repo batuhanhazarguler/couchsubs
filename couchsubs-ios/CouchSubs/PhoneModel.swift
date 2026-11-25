@@ -1392,6 +1392,11 @@ final class PhoneModel: ObservableObject {
                                         server: sender, scheduler: scheduler)
         // Altyazı alanında konuşan adıyla satır okundu: ekranda menü yok (#1240).
         pipeline.onDialogue = { [weak self] in self?.screenTextDetector?.noteDialogue(now: SubtitleStabilizer.uptimeMs()) }
+        // Altyazı alanında menünün geçmiş listesi okundu: menü sürer, listeden bekletilen satır gönderilmez.
+        pipeline.onList = { [weak self, weak sender] in
+            self?.screenTextDetector?.noteList(now: SubtitleStabilizer.uptimeMs())
+            sender?.forget()
+        }
         pipeline.echoPaused = { [weak self] in self?.screenTextDetector?.inMenu == true }
         pipeline.showSpeakerNames = settings.showSpeakerNames
         pipeline.applyWaits(from: settings)

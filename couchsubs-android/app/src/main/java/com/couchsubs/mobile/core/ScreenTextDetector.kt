@@ -46,6 +46,8 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         const val MENU_COMPONENTS = 3
         /** Menüde hiçbir yazı değişmeden bu kadar süre geçince menü durumu biter (altyazı okunur). */
         const val MENU_LIFE_MS = 5000L
+        /** Menü listesi okunduktan sonra bu kadar süre konuşan adlı satır menüyü bitirmez, menü de süresi dolmuş sayılmaz. */
+        const val LIST_MS = 1500L
         /** Konuşma satırı okunduktan sonra bu kadar süre menü durumu açılmaz ([noteDialogue]). */
         const val DIALOGUE_MS = 1500L
         /** Menü durumu: bileşenlerin dışındaki karoların en az bu kadarı bulanık/karartılmış (düşük sapmalı). */
@@ -276,7 +278,9 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         // (Mac/iPhone, Windows ile aynı). Karanlık sahnede birlikte beliren sabit HUD yazıları da menü sanılabiliyor.
         var expired = false
         if (menu && wasMenu) {
-            val activity = maxOf(menuEnteredAt, menuAnchors.maxOfOrNull { tiles[it].stableSince } ?: menuEnteredAt)
+            // Menünün geçmiş listesi altyazı alanında okunuyor ([noteList]): menü yerinde, süresi dolmaz.
+            val listed = listAt?.takeIf { now - it <= LIST_MS } ?: 0L
+            val activity = maxOf(menuEnteredAt, menuAnchors.maxOfOrNull { tiles[it].stableSince } ?: menuEnteredAt, listed)
             if (now - activity > MENU_LIFE_MS) {
                 menu = false
                 menuFloor = now
@@ -384,6 +388,8 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
      * alanında konuşma satırı olmaz.
      */
     fun noteDialogue(now: Long = clock()): Unit = synchronized(lock) {
+        // Menünün geçmiş listesi az önce okundu: konuşan adlı satır listenin satırıdır (kaydırılırken tek satır okunabilir).
+        if (listAt?.let { now - it <= LIST_MS } == true) return
         dialogueAt = now
         if (!menu) return
         menu = false
@@ -392,8 +398,19 @@ class ScreenTextDetector(private val clock: () -> Long = monotonicClock) {
         autos.removeAll { it.menu }
     }
 
+    private var listAt: Long? = null
+
+    /**
+     * Altyazı alanında menünün geçmiş listesi okundu ([Reading.isHistoryList], Sinan Bey beta.100 3380-3383): ekranda
+     * menü vardır. Menü durumu liste durdukça sürer ([MENU_LIFE_MS] dolmaz; listeye bakarken menü bitip satırlar dünya
+     * yazısı sayılıyor, kimi satır çevrilmiyordu) ve [LIST_MS] boyunca konuşan adlı satır ([noteDialogue]) menüyü
+     * bitirmez (Mac/iPhone, Windows ile aynı).
+     */
+    fun noteList(now: Long = clock()): Unit = synchronized(lock) { listAt = now }
+
     /** Çeviri durdu ya da oturum yenilendi: alanlar ve karo durumu sıfırlanır. */
     fun reset(): Unit = synchronized(lock) {
+        listAt = null
         for (index in 0 until TILES) tiles[index] = Tile()
         autos.clear()
         menu = false

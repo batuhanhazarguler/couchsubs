@@ -218,6 +218,11 @@ public final class SubtitlePipeline {
     /// Altyazı alanında konuşan adıyla başlayan bir satır okundu (her okumada). Uygulama ekran yazısı dedektörüne bildirir
     /// (`ScreenTextDetector.noteDialogue`): konuşma sürerken menü sayılmaz (#1240). Windows ve Android aynı.
     public var onDialogue: (() -> Void)?
+    /// Altyazı alanında menünün geçmiş listesi okundu (`Reading.isHistoryList`; her okumada). Uygulama ekran yazısı
+    /// dedektörüne (`ScreenTextDetector.noteList`) ve menü göndericisine (`MenuHeldSender.forget`) bildirir: liste
+    /// ekranda durdukça menü sürer, listeden bekletilen satır menü kapanınca altyazı olarak gönderilmez. Windows ve
+    /// Android aynı.
+    public var onList: (() -> Void)?
     /// Doğruysa bu karede okunan blok `echo`'ya kaydedilmez: ekranda menü var, altyazı bekletiliyor; okunan menü satırları
     /// altyazı sayılmaz (yoksa menünün kendi çevirisi metin eşleşmesiyle atılırdı). Windows: EchoPaused.
     public var echoPaused: (() -> Bool)?
@@ -375,8 +380,16 @@ public final class SubtitlePipeline {
         // Açık zemindeki koyu yazı (duvardaki kâğıt ilan) altyazı değildir (`InkTone`, GitHub #1124); oyunun altyazısı koyu
         // yazıysa (`DarkInkStyle`) renge bakılmaz.
         var darkBlocks: [Reading] = []
+        // Menünün geçmiş listesi (`Reading.isHistoryList`; sabit satır süzgecinden önce: liste bir satır kayınca yalnız yeni
+        // satır "sabit değil" kalıp altyazı seçiliyordu): hiçbir satırı altyazı olmaz, konuşan adlı satırı menü durumunu
+        // bitirmez, bekçi de listeden satır çevirmez. Uygulama ekran yazısı dedektörüne bildirir.
+        let listed = cleaned.isHistoryList
+        if listed {
+            onList?()
+            logSceneText(cleaned.text, Reading.listReason)
+        }
         let darkInk = darkInkStyle.isGameStyle ? nil : InkTone.sampler(area)
-        let reading = rows.subtitleBlock(in: place, band: subtitleBand, darkInk: darkInk, dropped: { [weak self] block, reason in
+        let reading = listed ? Reading.empty : rows.subtitleBlock(in: place, band: subtitleBand, darkInk: darkInk, dropped: { [weak self] block, reason in
             sceneTexts += block.lines.map(\.text)
             if reason == InkTone.reason { darkBlocks.append(block) }
             self?.logSceneText(block.text, reason)
@@ -502,6 +515,11 @@ public final class SubtitlePipeline {
         }
         // Restore önce işlenir: geri görünen satırın leftAt bilgisi temizlenmeden iptal edilmemeli.
         abandonUndisplayableTranslation()
+        // Menü listesi okunurken bekçi saymaz: listenin bir satırı 10 sn sonra süzgeçleri atlayıp altyazı olmasın.
+        if listed {
+            silence = SilenceWatch()
+            return
+        }
         watchSilence(visible, stages: [("kendi altyazısı", ownLines), ("telefon yazısı", seen.lines),
                                        ("kumanda ipucu ya da okuma gürültüsü", cleaned.lines),
                                        ("sabit satır (görev/HUD)", rows.lines),

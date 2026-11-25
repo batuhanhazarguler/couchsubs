@@ -60,6 +60,15 @@ class MenuHeldSender(
 
     override fun clear() = inner.clear()
 
+    /**
+     * Altyazı alanında menünün geçmiş listesi okundu ([SubtitlePipeline.onList]): menü sırasında bekletilen satırlar
+     * listenin satırlarıdır (kaydırırken tek satır okunabiliyor), menü kapanınca altyazı olarak gönderilmez.
+     */
+    fun forget(): Unit = synchronized(lock) {
+        for (line in held) drops.note("Menü", "menü listesinin satırı, gönderilmedi", line.text)
+        held.clear()
+    }
+
     private fun observe(): Pair<Boolean, List<Held>> {
         val menu = inMenu()
         if (menu == paused) return menu to emptyList()

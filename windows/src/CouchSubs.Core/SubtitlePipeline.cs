@@ -275,6 +275,13 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
     /// (<see cref="ScreenTextDetector.NoteDialogue"/>): konuşma sürerken menü sayılmaz (#1240). Mac/iPhone ve Android aynı.
     /// </summary>
     public Action? DialogueRead { get; init; }
+    /// <summary>
+    /// Altyazı alanında menünün geçmiş listesi okundu (<see cref="Reading.IsHistoryList"/>; her okumada). Uygulama ekran
+    /// yazısı dedektörüne (<see cref="ScreenTextDetector.NoteList"/>) ve menü göndericisine (MenuPausedSender.Forget)
+    /// bildirir: liste ekranda durdukça menü sürer, listeden bekletilen satır menü kapanınca altyazı olarak gönderilmez.
+    /// Mac/iPhone ve Android aynı.
+    /// </summary>
+    public Action? ListRead { get; init; }
     /// <summary>Son gösterilen çevirinin nereden geldiği: "paket" ya da "motor" (günlük ve sayım için).</summary>
     public string? LastOrigin { get; private set; }
     /// <summary>Bu hatta paketten gelen satır sayısı.</summary>
@@ -444,6 +451,11 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
         // GTA ekran yazısı (silah adı, plaka, tabela, menü) altyazı değildir; konuşmaya yapışsa da çevrilmez.
         if (DropsScreenText?.Invoke() == true) cleaned = cleaned.WithoutScreenText();
         var rows = cleaned.JoiningRows();
+        // Menünün geçmiş listesi (Reading.IsHistoryList; sabit satır süzgecinden önce: liste bir satır kayınca yalnız yeni
+        // satır "sabit değil" kalıp altyazı seçiliyordu): hiçbir satırı altyazı olmaz, konuşan adlı satırı menü durumunu
+        // bitirmez, bekçi de listeden satır çevirmez.
+        var listed = rows.IsHistoryList;
+        if (listed) ListRead?.Invoke();
         bool missionMoved;
         CropRegion? missionRegion;
         lock (gate)
@@ -476,7 +488,8 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
             // yazıysa (DarkInkStyle) renge bakılmaz.
             var darkBlocks = new List<Reading>();
             var darkInk = darkInkStyle.IsGameStyle || cropped is null ? null : InkTone.Sampler(cropped);
-            reading = rows.SubtitleBlock(area, subtitleBand, (block, reason) =>
+            if (listed) LogSceneText(rows.Text, Reading.ListReason);
+            reading = (listed ? Reading.Empty : rows).SubtitleBlock(area, subtitleBand, (block, reason) =>
                                          {
                                              if (reason == InkTone.Reason) darkBlocks.Add(block);
                                              LogSceneText(block.Text, reason);
@@ -672,7 +685,9 @@ public sealed class SubtitlePipeline(ITextReader reader, ITextTranslator transla
             }
             // Restore önce işlenir: geri görünen satırın LeftAt bilgisi temizlenmeden iptal edilmemeli.
             abandoned = AbandonUndisplayableTranslation();
-            forced = WatchSilence(raw, [("kendi altyazısı", ownLines), ("telefon yazısı", seen.Lines),
+            // Menü listesi okunurken bekçi saymaz: listenin bir satırı 10 sn sonra süzgeçleri atlayıp altyazı olmasın.
+            if (listed) silence = new SilenceWatch();
+            else forced = WatchSilence(raw, [("kendi altyazısı", ownLines), ("telefon yazısı", seen.Lines),
                                         ("kumanda ipucu, okuma gürültüsü ya da ekran yazısı", cleaned.Lines),
                                         ("sabit satır (görev/HUD)", rows.Lines),
                                         ("altyazı bloğu seçilmedi (sahne yazısı, menü ya da başka blok)", reading.Lines)], area);

@@ -209,6 +209,8 @@ public final class ScreenTextDetector: @unchecked Sendable {
     /// konuşma satırı olmaz.
     public func noteDialogue(now: Int) {
         lock.withLock {
+            // Menünün geçmiş listesi az önce okundu: konuşan adlı satır listenin satırıdır (kaydırılırken tek satır okunabilir).
+            if let listed = listAt, now - listed <= Self.listMs { return }
             dialogueAt = now
             guard menu else { return }
             menu = false
@@ -218,9 +220,21 @@ public final class ScreenTextDetector: @unchecked Sendable {
         }
     }
 
+    /// Menü listesi okunduktan sonra bu kadar süre konuşan adlı satır menüyü bitirmez, menü de süresi dolmuş sayılmaz.
+    public static let listMs = 1500
+    private var listAt: Int?
+
+    /// Altyazı alanında menünün geçmiş listesi okundu (`Reading.isHistoryList`, Sinan Bey beta.100 3380-3383): ekranda menü
+    /// vardır. Menü durumu liste durdukça sürer (`menuLifeMs` dolmaz; listeye bakarken menü bitip satırlar dünya yazısı
+    /// sayılıyor, kimi satır çevrilmiyordu) ve `listMs` boyunca konuşan adlı satır (`noteDialogue`) menüyü bitirmez.
+    public func noteList(now: Int) {
+        lock.withLock { listAt = now }
+    }
+
     /// Çeviri durdu ya da oturum sıfırlandı: alanlar ve karo durumu silinir.
     public func reset() {
         lock.withLock {
+            listAt = nil
             tiles = [Tile](repeating: Tile(), count: tiles.count)
             tracked.removeAll()
             lastSample = nil
@@ -415,7 +429,9 @@ public final class ScreenTextDetector: @unchecked Sendable {
         }) {
             // Menüde bir şey değişmeden (gezinme, seçim) `menuLifeMs` geçti: menü sayılmaz, altyazı yeniden okunur. Aynı
             // yazılar yeniden menü sayılmaz; menü ancak sonradan beliren yazılarla yeniden açılır (`menuFloor`).
-            let activity = menuAnchors.map { tiles[$0].stableSince }.max() ?? menuEnteredAt
+            var activity = menuAnchors.map { tiles[$0].stableSince }.max() ?? menuEnteredAt
+            // Menünün geçmiş listesi altyazı alanında okunuyor (`noteList`): menü yerinde, süresi dolmaz.
+            if let listed = listAt, now - listed <= Self.listMs { activity = max(activity, listed) }
             if now - max(activity, menuEnteredAt) <= Self.menuLifeMs { return true }
             menuFloor = now
             menuExpired = true

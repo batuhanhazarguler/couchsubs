@@ -257,6 +257,11 @@ public struct Reading: Equatable, Sendable {
                               age: ((String) -> Int?)? = nil,
                               stale: ((Reading) -> Void)? = nil) -> Reading {
         guard !lines.isEmpty, lines.allSatisfy({ $0.box != nil }) else { return isActionLabel ? .empty : self }
+        // Menünün konuşma/yardım geçmişi listesi (`isHistoryList`) altyazı değildir: hiçbir satırı altyazı seçilmez.
+        if isHistoryList {
+            dropped?(self, Self.listReason)
+            return .empty
+        }
         var blocks: [[TextLine]] = []
         for line in lines.sorted(by: { $0.box!.top < $1.box!.top }) {
             let box = line.box!.placed(in: area)
@@ -451,6 +456,52 @@ public struct Reading: Equatable, Sendable {
 
     /// Menü satırlarının sol ya da sağ kenarı bu kadar içinde hizalı (okunan alana oranla).
     static let menuEdge = 0.012
+
+    /// Menü listesi sayılıp atılan okumanın günlük nedeni.
+    public static let listReason = "menü listesi (eşit aralıklı satırlar), altyazı değil"
+    /// Liste satırlarının aralığı (üst kenardan üst kenara) satır yüksekliğinin en az bu katı: altyazının satırları
+    /// bitişiktir (~1,2-1,4 kat), menü listesinin satırları arasında boşluk vardır.
+    static let listPitch = 1.8
+    /// Aralık bundan büyükse ayrı yazılardır (liste değil).
+    static let listMaxPitch = 4.0
+    /// Listede ardışık aralıklar en çok bu oranda farklı (eşit aralık).
+    static let listSpread = 1.3
+
+    /// Okuma menünün geçmiş listesi mi (GTA 6 duraklatma menüsü "Map Özeti": diyalog/yardım/görev geçmişi). Sinan Bey
+    /// beta.100 (3380-3383): listenin "Staff Member: 'Sup?" gibi konuşan adlı satırlarından biri her karede altyazı sanılıp
+    /// altta siyah kutuda gösteriliyor, özgünün üstüne biniyor, konuşan adı yüzünden menü durumu da bitiyordu (#1240).
+    /// Liste: yatayda üst üste duran (aynı sütun), aralarında boşluk olan (`listPitch`..`listMaxPitch` satır boyu) ve eşit
+    /// aralıklı (`listSpread`) en az üç satır; ya da konuşan adıyla başlayan, sol kenarları hizalı (`menuEdge`) iki satır.
+    /// Oyun içi altyazının satırları bitişiktir, tek konuşma bir seferde görünür; gerçek kare setinde hiçbir altyazı
+    /// karesi liste sayılmaz (Windows: Reading.IsHistoryList, Android: Reading.isHistoryList).
+    public var isHistoryList: Bool {
+        let rows = lines.filter { $0.box != nil && $0.text.contains(where: \.isLetter) }
+            .sorted { $0.box!.top < $1.box!.top }
+        guard rows.count >= 2 else { return false }
+        let heights = rows.map { $0.box!.bottom - $0.box!.top }.sorted()
+        let height = heights[heights.count / 2]
+        guard height > 0 else { return false }
+        func column(_ a: TextBox, _ b: TextBox) -> Bool {
+            let overlap = min(a.right, b.right) - max(a.left, b.left)
+            return overlap > 0 && overlap >= 0.5 * min(a.right - a.left, b.right - b.left)
+        }
+        for start in rows.indices {
+            var run = [start]
+            var first: Double?
+            while let current = run.last,
+                  let next = rows.indices.first(where: { $0 > current && column(rows[current].box!, rows[$0].box!) }) {
+                let pitch = rows[next].box!.top - rows[current].box!.top
+                guard pitch >= Self.listPitch * height, pitch <= Self.listMaxPitch * height else { break }
+                if let first, max(pitch, first) > Self.listSpread * min(pitch, first) { break }
+                first = first ?? pitch
+                run.append(next)
+            }
+            if run.count >= 3 { return true }
+            if run.count == 2, run.allSatisfy({ SpeakerPrefix.split(rows[$0].text) != nil }),
+               abs(rows[run[0]].box!.left - rows[run[1]].box!.left) <= Self.menuEdge { return true }
+        }
+        return false
+    }
 
     /// Tek başına okunan etkileşim/HUD etiketi (GTA 6: "SIT", "• ADD TO TRUNK").
     var isActionLabel: Bool { lines.count == 1 && ButtonPrompts.isActionLabel(lines[0].text) }

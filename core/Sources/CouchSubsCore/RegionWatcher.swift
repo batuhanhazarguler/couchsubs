@@ -415,8 +415,13 @@ public final class RegionWatcher {
             // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o
             // satırın eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen
             // kalkar; yeni okuma her zamanki gibi çizilir.
+            // Liste kaydı (Sinan Bey beta.100 3381, 3383): menüde liste kayınca eski kutular eski yerinde başka satırın
+            // üstünde kalıyordu ("Hazır olunca çık"); yazının bir kısmı hâlâ göründüğü için kararsız okuma da kaldırmıyordu.
+            // Gösterilen bir satır başka yerde okunuyor ya da yerinde başka yazı var: eski kutular hemen kalkar.
+            let rendered = state.renderedBlocks?.map(\.item) ?? []
             if !(state.renderedText ?? "").isEmpty,
-               Self.selectionMoved(rendered: state.renderedBlocks?.map(\.item) ?? [], current: candidate.blocks ?? []) {
+               Self.selectionMoved(rendered: rendered, current: candidate.blocks ?? [])
+                || (area.menu && Self.listMoved(rendered: rendered, current: Self.blockTexts(candidate))) {
                 server.sendRegion(id: area.id, text: "", box: nil, lineHeight: nil)
                 state.shown = ""
                 state.shownText = ""
@@ -600,12 +605,15 @@ public final class RegionWatcher {
         let marked = reading.withButtonIcons(frame: frame, monochrome: auto)
         // Menü şeridinin sekmeleri tek satır okunsa da ayrı satırlardır (#859); kutular alana oranlı.
         let aspect = (region.right - region.left) * 16 / max(1e-6, (region.bottom - region.top) * 9)
-        let read = (auto ? marked : marked.withoutButtonPrompts()).withoutOcrNoise().lines
+        let cleaned = (auto ? marked : marked.withoutButtonPrompts()).withoutOcrNoise().lines
+        // Otomatik alanda aynı satırın yan yana okunan parçaları (simgeden, renkli addan bölünen cümle) tek satırdır.
+        let read = (auto ? joinedPieces(cleaned, aspect: aspect) : cleaned)
             .flatMap { ScreenTranslation.menuPieces($0, aspect: aspect, frame: frame) }
             .filter { ScreenTranslation.isWords($0.text) }
-            // Otomatik alanda yayın katmanı (logo, alan adı, "Canlı"), karenin kenarında kesilmiş tek sözcük ve bozuk okuma
-            // (düşük güven, tuhaf harfler) atılır.
-            .filter { !auto || !(ScreenTextNoise.isOverlay($0.text) || cutAtEdge($0) || ScreenTextNoise.isGarbled($0)) }
+            // Otomatik alanda yayın katmanı (logo, alan adı, "Canlı"), karenin kenarında kesilmiş tek sözcük, menüde alanın
+            // kenarında kesilmiş satır ve bozuk okuma (düşük güven, tuhaf harfler) atılır.
+            .filter { !auto || !(ScreenTextNoise.isOverlay($0.text) || cutAtEdge($0)
+                || (menu && cutAtAreaEdge($0, region: region)) || ScreenTextNoise.isGarbled($0)) }
             .filter { !styled || !ScreenTranslation.isClock($0.text) }
             .sorted { ($0.box?.top ?? 0) < ($1.box?.top ?? 0) }
         // Aynı yazının iki okunuşu tek satır kalır; satırın başındaki/sonundaki simge kutunun dışında kalır (#827;
@@ -738,6 +746,42 @@ public final class RegionWatcher {
         }
     }
 
+    /// Adayın blokları: karedeki yeri ve yazısı (bloğun parçaları birleşik).
+    static func blockTexts(_ candidate: Candidate) -> [(box: TextBox, text: String)] {
+        (candidate.blocks ?? []).map { block in
+            let end = min(candidate.paragraphs.count, block.start + block.count)
+            let text = block.start < end ? candidate.paragraphs[block.start..<end].joined(separator: " ") : ""
+            return (block.box, text)
+        }
+    }
+
+    /// Liste kaydı: gösterilen bir kutunun yazısı yeni okumada satır yüksekliğinin en az yarısı kadar başka yerde, ya da
+    /// kutunun yerinde (satırının en az yarısı örtüşen) başka bir yazı var. Okuma oynamaları (benzer okuma, eksik okuma)
+    /// aynı yazı sayılır. Windows ve Android aynı kuralı uygular.
+    static func listMoved(rendered: [ScreenTranslation.Item], current: [(box: TextBox, text: String)]) -> Bool {
+        func same(_ a: String, _ b: String) -> Bool {
+            let x = IconText.plain(a), y = IconText.plain(b)
+            return matches(textKey([x]), textKey([y])) || isPartOf(x, y) || isPartOf(y, x)
+        }
+        func rows(_ a: TextBox, _ b: TextBox) -> Double {
+            max(0, min(a.bottom, b.bottom) - max(a.top, b.top)) / max(1e-9, min(a.bottom - a.top, b.bottom - b.top))
+        }
+        return rendered.contains { item in
+            let source = item.source
+            guard source.contains(where: \.isLetter) else { return false }
+            let height = item.box.bottom - item.box.top
+            let found = current.filter { same($0.text, source) && min($0.box.right, item.box.right) > max($0.box.left, item.box.left) }
+            if let nearest = found.min(by: { abs($0.box.top - item.box.top) < abs($1.box.top - item.box.top) }) {
+                let line = min(height, nearest.box.bottom - nearest.box.top) / Double(max(1, item.rows))
+                return abs(nearest.box.top - item.box.top) >= 0.5 * line
+            }
+            return current.contains { block in
+                rows(block.box, item.box) >= 0.5 && min(block.box.right, item.box.right) > max(block.box.left, item.box.left)
+                    && !same(block.text, source)
+            }
+        }
+    }
+
     /// Kısa etiket satırı (menü satırı, tuş etiketi): en çok bu kadar sözcük (Windows: ScreenTranslation.MenuLabelWords).
     static let labelWords = 5
 
@@ -807,6 +851,60 @@ public final class RegionWatcher {
         guard let box = line.box, !IconText.plain(line.text).trimmingCharacters(in: .whitespaces).contains(" ") else { return false }
         // Otomatik alan yazının dışına kadar genişletilir: kenara değen sözcük alanın (ya da karenin) dışından taşıyor.
         return box.left <= 0.005 || box.right >= 0.995
+    }
+
+    /// Menüdeki otomatik alanın sol ya da sağ kenarına (karenin kenarı değilse) `areaEdgeTiles` karodan yakın değen satır
+    /// alanın dışına taşıyor: uzun satırın bir parçasıdır. Alan yazının karolarından bir karo geniş tutulur; içindeki
+    /// yazı kenara değmez. Sinan Bey beta.100 (3381-3383): "What's your problem, as" / "You better be fucking" / "in
+    /// just about every facilit" yarım okunup kalan parçası ayrı blok sanılıyor, yanına küçük kutuyla çevriliyordu
+    /// ("Delik", "bunun bedelini ödemek!"). Kesik satır çevrilmez; bütün okunduğu alanda (liste kayınca) çevrilir.
+    static func cutAtAreaEdge(_ line: TextLine, region: CropRegion) -> Bool {
+        guard let box = line.box else { return false }
+        let width = region.right - region.left
+        guard width > 0 else { return false }
+        let margin = areaEdgeTiles / Double(ScreenTextDetector.columns) / width
+        return (region.left > 0.001 && box.left <= margin) || (region.right < 0.999 && box.right >= 1 - margin)
+    }
+
+    /// `cutAtAreaEdge` payı (karo genişliği cinsinden).
+    static let areaEdgeTiles = 0.25
+
+    /// Aynı satırda yan yana okunan parçalar (dikeyde küçüğün %60'ı örtüşür, yazı boyları 1,3 kattan az farklı, aradaki
+    /// boşluk satır yüksekliğinin en çok `pieceGap` katı) soldan sağa tek satır olur; en az birinde küçük harf olmalı
+    /// (BÜYÜK HARFLİ sekmeler ve tuş etiketleri ayrı kalır, `menuPieces`). Yazı tanıma uzun satırı satır içi simgeden ya da
+    /// renkli konuşan adından bölüyor, parçalar ayrı blok olup ayrı ayrı çevriliyordu (Sinan Bey beta.100 3380: "görmek
+    /// için", "Ev" yardım paragrafının içine küçük kutularla biniyordu). `aspect`: alanın genişlik/yükseklik oranı.
+    static func joinedPieces(_ lines: [TextLine], aspect: Double) -> [TextLine] {
+        guard lines.count > 1, lines.allSatisfy({ $0.box != nil }) else { return lines }
+        var rows: [TextLine] = []
+        for line in lines.sorted(by: { $0.box!.left < $1.box!.left }) {
+            let box = line.box!
+            if let index = rows.firstIndex(where: { pieceOf(box, line.text, $0, aspect: aspect) }) {
+                let row = rows[index]
+                var joined = TextLine(row.text + " " + line.text, box: row.box!.union(box),
+                                      confidence: [row.confidence, line.confidence].compactMap { $0 }.min())
+                if let a = row.words, let b = line.words { joined.words = a + b }
+                let icons = (row.icons ?? []) + (line.icons ?? [])
+                joined.icons = icons.isEmpty ? nil : icons
+                rows[index] = joined
+            } else {
+                rows.append(line)
+            }
+        }
+        return rows.count == lines.count ? lines : rows.sorted { ($0.box!.top, $0.box!.left) < ($1.box!.top, $1.box!.left) }
+    }
+
+    /// `pieceGap`: parçalar arası boşluk (satır yüksekliğine oranla); satır içi simge ve iki yanındaki boşluklar sığar.
+    static let pieceGap = 2.5
+
+    private static func pieceOf(_ next: TextBox, _ text: String, _ row: TextLine, aspect: Double) -> Bool {
+        let box = row.box!
+        let a = next.bottom - next.top, b = box.bottom - box.top
+        guard min(a, b) > 0, max(a, b) <= 1.3 * min(a, b),
+              min(next.bottom, box.bottom) - max(next.top, box.top) >= 0.6 * min(a, b) else { return false }
+        guard text.contains(where: \.isLowercase) || row.text.contains(where: \.isLowercase) else { return false }
+        let gap = (next.left - box.right) * aspect
+        return gap >= -0.5 * max(a, b) && gap <= pieceGap * max(a, b)
     }
 
     private static func inside(_ line: TextBox, _ group: TextBox) -> Bool {
@@ -1148,13 +1246,42 @@ public final class RegionWatcher {
         var pieces = body.components(separatedBy: " / ")
         if pieces.contains(where: { !$0.contains(where: \.isLetter) }) { pieces = [body] }
         var result = pieces.map { part -> LabelPart in
-            let prefix = match(keyPrefix, part)
-            let rest = String(part.dropFirst(prefix.count))
+            var prefix = match(keyPrefix, part)
+            var rest = String(part.dropFirst(prefix.count))
+            // Baştaki konuşan adı ("Staff Member: 'Sup?", menünün diyalog geçmişi) ve özel ad ("JASON & LUCIA MAP", sekmeler
+            // tek parça okununca) çevrilmez, olduğu gibi kalır; yalnız ardındaki yazı çevrilir (Sinan Bey beta.100 3380:
+            // "JASON & LUCIA MAP ÖZETİ", "MAP" çevrilmemişti).
+            if let kept = keptHead(rest) {
+                prefix += kept
+                rest = String(rest.dropFirst(kept.count))
+            }
             let suffix = match(keySuffix, rest)
             return LabelPart(prefix: prefix, core: String(rest.dropLast(suffix.count)), suffix: suffix)
         }
         if !count.isEmpty { result[result.count - 1].suffix += count }
         return result
+    }
+
+    /// Etiketin başında çevrilmeyecek kısım (ardındaki boşluk dahil): konuşan adı ("Staff Member: ") ya da yalnız özel
+    /// adlardan oluşan baş ("JASON & LUCIA " + "MAP"; `ScreenTranslation.keepsNames`). Ardında harfli yazı kalmalı.
+    /// Konuşan adının ardı cümle olmalı (noktalamayla biter ya da en az üç sözcük): ayar satırı ("Subtitles: On") bütün
+    /// çevrilir.
+    static func keptHead(_ text: String) -> String? {
+        if let speaker = SpeakerPrefix.split(text),
+           SubtitleStabilizer.endsSentence(speaker.body) || speaker.body.split(whereSeparator: \.isWhitespace).count >= 3,
+           let range = text.range(of: speaker.body, options: .backwards),
+           text[range.upperBound...].trimmingCharacters(in: .whitespaces).isEmpty {
+            return String(text[..<range.lowerBound])
+        }
+        guard text.contains(" & "), TextStyleSampler.isUpper(text) else { return nil }
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        guard words.count >= 4 else { return nil }
+        for end in stride(from: words.count - 1, through: 3, by: -1) {
+            let head = words[..<end].joined(separator: " ")
+            let tail = words[end...].joined(separator: " ")
+            if tail.contains(where: \.isLetter), ScreenTranslation.keepsNames(head) { return head + " " }
+        }
+        return nil
     }
 
     /// Otomatik alanın çevirisi (yoğun menüler): her paragraf " / " ayırıcısından parçalara bölünür, tuş adları ve

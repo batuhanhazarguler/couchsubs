@@ -68,6 +68,15 @@ public final class MenuHeldSender: SubtitleSending, @unchecked Sendable {
 
     public func clear() { inner.clear() }
 
+    /// Altyazı alanında menünün geçmiş listesi okundu (`SubtitlePipeline.onList`): menü sırasında bekletilen satırlar
+    /// listenin satırlarıdır (kaydırırken tek satır okunabiliyor), menü kapanınca altyazı olarak gönderilmez.
+    public func forget() {
+        lock.withLock {
+            for line in held { drops.note("Menü", "menü listesinin satırı, gönderilmedi", line.text) }
+            held.removeAll()
+        }
+    }
+
     private func observe() -> (Bool, [Held]) {
         let menu = inMenu()
         guard menu != paused else { return (menu, []) }

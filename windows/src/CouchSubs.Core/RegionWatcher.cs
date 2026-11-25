@@ -507,8 +507,13 @@ public sealed partial class RegionWatcher
             // Seçim kaydı (#1267): gösterilen bir satırın zemini açıktan koyuya (ya da tersine) döndüyse eski kutular o satırın
             // eski renginde kalıyor, yeni okuma doğrulanana dek bozuk çeviri görünüyordu. Eski kutular hemen kalkar; yeni okuma
             // her zamanki gibi çizilir (Mac ve Android ile aynı).
+            // Liste kaydı (Sinan Bey beta.100 3381, 3383): menüde liste kayınca eski kutular eski yerinde başka satırın
+            // üstünde kalıyordu; yazının bir kısmı hâlâ göründüğü için kararsız okuma da kaldırmıyordu. Gösterilen bir satır
+            // başka yerde okunuyor ya da yerinde başka yazı var: eski kutular hemen kalkar.
+            var shownItems = (state.RenderedBlocks ?? []).Select(block => block.Item).ToList();
             if (!string.IsNullOrEmpty(state.RenderedText)
-                && SelectionMoved([.. (state.RenderedBlocks ?? []).Select(block => block.Item)], candidate.Blocks ?? []))
+                && (SelectionMoved(shownItems, candidate.Blocks ?? [])
+                    || (area.Menu && ListMoved(shownItems, BlockTexts(candidate)))))
             {
                 server.SendRegion(area.Id, "", null);
                 state.Shown = state.ShownText = "";
@@ -812,13 +817,17 @@ public sealed partial class RegionWatcher
         // Menü şeridinin sekmeleri tek satır okunsa da ayrı satırlardır (#859); kutular alana oranlı.
         var aspect = (region.Right - region.Left) * 16 / Math.Max(1e-6, (region.Bottom - region.Top) * 9);
         // Otomatik alanda (menü, kontrol şeması) tuşlu etiketler ("HOLSTER (L1)", "SELECT (✕)") yazının kendisidir, atılmaz.
-        var lines = (auto ? marked : marked.WithoutButtonPrompts()).WithoutOcrNoise(phone).Lines
+        var cleaned = (auto ? marked : marked.WithoutButtonPrompts()).WithoutOcrNoise(phone).Lines;
+        // Otomatik alanda aynı satırın yan yana okunan parçaları (simgeden, renkli addan bölünen cümle) tek satırdır.
+        var lines = (auto && !phone ? JoinedPieces(cleaned, aspect) : cleaned)
             .SelectMany(line => phone ? [line] : ScreenTranslation.MenuPieces(line, aspect, frame))
             .Where(line => ScreenTranslation.IsWords(line.Text))
             .Where(line => !styled || !ScreenTranslation.IsClock(line.Text))
             // Otomatik alanda yayın katmanı (logo, alan adı, "Canlı") ve karenin kenarında kesilmiş tek sözcük atılır.
             // Güveni düşük okuma, sözlükte karşılığı yoksa atılır ("1 Мар" güven 0,3 ama sözlükte "Map").
+            // Menüde alanın kenarında kesilmiş satır da atılır (CutAtAreaEdge).
             .Where(line => !auto || !(ScreenTextNoise.IsOverlay(line.Text) || CutAtEdge(line)
+                                      || (menu && !phone && CutAtAreaEdge(line, region))
                                       || (line.Confidence < 0.5 && UiCommands.TranslateLabelLoosely(IconText.Plain(line.Text)) is null)))
             .OrderBy(line => line.Box?.Top ?? 0)
             .ToList();
@@ -994,6 +1003,144 @@ public sealed partial class RegionWatcher
             result.Add(block with { Look = look with { Align = align } });
         }
         return result;
+    }
+
+    /// <summary><see cref="CutAtAreaEdge"/> payı (karo genişliği cinsinden).</summary>
+    internal const double AreaEdgeTiles = 0.25;
+
+    /// <summary>
+    /// Menüdeki otomatik alanın sol ya da sağ kenarına (karenin kenarı değilse) <see cref="AreaEdgeTiles"/> karodan yakın
+    /// değen satır alanın dışına taşıyor: uzun satırın bir parçasıdır. Alan yazının karolarından bir karo geniş tutulur;
+    /// içindeki yazı kenara değmez. Sinan Bey beta.100 (3381-3383): yarım okunan satırın kalan parçası ayrı blok sanılıp
+    /// yanına küçük kutuyla çevriliyordu ("Delik", "bunun bedelini ödemek!"). Kesik satır çevrilmez; bütün okunduğu alanda
+    /// çevrilir (Mac/iPhone, Android ile aynı).
+    /// </summary>
+    internal static bool CutAtAreaEdge(TextLine line, CropRegion region)
+    {
+        if (line.Box is not { } box) return false;
+        var width = region.Right - region.Left;
+        if (width <= 0) return false;
+        var margin = AreaEdgeTiles / ScreenTextDetector.Columns / width;
+        return (region.Left > 0.001 && box.Left <= margin) || (region.Right < 0.999 && box.Right >= 1 - margin);
+    }
+
+    /// <summary><see cref="JoinedPieces"/>: parçalar arası boşluk (satır yüksekliğine oranla); satır içi simge sığar.</summary>
+    internal const double PieceGap = 2.5;
+
+    /// <summary>
+    /// Aynı satırda yan yana okunan parçalar (dikeyde küçüğün %60'ı örtüşür, yazı boyları 1,3 kattan az farklı, aradaki
+    /// boşluk satır yüksekliğinin en çok <see cref="PieceGap"/> katı) soldan sağa tek satır olur; en az birinde küçük harf
+    /// olmalı (BÜYÜK HARFLİ sekmeler ve tuş etiketleri ayrı kalır, MenuPieces). Yazı tanıma uzun satırı satır içi simgeden
+    /// ya da renkli konuşan adından bölüyor, parçalar ayrı blok olup ayrı ayrı çevriliyordu (Sinan Bey beta.100 3380:
+    /// "görmek için", "Ev" yardım paragrafının içine küçük kutularla biniyordu). <paramref name="aspect"/>: alanın
+    /// genişlik/yükseklik oranı (Mac/iPhone, Android ile aynı).
+    /// </summary>
+    internal static IReadOnlyList<TextLine> JoinedPieces(IReadOnlyList<TextLine> lines, double aspect)
+    {
+        if (lines.Count < 2 || lines.Any(line => line.Box is null)) return lines;
+        var rows = new List<TextLine>();
+        foreach (var line in lines.OrderBy(line => line.Box!.Value.Left))
+        {
+            var box = line.Box!.Value;
+            var index = rows.FindIndex(row => PieceOf(box, line.Text, row, aspect));
+            if (index < 0)
+            {
+                rows.Add(line);
+                continue;
+            }
+            var row = rows[index];
+            var words = row.Words is not null && line.Words is not null ? row.Words.Concat(line.Words).ToList() : null;
+            var icons = (row.Icons ?? []).Concat(line.Icons ?? []).ToList();
+            double? confidence = row.Confidence is null ? line.Confidence
+                : line.Confidence is null ? row.Confidence : Math.Min(row.Confidence.Value, line.Confidence.Value);
+            rows[index] = row with
+            {
+                Text = row.Text + " " + line.Text, Box = row.Box!.Value.Union(box), Words = words,
+                Icons = icons.Count == 0 ? null : icons, Confidence = confidence,
+            };
+        }
+        return rows.Count == lines.Count ? lines
+            : [.. rows.OrderBy(row => row.Box!.Value.Top).ThenBy(row => row.Box!.Value.Left)];
+    }
+
+    private static bool PieceOf(TextBox next, string text, TextLine row, double aspect)
+    {
+        var box = row.Box!.Value;
+        double a = next.Bottom - next.Top, b = box.Bottom - box.Top;
+        if (Math.Min(a, b) <= 0 || Math.Max(a, b) > 1.3 * Math.Min(a, b)) return false;
+        if (Math.Min(next.Bottom, box.Bottom) - Math.Max(next.Top, box.Top) < 0.6 * Math.Min(a, b)) return false;
+        if (!text.Any(char.IsLower) && !row.Text.Any(char.IsLower)) return false;
+        var gap = (next.Left - box.Right) * aspect;
+        return gap >= -0.5 * Math.Max(a, b) && gap <= PieceGap * Math.Max(a, b);
+    }
+
+    /// <summary>Adayın blokları: karedeki yeri ve yazısı (bloğun parçaları birleşik).</summary>
+    internal static IReadOnlyList<(TextBox Box, string Text)> BlockTexts(Candidate candidate) =>
+        [.. (candidate.Blocks ?? []).Select(block =>
+        {
+            var end = Math.Min(candidate.Paragraphs.Count, block.Start + block.Count);
+            return (block.Box, block.Start < end ? string.Join(" ", candidate.Paragraphs.Skip(block.Start).Take(end - block.Start)) : "");
+        })];
+
+    /// <summary>
+    /// Liste kaydı (Sinan Bey beta.100 3381, 3383): gösterilen bir kutunun yazısı yeni okumada satır yüksekliğinin en az
+    /// yarısı kadar başka yerde, ya da kutunun yerinde (satırının en az yarısı örtüşen) başka bir yazı var. Okuma
+    /// oynamaları (benzer okuma, eksik okuma) aynı yazı sayılır. Mac/iPhone ve Android aynı kuralı uygular.
+    /// </summary>
+    internal static bool ListMoved(IReadOnlyList<ScreenTranslation.Item> rendered, IReadOnlyList<(TextBox Box, string Text)> current)
+    {
+        static bool Same(string a, string b)
+        {
+            var (x, y) = (IconText.Plain(a).Replace('\n', ' '), IconText.Plain(b).Replace('\n', ' '));
+            return Matches(TextKey([x]), TextKey([y])) || IsPartOf(x, y) || IsPartOf(y, x);
+        }
+        static double Rows(TextBox a, TextBox b) =>
+            Math.Max(0, Math.Min(a.Bottom, b.Bottom) - Math.Max(a.Top, b.Top)) / Math.Max(1e-9, Math.Min(a.Bottom - a.Top, b.Bottom - b.Top));
+        foreach (var item in rendered)
+        {
+            var source = item.Source;
+            if (!source.Any(char.IsLetter)) continue;
+            var height = item.Box.Bottom - item.Box.Top;
+            var found = current.Where(block => Same(block.Text, source)
+                                               && Math.Min(block.Box.Right, item.Box.Right) > Math.Max(block.Box.Left, item.Box.Left)).ToList();
+            if (found.Count > 0)
+            {
+                var nearest = found.MinBy(block => Math.Abs(block.Box.Top - item.Box.Top));
+                var line = Math.Min(height, nearest.Box.Bottom - nearest.Box.Top) / Math.Max(1, item.Rows);
+                if (Math.Abs(nearest.Box.Top - item.Box.Top) >= 0.5 * line) return true;
+                continue;
+            }
+            if (current.Any(block => Rows(block.Box, item.Box) >= 0.5
+                                     && Math.Min(block.Box.Right, item.Box.Right) > Math.Max(block.Box.Left, item.Box.Left)
+                                     && !Same(block.Text, source))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Etiketin başında çevrilmeyecek kısım (ardındaki boşluk dahil): konuşan adı ("Staff Member: ", ardı cümleyse) ya da
+    /// BÜYÜK HARFLİ yazıda yalnız özel adlardan oluşan baş ("JASON & LUCIA " + "MAP"; ScreenTranslation.KeepsNames).
+    /// Ardında harfli yazı kalmalı. Ayar satırı ("Subtitles: On") bütün çevrilir (Mac/iPhone, Android ile aynı).
+    /// </summary>
+    internal static string? KeptHead(string text)
+    {
+        if (SpeakerPrefix.Parse(text) is { } speaker
+            && (SubtitleStabilizer.EndsSentence(speaker.Body)
+                || speaker.Body.Split(' ', '\t', StringSplitOptions.RemoveEmptyEntries).Length >= 3))
+        {
+            var at = text.LastIndexOf(speaker.Body, StringComparison.Ordinal);
+            if (at > 0 && string.IsNullOrWhiteSpace(text[(at + speaker.Body.Length)..])) return text[..at];
+        }
+        if (!text.Contains(" & ") || !TextStyleSampler.IsUpper(text)) return null;
+        var words = text.Split(' ');
+        if (words.Length < 4) return null;
+        for (var end = words.Length - 1; end >= 3; end--)
+        {
+            var head = string.Join(" ", words[..end]);
+            var tail = string.Join(" ", words[end..]);
+            if (tail.Any(char.IsLetter) && ScreenTranslation.KeepsNames(head)) return head + " ";
+        }
+        return null;
     }
 
     /// <summary>Tek sözcüklük satır alanın sol ya da sağ kenarına değiyor: kesilmiş bir yazının parçası ("KELI").</summary>
@@ -1567,6 +1714,13 @@ public sealed partial class RegionWatcher
         {
             var prefix = KeyPrefix().Match(part).Value;
             var rest = part[prefix.Length..];
+            // Baştaki konuşan adı ("Staff Member: 'Sup?", menünün diyalog geçmişi) ve özel ad ("JASON & LUCIA MAP", sekmeler
+            // tek parça okununca) çevrilmez, olduğu gibi kalır; yalnız ardındaki yazı çevrilir (Sinan Bey beta.100 3380).
+            if (KeptHead(rest) is { } kept)
+            {
+                prefix += kept;
+                rest = rest[kept.Length..];
+            }
             var suffix = KeySuffix().Match(rest).Value;
             return (prefix, rest[..^suffix.Length], suffix);
         }).ToList();
