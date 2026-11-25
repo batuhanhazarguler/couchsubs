@@ -329,7 +329,8 @@ final class Runner {
         if let handset = ScreenPhoneCard.phone(in: image) {
             let groups = ScreenTranslation.groups(reading, frame: image, wholeScreen: true, handset: handset)
             let roles = Set(groups.compactMap { $0.phone?.role.rawValue })
-            if roles.contains("home") {
+            // Ana ekran bileşeni (beta.100: başlık + sayaç tek kart, rol "widget") da ana ekrandır.
+            if roles.contains("home") || roles.contains("widget") {
                 result.phoneDetected = "home"
             } else if !roles.isDisjoint(with: ["incoming", "outgoing", "message"]) {
                 result.phoneDetected = "chat"
