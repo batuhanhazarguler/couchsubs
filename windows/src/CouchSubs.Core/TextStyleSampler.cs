@@ -72,10 +72,16 @@ public static class TextStyleSampler
         // Düz olmayan zeminde kenarlıklı yazı (GTA 6 haritasındaki tuş ipuçları: beyaz harf, koyu kenarlık, açık mavi deniz):
         // kutunun içinde üç ton var, zemin kümesi harfle denizin karışımı çıkıyor, kutu denizin üstünde açık gri
         // çiziliyordu. Yazının hemen çevresindeki şerit düzse zemin odur.
-        if (!flat && ring is not null && Deviation(ring) < flatLimit)
+        // Şeridin yan parçası yazının yanındaki tuş simgesine (RECENTER Ⓛ3, 2D VIEW Ⓡ3), alt/üst parçası kutudan taşan harf
+        // konturuna denk gelince şerit düz çıkmıyor, kutu yine açık gri çiziliyordu (#1268): o zaman yalnız yazıdan biraz
+        // uzaktaki üst ve alt şeride bakılır (Mac ile aynı).
+        var band = flat ? null
+            : ring is not null && Deviation(ring) < flatLimit ? ring
+            : Surrounding(frame, boxes, sides: false) is { } far && Deviation(far) < flatLimit ? far : null;
+        if (band is not null)
         {
-            background = Mean(ring);
-            shade = ring.Average(pixel => pixel.Luma);
+            background = Mean(band);
+            shade = band.Average(pixel => pixel.Luma);
         }
         if (DesignTokens.Contrast(background, foreground) < 3)
             foreground = shade < 128 ? "#FFFFFF" : "#000000";
@@ -122,7 +128,11 @@ public static class TextStyleSampler
     /// <summary>Kutunun kenar noktalarının en az bu kadarı çok olan kümedeyse kutu dolu bir zemindir (seçili satır); şeride bakılmaz.</summary>
     public const double FilledEdge = 0.7;
 
-    private static List<(int Luma, byte R, byte G, byte B, bool Edge)>? Surrounding(Frame frame, IReadOnlyList<TextBox> boxes)
+    /// <summary>
+    /// <paramref name="sides"/>: yanlardaki parçalar da; yoksa yalnız üst ve alt şerit, kutudan bir şerit boyu uzakta (taşan
+    /// harf konturu girmesin).
+    /// </summary>
+    private static List<(int Luma, byte R, byte G, byte B, bool Edge)>? Surrounding(Frame frame, IReadOnlyList<TextBox> boxes, bool sides = true)
     {
         var pixels = new List<(int Luma, byte R, byte G, byte B, bool Edge)>();
         var aspect = (double)frame.Width / Math.Max(1, frame.Height);
@@ -130,13 +140,20 @@ public static class TextStyleSampler
         {
             var dy = (box.Bottom - box.Top) * RingShare;
             var dx = dy / aspect;
-            TextBox[] strips =
-            [
-                new(box.Left, box.Top - dy, box.Right, box.Top),
-                new(box.Left, box.Bottom, box.Right, box.Bottom + dy),
-                new(box.Left - dx, box.Top, box.Left, box.Bottom),
-                new(box.Right, box.Top, box.Right + dx, box.Bottom),
-            ];
+            var away = sides ? 0 : dy;
+            TextBox[] strips = sides
+                ?
+                [
+                    new(box.Left, box.Top - dy, box.Right, box.Top),
+                    new(box.Left, box.Bottom, box.Right, box.Bottom + dy),
+                    new(box.Left - dx, box.Top, box.Left, box.Bottom),
+                    new(box.Right, box.Top, box.Right + dx, box.Bottom),
+                ]
+                :
+                [
+                    new(box.Left, box.Top - away - dy, box.Right, box.Top - away),
+                    new(box.Left, box.Bottom + away, box.Right, box.Bottom + away + dy),
+                ];
             foreach (var strip in strips)
                 if (strip.Left >= 0 && strip.Top >= 0 && strip.Right <= 1 && strip.Bottom <= 1
                     && !boxes.Any(other => ScreenTranslation.Overlap(other, strip) > 0.2))

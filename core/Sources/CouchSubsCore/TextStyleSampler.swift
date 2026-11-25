@@ -85,9 +85,13 @@ public enum TextStyleSampler {
         // Düz olmayan zeminde kenarlıklı yazı (GTA 6 haritasındaki tuş ipuçları: beyaz harf, koyu kenarlık, açık mavi deniz):
         // kutunun içinde üç ton var, zemin kümesi harfle denizin karışımı çıkıyor, kutu denizin üstünde açık gri
         // çiziliyordu. Yazının hemen çevresindeki şerit düzse zemin odur.
-        if !flat, let ring, deviation(ring) < flatLimit {
-            background = mean(ring)
-            shade = Double(ring.map(\.luma).reduce(0, +)) / Double(ring.count)
+        // Şeridin yan parçası yazının yanındaki tuş simgesine (RECENTER Ⓛ3, 2D VIEW Ⓡ3), alt/üst parçası kutudan taşan harf
+        // konturuna denk gelince şerit düz çıkmıyor, kutu yine açık gri çiziliyordu (#1268): o zaman yalnız yazıdan biraz
+        // uzaktaki üst ve alt şeride bakılır.
+        if !flat, let band = [ring, surrounding(frame, boxes, sides: false)].compactMap({ $0 })
+            .first(where: { deviation($0) < flatLimit }) {
+            background = mean(band)
+            shade = Double(band.map(\.luma).reduce(0, +)) / Double(band.count)
         }
         if contrast(background, foreground) < 3 {
             foreground = shade < 128 ? "#FFFFFF" : "#000000"
@@ -129,18 +133,23 @@ public enum TextStyleSampler {
     /// Kutunun kenar noktalarının en az bu kadarı çok olan kümedeyse kutu dolu bir zemindir (seçili satır); şeride bakılmaz.
     static let filledEdge = 0.7
 
-    private static func surrounding(_ frame: CGImage, _ boxes: [TextBox]) -> [Pixel]? {
+    /// `sides`: yanlardaki parçalar da; yoksa yalnız üst ve alt şerit, kutudan bir şerit boyu uzakta (taşan harf konturu
+    /// girmesin).
+    private static func surrounding(_ frame: CGImage, _ boxes: [TextBox], sides: Bool = true) -> [Pixel]? {
         var pixels: [Pixel] = []
         let aspect = Double(frame.width) / Double(max(1, frame.height))
         for box in boxes {
             let dy = (box.bottom - box.top) * ringShare
             let dx = dy / aspect
-            let strips = [
-                TextBox(left: box.left, top: box.top - dy, right: box.right, bottom: box.top),
-                TextBox(left: box.left, top: box.bottom, right: box.right, bottom: box.bottom + dy),
-                TextBox(left: box.left - dx, top: box.top, right: box.left, bottom: box.bottom),
-                TextBox(left: box.right, top: box.top, right: box.right + dx, bottom: box.bottom),
+            let away = sides ? 0 : dy
+            var strips = [
+                TextBox(left: box.left, top: box.top - away - dy, right: box.right, bottom: box.top - away),
+                TextBox(left: box.left, top: box.bottom + away, right: box.right, bottom: box.bottom + away + dy),
             ]
+            if sides {
+                strips += [TextBox(left: box.left - dx, top: box.top, right: box.left, bottom: box.bottom),
+                           TextBox(left: box.right, top: box.top, right: box.right + dx, bottom: box.bottom)]
+            }
             for strip in strips where strip.left >= 0 && strip.top >= 0 && strip.right <= 1 && strip.bottom <= 1
                 && !boxes.contains(where: { ScreenTranslation.overlap($0, strip) > 0.2 }) {
                 collect(frame, strip, into: &pixels)

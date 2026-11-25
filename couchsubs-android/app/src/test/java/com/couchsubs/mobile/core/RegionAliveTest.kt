@@ -69,9 +69,9 @@ class RegionAliveTest {
         assertFalse(ScreenTextDetector.outlined(400, 100))
     }
 
-    /** Gerçek kare (testdata/frames/gta6-harita-kart.jpg): desenli açık haritanın üstündeki tuş listesi menüde alan olur. */
-    @Test
-    fun outlinedMapHintsOnARealMapFrameAreFound() {
+    private class Picture(val rgb: IntArray, val width: Int, val height: Int)
+
+    private fun mapFrame(): Picture {
         val directory = generateSequence(File(System.getProperty("user.dir")!!).absoluteFile) { it.parentFile }
             .map { File(it, "testdata/frames") }
             .first { File(it, "frames.json").isFile }
@@ -82,6 +82,41 @@ class RegionAliveTest {
         val height = type.getMethod("getHeight").invoke(buffered) as Int
         val rgb = type.getMethod("getRGB", Int::class.java, Int::class.java, Int::class.java, Int::class.java, IntArray::class.java,
             Int::class.java, Int::class.java).invoke(buffered, 0, 0, width, height, null, 0, width) as IntArray
+        for (i in rgb.indices) rgb[i] = rgb[i] and 0xFFFFFF
+        return Picture(rgb, width, height)
+    }
+
+    /**
+     * Gerçek kare: tuş listesinin kutuları denizin renginde (yanındaki Ⓛ3/Ⓡ3 simgesi ve taşan harf konturu zemine karışmaz).
+     * Eskiden "RECENTER" ve "2D VIEW" açık gri çiziliyordu (Mac ile aynı vaka).
+     */
+    @Test
+    fun outlinedMapHintsAreDrawnInTheSeaColour() {
+        val picture = mapFrame()
+        val (width, height, rgb) = Triple(picture.width, picture.height, picture.rgb)
+        val gray = GrayFrame(ByteArray(rgb.size) { i ->
+            val c = rgb[i]
+            ((299 * ((c shr 16) and 0xff) + 587 * ((c shr 8) and 0xff) + 114 * (c and 0xff)) / 1000).toByte()
+        }, width, height)
+        // Kayıtlı okumanın kutuları (alan 0.812-1.0 x 0.639-1.0'a oranla).
+        val lines = listOf("RECENTER" to listOf(0.378, 0.183, 0.772, 0.258), "2D VIEW" to listOf(0.450, 0.343, 0.761, 0.431))
+        for ((text, b) in lines) {
+            fun x(v: Double) = ((0.812 + v * 0.188) * width).toInt()
+            fun y(v: Double) = ((0.639 + v * 0.361) * height).toInt()
+            val style = TextStyleSampler.sample(gray, x(b[0]), y(b[1]), x(b[2]), y(b[3]), (y(b[3]) - y(b[1])).toDouble(), text,
+                color = { px, py -> rgb[py * width + px] })!!
+            val c = style.surface.background.removePrefix("#").toInt(16)
+            val distance = maxOf(kotlin.math.abs(((c shr 16) and 0xff) - 0x3A), kotlin.math.abs(((c shr 8) and 0xff) - 0x94),
+                kotlin.math.abs((c and 0xff) - 0xBB))
+            assertTrue("$text: ${style.surface.background}", distance <= 24)
+        }
+    }
+
+    /** Gerçek kare (testdata/frames/gta6-harita-kart.jpg): desenli açık haritanın üstündeki tuş listesi menüde alan olur. */
+    @Test
+    fun outlinedMapHintsOnARealMapFrameAreFound() {
+        val picture = mapFrame()
+        val (width, height, rgb) = Triple(picture.width, picture.height, picture.rgb)
         val detector = ScreenTextDetector()
         val sample = detector.sample(width, height) { x, y ->
             val c = rgb[y * width + x]

@@ -102,21 +102,27 @@ object TextStyleSampler {
         // Düz olmayan zeminde kenarlıklı yazı (GTA 6 haritasındaki tuş ipuçları: beyaz harf, koyu kenarlık, açık mavi deniz):
         // kutunun içinde üç ton var, zemin kümesi harfle denizin karışımı çıkıyor, kutu denizin üstünde açık gri
         // çiziliyordu. Yazının hemen çevresindeki şerit düzse zemin odur.
-        if (deviation >= flatLimit && ring != null) {
-            val lumas = ring.map { (x, y) -> frame.at(x, y) }
-            val mean = lumas.average()
-            val spread = sqrt(lumas.sumOf { (it - mean) * (it - mean) } / lumas.size)
-            if (spread < flatLimit) {
-                groundHex = if (color == null) hex(mean) else {
-                    val sum = LongArray(3)
-                    for ((x, y) in ring) {
-                        val rgb = color(x, y)
-                        sum[0] += (rgb shr 16) and 0xff
-                        sum[1] += (rgb shr 8) and 0xff
-                        sum[2] += rgb and 0xff
-                    }
-                    rgbHex(sum, ring.size.toLong())
+        // Şeridin yan parçası yazının yanındaki tuş simgesine (RECENTER Ⓛ3, 2D VIEW Ⓡ3), alt/üst parçası kutudan taşan harf
+        // konturuna denk gelince şerit düz çıkmıyor, kutu yine açık gri çiziliyordu (#1268): o zaman yalnız yazıdan biraz
+        // uzaktaki üst ve alt şeride bakılır (Mac/iPhone, Windows ile aynı).
+        val band = if (deviation < flatLimit) null else sequenceOf({ ring }, { surrounding(frame, l, t, r, b, sides = false) })
+            .mapNotNull { it() }
+            .firstOrNull { points ->
+                val lumas = points.map { (x, y) -> frame.at(x, y) }
+                val mean = lumas.average()
+                sqrt(lumas.sumOf { (it - mean) * (it - mean) } / lumas.size) < flatLimit
+            }
+        if (band != null) {
+            val mean = band.map { (x, y) -> frame.at(x, y) }.average()
+            groundHex = if (color == null) hex(mean) else {
+                val sum = LongArray(3)
+                for ((x, y) in band) {
+                    val rgb = color(x, y)
+                    sum[0] += (rgb shr 16) and 0xff
+                    sum[1] += (rgb shr 8) and 0xff
+                    sum[2] += rgb and 0xff
                 }
+                rgbHex(sum, band.size.toLong())
             }
         }
         val ratio = inkCount.toDouble() / (inkCount + groundCount)
@@ -133,18 +139,24 @@ object TextStyleSampler {
     /** Çok olan küme kutunun kenar noktalarının en az bu kadarını dolduruyorsa (seçili satırın zemini) zemindir. */
     const val FILLED_EDGE = 0.7
 
-    /** Dikdörtgenin hemen dışındaki şeridin noktaları (x, y); kareden taşan parça atlanır, nokta azsa null. */
-    private fun surrounding(frame: GrayFrame, l: Int, t: Int, r: Int, b: Int): List<Pair<Int, Int>>? {
+    /**
+     * Dikdörtgenin hemen dışındaki şeridin noktaları (x, y); kareden taşan parça atlanır, nokta azsa null. [sides] false ise
+     * yalnız üst ve alt şerit, kutudan bir şerit boyu uzakta (taşan harf konturu girmesin).
+     */
+    private fun surrounding(frame: GrayFrame, l: Int, t: Int, r: Int, b: Int, sides: Boolean = true): List<Pair<Int, Int>>? {
         val d = maxOf(1, ((b - t) * RING_SHARE).toInt())
+        val away = if (sides) 0 else d
         val values = mutableListOf<Pair<Int, Int>>()
         fun strip(x0: Int, y0: Int, x1: Int, y1: Int) {
             if (x0 < 0 || y0 < 0 || x1 > frame.width || y1 > frame.height || x1 - x0 < 1 || y1 - y0 < 1) return
             for (y in y0 until y1) for (x in x0 until x1) values.add(x to y)
         }
-        strip(l, t - d, r, t)
-        strip(l, b, r, b + d)
-        strip(l - d, t, l, b)
-        strip(r, t, r + d, b)
+        strip(l, t - away - d, r, t - away)
+        strip(l, b + away, r, b + away + d)
+        if (sides) {
+            strip(l - d, t, l, b)
+            strip(r, t, r + d, b)
+        }
         return if (values.size < 16) null else values
     }
 
