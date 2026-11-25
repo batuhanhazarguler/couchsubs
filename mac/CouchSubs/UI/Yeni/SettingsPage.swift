@@ -173,7 +173,7 @@ private struct SettingsNav: View {
                         .opacity(selected || hovering ? 1 : 0.85)
                     VStack(alignment: .leading, spacing: DS.space("line")) {
                         Text(item.title).font(.dsBodyStrong).foregroundStyle(Color.dsText).lineLimit(1).minimumScaleFactor(0.8)
-                        Text(item.hint).font(.dsCaption).foregroundStyle(selected ? Color.dsMuted : Color.dsFaint).lineLimit(1)
+                        Text(item.hint).font(.dsCaption).foregroundStyle(Color.dsMuted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }
@@ -859,7 +859,7 @@ private struct OutputSettings: View {
                 Text(phase.title).font(.dsSmall).foregroundStyle(Color.dsMuted)
             }
             if let step = phase.step {
-                Text(tvStepLine(current: step)).font(.dsSmall).foregroundStyle(Color.dsFaint)
+                Text(tvStepLine(current: step)).font(.dsSmall).foregroundStyle(Color.dsMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }

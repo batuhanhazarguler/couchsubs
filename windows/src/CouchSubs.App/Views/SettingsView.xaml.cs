@@ -159,6 +159,7 @@ public partial class SettingsView : UserControl
         Loaded += (_, _) => DarkenAmberGlyph();
         Loaded += (_, _) => MoveSelection(false);
         NavHost.SizeChanged += (_, _) => MoveSelection(false);
+        SizeChanged += (_, e) => { if (e.WidthChanged) UseCompactNav(ActualWidth < CompactNavBelow); };
         Unloaded += (_, _) => StopRecording();
         loading = false;
     }
@@ -468,18 +469,18 @@ public partial class SettingsView : UserControl
         var active = controller.Settings.ActiveAreaProfile;
         foreach (var profile in controller.GameProfiles)
         {
-            var row = new DockPanel { Margin = Sp.T("0", "xxs", "0", "xxs"), LastChildFill = true };
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-            DockPanel.SetDock(buttons, Dock.Right);
-            void AddButton(string title, Action run, string left = "xs")
+            // Ad üstte, düğmeler altında ve sığmazsa alt satıra sarılır: dar sütunda dört düğme adı ezip kartın dışına taşıyordu.
+            var row = new StackPanel { Margin = Sp.T("0", "xxs", "0", "xxs") };
+            var buttons = new WrapPanel { Margin = Sp.T("0", "xs", "0", "0") };
+            void AddButton(string title, Action run)
             {
-                var button = new Button { Content = text[title], Padding = Sp.T("s", "0", "s", "0"), Margin = Sp.T(left, "0", "0", "0") };
+                var button = new Button { Content = text[title], Padding = Sp.T("s", "0", "s", "0"), Margin = Sp.T("0", "0", "xs", "xs") };
                 button.Click += (_, _) => run();
                 buttons.Children.Add(button);
             }
             var key = profile.Key;
             var game = profile.Game;
-            if (key != active) AddButton("Use", () => controller.UseAreaProfile(key), "0");
+            if (key != active) AddButton("Use", () => controller.UseAreaProfile(key));
             AddButton("Rename", () => BeginProfileEdit((key, false), game));
             AddButton("Duplicate", () => BeginProfileEdit((key, true), ""));
             AddButton("Delete profile", () =>
@@ -488,12 +489,12 @@ public partial class SettingsView : UserControl
                                     MessageBoxImage.Question) == MessageBoxResult.Yes)
                     controller.DeleteAreaProfile(key);
             });
-            row.Children.Add(buttons);
             row.Children.Add(new TextBlock
             {
                 Text = key == active ? game + " · " + text["In use"] : game,
-                VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+                TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap,
             });
+            row.Children.Add(buttons);
             GameProfileList.Children.Add(row);
         }
         GameProfileList.Visibility = GameProfileList.Children.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -1377,6 +1378,28 @@ public partial class SettingsView : UserControl
 
     private void OnEditAppearance(object sender, RoutedEventArgs e) => Sections.SelectedItem = AppearanceSection;
 
+    /// <summary>Bu genişliğin altında soldaki menü yalnız simgelere iner (ad ipucunda); sağdaki sayfaya yer kalır.</summary>
+    private const double CompactNavBelow = 1000;
+    private bool compactNav;
+
+    /// <summary>
+    /// Dar pencere (ör. 800 px): menü kartı 240'tan simge genişliğine (simge 30 + satır ve kart iç boşlukları + 1 px
+    /// kenarlar) iner, satırın adı ipucunda görünür. Genişleyince eski haline döner. Seçim hapı NavHost boyu değişince
+    /// yeniden yerleşir.
+    /// </summary>
+    private void UseCompactNav(bool compact)
+    {
+        if (compact == compactNav) return;
+        compactNav = compact;
+        if (compact) NavCard.Width = 30 + 4 * Sp.V("s") + 2;
+        else NavCard.SetResourceReference(WidthProperty, "size.settingsNav");
+        foreach (var item in Nav.Children.OfType<Controls.NavItem>())
+        {
+            item.Compact = compact;
+            item.ToolTip = compact ? item.Content : null;
+        }
+    }
+
     /// <summary>
     /// Seçim hapını seçili menü satırına taşır (Mac matchedGeometryEffect): konum ve yükseklik giriş eğrisiyle orta sürede
     /// kayar; hareket azaltılmışsa ya da Geçiş Animasyonları kapalıysa kısa sürede.
@@ -2081,6 +2104,8 @@ public partial class SettingsView : UserControl
                 TextWrapping = TextWrapping.Wrap,
                 Margin = Sp.T("0", "0", "m", "xs"),
             };
+            // Satır adı gövde yazısı rengiyle (tema kaynağı; açık ve koyu temada okunur).
+            name.SetResourceReference(TextBlock.ForegroundProperty, "textPrimaryBrush");
             Grid.SetRow(name, row);
             ShortcutGrid.Children.Add(name);
             for (var slot = 0; slot < HotkeyTable.SlotCount; slot++)

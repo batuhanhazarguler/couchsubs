@@ -636,7 +636,7 @@ struct DSAccountCard<Others: View>: View {
                     HStack(spacing: DS.space("xxs")) {
                         Circle().fill(signedIn ? Color.dsSuccess : Color.dsFaint).frame(width: 7, height: 7).accessibilityHidden(true)
                         Text(signedIn ? "Signed in" : "Not signed in").font(.dsSmall).foregroundStyle(Color.dsMuted)
-                        if let detail { Text(verbatim: "· \(detail)").font(.dsSmall).foregroundStyle(Color.dsFaint).lineLimit(1) }
+                        if let detail { Text(verbatim: "· \(detail)").font(.dsSmall).foregroundStyle(Color.dsMuted).lineLimit(1) }
                     }
                     .fixedSize()
                 }
@@ -1202,7 +1202,7 @@ struct DSKeys: View {
     var body: some View {
         HStack(spacing: DS.space("xxs")) {
             ForEach(Array(keys.enumerated()), id: \.offset) { index, key in
-                if index > 0 { Text("or").font(.dsCaption).foregroundStyle(Color.dsFaint) }
+                if index > 0 { Text("or").font(.dsCaption).foregroundStyle(Color.dsMuted) }
                 Text(verbatim: key)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(Color.dsText)

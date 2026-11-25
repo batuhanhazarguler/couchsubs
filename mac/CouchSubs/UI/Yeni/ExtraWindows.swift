@@ -57,7 +57,7 @@ struct NewAboutView: View {
             VStack(spacing: DS.space("xs")) {
                 Image("Enmera").resizable().aspectRatio(contentMode: .fit).frame(height: 16).opacity(0.85)
                     .accessibilityLabel(Text(verbatim: "Enmera"))
-                Text("Copyright © 2026 Enmera").font(.system(size: 11)).foregroundStyle(Color.dsFaint)
+                Text("Copyright © 2026 Enmera").font(.system(size: 11)).foregroundStyle(Color.dsMuted)
             }
             .padding(.top, DS.space("xs"))
             Button("Close") { dismiss() }
@@ -178,7 +178,7 @@ struct MenuBarPanel: View {
                 DSTitleBlock(title: "Clicks Pass to the Window Below", subtitle: "Subtitles don't block clicks.",
                              titleFont: .system(size: 14, weight: .medium))
                 if let key = HotkeyTable.keys(model.settings.hotkeys, .clickThrough).first {
-                    Text(verbatim: key.label).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dsFaint)
+                    Text(verbatim: key.label).font(.system(size: 11, design: .monospaced)).foregroundStyle(Color.dsMuted)
                 }
             }
             MenuRow(title: "Position the Subtitles") { model.overlayAdjusting = true }

@@ -136,11 +136,123 @@ public class UiLintTests
         Assert.True(problems.Count == 0, "Tanımından önce kullanılan StaticResource (açılışta XamlParseException):\n" + string.Join("\n", problems.Distinct()));
     }
 
+    /// <summary>Okunacak yazının renkleri (gövde, açıklama, durum yazıları) ve üstünde durdukları zeminler.</summary>
+    private static readonly string[] TextColors = ["text", "muted", "amberText", "liveText", "successText", "infoText"];
+    private static readonly string[] TextBackgrounds = ["background", "surface", "surfaceRaised", "surfaceHigh", "field"];
+
+    /// <summary>
+    /// Yazı renkleri koyu ve açık temada her zeminde WCAG AA (en az 4,5:1). tasarim.json Mac ile ortak; Windows'ta "Sistemle
+    /// aynı" seçiliyse Windows'un açık / koyu teması bu iki takımdan birini seçer, başka renk takımı yoktur.
+    /// </summary>
+    [Fact]
+    public void TextColorsMeetContrastInBothThemes()
+    {
+        var colors = JsonDocument.Parse(File.ReadAllText(DesignFile())).RootElement.GetProperty("color");
+        var failures = new List<string>();
+        foreach (var theme in new[] { "light", "dark" })
+            foreach (var text in TextColors)
+                foreach (var background in TextBackgrounds)
+                {
+                    var ratio = Contrast(colors.GetProperty(text).GetProperty(theme).GetString()!, colors.GetProperty(background).GetProperty(theme).GetString()!);
+                    if (ratio < 4.5) failures.Add($"{theme}: {text} / {background} = {ratio:0.00}");
+                }
+        Assert.True(failures.Count == 0, "4,5:1'in altında kalan yazı rengi:\n" + string.Join("\n", failures));
+    }
+
+    /// <summary>
+    /// Ayarlar sayfalarının içeriği TabItem'ın mantıksal çocuğudur ve yazı rengini ondan alır. Windows'un TabItem stili
+    /// Foreground=Black verir; sekme stili tema rengini vermezse renksiz satırlar (kısayol adları, profil satırı) koyu
+    /// temada siyaha yakın çizilir.
+    /// </summary>
+    [Fact]
+    public void SettingsPagesGiveTabContentTheThemeTextColor()
+    {
+        var styles = XDocument.Load(Path.Combine(App, "Theme", "Styles.xaml"));
+        foreach (var key in new[] { "SettingsPageTabs", "PageTabs" })
+        {
+            var style = styles.Descendants().Single(e => e.Name.LocalName == "Style" && (string?)e.Attribute(X + "Key") == key);
+            var tabItem = style.Descendants().Single(e => e.Name.LocalName == "Style" && (string?)e.Attribute("TargetType") == "TabItem");
+            var foreground = tabItem.Elements().SingleOrDefault(e => (string?)e.Attribute("Property") == "Foreground")?.Attribute("Value")?.Value;
+            Assert.True(foreground == "{DynamicResource textPrimaryBrush}", $"{key}: sekme öğesi Foreground tema rengi değil ({foreground ?? "yok"})");
+        }
+    }
+
+    /// <summary>"Dosya: öğe adı" → gerekçe. Soluk (faint) renk okunacak yazıda kullanılmaz; yalnız bunlar.</summary>
+    private static readonly Dictionary<string, string> FaintAllowed = new()
+    {
+        ["MainView.xaml: GameSearchHint"] = "arama kutusunun yer tutucusu (WCAG yer tutucuyu saymaz)",
+        ["HistoryView.xaml: SearchHint"] = "arama kutusunun yer tutucusu",
+        ["Styles.xaml: AppStoreSoon"] = "reklam bandındaki devre dışı mağaza düğmesinin \"Yakında\" yazısı (devre dışı)",
+        ["Styles.xaml: GooglePlaySoon"] = "reklam bandındaki devre dışı mağaza düğmesinin \"Yakında\" yazısı (devre dışı)",
+        ["Styles.xaml: {theme:T 'AD'}"] = "reklam bandının köşesindeki küçük \"Reklam\" damgası (süs; Mac DSAdBand ile aynı)",
+    };
+
+    private static readonly Regex LiteralColor = new(@"^(#[0-9A-Fa-f]{3,8}|Black|Gray|Grey|DarkGray|DimGray|LightGray|Silver|SlateGray)$");
+
+    /// <summary>
+    /// Yazılar tema kaynağıyla boyanır (DynamicResource): XAML'deki TextBlock'larda ve TextBlock stillerinde sabit koyu /
+    /// gri renk yok (temayla değişmez, koyu temada kaybolur) ve soluk faint / textTertiary okunacak yazıda yok (her iki
+    /// temada 4,5:1'in altında). Simge yazıları (GlyphText) ve gerekçeli istisnalar hariç.
+    /// </summary>
+    [Fact]
+    public void TextUsesThemeColorsWithEnoughContrast()
+    {
+        var problems = new List<string>();
+        var files = Directory.EnumerateFiles(Path.Combine(App, "Views"), "*.xaml", SearchOption.AllDirectories)
+            .Append(Path.Combine(App, "ShellWindow.xaml")).Append(Path.Combine(App, "Theme", "Styles.xaml")).Where(IsSource);
+        foreach (var file in files)
+        {
+            var name = Path.GetFileName(file);
+            foreach (var element in XDocument.Load(file).Descendants())
+            {
+                string? value = null;
+                string label;
+                if (element.Name.LocalName == "TextBlock")
+                {
+                    if (((string?)element.Attribute("Style"))?.Contains("GlyphText") == true) continue;
+                    value = (string?)element.Attribute("Foreground");
+                    label = (string?)element.Attribute(X + "Name") ?? (string?)element.Attribute("Text") ?? "TextBlock";
+                }
+                else if (element.Name.LocalName == "Setter" && (string?)element.Attribute("Property") == "Foreground"
+                         && element.Parent is { } style && style.Name.LocalName == "Style" && (string?)style.Attribute("TargetType") == "TextBlock")
+                {
+                    value = (string?)element.Attribute("Value");
+                    label = (string?)style.Attribute(X + "Key") ?? "TextBlock (örtük stil)";
+                }
+                else continue;
+                if (value is null) continue;
+                var line = ((System.Xml.IXmlLineInfo)element).LineNumber;
+                if (LiteralColor.IsMatch(value.Trim()))
+                    problems.Add($"{name}:{line}: {label} sabit renk {value} (tema kaynağı kullanın)");
+                else if ((value.Contains("faintBrush") || value.Contains("textTertiaryBrush")) && !FaintAllowed.ContainsKey($"{name}: {label}"))
+                    problems.Add($"{name}:{line}: {label} soluk {value} (okunacak yazı için mutedBrush / textSecondaryBrush)");
+            }
+        }
+        Assert.True(problems.Count == 0, "Tema dışı ya da düşük kontrastlı yazı rengi:\n" + string.Join("\n", problems));
+    }
+
+    /// <summary>WCAG 2 bağıl parlaklık oranı; #RRGGBB(AA) — saydam renkler bu denetimde kullanılmaz.</summary>
+    private static double Contrast(string a, string b)
+    {
+        static double Luminance(string hex)
+        {
+            var text = hex.TrimStart('#');
+            double Channel(int index)
+            {
+                var c = Convert.ToInt32(text.Substring(index, 2), 16) / 255.0;
+                return c <= 0.03928 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+            }
+            return 0.2126 * Channel(0) + 0.7152 * Channel(2) + 0.0722 * Channel(4);
+        }
+        var (la, lb) = (Luminance(a), Luminance(b));
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
     private static (HashSet<string> Keys, HashSet<string> Colors, HashSet<string> Fonts) KnownKeys()
     {
         var keys = new HashSet<string>();
         foreach (var file in Directory.EnumerateFiles(App, "*.xaml", SearchOption.AllDirectories).Where(IsSource))
-            foreach (var element in XDocument.Load(file).Descendants())
+            foreach (var element in XDocument.Load(file, LoadOptions.SetLineInfo).Descendants())
                 if (element.Attribute(X + "Key") is { } key) keys.Add(key.Value);
         var colors = new HashSet<string>();
         var fonts = new HashSet<string>();

@@ -180,10 +180,11 @@
         <Setter Property="Foreground" Value="{DynamicResource textSecondaryBrush}" />
     </Style>
     <Style x:Key="TertiaryText" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
-        <Setter Property="Foreground" Value="{DynamicResource textTertiaryBrush}" />
+        <!-- faint zeminlerde 4,5:1'in altında kalır (yalnız simge ve devre dışı için); okunacak yazı muted. -->
+        <Setter Property="Foreground" Value="{DynamicResource textSecondaryBrush}" />
     </Style>
     <Style x:Key="ErrorText" TargetType="TextBlock" BasedOn="{StaticResource HintText}">
-        <Setter Property="Foreground" Value="{DynamicResource liveBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource liveTextBrush}" />
     </Style>
     <Style x:Key="DoneText" TargetType="TextBlock" BasedOn="{StaticResource BodyText}">
         <Setter Property="FontWeight" Value="SemiBold" />
@@ -1010,10 +1011,10 @@
                                 <TextBlock x:Name="Glyph" Text="{TemplateBinding Icon}" Style="{StaticResource GlyphText}" FontSize="14" HorizontalAlignment="Center"
                                            Foreground="White" />
                             </Grid>
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <StackPanel x:Name="Texts" Grid.Column="1" VerticalAlignment="Center">
                                 <ContentPresenter x:Name="Label" TextElement.FontSize="{DynamicResource bodyStrongFontSize}" TextElement.FontWeight="{DynamicResource bodyStrongFontWeight}"
                                                   RecognizesAccessKey="True" />
-                                <TextBlock x:Name="Hint" Text="{TemplateBinding Hint}" FontSize="{DynamicResource captionFontSize}" Foreground="{DynamicResource faintBrush}"
+                                <TextBlock x:Name="Hint" Text="{TemplateBinding Hint}" FontSize="{DynamicResource captionFontSize}" Foreground="{DynamicResource mutedBrush}"
                                            Margin="{m:Sp '0,line,0,0'}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                             </StackPanel>
                         </Grid>
@@ -1024,6 +1025,11 @@
                         </Trigger>
                         <Trigger Property="Icon" Value="{x:Null}">
                             <Setter TargetName="IconBox" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <!-- Dar pencere: yalnız simge karesi (SettingsView.UseCompactNav). -->
+                        <Trigger Property="Compact" Value="True">
+                            <Setter TargetName="Texts" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="IconBox" Property="Margin" Value="0" />
                         </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Row" Property="Background" Value="{DynamicResource fieldBrush}" />
@@ -1837,7 +1843,7 @@
                                     <StackPanel Orientation="Horizontal" Margin="{m:Sp '0,line,0,0'}">
                                         <Ellipse x:Name="Dot" Width="7" Height="7" Fill="{DynamicResource faintBrush}" VerticalAlignment="Center" Margin="{m:Sp '0,0,xxs,0'}" />
                                         <TextBlock x:Name="State" Text="{theme:T 'Not signed in'}" FontSize="{DynamicResource smallFontSize}" Foreground="{DynamicResource mutedBrush}" />
-                                        <TextBlock x:Name="Detail" FontSize="{DynamicResource smallFontSize}" Foreground="{DynamicResource faintBrush}" TextTrimming="CharacterEllipsis"
+                                        <TextBlock x:Name="Detail" FontSize="{DynamicResource smallFontSize}" Foreground="{DynamicResource mutedBrush}" TextTrimming="CharacterEllipsis"
                                                    TextWrapping="NoWrap" Margin="{m:Sp 'xxs,0,0,0'}">
                                             <Run Text="·" /> <Run Text="{Binding Detail, RelativeSource={RelativeSource TemplatedParent}}" />
                                         </TextBlock>
@@ -1981,8 +1987,11 @@
         <Setter Property="Foreground" Value="{DynamicResource textPrimaryBrush}" />
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
+                <!-- Sekmenin içeriği TabItem'ın mantıksal çocuğudur ve yazı rengini ondan alır; Windows'un TabItem stili
+                     (Aero2) Foreground=Black verir, koyu temada renksiz satırlar siyaha yakın çiziliyordu. -->
                 <Style TargetType="TabItem">
                     <Setter Property="Visibility" Value="Collapsed" />
+                    <Setter Property="Foreground" Value="{DynamicResource textPrimaryBrush}" />
                 </Style>
             </Setter.Value>
         </Setter>
@@ -2065,8 +2074,11 @@
         <Setter Property="Foreground" Value="{DynamicResource textPrimaryBrush}" />
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
+                <!-- Sekmenin içeriği TabItem'ın mantıksal çocuğudur ve yazı rengini ondan alır; Windows'un TabItem stili
+                     (Aero2) Foreground=Black verir, koyu temada renksiz satırlar siyaha yakın çiziliyordu. -->
                 <Style TargetType="TabItem">
                     <Setter Property="Visibility" Value="Collapsed" />
+                    <Setter Property="Foreground" Value="{DynamicResource textPrimaryBrush}" />
                 </Style>
             </Setter.Value>
         </Setter>

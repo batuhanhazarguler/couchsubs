@@ -35,7 +35,7 @@
                 <Button Content="Greenlight" Style="{StaticResource SmallSecondaryButton}" Height="40" Margin="{t:Sp 'xs,0,0,0'}" Tag="https://github.com/unknownskl/greenlight" Click="OnLink" />
             </StackPanel>
             <Image x:Name="EnmeraLogo" Height="16" Opacity="0.85" HorizontalAlignment="Center" Margin="{t:Sp '0,l,0,0'}" RenderOptions.BitmapScalingMode="HighQuality" />
-            <TextBlock Text="{t:T 'Copyright © 2026 Enmera'}" FontSize="11" Foreground="{DynamicResource textTertiaryBrush}" HorizontalAlignment="Center" Margin="{t:Sp '0,xs,0,0'}" />
+            <TextBlock Text="{t:T 'Copyright © 2026 Enmera'}" FontSize="11" Foreground="{DynamicResource textSecondaryBrush}" HorizontalAlignment="Center" Margin="{t:Sp '0,xs,0,0'}" />
             <Button Content="{t:T 'Close'}" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Center" Margin="{t:Sp '0,m,0,0'}" IsDefault="True" IsCancel="True" Click="OnClose" />
         </StackPanel>
     </Border>

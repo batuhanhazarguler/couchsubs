@@ -52,7 +52,7 @@
         <TabControl x:Name="Sections" Grid.Column="2" Style="{StaticResource SettingsPageTabs}" SelectionChanged="OnSection">
             <!-- ───── Temel ───── -->
             <TabItem x:Name="BasicsSection">
-                <Grid Margin="{t:Sp '0,0,0,l'}">
+                <Grid Margin="{t:Sp '0,0,0,l'}" c:Responsive.StackBelow="{x:Static c:Responsive.TwoColumnMin}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="{t:Sp l}" />
@@ -126,7 +126,7 @@
 
             <!-- ───── Gelişmiş ───── -->
             <TabItem x:Name="TranslationSection">
-                <Grid Margin="{t:Sp '0,0,0,l'}">
+                <Grid Margin="{t:Sp '0,0,0,l'}" c:Responsive.StackBelow="{x:Static c:Responsive.TwoColumnMin}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="{t:Sp l}" />
@@ -347,7 +347,7 @@
             <!-- ───── Altyazı Alanı ───── -->
             <TabItem x:Name="AreaTab">
                 <c:SpacedStack Gap="l" Margin="{t:Sp '0,0,0,l'}">
-                    <Grid>
+                    <Grid c:Responsive.StackBelow="{x:Static c:Responsive.TwoColumnMin}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="{t:Sp l}" />
@@ -570,7 +570,7 @@
 
             <!-- ───── Çıkış Ekranları ───── -->
             <TabItem x:Name="OutputSection">
-                <Grid Margin="{t:Sp '0,0,0,l'}">
+                <Grid Margin="{t:Sp '0,0,0,l'}" c:Responsive.StackBelow="{x:Static c:Responsive.TwoColumnMin}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="{t:Sp l}" />
@@ -785,7 +785,7 @@
 
             <!-- ───── Konsol ve Kaynak ───── -->
             <TabItem x:Name="PictureSourceSection">
-                <Grid Margin="{t:Sp '0,0,0,l'}">
+                <Grid Margin="{t:Sp '0,0,0,l'}" c:Responsive.StackBelow="{x:Static c:Responsive.TwoColumnMin}">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="{t:Sp l}" />

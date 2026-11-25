@@ -66,6 +66,8 @@ public sealed class AppearanceEditor : Grid
         ColumnDefinitions.Add(new ColumnDefinition());
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Sp.V("l")) });
         ColumnDefinitions.Add(new ColumnDefinition());
+        // Dar pencerede ayarlar önizlemenin altına iner (SettingsView'daki iki sütunlu sayfalarla aynı eşik).
+        Responsive.SetStackBelow(this, Responsive.TwoColumnMin);
         var l = Localizer.Current;
 
         // Sol: önizleme (Mac: "TV'deki altyazılar" kartı).
