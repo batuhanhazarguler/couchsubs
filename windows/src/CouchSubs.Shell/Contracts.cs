@@ -253,7 +253,7 @@ public enum RemotePlayApp { Automatic, Sony, Chiaki }
 /// <summary>
 /// "Ekran yazılarını otomatik çevir" bir kerelik göçü (Mac/iPhone AutoScreenTextMigration, Android aynı kural):
 /// işareti olmayan ayar dosyasında ayar kapatılır ve işaret konur. Ayar açıksa (beta.63 varsayılanı) kullanıcıya bir
-/// kez "deneysel; Ayarlar'dan açabilirsiniz" bilgisi gösterilir.
+/// kez "kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları'ndan açabilirsiniz" bilgisi gösterilir.
 /// </summary>
 public static class AutoScreenTextMigration
 {
@@ -285,7 +285,19 @@ public static class ScreenTextExtrasMigration
 public static class GamePhoneMigration
 {
     public static UserSettings Apply(UserSettings settings) => settings.GamePhoneReenabled ? settings
-        : settings with { AutoReadGamePhone = true, GamePhoneReenabled = true };
+        : settings with { TranslatesGamePhone = true, GamePhoneReenabled = true };
+}
+
+/// <summary>
+/// Eski iki telefon anahtarı ("GTA 6 telefonunu otomatik çevir" ve otomatik ekran yazısında "Telefon" türü) tek
+/// "GTA 6 Telefonunu Çevir"de birleşir (Mac/iPhone mergingGamePhoneSwitches, Android aynı kural). İkisi farklıysa telefonun o
+/// an gerçekten okunup okunmadığı (<see cref="UserSettings.ReadsGamePhone"/>) ikisine de yazılır; kullanıcının açık seçimi
+/// korunur. Her açılışta güvenle uygulanır; kayıt anahtarları değişmez.
+/// </summary>
+public static class GamePhoneSwitchMerge
+{
+    public static UserSettings Apply(UserSettings settings) => settings.AutoReadGamePhone == settings.ScreenTextPhone ? settings
+        : settings with { TranslatesGamePhone = settings.ReadsGamePhone };
 }
 
 /// <summary>"oturum başladı" günlük satırının ekran yazısı kısmı (Mac/iPhone SubtitleLog.areaSummary'nin sonu).</summary>
@@ -352,7 +364,7 @@ public sealed record UserSettings
     public bool PhoneChatCard { get => PhoneMessagesPanel; init => PhoneMessagesPanel = value; }
     /// <summary>
     /// Ekran yazıları kendiliğinden bulunup yerinde çevrilir (görev, yardım, mesaj; bütün oyunlarda, bkz.
-    /// <see cref="ScreenTextDetector"/>). Altyazı alanı Tam ekranken çalışmaz. Deneysel: varsayılan kapalı (beta.63'te açık
+    /// <see cref="ScreenTextDetector"/>). Altyazı alanı Tam ekranken çalışmaz. Varsayılan kapalı (beta.63'te açık
     /// geliyordu; oyun dünyasındaki poster ve plakaları da çeviriyordu). Kullanıcı Ayarlar'dan açar.
     /// </summary>
     public bool AutoScreenText { get; init; }
@@ -398,6 +410,20 @@ public sealed record UserSettings
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool ReadsGamePhone => AutoReadGamePhone || (AutoScreenText && ScreenTextPhone);
+    /// <summary>
+    /// Ayarlardaki tek "GTA 6 Telefonunu Çevir" anahtarı (dört platformda aynı): iki eski alan birlikte yazılır, kayıt
+    /// anahtarları değişmez. Okunan değer <see cref="ReadsGamePhone"/>'dur (iki alan eşitken onların değeri).
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool TranslatesGamePhone
+    {
+        get => ReadsGamePhone;
+        init
+        {
+            AutoReadGamePhone = value;
+            ScreenTextPhone = value;
+        }
+    }
     /// <summary>
     /// "Ekran yazılarını altyazıdan ayır": ek alan ve otomatik ekran yazısı kutuları özgün rengini ve zeminini korur,
     /// altyazı kutusuna benzemez (zemin yoksa zeminsiz, koyu gölgeli). Eski ayar dosyalarında yoktur; açık başlar.

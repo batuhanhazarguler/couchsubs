@@ -255,7 +255,7 @@ class AppSettings(context: Context) : AreaStore {
 
     /**
      * "Ekran yazılarını otomatik çevir": ekranda beliren yazı kutuları (görev, yardım, mesaj) bulunup kendi yerinde
-     * çevrilir; oyundan bağımsızdır. Deneysel: varsayılan kapalı (beta.63'te açık geliyordu; oyun dünyasındaki poster ve
+     * çevrilir; oyundan bağımsızdır. Varsayılan kapalı (beta.63'te açık geliyordu; oyun dünyasındaki poster ve
      * plakaları da çeviriyordu). Kullanıcı Ayarlar'dan açar. Değiştirilince göç bilgisi kalkar.
      */
     var autoScreenText: Boolean
@@ -295,10 +295,29 @@ class AppSettings(context: Context) : AreaStore {
     /** GTA 6 telefonu okunur mu: kendi ayarı ya da otomatik ekran yazısında Telefon türü açık. */
     val readsGamePhone: Boolean get() = screenTextKinds.readsGamePhone(autoReadGamePhone, autoScreenText)
 
+    /**
+     * Ayarlardaki tek "GTA 6 Telefonunu Çevir" anahtarı (dört platformda aynı; Mac/iPhone translatesGamePhone). İki eski
+     * alan (autoReadGamePhone ve Telefon türü screenTextPhone) birlikte yazılır, kayıt anahtarları değişmez. Okunan değer
+     * [readsGamePhone]'dur (iki alan eşitken onların değeri).
+     */
+    fun setGamePhone(on: Boolean) {
+        prefs.edit().putBoolean("autoReadGamePhone", on).putBoolean("screenTextPhone", on).apply()
+    }
+
     init {
         migrateAutoScreenText()
         migrateScreenTextExtras()
         migrateGamePhone()
+        mergeGamePhoneSwitches()
+    }
+
+    /**
+     * Eski iki telefon anahtarı tek "GTA 6 Telefonunu Çevir"de birleşir (Windows GamePhoneSwitchMerge, Mac/iPhone
+     * mergingGamePhoneSwitches): ikisi farklıysa telefonun o an gerçekten okunup okunmadığı ([readsGamePhone]) ikisine de
+     * yazılır; kullanıcının açık seçimi korunur. Her açılışta güvenle çalışır.
+     */
+    private fun mergeGamePhoneSwitches() {
+        if (autoReadGamePhone != screenTextPhone) setGamePhone(readsGamePhone)
     }
 
     /** Hazır alanlar bir kerelik göçü ([ScreenTextExtrasMigration]). */
@@ -312,13 +331,13 @@ class AppSettings(context: Context) : AreaStore {
     /** GTA 6 telefonu bir kez açılır ([GamePhoneMigration]). */
     private fun migrateGamePhone() {
         if (!GamePhoneMigration.apply(gamePhoneReenabled)) return
-        prefs.edit().putBoolean("gamePhoneReenabled", true).putBoolean("autoReadGamePhone", true).apply()
+        prefs.edit().putBoolean("gamePhoneReenabled", true).putBoolean("autoReadGamePhone", true).putBoolean("screenTextPhone", true).apply()
     }
 
     /**
      * Bir kerelik göç (Windows AutoScreenTextMigration, Mac/iPhone migratingAutoScreenText ile aynı kural): işaret yoksa
      * ayar kapatılır, işaret konur. Ayar açıktıysa (beta.63'te açık kaydedilmiş ya da hiç değiştirilmemiş eski kurulum)
-     * bu süreçte bir kez "deneysel; Ayarlar'dan açabilirsiniz" bilgisi gösterilir. Yeni kurulumda bilgi yok.
+     * bu süreçte bir kez "kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları'ndan açabilirsiniz" bilgisi gösterilir. Yeni kurulumda bilgi yok.
      */
     private fun migrateAutoScreenText() {
         val stored = if (prefs.contains("autoScreenText")) prefs.getBoolean("autoScreenText", false) else null
@@ -386,7 +405,7 @@ class AppSettings(context: Context) : AreaStore {
         set(value) = prefs.edit().putInt("partialWaitMs", value).apply()
 
     /**
-     * "GTA 6'daki telefonu otomatik çevir (deneysel)": GTA 6 oynanırken oyun içi telefon açılınca ekranı okunup çevrilir
+     * "GTA 6 telefonunu otomatik çevir" (Ayarlar'da tek "GTA 6 Telefonunu Çevir" anahtarı, [setGamePhone]): GTA 6 oynanırken oyun içi telefon açılınca ekranı okunup çevrilir
      * (Mac/Windows autoReadGamePhone); varsayılan açık (telefon yalnız GTA 6'da okunur).
      */
     var autoReadGamePhone: Boolean

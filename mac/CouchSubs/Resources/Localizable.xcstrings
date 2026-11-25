@@ -121,7 +121,7 @@
     "Code shown on the TV": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Code shown on the TV"}}, "tr": {"stringUnit": {"state": "translated", "value": "TV'de görünen kod"}}}},
     "Couldn't connect to the PS5": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't connect to the PS5"}}, "tr": {"stringUnit": {"state": "translated", "value": "PS5'e bağlanılamadı"}}}},
     "Done once": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Done once"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bir kez yapılır"}}}},
-    "Experimental": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Experimental"}}, "tr": {"stringUnit": {"state": "translated", "value": "Deneysel"}}}},
+    "On-screen text": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "On-screen text"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ekran yazıları"}}}},
     "Game being played": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Game being played"}}, "tr": {"stringUnit": {"state": "translated", "value": "Oynanan oyun"}}}},
     "GTA 6 phone messages": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "GTA 6 phone messages"}}, "tr": {"stringUnit": {"state": "translated", "value": "GTA 6 telefon mesajları"}}}},
     "Live feed": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Live feed"}}, "tr": {"stringUnit": {"state": "translated", "value": "Canlı akış"}}}},
@@ -220,7 +220,6 @@
     "The small Picture in Picture window closed, so iPhone paused CouchSubs. Open CouchSubs to continue; it reconnects by itself.": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The small Picture in Picture window closed, so iPhone paused CouchSubs. Open CouchSubs to continue; it reconnects by itself."}},"tr":{"stringUnit":{"state":"translated","value":"Küçük pencere (Resim içinde resim) kapandığı için iPhone CouchSubs’u duraklattı. Devam etmek için CouchSubs’u açın; bağlantı kendiliğinden yenilenir."}}}},
     "iPhone pauses CouchSubs in the background. Open CouchSubs to continue; it reconnects by itself. To keep translating in a small window, turn on “Keep translating in the background” in Profile.": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"iPhone pauses CouchSubs in the background. Open CouchSubs to continue; it reconnects by itself. To keep translating in a small window, turn on “Keep translating in the background” in Profile."}},"tr":{"stringUnit":{"state":"translated","value":"iPhone, arka plandaki CouchSubs’u duraklatır. Devam etmek için CouchSubs’u açın; bağlantı kendiliğinden yenilenir. Küçük pencerede çevirmeye devam etmek için Profil’de “Arka planda sürdür”ü açın."}}}},
     "Which on-screen text to translate": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Which on-screen text to translate"}},"tr":{"stringUnit":{"state":"translated","value":"Hangi ekran yazıları çevrilsin"}}}},
-    "Phone (GTA 6 phone)": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Phone (GTA 6 phone)"}},"tr":{"stringUnit":{"state":"translated","value":"Telefon (GTA 6 telefonu)"}}}},
     "Mission and objective text": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Mission and objective text"}},"tr":{"stringUnit":{"state":"translated","value":"Görev ve hedef yazısı"}}}},
     "Help boxes and actions (button prompts)": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Help boxes and actions (button prompts)"}},"tr":{"stringUnit":{"state":"translated","value":"Yardım kutuları ve eylemler (tuş ipuçları)"}}}},
     "Menus (pause, map, settings)": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Menus (pause, map, settings)"}},"tr":{"stringUnit":{"state":"translated","value":"Menüler (duraklatma, harita, ayarlar)"}}}},
@@ -575,7 +574,6 @@
     "Saved areas for %@ are available. Use them?": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Saved areas for %@ are available. Use them?"}},"tr":{"stringUnit":{"state":"translated","value":"%@ için kayıtlı alanlar var. Kullanılsın mı?"}}}},
     "Using the saved areas for %@.": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Using the saved areas for %@."}},"tr":{"stringUnit":{"state":"translated","value":"%@ için kayıtlı alanlar kullanılıyor."}}}},
     "Areas for this game": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Areas for this game"}},"tr":{"stringUnit":{"state":"translated","value":"Bu oyunun alanları"}}}},
-    "Automatically translate the GTA 6 phone (experimental)": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Automatically translate the GTA 6 phone (experimental)"}},"tr":{"stringUnit":{"state":"translated","value":"GTA 6'daki telefonu otomatik çevir (deneysel)"}}}},
     "GTA 6 Phone Messages": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"GTA 6 Phone Messages"}},"tr":{"stringUnit":{"state":"translated","value":"GTA 6 Telefon Mesajları"}}}},
     "Side Panel": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Side Panel"}},"tr":{"stringUnit":{"state":"translated","value":"Yanda Panel"}}}},
     "On the Bubbles": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"On the Bubbles"}},"tr":{"stringUnit":{"state":"translated","value":"Balonların Üstünde"}}}},
@@ -14569,38 +14567,7 @@
         }
       }
     },
-    "Automatically translate on-screen text (experimental)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatically translate on-screen text (experimental)"
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ekran yazılarını otomatik çevir (deneysel)"
-          }
-        }
-      }
-    },
-    "Automatic on-screen text translation is experimental; you can turn it on in Settings.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatic on-screen text translation is experimental; you can turn it on in Settings."
-          }
-        },
-        "tr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ekran yazılarını otomatik çevirme deneysel; Ayarlar'dan açabilirsiniz."
-          }
-        }
-      }
-    },
+    "Automatic on-screen text translation was turned off; you can turn it on in Settings › Advanced › On-screen text.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Automatic on-screen text translation was turned off; you can turn it on in Settings › Advanced › On-screen text."}}, "tr": {"stringUnit": {"state": "translated", "value": "Ekran yazılarını otomatik çevirme kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları'ndan açabilirsiniz."}}}},
     "Text boxes that appear on screen (objectives, help, messages) are found and translated in place. Counters, the map and short labels are skipped.": {
       "localizations": {
         "en": {
@@ -15987,7 +15954,7 @@
     "Translation, Sound": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Translation, Sound"}}, "tr": {"stringUnit": {"state": "translated", "value": "Çeviri, Ses"}}}},
     "Subtitle Appearance": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subtitle Appearance"}}, "tr": {"stringUnit": {"state": "translated", "value": "Altyazı Görünümü"}}}},
     "Size, Colors": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Size, Colors"}}, "tr": {"stringUnit": {"state": "translated", "value": "Boyut, Renkler"}}}},
-    "Engine, Experimental": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Engine, Experimental"}}, "tr": {"stringUnit": {"state": "translated", "value": "Motor, Deneysel"}}}},
+    "Engine, On-Screen Text": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Engine, On-Screen Text"}}, "tr": {"stringUnit": {"state": "translated", "value": "Motor, Ekran Yazıları"}}}},
     "Subtitle Area": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subtitle Area"}}, "tr": {"stringUnit": {"state": "translated", "value": "Altyazı Alanı"}}}},
     "Game Packs": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Game Packs"}}, "tr": {"stringUnit": {"state": "translated", "value": "Oyun Paketleri"}}}},
     "Turkish Dubbing": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Turkish Dubbing"}}, "tr": {"stringUnit": {"state": "translated", "value": "Türkçe Seslendirme"}}}},
@@ -16056,10 +16023,10 @@
     "API Key": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "API Key"}}, "tr": {"stringUnit": {"state": "translated", "value": "API Anahtarı"}}}},
     "Stored only on this device.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Stored only on this device."}}, "tr": {"stringUnit": {"state": "translated", "value": "Yalnız bu cihazda saklanır."}}}},
     "EXPERIMENTAL": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "EXPERIMENTAL"}}, "tr": {"stringUnit": {"state": "translated", "value": "DENEYSEL"}}}},
-    "These settings may slow down or interrupt translation. If there's a problem, go back to the defaults.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "These settings may slow down or interrupt translation. If there's a problem, go back to the defaults."}}, "tr": {"stringUnit": {"state": "translated", "value": "Bu ayarlar çeviriyi yavaşlatabilir ya da kesebilir. Sorun olursa varsayılana dönün."}}}},
+    "Subtitle reading": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subtitle reading"}}, "tr": {"stringUnit": {"state": "translated", "value": "Altyazı okuma"}}}},
     "Translate On-Screen Text Automatically": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Translate On-Screen Text Automatically"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ekran Yazılarını Otomatik Çevir"}}}},
     "Objectives, menus and other text on the screen.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Objectives, menus and other text on the screen."}}, "tr": {"stringUnit": {"state": "translated", "value": "Görev, menü ve ekrandaki diğer yazılar."}}}},
-    "Translate the GTA 6 Phone Automatically": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Translate the GTA 6 Phone Automatically"}}, "tr": {"stringUnit": {"state": "translated", "value": "GTA 6 Telefonunu Otomatik Çevir"}}}},
+    "Translate the GTA 6 Phone": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Translate the GTA 6 Phone"}}, "tr": {"stringUnit": {"state": "translated", "value": "GTA 6 Telefonunu Çevir"}}}},
     "Each message is translated over its own bubble.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Each message is translated over its own bubble."}}, "tr": {"stringUnit": {"state": "translated", "value": "Her mesaj kendi balonunun üstünde çevrilir."}}}},
     "Restore Defaults": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Restore Defaults"}}, "tr": {"stringUnit": {"state": "translated", "value": "Varsayılana Dön"}}}},
     "Follow System": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Follow System"}}, "tr": {"stringUnit": {"state": "translated", "value": "Sisteme Uy"}}}},
@@ -16085,7 +16052,7 @@
     "Saved Games": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Saved Games"}}, "tr": {"stringUnit": {"state": "translated", "value": "Kayıtlı Oyunlar"}}}},
     "When one of these games starts, its areas load by themselves.": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "When one of these games starts, its areas load by themselves."}}, "tr": {"stringUnit": {"state": "translated", "value": "Bu oyunlardan biri açılınca alanları kendiliğinden yüklenir."}}}},
     "Use Ready Areas for Known Games": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Use Ready Areas for Known Games"}}, "tr": {"stringUnit": {"state": "translated", "value": "Bilinen Oyunlarda Hazır Alanları Kullan"}}}},
-    "Redraw the Screen in Turkish in Place (Experimental)": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Redraw the Screen in Turkish in Place (Experimental)"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ekranı Yerinde Türkçe Çiz (Deneysel)"}}}},
+    "Redraw the Screen in Turkish in Place": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Redraw the Screen in Turkish in Place"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ekranı Yerinde Türkçe Çiz"}}}},
     "GTA 6 phone: the original text is erased and the translation is drawn in its place, right on the phone in the game window, and it moves with the phone. Works when the picture is read from a window on this Mac (Remote Play, chiaki-ng or OBS).": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "GTA 6 phone: the original text is erased and the translation is drawn in its place, right on the phone in the game window, and it moves with the phone. Works when the picture is read from a window on this Mac (Remote Play, chiaki-ng or OBS)."}}, "tr": {"stringUnit": {"state": "translated", "value": "GTA 6 telefonu: özgün yazı silinir, çevirisi oyun penceresinde telefonun üstüne, aynı yere çizilir ve telefonla birlikte hareket eder. Görüntü bu Mac'teki bir pencereden (Remote Play, chiaki-ng ya da OBS) okunurken çalışır."}}}},
     "Keep Centered": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Keep Centered"}}, "tr": {"stringUnit": {"state": "translated", "value": "Ortada Tut"}}}},
     "Use Game Packs": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Use Game Packs"}}, "tr": {"stringUnit": {"state": "translated", "value": "Oyun Paketlerini Kullan"}}}},

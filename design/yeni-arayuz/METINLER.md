@@ -528,7 +528,7 @@ kartı: "%lld SN SESSİZ", neden başlığı, açıklama, çözüm düğmeleri v
 Solda 240 genişlikte gezinme kartı: üstte üç bölüm (64 yükseklik, başlık + gri ipucu), ayraç, altında altı sayfa
 (44 yükseklik). En altta gri not "Ayarlar tek yerde. Profil sayfası kaldırıldı." Sağda iki sütun kartlar.
 
-Gelişmiş › Deneysel kartında "GTA 6 Telefonunu Otomatik Çevir" satırının altında **GTA 6 Telefon Mesajları** seçicisi
+Gelişmiş › Ekran yazıları kartında "GTA 6 Telefonunu Çevir" satırının altında (Windows; Mac, iPhone ve Android'de Altyazı Alanı sayfasında) **GTA 6 Telefon Mesajları** seçicisi
 (`DSTabs`: Yanda Panel / Balonların Üstünde, varsayılan Yanda Panel; ayar Mac `phoneMessagesPanel`, Windows
 `PhoneMessagesPanel`) ve altında gri açıklaması. Otomatik telefon okumasına ve "Ekranı Çevir"e birlikte uygulanır.
 
@@ -539,7 +539,7 @@ Gelişmiş › Deneysel kartında "GTA 6 Telefonunu Otomatik Çevir" satırını
 | Subtitle Appearance | Altyazı Görünümü |
 | Size, Colors | Boyut, Renkler |
 | Advanced | Gelişmiş |
-| Engine, Experimental | Motor, Deneysel |
+| Engine, On-Screen Text | Motor, Ekran Yazıları |
 | Subtitle Area | Altyazı Alanı |
 | Game Packs | Oyun Paketleri |
 | Turkish Dubbing | Türkçe Seslendirme |
@@ -614,11 +614,11 @@ Gelişmiş › Deneysel kartında "GTA 6 Telefonunu Otomatik Çevir" satırını
 | OpenAI or Claude with your own key. | Kendi anahtarınızla OpenAI ya da Claude. |
 | API Key | API Anahtarı |
 | Stored only on this device. | Yalnız bu cihazda saklanır. |
-| Experimental | Deneysel |
-| These settings may slow down or interrupt translation. If there's a problem, go back to the defaults. | Bu ayarlar çeviriyi yavaşlatabilir ya da kesebilir. Sorun olursa varsayılana dönün. |
+| On-screen text | Ekran yazıları |
 | Translate On-Screen Text Automatically | Ekran Yazılarını Otomatik Çevir |
 | Objectives, menus and other text on the screen. | Görev, menü ve ekrandaki diğer yazılar. |
-| Translate the GTA 6 Phone Automatically | GTA 6 Telefonunu Otomatik Çevir |
+| Translate the GTA 6 Phone | GTA 6 Telefonunu Çevir |
+| Subtitle reading | Altyazı okuma |
 | Each message is translated over its own bubble. | Her mesaj kendi balonunun üstünde çevrilir. |
 | GTA 6 Phone Messages | GTA 6 Telefon Mesajları |
 | Side Panel | Yanda Panel |

@@ -95,10 +95,10 @@ sabit), yalnız kart açılıp kapanınca ya da kayınca kaybolur. Oradaki titre
 4. **Yerinde çizim**: balonun düz zemini özgün yazının üstüne aynı renkle çizilir (#1142 sil-ve-yeniden-çiz), çeviri
    balonun renginde, sabit boyda.
 
-## Mac: "Ekranı yerinde Türkçe çiz" (deneysel, önce yalnız Mac)
+## Mac: "Ekranı yerinde Türkçe çiz" (önce yalnız Mac)
 
 Sinan Bey kararı (24 Kas): önce yalnız Mac'te, telefon önce; görev kartları ve menüler ikinci aşamada. Ayar Ayarlar ›
-Alanlar › "GTA 6 phone messages" kartında **Ekranı Yerinde Türkçe Çiz (Deneysel)**, Mac'te varsayılan açık
+Alanlar › "GTA 6 phone messages" kartında **Ekranı Yerinde Türkçe Çiz**, Mac'te varsayılan açık
 (`UserSettings.drawScreenInPlace`; öbür platformlar henüz okumaz, eşitlik denetiminde izinli). Yalnız oyun görüntüsü
 bu Mac'teki bir pencereden (PS Remote Play, chiaki-ng, seçilen OBS/oyun penceresi) okunurken çalışır; PS5'ten doğrudan
 okurken eski davranış.

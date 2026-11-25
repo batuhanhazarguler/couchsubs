@@ -399,26 +399,25 @@ private fun AdvancedPage() {
     val settings = Services.settings
     EngineTile(settings)
     var autoScreenText by remember { mutableStateOf(settings.autoScreenText) }
-    var kindPhone by remember { mutableStateOf(settings.screenTextPhone) }
     var kindMission by remember { mutableStateOf(settings.screenTextMission) }
     var kindHelp by remember { mutableStateOf(settings.screenTextHelp) }
     var kindMenus by remember { mutableStateOf(settings.screenTextMenus) }
     var kindOther by remember { mutableStateOf(settings.screenTextOther) }
-    var gamePhone by remember { mutableStateOf(settings.autoReadGamePhone) }
+    var gamePhone by remember { mutableStateOf(settings.readsGamePhone) }
     var setTextApart by remember { mutableStateOf(settings.setTextApart) }
     var fastReading by remember { mutableStateOf(settings.fastSubtitleDetection) }
     var misreadWait by remember { mutableStateOf(settings.misreadWaitMs) }
     var partialWait by remember { mutableStateOf(settings.partialWaitMs) }
+    // Ekran yazıları ve altyazı okuma: dört platformda aynı başlık, aynı ad ve sıra (Mac, Windows, iPhone).
     Tile(Modifier.fillMaxWidth(), style = TileStyle.NORMAL) {
-        SectionTitle(stringResource(R.string.set_experimental))
-        Text(stringResource(R.string.set_experimental_note), style = Tokens.Type.caption, color = Tokens.Color.secondary)
+        SectionTitle(stringResource(R.string.set_screen_text))
         SwitchRow(stringResource(R.string.set_auto_screen), stringResource(R.string.set_auto_screen_note), autoScreenText) {
             autoScreenText = it; settings.autoScreenText = it
         }
-        // Türler yalnız ayar açıkken görünür; dört platformda aynı ad ve sıra (bkz. ScreenTextKind).
+        // Türler yalnız ayar açıkken görünür; dört platformda aynı ad ve sıra (bkz. ScreenTextKind). Telefon türü ayrı satır
+        // değil: tek "GTA 6 Telefonunu Çevir" anahtarı onu da yazar (AppSettings.setGamePhone).
         if (autoScreenText) Column(Modifier.padding(start = 16.dp)) {
             Text(stringResource(R.string.settings_screen_text_kinds), style = Tokens.Type.caption, color = Tokens.Color.secondary)
-            SwitchRow(stringResource(R.string.settings_screen_text_phone), checked = kindPhone) { kindPhone = it; settings.screenTextPhone = it }
             SwitchRow(stringResource(R.string.settings_screen_text_mission), checked = kindMission) { kindMission = it; settings.screenTextMission = it }
             SwitchRow(stringResource(R.string.settings_screen_text_help), checked = kindHelp) { kindHelp = it; settings.screenTextHelp = it }
             SwitchRow(stringResource(R.string.settings_screen_text_menus), checked = kindMenus) { kindMenus = it; settings.screenTextMenus = it }
@@ -426,26 +425,31 @@ private fun AdvancedPage() {
             Text(stringResource(R.string.settings_screen_text_manual), style = Tokens.Type.caption, color = Tokens.Color.secondary)
         }
         SwitchRow(stringResource(R.string.set_auto_phone), stringResource(R.string.set_auto_phone_note), gamePhone) {
-            gamePhone = it; settings.autoReadGamePhone = it
+            gamePhone = it; settings.setGamePhone(it)
         }
         SwitchRow(stringResource(R.string.set_apart), stringResource(R.string.settings_set_text_apart_short), setTextApart) {
             setTextApart = it; settings.setTextApart = it; TranslationService.setTextApart(it)
         }
+        // Varsayılana Dön: bu karttaki ayarlar (Mac, Windows, iPhone ile aynı küme).
+        SecondaryButton(stringResource(R.string.set_restore)) {
+            autoScreenText = false; gamePhone = true; setTextApart = true
+            kindMission = true; kindHelp = true; kindMenus = false; kindOther = false
+            settings.autoScreenText = false; settings.setGamePhone(true); settings.setTextApart = true
+            settings.screenTextMission = true; settings.screenTextHelp = true
+            settings.screenTextMenus = false; settings.screenTextOther = false
+            TranslationService.setTextApart(true)
+        }
+    }
+    Tile(Modifier.fillMaxWidth(), style = TileStyle.NORMAL) {
+        SectionTitle(stringResource(R.string.set_reading))
         SwitchRow(stringResource(R.string.set_fast_check), stringResource(R.string.settings_fast_reading_short), fastReading) {
             fastReading = it; settings.fastSubtitleDetection = it
         }
         WaitSlider(stringResource(R.string.set_misread), stringResource(R.string.set_misread_note), misreadWait) { misreadWait = it; settings.misreadWaitMs = it }
         WaitSlider(stringResource(R.string.set_partial), stringResource(R.string.set_partial_note), partialWait) { partialWait = it; settings.partialWaitMs = it }
-        // Varsayılana Dön: deneysel ayarların hepsi (Mac ile aynı küme).
         SecondaryButton(stringResource(R.string.set_restore)) {
-            autoScreenText = false; gamePhone = true; setTextApart = true; fastReading = false
-            misreadWait = SubtitlePipeline.PACK_WAIT_MS; partialWait = SubtitlePipeline.CLEAN_WAIT_MS
-            kindPhone = true; kindMission = true; kindHelp = true; kindMenus = false; kindOther = false
-            settings.autoScreenText = false; settings.autoReadGamePhone = true; settings.setTextApart = true; settings.fastSubtitleDetection = false
-            settings.misreadWaitMs = misreadWait; settings.partialWaitMs = partialWait
-            settings.screenTextPhone = true; settings.screenTextMission = true; settings.screenTextHelp = true
-            settings.screenTextMenus = false; settings.screenTextOther = false
-            TranslationService.setTextApart(true)
+            fastReading = false; misreadWait = SubtitlePipeline.PACK_WAIT_MS; partialWait = SubtitlePipeline.CLEAN_WAIT_MS
+            settings.fastSubtitleDetection = false; settings.misreadWaitMs = misreadWait; settings.partialWaitMs = partialWait
         }
     }
 }

@@ -26,7 +26,7 @@ enum PhoneSettingsSection: String, Hashable, CaseIterable {
         switch self {
         case .basics: "Translation, Sound"
         case .appearance: "Size, Colors"
-        case .advanced: "Engine, Experimental"
+        case .advanced: "Engine, On-Screen Text"
         case .area: "Frame, Extra Areas"
         case .packs: "Ready Translations"
         case .dubbing: "Voices, Characters"
@@ -466,16 +466,16 @@ private struct AdvancedPage: View {
 
     var body: some View {
         EngineTile()
-        Tile(emphasis: .danger, spacing: Mobile.Space.unit) {
-            Text("Experimental").font(Mobile.TypeScale.cardTitle).foregroundStyle(Color.dsLiveText)
-            Text("These settings may slow down or interrupt translation. If there's a problem, go back to the defaults.").dsMuted()
+        // Ekran yazıları ve altyazı okuma: dört platformda aynı başlık, aynı ad ve sıra (Mac, Windows, Android).
+        Tile(spacing: Mobile.Space.unit) {
+            Text("On-screen text").font(Mobile.TypeScale.cardTitle).foregroundStyle(Mobile.Palette.text)
             SettingSwitch(title: "Translate On-Screen Text Automatically", subtitle: "Objectives, menus and other text on the screen.",
                           isOn: $model.settings.autoScreenText)
-            // Türler yalnız ayar açıkken görünür; dört platformda aynı ad ve sıra (bkz. ScreenTextKind).
+            // Türler yalnız ayar açıkken görünür; dört platformda aynı ad ve sıra (bkz. ScreenTextKind). Telefon türü ayrı
+            // satır değil: tek "GTA 6 Telefonunu Çevir" anahtarı onu da yazar (`translatesGamePhone`).
             if model.settings.autoScreenText {
                 VStack(alignment: .leading, spacing: Mobile.Space.gap) {
                     Text("Which on-screen text to translate").font(Font.dsLabel).foregroundStyle(Mobile.Palette.secondary)
-                    SettingSwitch(title: "Phone (GTA 6 phone)", isOn: $model.settings.screenTextPhone)
                     SettingSwitch(title: "Mission and objective text", isOn: $model.settings.screenTextMission)
                     SettingSwitch(title: "Help boxes and actions (button prompts)", isOn: $model.settings.screenTextHelp)
                     SettingSwitch(title: "Menus (pause, map, settings)", isOn: $model.settings.screenTextMenus)
@@ -484,10 +484,15 @@ private struct AdvancedPage: View {
                 }
                 .padding(.leading, Mobile.Space.gap)
             }
-            SettingSwitch(title: "Translate the GTA 6 Phone Automatically", subtitle: "Each message is translated over its own bubble.",
-                          isOn: $model.settings.autoReadGamePhone)
+            SettingSwitch(title: "Translate the GTA 6 Phone", subtitle: "Each message is translated over its own bubble.",
+                          isOn: $model.settings.translatesGamePhone)
             SettingSwitch(title: "Set On-Screen Text Apart from Subtitles", subtitle: "On-screen text keeps its own colours and place, and never looks like the subtitle box.",
                           isOn: $model.settings.setTextApart)
+            Button("Restore Defaults") { restoreScreenTextDefaults() }
+                .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+        }
+        Tile(spacing: Mobile.Space.unit) {
+            Text("Subtitle reading").font(Mobile.TypeScale.cardTitle).foregroundStyle(Mobile.Palette.text)
             SettingSwitch(title: "Check Unchanged Subtitle Areas More Often",
                           subtitle: "When the subtitle area looks unchanged, read it again after 2 frames instead of 20. Uses more CPU.",
                           isOn: $model.settings.fastSubtitleDetection)
@@ -497,25 +502,28 @@ private struct AdvancedPage: View {
             WaitSlider(title: "Wait for a Half-Read Line",
                        hint: "If a line shows only in part, the whole line is awaited for at most this long. Recommended: 0.3 s.",
                        ms: $model.settings.partialWaitMs)
-            Button("Restore Defaults") { restoreDefaults() }
+            Button("Restore Defaults") { restoreReadingDefaults() }
                 .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
         }
     }
 
-    /// Deneysel ayarların hepsi varsayılana döner (Mac'teki Varsayılana Dön ile aynı alanlar).
-    private func restoreDefaults() {
+    /// Ekran yazıları kartı varsayılana döner (Mac, Windows ve Android ile aynı alanlar).
+    private func restoreScreenTextDefaults() {
         let defaults = UserSettings()
         model.settings.autoScreenText = defaults.autoScreenText
-        model.settings.autoReadGamePhone = defaults.autoReadGamePhone
+        model.settings.translatesGamePhone = defaults.translatesGamePhone
         model.settings.setTextApart = defaults.setTextApart
-        model.settings.fastSubtitleDetection = defaults.fastSubtitleDetection
-        model.settings.misreadWaitMs = SubtitlePipeline.packWaitMs
-        model.settings.partialWaitMs = SubtitlePipeline.cleanWaitMs
-        model.settings.screenTextPhone = defaults.screenTextPhone
         model.settings.screenTextMission = defaults.screenTextMission
         model.settings.screenTextHelp = defaults.screenTextHelp
         model.settings.screenTextMenus = defaults.screenTextMenus
         model.settings.screenTextOther = defaults.screenTextOther
+    }
+
+    /// Altyazı okuma kartı varsayılana döner.
+    private func restoreReadingDefaults() {
+        model.settings.fastSubtitleDetection = UserSettings().fastSubtitleDetection
+        model.settings.misreadWaitMs = SubtitlePipeline.packWaitMs
+        model.settings.partialWaitMs = SubtitlePipeline.cleanWaitMs
     }
 }
 

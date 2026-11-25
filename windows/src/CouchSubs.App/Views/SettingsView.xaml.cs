@@ -106,7 +106,7 @@ public partial class SettingsView : UserControl
         CpuThreadChoice.SelectedItem = CpuThreadChoice.Items.Cast<ComboBoxItem>()
             .First(item => (int)item.Tag == CpuThreadOptions.Normalize(settings.CpuTranslationThreads, Environment.ProcessorCount));
         FastSubtitleDetection.IsChecked = settings.FastSubtitleDetection;
-        AutoReadGamePhone.IsChecked = settings.AutoReadGamePhone;
+        AutoReadGamePhone.IsChecked = settings.TranslatesGamePhone;
         PhoneMessagesPanel.IsChecked = settings.PhoneMessagesPanel;
         PhoneMessagesBubbles.IsChecked = !settings.PhoneMessagesPanel;
         OcrEngineChoice.SelectedItem = OcrEngineChoice.Items.Cast<ComboBoxItem>().First(item => (string)item.Tag == settings.OcrEngine.ToString());
@@ -122,7 +122,6 @@ public partial class SettingsView : UserControl
         SpeakerNames.IsChecked = settings.ShowSpeakerNames;
         SpeakerColors.IsChecked = settings.SpeakerColors;
         AutoScreenText.IsChecked = settings.AutoScreenText;
-        ScreenTextPhone.IsChecked = settings.ScreenTextPhone;
         ScreenTextMission.IsChecked = settings.ScreenTextMission;
         ScreenTextHelp.IsChecked = settings.ScreenTextHelp;
         ScreenTextMenus.IsChecked = settings.ScreenTextMenus;
@@ -964,7 +963,6 @@ public partial class SettingsView : UserControl
     /// <summary>Otomatik ekran yazısının türleri (bkz. <see cref="ScreenTextKind"/>).</summary>
     private void OnScreenTextKind(object sender, RoutedEventArgs e) => Update(s => s with
     {
-        ScreenTextPhone = ScreenTextPhone.IsChecked == true,
         ScreenTextMission = ScreenTextMission.IsChecked == true,
         ScreenTextHelp = ScreenTextHelp.IsChecked == true,
         ScreenTextMenus = ScreenTextMenus.IsChecked == true,
@@ -1216,7 +1214,7 @@ public partial class SettingsView : UserControl
         Update(s => s with { FastSubtitleDetection = FastSubtitleDetection.IsChecked == true });
 
     private void OnAutoReadGamePhone(object sender, RoutedEventArgs e) =>
-        Update(s => s with { AutoReadGamePhone = AutoReadGamePhone.IsChecked == true });
+        Update(s => s with { TranslatesGamePhone = AutoReadGamePhone.IsChecked == true });
 
     private void OnPhoneMessages(object sender, RoutedEventArgs e) =>
         Update(s => s with { PhoneMessagesPanel = PhoneMessagesPanel.IsChecked == true });
@@ -1475,11 +1473,17 @@ public partial class SettingsView : UserControl
         Theme.Motion.AnimationsEnabled = on;
     }
 
-    /// <summary>Deneysel ayarlar varsayılana döner: ekran yazısı kapalı, GTA 6 telefonu açık.</summary>
-    private void OnExperimentalDefaults(object sender, RoutedEventArgs e)
+    /// <summary>Ekran yazıları kartı varsayılana döner (Mac, iPhone, Android ile aynı alanlar).</summary>
+    private void OnScreenTextDefaults(object sender, RoutedEventArgs e)
     {
-        AutoScreenText.IsChecked = false;
-        AutoReadGamePhone.IsChecked = new UserSettings().AutoReadGamePhone;
+        var defaults = new UserSettings();
+        AutoScreenText.IsChecked = defaults.AutoScreenText;
+        AutoReadGamePhone.IsChecked = defaults.TranslatesGamePhone;
+        SetTextApart.IsChecked = defaults.SetTextApart;
+        ScreenTextMission.IsChecked = defaults.ScreenTextMission;
+        ScreenTextHelp.IsChecked = defaults.ScreenTextHelp;
+        ScreenTextMenus.IsChecked = defaults.ScreenTextMenus;
+        ScreenTextOther.IsChecked = defaults.ScreenTextOther;
     }
 
     /// <summary>TV durumu noktası: bağlı yeşil, yeniden bağlanıyor amber, bekliyor gri.</summary>
@@ -1549,7 +1553,7 @@ public partial class SettingsView : UserControl
     [
         ("\uE9E9", Controls.IconTone.Amber, "Basics", "Translation, Sound"),
         ("\uE8D2", Controls.IconTone.Peach, "Subtitle Appearance", "Size, Colors"),
-        ("\uE713", Controls.IconTone.Gray, "Advanced", "Engine, Experimental"),
+        ("\uE713", Controls.IconTone.Gray, "Advanced", "Engine, On-Screen Text"),
         ("\uE8B3", Controls.IconTone.Olive, "Subtitle Area", "Frame, Extra Areas"),
         ("\uE7B8", Controls.IconTone.Olive, "Game Packs", "Ready Translations"),
         ("\uE8D6", Controls.IconTone.Plum, "Turkish Dubbing", "Voices, Characters"),
@@ -1680,6 +1684,7 @@ public partial class SettingsView : UserControl
 
     private void OnWaitDefaults(object sender, RoutedEventArgs e)
     {
+        FastSubtitleDetection.IsChecked = new UserSettings().FastSubtitleDetection;
         MisreadWait.Value = SubtitlePipeline.PackWaitMs / 1000.0;
         PartialWait.Value = SubtitlePipeline.CleanWaitMs / 1000.0;
     }

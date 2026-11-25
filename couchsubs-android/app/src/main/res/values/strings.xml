@@ -337,9 +337,8 @@
     <string name="settings_ask_game_short">Oyun paketle tanınmazsa çeviri başladıktan iki dakika sonra bir kez sorulur.</string>
     <string name="settings_game_area_presets">Bilinen oyunlarda hazır alanları kullan</string>
     <string name="settings_game_area_presets_short">Hazır alanı olan bir oyun (ör. GTA 6) oynanırken yardım kutusu ve mesajlar kendiliğinden okunup çevrilir. Kendi ek alanlarınız varsa onlar kullanılır.</string>
-    <string name="auto_screen_text_notice">Ekran yazılarını otomatik çevirme deneysel; Ayarlar\'dan açabilirsiniz.</string>
+    <string name="auto_screen_text_notice">Ekran yazılarını otomatik çevirme kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları\'ndan açabilirsiniz.</string>
     <string name="settings_screen_text_kinds">Hangi ekran yazıları çevrilsin</string>
-    <string name="settings_screen_text_phone">Telefon (GTA 6 telefonu)</string>
     <string name="settings_screen_text_mission">Görev ve hedef yazısı</string>
     <string name="settings_screen_text_help">Yardım kutuları ve eylemler (tuş ipuçları)</string>
     <string name="settings_screen_text_menus">Menüler (duraklatma, harita, ayarlar)</string>
@@ -749,7 +748,7 @@
     <string name="set_appearance">Altyazı Görünümü</string>
     <string name="set_appearance_hint">Boyut, Renkler</string>
     <string name="set_advanced">Gelişmiş</string>
-    <string name="set_advanced_hint">Motor, Deneysel</string>
+    <string name="set_advanced_hint">Motor, Ekran Yazıları</string>
     <string name="set_area">Altyazı Alanı</string>
     <string name="set_area_hint">Çerçeve, Ek Alanlar</string>
     <string name="set_packs">Oyun Paketleri</string>
@@ -818,11 +817,11 @@
     <string name="set_show_speaker_name">Konuşanın Adını Göster</string>
     <string name="set_gemini_paid">Ücretli Gemini API anahtarı kullanıyorum</string>
     <string name="set_gemini_paid_note">Ücretli API anahtarı ücretlendirilebilir. Google\'ın kotaları yine geçerlidir.</string>
-    <string name="set_experimental">Deneysel</string>
-    <string name="set_experimental_note">Bu ayarlar çeviriyi yavaşlatabilir ya da kesebilir. Sorun olursa varsayılana dönün.</string>
+    <string name="set_screen_text">Ekran yazıları</string>
+    <string name="set_reading">Altyazı okuma</string>
     <string name="set_auto_screen">Ekran Yazılarını Otomatik Çevir</string>
     <string name="set_auto_screen_note">Görev, menü ve ekrandaki diğer yazılar.</string>
-    <string name="set_auto_phone">GTA 6 Telefonunu Otomatik Çevir</string>
+    <string name="set_auto_phone">GTA 6 Telefonunu Çevir</string>
     <string name="set_auto_phone_note">Her mesaj kendi balonunun üstünde çevrilir.</string>
     <string name="set_apart">Ekran Yazılarını Altyazıdan Ayır</string>
     <string name="set_fast_check">Değişmeyen Altyazı Alanını Daha Sık Oku</string>

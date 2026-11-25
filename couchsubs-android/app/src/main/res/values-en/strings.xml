@@ -330,9 +330,8 @@
     <string name="settings_ask_game_short">If no pack recognises the game, asked once two minutes after translation starts.</string>
     <string name="settings_game_area_presets">Use ready areas for known games</string>
     <string name="settings_game_area_presets_short">When a game with ready areas (such as GTA 6) is being played, its help box and messages are read and translated automatically. Your own extra areas take precedence.</string>
-    <string name="auto_screen_text_notice">Automatic on-screen text translation is experimental; you can turn it on in Settings.</string>
+    <string name="auto_screen_text_notice">Automatic on-screen text translation was turned off; you can turn it on in Settings › Advanced › On-screen text.</string>
     <string name="settings_screen_text_kinds">Which on-screen text to translate</string>
-    <string name="settings_screen_text_phone">Phone (GTA 6 phone)</string>
     <string name="settings_screen_text_mission">Mission and objective text</string>
     <string name="settings_screen_text_help">Help boxes and actions (button prompts)</string>
     <string name="settings_screen_text_menus">Menus (pause, map, settings)</string>
@@ -740,7 +739,7 @@
     <string name="set_appearance">Subtitle Appearance</string>
     <string name="set_appearance_hint">Size, Colors</string>
     <string name="set_advanced">Advanced</string>
-    <string name="set_advanced_hint">Engine, Experimental</string>
+    <string name="set_advanced_hint">Engine, On-Screen Text</string>
     <string name="set_area">Subtitle Area</string>
     <string name="set_area_hint">Frame, Extra Areas</string>
     <string name="set_packs">Game Packs</string>
@@ -809,11 +808,11 @@
     <string name="set_show_speaker_name">Show Speaker Name</string>
     <string name="set_gemini_paid">I use a paid Gemini API key</string>
     <string name="set_gemini_paid_note">Paid API keys may incur charges. Google still enforces quotas.</string>
-    <string name="set_experimental">Experimental</string>
-    <string name="set_experimental_note">These settings may slow down or interrupt translation. If there\'s a problem, go back to the defaults.</string>
+    <string name="set_screen_text">On-screen text</string>
+    <string name="set_reading">Subtitle reading</string>
     <string name="set_auto_screen">Translate On-Screen Text Automatically</string>
     <string name="set_auto_screen_note">Objectives, menus and other text on the screen.</string>
-    <string name="set_auto_phone">Translate the GTA 6 Phone Automatically</string>
+    <string name="set_auto_phone">Translate the GTA 6 Phone</string>
     <string name="set_auto_phone_note">Each message is translated over its own bubble.</string>
     <string name="set_apart">Set On-Screen Text Apart from Subtitles</string>
     <string name="set_fast_check">Check Unchanged Subtitle Areas More Often</string>

@@ -196,7 +196,7 @@ public struct UserSettings: Codable, Equatable {
     /// ayarı kullanır. Kullanıcı bildirimi (X, monitörde oynayan): balonların üstündeki çeviriler kayıyor, küçük kalıyor,
     /// kimin ne dediği belli olmuyordu. Eski `phoneChatCard` kaydı (varsayılanı kapalıydı) okunmaz; herkes panelle başlar.
     public var phoneMessagesPanel = true
-    /// "Ekranı yerinde Türkçe çiz (deneysel)": GTA 6 telefonunun yazıları zeminden silinir, Türkçesi aynı yere çizilir ve
+    /// "Ekranı yerinde Türkçe çiz": GTA 6 telefonunun yazıları zeminden silinir, Türkçesi aynı yere çizilir ve
     /// telefonun görüntüsüne çapayla yapışık, oyun penceresinin üstünde gösterilir (`PhoneAnchorSession`, `PhoneTwin`;
     /// docs/ekran-capasi.md). Telefon sarsılsa da kaysa da çizim onunla gider; OCR yalnız yazı değişince çalışır. Önce
     /// yalnız Mac'te (Sinan Bey kararı, 24 Kas): Mac'te varsayılan açık, öbür platformlar bu ayarı henüz okumaz.
@@ -209,7 +209,7 @@ public struct UserSettings: Codable, Equatable {
     /// altyazı kutusuna benzemez (zemin yoksa zeminsiz, koyu gölgeli). Eski kayıtlarda yoktur; açık başlar.
     public var setTextApart = true
     /// Ekran yazıları kendiliğinden bulunup yerinde çevrilir (görev, yardım, mesaj; bütün oyunlarda, bkz.
-    /// `ScreenTextDetector`). Altyazı alanı Tam ekranken çalışmaz. Deneysel: varsayılan kapalı (beta.63'te açık geliyordu;
+    /// `ScreenTextDetector`). Altyazı alanı Tam ekranken çalışmaz. Varsayılan kapalı (beta.63'te açık geliyordu;
     /// oyun dünyasındaki poster ve plakaları da çeviriyordu). Kullanıcı Ayarlar'dan açar.
     public var autoScreenText = false
     /// Bir kerelik göç yapıldı (bkz. `migratingAutoScreenText()`). Eski kayıtlarda yoktur (false).
@@ -316,6 +316,8 @@ public struct UserSettings: Codable, Equatable {
             .suffix(AreaProfiles.maxCount))
         activeAreaProfile = try? values.decodeIfPresent(String.self, forKey: .activeAreaProfile)
         generalAreas = try? values.decodeIfPresent(AreaSet.self, forKey: .generalAreas)
+        // Eski iki telefon anahtarı tek "GTA 6 Telefonunu Çevir"de birleşir (`mergingGamePhoneSwitches`).
+        mergingGamePhoneSwitches()
     }
 
     /// Hazır bölge seçilir; Özel seçilince kayıtlı bölge olduğu gibi kalır.
@@ -437,7 +439,7 @@ extension UserSettings {
 
     /// "Ekran yazılarını otomatik çevir" bir kerelik göçü (Windows AutoScreenTextMigration, Android aynı kural): göç
     /// işareti olmayan kayıtta ayar kapatılır, işaret konur. Dönüş true ise ayar açıktı (beta.63 varsayılanı); kullanıcıya
-    /// bir kez "deneysel; Ayarlar'dan açabilirsiniz" bilgisi gösterilir.
+    /// bir kez "kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları'ndan açabilirsiniz" bilgisi gösterilir.
     @discardableResult
     public mutating func migratingAutoScreenText() -> Bool {
         guard !autoScreenTextReset else { return false }
@@ -471,7 +473,7 @@ extension UserSettings {
         guard !gamePhoneReenabled else { return false }
         gamePhoneReenabled = true
         let changed = !autoReadGamePhone
-        autoReadGamePhone = true
+        translatesGamePhone = true
         return changed
     }
 }

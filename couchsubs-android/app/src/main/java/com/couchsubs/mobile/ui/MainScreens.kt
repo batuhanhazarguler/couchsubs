@@ -415,7 +415,7 @@ private fun RunningScreen(status: LiveStatus, topBar: @Composable () -> Unit, on
                 Text(stringResource(R.string.game_phone_hint), style = Tokens.Type.body, color = Tokens.Color.text)
                 Row(horizontalArrangement = Arrangement.spacedBy(Tokens.Space.inline)) {
                     SecondaryButton(stringResource(R.string.game_phone_hint_turn_on)) {
-                        Services.settings.autoReadGamePhone = true
+                        Services.settings.setGamePhone(true)
                         com.couchsubs.mobile.service.LiveState.update { it.copy(gamePhoneHint = false) }
                     }
                     GhostButton(stringResource(R.string.area_profile_no), color = Tokens.Color.secondary) {

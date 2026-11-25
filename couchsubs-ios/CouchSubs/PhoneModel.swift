@@ -157,8 +157,8 @@ final class PhoneModel: ObservableObject {
     /// Görüntü bir dakikadır geliyor ama bu çeviride tek altyazı satırı gösterilmedi: "oyunun kendi altyazısını açın"
     /// ipucu (CouchSubsCore SubtitleOffTip; GitHub #503, #566, #572).
     @Published private(set) var showsSubtitleOffTip = false
-    /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "deneysel; Ayarlar'dan
-    /// açabilirsiniz" bilgisi görünür. Kullanıcı ayarı değiştirince kalkar.
+    /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "kapatıldı; Ayarlar › Gelişmiş ›
+    /// Ekran yazıları'ndan açabilirsiniz" bilgisi görünür. Kullanıcı ayarı değiştirince kalkar.
     @Published private(set) var showsAutoScreenTextNotice = false
     /// Telefon çevirisi kapalıyken GTA 6'nın telefon listesi altyazı yolunda sahne yazısı sayılıp atıldı: oturumda bir kez
     /// "Telefon çevirisi kapalı, açmak ister misiniz?" (`GamePhoneHint`, #1202; Mac ile aynı).
@@ -1492,9 +1492,9 @@ final class PhoneModel: ObservableObject {
         if readingStuck { readingStuck = false }
     }
 
-    /// Telefon ipucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.
+    /// Telefon ipucundaki "Aç": "GTA 6 Telefonunu Çevir" açılır.
     func enableGamePhone() {
-        settings.autoReadGamePhone = true
+        settings.translatesGamePhone = true
         showsGamePhoneHint = false
     }
 

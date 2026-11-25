@@ -15,7 +15,7 @@ public class ScreenTextKindSettingsTests
     public void DefaultsAndOldSettingsGetTheDefaults()
     {
         var fresh = new UserSettings();
-        Assert.False(fresh.AutoScreenText); // ana anahtar deneysel, kapalı
+        Assert.False(fresh.AutoScreenText); // ana anahtar varsayılan kapalı
         Assert.Equal([true, true, true, false, false],
                      [fresh.ScreenTextPhone, fresh.ScreenTextMission, fresh.ScreenTextHelp, fresh.ScreenTextMenus, fresh.ScreenTextOther]);
         // Eski ayar dosyası: türler yok, otomatik ekran yazısı açık.
@@ -25,6 +25,7 @@ public class ScreenTextKindSettingsTests
         // Kayıt ve yeniden okuma türleri korur; hesaplanan alan dosyaya yazılmaz.
         var saved = JsonSerializer.Serialize(old with { ScreenTextMenus = true, ScreenTextPhone = false });
         Assert.DoesNotContain("ReadsGamePhone", saved);
+        Assert.DoesNotContain("TranslatesGamePhone", saved);
         Assert.Equal([false, true, true, true, false], All.Select(JsonSerializer.Deserialize<UserSettings>(saved)!.ScreenTextAllows));
     }
 
@@ -50,5 +51,26 @@ public class ScreenTextKindSettingsTests
         settings = settings with { ScreenTextPhone = false };
         Assert.False(settings.ReadsGamePhone);
         Assert.True((settings with { AutoReadGamePhone = true }).ReadsGamePhone);
+    }
+
+    /// <summary>
+    /// Ayarlardaki tek "GTA 6 Telefonunu Çevir" anahtarı iki eski alanı birlikte yazar; eski dosyada farklı kalan iki alan
+    /// telefonun gerçekten okunup okunmadığına göre birleşir (Mac/iPhone mergingGamePhoneSwitches, Android aynı kural).
+    /// </summary>
+    [Fact]
+    public void SinglePhoneSwitchMergesTheTwoOldSwitches()
+    {
+        var off = new UserSettings() with { TranslatesGamePhone = false };
+        Assert.Equal([false, false], [off.AutoReadGamePhone, off.ScreenTextPhone]);
+        Assert.False((off with { AutoScreenText = true }).ReadsGamePhone);
+        var own = GamePhoneSwitchMerge.Apply(new UserSettings { AutoReadGamePhone = true, ScreenTextPhone = false, AutoScreenText = true });
+        Assert.Equal([true, true], [own.AutoReadGamePhone, own.ScreenTextPhone]);
+        var kind = GamePhoneSwitchMerge.Apply(new UserSettings { AutoReadGamePhone = false, ScreenTextPhone = true, AutoScreenText = true });
+        Assert.Equal([true, true], [kind.AutoReadGamePhone, kind.ScreenTextPhone]);
+        var closed = GamePhoneSwitchMerge.Apply(new UserSettings { AutoReadGamePhone = false, ScreenTextPhone = true });
+        Assert.Equal([false, false], [closed.AutoReadGamePhone, closed.ScreenTextPhone]);
+        Assert.False(closed.ReadsGamePhone);
+        var same = new UserSettings();
+        Assert.Same(same, GamePhoneSwitchMerge.Apply(same));
     }
 }

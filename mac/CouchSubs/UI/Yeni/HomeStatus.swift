@@ -300,7 +300,7 @@ struct HomeNotices: View {
                        + (model.onlineIssue.map { TranslationCard.describe($0, engine: model.settings.onlineEngine, server: model.settings.localAIServer) } ?? "")
                        + " " + String(localized: "Meanwhile the free translation is used.")) { EmptyView() }
         case .autoScreenText:
-            NoticeCard(text: String(localized: "Automatic on-screen text translation is experimental; you can turn it on in Settings.")) { EmptyView() }
+            NoticeCard(text: String(localized: "Automatic on-screen text translation was turned off; you can turn it on in Settings › Advanced › On-screen text.")) { EmptyView() }
         case .gamePhone:
             NoticeCard(text: String(localized: "The phone translation is off. Turn it on?")) {
                 Button("Turn On") { model.enableGamePhone() }.buttonStyle(.dsPrimary)

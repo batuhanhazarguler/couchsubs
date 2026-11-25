@@ -10,7 +10,7 @@ import XCTest
 final class ScreenTextKindTests: XCTestCase {
     func testDefaultsAndOldSettingsGetTheDefaults() throws {
         let fresh = UserSettings()
-        XCTAssertFalse(fresh.autoScreenText, "ana anahtar deneysel, kapalı")
+        XCTAssertFalse(fresh.autoScreenText, "ana anahtar varsayılan kapalı")
         XCTAssertEqual([fresh.screenTextPhone, fresh.screenTextMission, fresh.screenTextHelp, fresh.screenTextMenus,
                         fresh.screenTextOther], [true, true, true, false, false])
         // Eski kayıt: türler yok, otomatik ekran yazısı açık.
@@ -20,7 +20,7 @@ final class ScreenTextKindTests: XCTestCase {
         // Kayıt ve yeniden okuma türleri korur.
         var changed = old
         changed.screenTextMenus = true
-        changed.screenTextPhone = false
+        changed.translatesGamePhone = false
         let again = try JSONDecoder().decode(UserSettings.self, from: JSONEncoder().encode(changed))
         XCTAssertEqual(ScreenTextKind.allCases.map(again.screenTextAllows), [false, true, true, true, false])
     }
@@ -45,6 +45,29 @@ final class ScreenTextKindTests: XCTestCase {
         XCTAssertFalse(settings.readsGamePhone)
         settings.autoReadGamePhone = true
         XCTAssertTrue(settings.readsGamePhone)
+    }
+
+    /// Ayarlardaki tek "GTA 6 Telefonunu Çevir" anahtarı iki eski alanı birlikte yazar; eski kayıtta farklı kalan iki alan
+    /// telefonun gerçekten okunup okunmadığına göre birleşir (açık seçim korunur). Windows ve Android aynı kural.
+    func testSinglePhoneSwitchMergesTheTwoOldSwitches() throws {
+        var settings = UserSettings()
+        XCTAssertTrue(settings.translatesGamePhone)
+        settings.translatesGamePhone = false
+        XCTAssertEqual([settings.autoReadGamePhone, settings.screenTextPhone], [false, false])
+        XCTAssertFalse(settings.readsGamePhone)
+        settings.autoScreenText = true
+        XCTAssertFalse(settings.readsGamePhone, "otomatik ekran yazısı açılınca telefon kendiliğinden açılmaz")
+        func decoded(_ json: String) throws -> UserSettings { try JSONDecoder().decode(UserSettings.self, from: Data(json.utf8)) }
+        // Kendi anahtarı açık, Telefon türü kapalı: telefon okunuyordu, açık kalır.
+        let own = try decoded(#"{"autoReadGamePhone": true, "screenTextPhone": false, "autoScreenText": true}"#)
+        XCTAssertEqual([own.autoReadGamePhone, own.screenTextPhone], [true, true])
+        // Kendi anahtarı kapalı, otomatik ekran yazısında Telefon türü açık: telefon okunuyordu, açık kalır.
+        let kind = try decoded(#"{"autoReadGamePhone": false, "screenTextPhone": true, "autoScreenText": true}"#)
+        XCTAssertEqual([kind.autoReadGamePhone, kind.screenTextPhone], [true, true])
+        // Kendi anahtarı kapalı, otomatik ekran yazısı kapalı: telefon okunmuyordu, kapalı kalır.
+        let off = try decoded(#"{"autoReadGamePhone": false, "screenTextPhone": true, "autoScreenText": false}"#)
+        XCTAssertEqual([off.autoReadGamePhone, off.screenTextPhone], [false, false])
+        XCTAssertFalse(off.readsGamePhone)
     }
 
     func testKindOfAnArea() {

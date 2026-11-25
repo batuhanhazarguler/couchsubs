@@ -84,4 +84,24 @@ extension UserSettings {
     /// GTA 6 telefonu okunur mu: kendi ayarı ("GTA 6 telefonunu otomatik çevir") ya da otomatik ekran yazısında Telefon
     /// türü açık.
     public var readsGamePhone: Bool { autoReadGamePhone || (autoScreenText && screenTextPhone) }
+
+    /// Ayarlardaki tek "GTA 6 Telefonunu Çevir" anahtarı (dört platformda aynı). Eskiden aynı işi yapan iki anahtar vardı
+    /// ("GTA 6 telefonunu otomatik çevir" ve otomatik ekran yazısında "Telefon" türü); ikisi birlikte yazılır, kayıt
+    /// anahtarları değişmez. Okunan değer `readsGamePhone`'dur: iki alan eşitken onların değeri.
+    public var translatesGamePhone: Bool {
+        get { readsGamePhone }
+        set {
+            autoReadGamePhone = newValue
+            screenTextPhone = newValue
+        }
+    }
+
+    /// İki eski telefon anahtarını birleştirir (göç; her açılışta güvenle çalışır): ikisi farklıysa telefonun o an gerçekten
+    /// okunup okunmadığı (`readsGamePhone`) ikisine de yazılır, böylece kullanıcının açık seçimi korunur. Dönüş: değişti.
+    @discardableResult
+    public mutating func mergingGamePhoneSwitches() -> Bool {
+        guard autoReadGamePhone != screenTextPhone else { return false }
+        translatesGamePhone = readsGamePhone
+        return true
+    }
 }

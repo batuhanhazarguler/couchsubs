@@ -28,7 +28,7 @@ enum SettingsSection: Hashable, CaseIterable {
         switch self {
         case .basics: "Translation, Sound"
         case .appearance: "Size, Colors"
-        case .advanced: "Engine, Experimental"
+        case .advanced: "Engine, On-Screen Text"
         case .area: "Frame, Extra Areas"
         case .packs: "Ready Translations"
         case .dubbing: "Voices, Characters"
@@ -618,16 +618,22 @@ private struct AdvancedSettings: View {
                 engineDetails.padding(.top, DS.space("s"))
             }
         } right: {
-            DSCard(accent: .dsLive, scrolls: false) {
-                DSCardHeader("Experimental", color: .dsLive)
-                Text("These settings may slow down or interrupt translation. If there's a problem, go back to the defaults.").dsMuted()
+            // Ekran yazıları ve altyazı okuma: dört platformda aynı başlık, aynı ad ve sıra (Windows, iPhone, Android).
+            DSCard(scrolls: false) {
+                DSCardHeader("On-screen text")
                 DSSwitchRow(title: "Translate On-Screen Text Automatically", subtitle: "Objectives, menus and other text on the screen.",
                             isOn: $model.settings.autoScreenText)
                 if model.settings.autoScreenText { ScreenTextKindRows(settings: $model.settings) }
-                DSSwitchRow(title: "Translate the GTA 6 Phone Automatically", subtitle: "Each message is translated over its own bubble.",
-                            isOn: $model.settings.autoReadGamePhone)
+                // Tek telefon anahtarı: eski "GTA 6 telefonunu otomatik çevir" ve "Telefon" türü birlikte yazılır.
+                DSSwitchRow(title: "Translate the GTA 6 Phone", subtitle: "Each message is translated over its own bubble.",
+                            isOn: $model.settings.translatesGamePhone)
                 DSSwitchRow(title: "Set On-Screen Text Apart from Subtitles", subtitle: "On-screen text keeps its own colours and place, and never looks like the subtitle box.",
                             isOn: $model.settings.setTextApart)
+                Button("Restore Defaults") { restoreScreenTextDefaults() }
+                    .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
+            }
+            DSCard(scrolls: false) {
+                DSCardHeader("Subtitle reading")
                 DSSwitchRow(title: "Check Unchanged Subtitle Areas More Often",
                             subtitle: "When the subtitle area looks unchanged, read it again after 2 frames instead of 20. Uses more CPU.",
                             isOn: $model.settings.fastSubtitleDetection)
@@ -639,25 +645,29 @@ private struct AdvancedSettings: View {
                                hint: "If a line shows only in part, the whole line is awaited for at most this long. Recommended: 0.3 s.",
                                ms: $model.settings.partialWaitMs)
                 }
-                Button("Restore Defaults") { restoreDefaults() }
+                Button("Restore Defaults") { restoreReadingDefaults() }
                     .buttonStyle(DSButtonStyle(kind: .secondary, fullWidth: true))
             }
         }
     }
 
-    private func restoreDefaults() {
+    /// Ekran yazıları kartı varsayılana döner (iPhone, Android ve Windows ile aynı alanlar).
+    private func restoreScreenTextDefaults() {
         let defaults = UserSettings()
         model.settings.autoScreenText = defaults.autoScreenText
-        model.settings.autoReadGamePhone = defaults.autoReadGamePhone
+        model.settings.translatesGamePhone = defaults.translatesGamePhone
         model.settings.setTextApart = defaults.setTextApart
-        model.settings.fastSubtitleDetection = defaults.fastSubtitleDetection
-        model.settings.misreadWaitMs = SubtitlePipeline.packWaitMs
-        model.settings.partialWaitMs = SubtitlePipeline.cleanWaitMs
-        model.settings.screenTextPhone = defaults.screenTextPhone
         model.settings.screenTextMission = defaults.screenTextMission
         model.settings.screenTextHelp = defaults.screenTextHelp
         model.settings.screenTextMenus = defaults.screenTextMenus
         model.settings.screenTextOther = defaults.screenTextOther
+    }
+
+    /// Altyazı okuma kartı varsayılana döner.
+    private func restoreReadingDefaults() {
+        model.settings.fastSubtitleDetection = UserSettings().fastSubtitleDetection
+        model.settings.misreadWaitMs = SubtitlePipeline.packWaitMs
+        model.settings.partialWaitMs = SubtitlePipeline.cleanWaitMs
     }
 
     private func title(_ engine: TranslationEngine) -> LocalizedStringKey {
@@ -746,7 +756,7 @@ private struct AreaSettings: View {
                     DSTabs(selection: $model.settings.phoneMessagesPanel, items: [(true, "Side Panel"), (false, "On the Bubbles")])
                 }
                 // Önce yalnız Mac'te deneniyor (Sinan Bey kararı, 24 Kas); varsayılan açık.
-                DSSwitchRow(title: "Redraw the Screen in Turkish in Place (Experimental)",
+                DSSwitchRow(title: "Redraw the Screen in Turkish in Place",
                             subtitle: "GTA 6 phone: the original text is erased and the translation is drawn in its place, right on the phone in the game window, and it moves with the phone. Works when the picture is read from a window on this Mac (Remote Play, chiaki-ng or OBS).",
                             isOn: $model.settings.drawScreenInPlace, divider: false)
             }

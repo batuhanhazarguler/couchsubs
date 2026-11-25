@@ -334,7 +334,7 @@ struct RunningScreen: View {
                 // Görüntü bir dakikadır geliyor ama hiç altyazı satırı okunmadı (GitHub #503, #566, #572; SubtitleOffTip).
                 // Otomatik ekran yazısı beta.63'te açık geliyordu; bir kez kapatıldı, kullanıcıya söylenir.
                 if model.showsAutoScreenTextNotice {
-                    MobileNote(text: String(localized: "Automatic on-screen text translation is experimental; you can turn it on in Settings."),
+                    MobileNote(text: String(localized: "Automatic on-screen text translation was turned off; you can turn it on in Settings › Advanced › On-screen text."),
                                tone: Mobile.Palette.secondary)
                 }
                 // Telefon çevirisi kapalıyken GTA 6'nın telefon listesi altyazı yolunda atıldı (#1202): oturumda bir kez.

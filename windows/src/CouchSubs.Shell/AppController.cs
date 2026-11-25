@@ -169,6 +169,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         settings = ScreenTextExtrasMigration.Apply(settings);
         // Eski göçün kapattığı GTA 6 telefonu bir kez açılır (#1202).
         settings = GamePhoneMigration.Apply(settings);
+        settings = GamePhoneSwitchMerge.Apply(settings);
         // Uygulama oturum sürerken kapandıysa oyunun profili açık kalmış olabilir: açılışta genel alanlar geri gelir.
         if (settings.ActiveAreaProfile is not null || settings.GeneralAreas is not null) settings = settings.WithGeneralAreas();
         services.Translation.SelectCpuThreads(settings.CpuTranslationThreads);
@@ -839,7 +840,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     /// </summary>
     public bool ShowsSubtitleOffTip { get => showsSubtitleOffTip; private set => Set(ref showsSubtitleOffTip, value); }
     /// <summary>
-    /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "deneysel; Ayarlar'dan açabilirsiniz"
+    /// Otomatik ekran yazısı göçle kapatıldı (beta.63'te açıktı): bu oturumda bir kez "kapatıldı; Ayarlar › Gelişmiş › Ekran yazıları'ndan açabilirsiniz"
     /// bilgisi görünür. Kullanıcı ayarı değiştirince kalkar.
     /// </summary>
     public bool ShowsAutoScreenTextNotice { get => showsAutoScreenTextNotice; private set => Set(ref showsAutoScreenTextNotice, value); }
@@ -3859,11 +3860,11 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         post(() => ShowsGamePhoneHint = !settings.ReadsGamePhone);
     }
 
-    /// <summary>İpucundaki "Aç": GTA 6 telefonunu otomatik çevir açılır.</summary>
+    /// <summary>İpucundaki "Aç": "GTA 6 Telefonunu Çevir" açılır.</summary>
     public void EnableGamePhone()
     {
         ShowsGamePhoneHint = false;
-        Settings = Settings with { AutoReadGamePhone = true };
+        Settings = Settings with { TranslatesGamePhone = true };
     }
 
     /// <summary>İpucundaki "Hayır": bu oturumda yeniden gösterilmez.</summary>
