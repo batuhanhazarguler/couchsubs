@@ -79,6 +79,10 @@ object PlayedGame {
     fun stop() {
         sense.endSession()
         onChange = null
+        // Bitmiş oturumun paket kitaplığı (bütün paketler açılmış hâlde) burada tutulmaz: tutulursa sonraki oturum yeni
+        // kitaplığı eskisi bellekteyken açar, büyük pakette (GTA 6) bellek yetmez ve oturum paketsiz sürer (#1282).
+        packs = null
+        packTitles = { emptyList() }
         xbox = false
         areas.stop()
         LiveState.update { it.copy(askingGame = false, xboxNeedsGame = false) }

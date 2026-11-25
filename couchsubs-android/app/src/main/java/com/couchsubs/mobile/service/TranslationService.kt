@@ -691,6 +691,9 @@ class TranslationService : Service() {
     private fun setup(console: RegisteredConsole?, accountId: ByteArray?, replacement: FrameSourceFactory?) {
         val xboxConsole = if (settings.xbox && !demo) settings.xboxConsole else null
         // Paketler ücretsiz: uygulamayla gelenler ve sunucudan inmiş güncel sürümler. Ayardan kapatılırsa aranmaz.
+        // Önceki oturumun kitaplığı yenisi açılmadan bırakılır; ikisi birden bellekte kalırsa GTA 6 paketi açılamıyordu (#1282).
+        PlayedGame.packs = null
+        packs = null
         val library = Services.packLibrary(this)
         packs = library
         // Terim sözlüğü ve kalıcı önbellek (iPhone ile aynı biçim): önceki oturumlarda çevrilen cümleler hemen gelir.
@@ -1604,6 +1607,7 @@ class TranslationService : Service() {
 
     private fun releaseParts() = synchronized(lifecycle) {
         PlayedGame.stop()
+        packs = null
         styleListener?.let(settings::removeListener)
         styleListener = null
         targetListener?.let(settings::removeListener)
