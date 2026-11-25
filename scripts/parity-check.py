@@ -178,6 +178,17 @@ CAPABILITIES = {
         ("windows", "windows/src/CouchSubs.Translation/PackLookup.cs", r"if \(TurkishText\.LooksTurkish\(text\)\) return null;"),
         ("android", _DROID + "SubtitleSegmenter.kt", r"if \(TurkishText\.looksTurkish\(text\)\) return null"),
     ],
+    # GitHub #1259: kamerayla kayan plaka/tabela altyazı alanına girse de altyazı sayılmaz; dört platformun hattında da.
+    "Kamerayla kayan yazıyı altyazıdan çıkarma (SceneMotion)": [
+        ("mac", _CORE + "Pipeline/SubtitlePipeline.swift", r"sceneMotion\.filter\("),
+        ("windows", _WIN + "SubtitlePipeline.cs", r"sceneMotion\.Filter\("),
+        ("android", _DROID + "SubtitlePipeline.kt", r"sceneMotion\.filter\("),
+    ],
+    "Ortak deneme dosyası scene-motion.json": [
+        ("mac", _CORE_TESTS + "SceneMotionTests.swift", r"scene-motion\.json"),
+        ("windows", _WIN_TESTS + "SceneMotionTests.cs", r"scene-motion\.json"),
+        ("android", _DROID_TESTS + "SceneMotionTest.kt", r"scene-motion\.json"),
+    ],
     "Ortak deneme dosyası settled-text.json": [
         ("mac", _CORE_TESTS + "SettledTextTests.swift", r"settled-text\.json"),
         ("windows", _WIN_TESTS + "SettledTextTests.cs", r"settled-text\.json"),

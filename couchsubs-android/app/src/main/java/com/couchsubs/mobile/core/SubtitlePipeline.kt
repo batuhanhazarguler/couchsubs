@@ -138,6 +138,8 @@ class SubtitlePipeline(
     private val stabilizer = SubtitleStabilizer(clock = now)
     /** Konuşma değişirken sabit duran görev/HUD satırları (GTA 6). */
     private val stickyRows = StickyRows()
+    /** Kamerayla kayan yazı (plaka, tabela) altyazı alanına girse de altyazı sayılmaz ([SceneMotion]). */
+    private val sceneMotion = SceneMotion()
     /** Bu oturumda kesin altyazının okunduğu yükseklikler: oradaki kısa satır sahne yazısı sayılmaz ([SceneText]). */
     private val subtitleBand = SubtitleBand()
     /** Oyunun altyazısı koyu yazı mı (açık zemindeki koyu yazı kuralı o oturumda kapanır, [InkTone]; GitHub #1124). */
@@ -353,7 +355,9 @@ class SubtitlePipeline(
         var noticeAreas: List<ExtraArea> = emptyList()
         var filteredRows = Reading(emptyList())
         val reading = synchronized(lock) {
-            val filtered = stickyRows.filter(rows, now())
+            // Kamerayla kayan yazı (plaka, tabela, dükkân adı) altyazı değildir ([SceneMotion], GitHub #1259).
+            val filtered = sceneMotion.filter(stickyRows.filter(rows, now()), area, now())
+            for (line in sceneMotion.removed) logSceneText(line.text, SceneMotion.REASON)
             filteredRows = filtered
             if (mission.observe(stickyRows.removed, area, now())) {
                 missionChanged = true
@@ -888,6 +892,7 @@ class SubtitlePipeline(
         lastShownSource = null
         pairs.clear()
         stickyRows.reset()
+        sceneMotion.reset()
         subtitleBand.reset()
         darkInkStyle.reset()
         loggedSceneText.clear()

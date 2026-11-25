@@ -124,6 +124,8 @@ public final class SubtitlePipeline {
     /// Son ham OCR. Gri görüntü izi aynı kalırken satırların altındaki panel rengi değişebilir.
     private var lastOcrReading = Reading.empty
     private var stickyRows = StickyRows()
+    /// Kamerayla kayan yazı (plaka, tabela) altyazı alanına girse de altyazı sayılmaz (`SceneMotion`).
+    private var sceneMotion = SceneMotion()
     /// Bu oturumda kesin altyazının okunduğu yükseklikler: oradaki kısa satır sahne yazısı sayılmaz (`SceneText`).
     private var subtitleBand = SubtitleBand()
     /// Oyunun altyazısı koyu yazı mı (açık zemindeki koyu yazı kuralı o oturumda kapanır, `InkTone`; GitHub #1124).
@@ -351,8 +353,10 @@ public final class SubtitlePipeline {
                 + "sayıldı (görüntü kaynağı CouchSubs'ın OBS katmanını da içeriyor; OBS'te Kaynak projektörünü seçin)")
         }
         let cleaned = seen.withoutButtonPrompts().withoutOcrNoise().joiningRows()
-        let rows = stickyRows.filter(cleaned, at: now())
+        // Kamerayla kayan yazı (plaka, tabela, dükkân adı) altyazı değildir (`SceneMotion`, GitHub #1259).
+        let rows = sceneMotion.filter(stickyRows.filter(cleaned, at: now()), in: place, at: now())
         for row in stickyRows.newlySticky { log("sabit satır: \(SubtitleLog.excerpt(row)) görev/HUD yazısı sayıldı, çevrilmiyor") }
+        for line in sceneMotion.removed { logSceneText(line.text, SceneMotion.reason) }
         if mission.observe(stickyRows.removed, area: place, at: now()) {
             log(mission.region == nil ? "görev satırı kalktı" : "görev satırı kendi yerinde gösteriliyor")
             onMissionChanged?(mission.region)
@@ -1033,6 +1037,7 @@ public final class SubtitlePipeline {
         lastReadMs = nil
         scheduler.reset()
         stickyRows.reset()
+        sceneMotion.reset()
         subtitleBand.reset()
         darkInkStyle.reset()
         loggedSceneText.removeAll()
