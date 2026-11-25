@@ -114,6 +114,9 @@ class XboxStreamSession(
     @Volatile private var keepalive: ScheduledFuture<*>? = null
     @Volatile private var lastConverted = 0L
     @Volatile private var firstFrameAt = 0L
+    /** Bu bağlantının çözücü durumu ve Xbox'ın SDP yanıtında seçtiği görüntü kodeği (tanı satırı için, #1252). */
+    @Volatile private var decoderNote = XboxDecoderNote()
+    @Volatile private var negotiatedCodec: String? = null
     /** Kare onayları (bkz. XboxFrameAcks.kt): el sıkışmadan sonra gönderilir. */
     private val acks = XboxFrameAckQueue()
     @Volatile private var acking = false
@@ -355,7 +358,7 @@ class XboxStreamSession(
             .setAudioDeviceModule(audio)
             // EGL bağlamı yok: donanım çözücüsü kareyi bellekte verir, Y düzlemi doğrudan okunur.
             // Kare onayı için çözülen karenin RTP zaman damgası gerekir; çözücü seçimi DefaultVideoDecoderFactory'ninki.
-            .setVideoDecoderFactory(XboxDecoderFactory(decoded))
+            .setVideoDecoderFactory(XboxDecoderFactory(decoded, XboxDecoderNote().also { decoderNote = it }))
             .setVideoEncoderFactory(SoftwareVideoEncoderFactory())
             .createPeerConnectionFactory()
             .also { audio.release() }
@@ -400,6 +403,7 @@ class XboxStreamSession(
         lastError = null
         lastKind = null
         firstFrameAt = 0L
+        negotiatedCodec = null
         connectedAt = 0L
         acking = false
         acks.clear()
@@ -477,6 +481,8 @@ class XboxStreamSession(
         await<Unit>("yerel SDP") { result -> connection.setLocalDescription(result.setting(), munged) }
         log("SDP gönderiliyor")
         val answer = home.sdp(id, munged.description)
+        negotiatedCodec = XboxSdp.negotiated(answer)
+        log(XboxSdp.summary(munged.description, answer))
         await<Unit>("Xbox SDP") { result -> connection.setRemoteDescription(result.setting(), SessionDescription(SessionDescription.Type.ANSWER, answer)) }
         // Yerel adaylar toplanana kadar (en çok 5 sn) beklenir; yavaş ağ bağdaştırıcılarının adayları da gitsin.
         gathered.await(ICE_GATHER_MS, TimeUnit.MILLISECONDS)
@@ -648,7 +654,8 @@ class XboxStreamSession(
             try {
                 val stats = report.statsMap.values.filter { it.type in XboxStreamStats.TYPES }
                     .map { XboxStat(it.type, it.id, it.members) }
-                log(XboxStreamStats.describe(since, current.frameSeen, current.keyframesRequested, stats, picture))
+                log(XboxStreamStats.describe(since, current.frameSeen, current.keyframesRequested, stats, picture,
+                    negotiatedCodec, decoderNote.describe()))
             } catch (error: Exception) {
                 log("ilk kare tanısı: ${error.message}")
             }

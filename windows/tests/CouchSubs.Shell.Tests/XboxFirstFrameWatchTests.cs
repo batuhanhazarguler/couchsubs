@@ -87,7 +87,7 @@ public class XboxFirstFrameWatchTests
              {"type":"codec","id":"C1","mimeType":"video/H264","sdpFmtpLine":"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f"}]
             """);
         var line = XboxStreamStats.Describe(Ms(10_000), false, 4, report.RootElement, "görüntü");
-        Assert.Contains("çözücü ?, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi", line);
+        Assert.Contains("çözücü kurulmadı, görüntü verisi gelmedi, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi", line);
     }
 
     [Fact]

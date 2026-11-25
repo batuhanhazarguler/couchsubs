@@ -75,6 +75,8 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
     private var watchTask: Task<Void, Never>?
     private var connectedAt: TimeInterval = 0
     private var videoTrack: RTCVideoTrack?
+    /// Xbox'ın SDP yanıtında seçtiği görüntü kodeği (tanı satırı için, #1252).
+    private var negotiatedCodec: String?
     /// İlk kareden sonra görüntü kesilirse uyarı ve yeniden kurma (kareler ve ICE olayları buraya yazılır).
     private var picture = XboxPictureWatch()
 
@@ -101,13 +103,16 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
     private static let playout = XboxPlayoutDevice()
     #endif
 
+    /// Kurulan görüntü çözücüsü tanı satırına yazılır (#1252); çözücüler RTCDefaultVideoDecoderFactory'ninki.
+    private static let decoders = XboxDecoderFactory()
+
     private static let factory: RTCPeerConnectionFactory = {
         RTCInitializeSSL()
         #if os(iOS)
-        return RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory(),
+        return RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: decoders,
                                         audioDevice: playout)
         #else
-        return RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: RTCDefaultVideoDecoderFactory())
+        return RTCPeerConnectionFactory(encoderFactory: RTCDefaultVideoEncoderFactory(), decoderFactory: decoders)
         #endif
     }()
 
@@ -346,8 +351,10 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
             clockStart = ProcessInfo.processInfo.systemUptime
             watch = nil
             connectedAt = 0
+            negotiatedCodec = nil
             picture = XboxPictureWatch()
         }
+        Self.decoders.reset()
         let config = RTCConfiguration()
         config.iceServers = [RTCIceServer(urlStrings: ["stun:stun.l.google.com:19302"]), RTCIceServer(urlStrings: ["stun:stun1.l.google.com:19302"])]
         config.sdpSemantics = .unifiedPlan
@@ -398,6 +405,8 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
         try await set(connection, local: munged)
         log("SDP gönderiliyor")
         let answer = try await home.sdp(id, offer: munged.sdp)
+        locked { negotiatedCodec = XboxSdp.negotiated(answer) }
+        log(XboxSdp.summary(offer: munged.sdp, answer: answer))
         try await set(connection, remote: RTCSessionDescription(type: .answer, sdp: answer))
         // Yerel adaylar toplanana kadar (en çok 5 sn) beklenir.
         for _ in 0..<(Self.iceGatherMs / 100) where !locked({ gatheringComplete }) {
@@ -611,8 +620,9 @@ public final class XboxStreamSession: NSObject, @unchecked Sendable {
             guard let self else { return }
             let stats = report.statistics.values.filter { XboxStreamStats.types.contains($0.type) }
                 .map { XboxStat(type: $0.type, id: $0.id, members: $0.values) }
-            let seen = self.locked { self.watch?.frameSeen ?? true }
-            self.log(XboxStreamStats.describe(sinceConnectedMs: sinceMs, frameSeen: seen, keyframes: keyframes, stats: stats, picture: picture))
+            let (seen, codec) = self.locked { (self.watch?.frameSeen ?? true, self.negotiatedCodec) }
+            self.log(XboxStreamStats.describe(sinceConnectedMs: sinceMs, frameSeen: seen, keyframes: keyframes, stats: stats, picture: picture,
+                                              negotiatedCodec: codec, decoder: Self.decoders.note))
         }
     }
 }

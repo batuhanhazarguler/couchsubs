@@ -152,7 +152,7 @@ final class XboxFirstFrameWatchTests: XCTestCase {
              {"type":"codec","id":"C1","mimeType":"video/H264","sdpFmtpLine":"level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f"}]
             """)
         let line = XboxStreamStats.describe(sinceConnectedMs: 10_000, frameSeen: false, keyframes: 4, stats: stats, picture: "görüntü")
-        XCTAssertTrue(line.contains("çözücü ?, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi"), line)
+        XCTAssertTrue(line.contains("çözücü kurulmadı, görüntü verisi gelmedi, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi"), line)
         XCTAssertTrue(XboxStreamStats.types.contains("codec"))
     }
 

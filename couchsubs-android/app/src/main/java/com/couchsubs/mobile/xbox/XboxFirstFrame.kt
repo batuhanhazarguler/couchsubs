@@ -68,15 +68,29 @@ object XboxStreamStats {
     /** Telefonda video öğesi yok: görüntü parçasının durumu (LIVE, ENDED). */
     fun picture(trackState: String): String = "görüntü parça $trackState"
 
-    fun describe(sinceConnectedMs: Long, frameSeen: Boolean, keyframes: Int, stats: List<XboxStat>, picture: String): String = buildString {
+    /** Görüntü verisi hiç gelmediyse (bayt 0) libwebrtc çözücüyü kurmaz; "çözücü" alanı bunu söyler. */
+    const val DECODER_NOT_STARTED = "kurulmadı, görüntü verisi gelmedi"
+
+    /**
+     * [negotiatedCodec]: Xbox'ın SDP yanıtında seçtiği görüntü kodeği (getStats kodeği ilk kareye kadar boştur).
+     * [decoder]: uygulamanın bildiği çözücü durumu (ad, donanım/yazılım, başlatma hatası); getStats'ta yoksa kullanılır.
+     */
+    fun describe(
+        sinceConnectedMs: Long, frameSeen: Boolean, keyframes: Int, stats: List<XboxStat>, picture: String,
+        negotiatedCodec: String? = null, decoder: String? = null,
+    ): String = buildString {
         append("tanı (${sinceConnectedMs / 1000} sn, ${if (frameSeen) "ilk kare geldi" else "ilk kare yok"}): keyframe isteği $keyframes; ")
         val video = stats.firstOrNull { it.type == "inbound-rtp" && (text(it, "kind") ?: text(it, "mediaType")) == "video" }
         if (video != null) {
             append("video paket ${number(video, "packetsReceived")}, bayt ${number(video, "bytesReceived")}, kayıp ${number(video, "packetsLost")}, ")
             append("çözülen ${number(video, "framesDecoded")}, düşen ${number(video, "framesDropped")}, anahtar kare ${number(video, "keyFramesDecoded")}, ")
-            append("PLI ${number(video, "pliCount")}, çözücü ${text(video, "decoderImplementation") ?: "?"}")
-            byId(stats, text(video, "codecId"))?.let { codec ->
+            val noData = number(video, "bytesReceived") == "0"
+            append("PLI ${number(video, "pliCount")}, çözücü ${text(video, "decoderImplementation") ?: decoder ?: if (noData) DECODER_NOT_STARTED else "?"}")
+            val codec = byId(stats, text(video, "codecId"))
+            if (codec != null) {
                 append(", kodek ${text(codec, "mimeType") ?: "?"} ${text(codec, "sdpFmtpLine") ?: ""}".trimEnd())
+            } else if (negotiatedCodec != null) {
+                append(", kodek $negotiatedCodec (SDP yanıtı)")
             }
             append("; ")
         } else {

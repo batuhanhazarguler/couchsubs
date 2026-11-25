@@ -70,8 +70,14 @@ public static class XboxStreamStats
         string.Create(CultureInfo.InvariantCulture,
             $"görüntü readyState {readyState}, {width}x{height}, görünürlük {visibility ?? "?"}, kare geri çağrısı {frameCallbacks}");
 
+    /// <summary>Görüntü verisi hiç gelmediyse (bayt 0) tarayıcı çözücüyü kurmaz; "çözücü" alanı bunu söyler (#1252).</summary>
+    public const string DecoderNotStarted = "kurulmadı, görüntü verisi gelmedi";
+
     /// <param name="stats">getStats raporunun girdileri (inbound-rtp, candidate-pair, local/remote-candidate, transport).</param>
-    public static string Describe(TimeSpan sinceConnected, bool frameSeen, int keyframes, JsonElement stats, string picture)
+    /// <param name="negotiatedCodec">Xbox'ın SDP yanıtında seçtiği görüntü kodeği (getStats kodeği ilk kareye kadar boştur).</param>
+    /// <param name="decoder">Uygulamanın bildiği çözücü durumu; getStats'ta yoksa kullanılır.</param>
+    public static string Describe(TimeSpan sinceConnected, bool frameSeen, int keyframes, JsonElement stats, string picture,
+        string? negotiatedCodec = null, string? decoder = null)
     {
         var entries = stats.ValueKind == JsonValueKind.Array ? stats.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object).ToList() : [];
         var line = new StringBuilder();
@@ -82,11 +88,13 @@ public static class XboxStreamStats
             line.Append(CultureInfo.InvariantCulture,
                 $"video paket {Number(video, "packetsReceived")}, bayt {Number(video, "bytesReceived")}, kayıp {Number(video, "packetsLost")}, " +
                 $"çözülen {Number(video, "framesDecoded")}, düşen {Number(video, "framesDropped")}, anahtar kare {Number(video, "keyFramesDecoded")}, " +
-                $"PLI {Number(video, "pliCount")}, çözücü {Text(video, "decoderImplementation") ?? "?"}");
+                $"PLI {Number(video, "pliCount")}, çözücü {Text(video, "decoderImplementation") ?? decoder ?? (Number(video, "bytesReceived") == "0" ? DecoderNotStarted : "?")}");
             // Anlaşılan kodek (Xbox'ın SDP yanıtının seçtiği): "görüntü hiç gelmedi" kodekten mi, ayrılsın.
             var codec = ById(entries, Text(video, "codecId"));
             if (codec.ValueKind == JsonValueKind.Object)
                 line.Append((", kodek " + (Text(codec, "mimeType") ?? "?") + " " + Text(codec, "sdpFmtpLine")).TrimEnd());
+            else if (negotiatedCodec is not null)
+                line.Append(", kodek ").Append(negotiatedCodec).Append(" (SDP yanıtı)");
             line.Append("; ");
         }
         else line.Append("video yok; ");

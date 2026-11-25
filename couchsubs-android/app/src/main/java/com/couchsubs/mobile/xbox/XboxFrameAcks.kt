@@ -7,6 +7,9 @@
 // gönderiyordu; Xbox yayını kısa sürede kapatıp "uzaktan yürütmeyi durdurdu" diyordu, uygulama da baştan bağlanıyordu.
 package com.couchsubs.mobile.xbox
 
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
+import android.os.Build
 import android.os.SystemClock
 import org.webrtc.EglBase
 import org.webrtc.EncodedImage
@@ -31,31 +34,78 @@ internal fun interface DecodedFrameListener {
  * `captureTimeNs`'i olarak verir (sdk/android/src/jni/video_decoder_wrapper.cc: `capture_time_ms_ = RtpTimestamp() /
  * kNumRtpTicksPerMillisec`); görüntü alıcısına (VideoSink) giden karede ise gösterim zamanı vardır.
  */
-internal class XboxDecoderFactory(private val listener: DecodedFrameListener) : VideoDecoderFactory {
+internal class XboxDecoderFactory(
+    private val listener: DecodedFrameListener,
+    private val note: XboxDecoderNote = XboxDecoderNote(),
+) : VideoDecoderFactory {
     private val hardware = HardwareVideoDecoderFactory(null as EglBase.Context?)
     private val software = SoftwareVideoDecoderFactory()
     private val platform = PlatformSoftwareVideoDecoderFactory(null)
 
     override fun createDecoder(info: VideoCodecInfo): VideoDecoder? {
-        val hw = hardware.createDecoder(info)?.let { ReportingDecoder(it, listener) }
+        // MediaCodec çözücüsü yalnız MIME türüne bakar: teklife eklenen H.264 High da donanım çözücüsüne gider.
+        val hw = hardware.createDecoder(info)?.let { ReportingDecoder(it, note, listener) }
         // SoftwareVideoDecoderFactory'ninkiler yereldir (C++); onlardan kare bilgisi alınamaz.
-        val sw = software.createDecoder(info) ?: platform.createDecoder(info)?.let { ReportingDecoder(it, listener) }
+        val native = software.createDecoder(info)
+        val sw = native ?: platform.createDecoder(info)?.let { ReportingDecoder(it, note, listener) }
+        when {
+            hw != null -> note.created(info.name, hw.implementationName, hardware = true)
+            native != null -> note.created(info.name, "libwebrtc", hardware = false)
+            sw != null -> note.created(info.name, sw.implementationName, hardware = false)
+            else -> note.initFailed(info.name, "bu telefonda çözücü yok")
+        }
         return if (hw != null && sw != null) VideoDecoderFallback(sw, hw) else hw ?: sw
     }
 
-    override fun getSupportedCodecs(): Array<VideoCodecInfo> = LinkedHashSet<VideoCodecInfo>().apply {
-        addAll(software.supportedCodecs)
-        addAll(hardware.supportedCodecs)
-        addAll(platform.supportedCodecs)
-    }.toTypedArray()
+    override fun getSupportedCodecs(): Array<VideoCodecInfo> {
+        val all = LinkedHashSet<VideoCodecInfo>().apply {
+            addAll(software.supportedCodecs)
+            addAll(hardware.supportedCodecs)
+            addAll(platform.supportedCodecs)
+        }.map { XboxCodec(it.name, it.params) }
+        return XboxCodecOrder.order(all, AvcHighProfile.supported)
+            .map { VideoCodecInfo(it.name, it.params, emptyList()) }.toTypedArray()
+    }
 }
 
-/** Java çözücüsünü sarar: girişte geliş anını, çıkışta kareyi bildirir; kareye dokunmaz. */
-internal class ReportingDecoder(private val inner: VideoDecoder, private val listener: DecodedFrameListener) : VideoDecoder {
+/** Telefonun donanım H.264 çözücüsü High (ya da Constrained High) profilini çözebiliyor mu (MediaCodecList'ten). */
+internal object AvcHighProfile {
+    private const val MIME = "video/avc"
+    private val SOFTWARE = listOf("OMX.google.", "OMX.SEC.", "c2.android")
+
+    val supported: Boolean by lazy {
+        runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.firstOrNull { info ->
+                !info.isEncoder && !info.name.endsWith(".secure") && hardware(info) &&
+                    info.supportedTypes.any { it.equals(MIME, ignoreCase = true) }
+            }?.getCapabilitiesForType(MIME)?.profileLevels?.any {
+                it.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileHigh ||
+                    it.profile == MediaCodecInfo.CodecProfileLevel.AVCProfileConstrainedHigh
+            } ?: false
+        }.getOrDefault(false)
+    }
+
+    private fun hardware(info: MediaCodecInfo): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.isHardwareAccelerated
+        else SOFTWARE.none { info.name.startsWith(it) }
+}
+
+/** Java çözücüsünü sarar: girişte geliş anını, çıkışta kareyi bildirir; kareye dokunmaz. Başlatma hatası tanıya yazılır. */
+internal class ReportingDecoder(
+    private val inner: VideoDecoder,
+    private val note: XboxDecoderNote? = null,
+    private val listener: DecodedFrameListener,
+) : VideoDecoder {
     /** captureTimeNs → çözücüye geliş anı. AndroidVideoDecoder çıkan karenin zamanını girişteki captureTimeNs'ten verir. */
     private val arrivals = ConcurrentHashMap<Long, Long>()
 
-    override fun initDecode(settings: VideoDecoder.Settings, callback: VideoDecoder.Callback): VideoCodecStatus =
+    override fun initDecode(settings: VideoDecoder.Settings, callback: VideoDecoder.Callback): VideoCodecStatus {
+        val status = start(settings, callback)
+        if (status != VideoCodecStatus.OK) note?.initFailed(inner.implementationName, status.name)
+        return status
+    }
+
+    private fun start(settings: VideoDecoder.Settings, callback: VideoDecoder.Callback): VideoCodecStatus =
         inner.initDecode(settings) { frame, decodeTimeMs, qp ->
             val now = SystemClock.elapsedRealtime()
             val arrived = arrivals.remove(frame.timestampNs) ?: now

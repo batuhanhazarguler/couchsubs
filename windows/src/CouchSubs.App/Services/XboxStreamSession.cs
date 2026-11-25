@@ -32,6 +32,8 @@ internal sealed class XboxStreamSession(XboxBridge bridge, XboxConsole console, 
     private DispatcherTimer? watchTimer;
     private long connectedAt;
     private bool keyframeReady;
+    /// <summary>Xbox'ın SDP yanıtında seçtiği görüntü kodeği (tanı satırı için, #1252); her yeni SDP'de yenilenir.</summary>
+    private string? negotiatedCodec;
     /// <summary>Bu WebRTC bağlantısında okumaya giden kare sayısı ve ilk karenin anı (bağlantı bitince özet satırı).</summary>
     private long connectionFrames;
     private long firstFrameAt;
@@ -426,7 +428,8 @@ internal sealed class XboxStreamSession(XboxBridge bridge, XboxConsole console, 
                         video.GetProperty("height").GetInt32(), video.TryGetProperty("visibility", out var visibility) ? visibility.GetString() : null,
                         video.GetProperty("callbacks").GetInt64());
                     Log(XboxStreamStats.Describe(TimeSpan.FromMilliseconds(Environment.TickCount64 - connectedAt),
-                        watch?.FrameSeen ?? Interlocked.Read(ref firstFrameAt) != 0, watch?.KeyframesRequested ?? 0, message.GetProperty("stats"), picture));
+                        watch?.FrameSeen ?? Interlocked.Read(ref firstFrameAt) != 0, watch?.KeyframesRequested ?? 0, message.GetProperty("stats"), picture,
+                        negotiatedCodec));
                     break;
                 case "rpc":
                     var id = message.GetProperty("id").GetInt32();
@@ -440,6 +443,7 @@ internal sealed class XboxStreamSession(XboxBridge bridge, XboxConsole console, 
                     try
                     {
                         var result = await bridge.CallAsync(command, args);
+                        if (command == "sdp") LogSdp(args, result);
                         browser?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { kind = "reply", id, value = result }));
                     }
                     catch (Exception error)
@@ -454,6 +458,17 @@ internal sealed class XboxStreamSession(XboxBridge bridge, XboxConsole console, 
             StateChanged?.Invoke(SessionState.Disconnected(DisconnectKind.Other, error.Message));
             browserEnded?.TrySetResult(true);
         }
+    }
+
+    /// <summary>Teklif edilen ve Xbox'ın seçtiği görüntü kodekleri günlüğe; seçilen kodek tanı satırına (#1252).</summary>
+    private void LogSdp(object? args, JsonElement result)
+    {
+        var offer = args is JsonElement { ValueKind: JsonValueKind.Object } request && request.TryGetProperty("sdp", out var o) && o.ValueKind == JsonValueKind.String
+            ? o.GetString() : null;
+        var answer = result.ValueKind == JsonValueKind.Object && result.TryGetProperty("sdp", out var a) && a.ValueKind == JsonValueKind.String
+            ? a.GetString() : null;
+        negotiatedCodec = XboxSdp.Negotiated(answer);
+        Log(XboxSdp.Summary(offer, answer));
     }
 
     /// <summary>

@@ -108,7 +108,7 @@ class XboxFirstFrameTest {
             XboxStat("codec", "C1", mapOf("mimeType" to "video/H264", "sdpFmtpLine" to "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f")),
         )
         val line = XboxStreamStats.describe(10_000, false, 4, stats, "görüntü")
-        assertTrue(line, line.contains("çözücü ?, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi"))
+        assertTrue(line, line.contains("çözücü kurulmadı, görüntü verisi gelmedi, kodek video/H264 level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=4d001f; aday seçilmedi"))
         assertTrue("codec" in XboxStreamStats.TYPES)
     }
 }

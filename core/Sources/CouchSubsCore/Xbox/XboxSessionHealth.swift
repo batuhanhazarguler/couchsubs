@@ -350,14 +350,24 @@ public enum XboxStreamStats {
     /// Telefonda ve Mac'te video öğesi yok: görüntü parçasının durumu (LIVE, ENDED).
     public static func picture(trackState: String) -> String { "görüntü parça \(trackState)" }
 
-    public static func describe(sinceConnectedMs: Int, frameSeen: Bool, keyframes: Int, stats: [XboxStat], picture: String) -> String {
+    /// Görüntü verisi hiç gelmediyse (bayt 0) libwebrtc çözücüyü kurmaz; "çözücü" alanı bunu söyler (#1252).
+    public static let decoderNotStarted = "kurulmadı, görüntü verisi gelmedi"
+
+    /// - Parameters:
+    ///   - negotiatedCodec: Xbox'ın SDP yanıtında seçtiği görüntü kodeği (getStats kodeği ilk kareye kadar boştur).
+    ///   - decoder: uygulamanın bildiği çözücü durumu (ad, donanım/yazılım); getStats'ta yoksa kullanılır.
+    public static func describe(sinceConnectedMs: Int, frameSeen: Bool, keyframes: Int, stats: [XboxStat], picture: String,
+                                negotiatedCodec: String? = nil, decoder: String? = nil) -> String {
         var line = "tanı (\(sinceConnectedMs / 1000) sn, \(frameSeen ? "ilk kare geldi" : "ilk kare yok")): keyframe isteği \(keyframes); "
         if let video = stats.first(where: { $0.type == "inbound-rtp" && (text($0, "kind") ?? text($0, "mediaType")) == "video" }) {
             line += "video paket \(number(video, "packetsReceived")), bayt \(number(video, "bytesReceived")), kayıp \(number(video, "packetsLost")), "
             line += "çözülen \(number(video, "framesDecoded")), düşen \(number(video, "framesDropped")), anahtar kare \(number(video, "keyFramesDecoded")), "
-            line += "PLI \(number(video, "pliCount")), çözücü \(text(video, "decoderImplementation") ?? "?")"
+            let noData = number(video, "bytesReceived") == "0"
+            line += "PLI \(number(video, "pliCount")), çözücü \(text(video, "decoderImplementation") ?? decoder ?? (noData ? decoderNotStarted : "?"))"
             if let codec = byId(stats, text(video, "codecId")) {
                 line += ", kodek \(text(codec, "mimeType") ?? "?") \(text(codec, "sdpFmtpLine") ?? "")".trimmingCharacters(in: .whitespaces)
+            } else if let negotiatedCodec {
+                line += ", kodek \(negotiatedCodec) (SDP yanıtı)"
             }
             line += "; "
         } else {
