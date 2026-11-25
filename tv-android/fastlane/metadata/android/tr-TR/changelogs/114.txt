@@ -1,0 +1,1 @@
+0.9.111: LG'de akışı gösterilmeyen TV'lerde oyun sırasında düşen görüntü yeniden kuruluyor; öne gelişte kararan TV, girişi bir kez yeniden seçince öğreniliyor.

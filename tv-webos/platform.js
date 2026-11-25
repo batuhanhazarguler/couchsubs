@@ -81,7 +81,7 @@
     pending: null, building: null, checkTimer: null, soonTimer: null, soonStrict: false, wasHidden: false,
     stalls: 0, stallNote: '', stallRebuiltAt: 0, stallTimer: null,
     stallVideo: null, stallTime: 0, stallFrames: -1, stallAt: 0, stallRebuilds: [], firstFrameAt: 0,
-    lastFrames: -1, flowing: false
+    lastFrames: -1, flowing: false, stallAge: -1, stallBlind: false
   };
 
   function nowMs() { return new Date().getTime(); }
@@ -293,6 +293,52 @@
   function flowBlind(video) {
     return !!video && !flowMeasurable() && frameCount(video) === 0 && !video.error && !video.paused && !video.ended &&
       (video.readyState >= 2 || video.videoWidth > 0);
+  }
+
+  // 0.9.111 (#1323; LG OLED55CS3VA, webOS 43.21.96, telefonla, 0.9.108): çeviri sırasında ekran kararıp öyle kalıyor.
+  // Panel: "hdmi playing rs4 1920x1080 t= fr 0 · ev stalled · stall 1 blind · rl 3", bg 3; sonrakinde bg 5, rl 7,
+  // "saver reply failed: The response is too late @2", bağlantı yok/bağlı. "rebuilt" hiç yok: sayfa <video>'ya hiç
+  // dokunmadı (yeniden kurma, sayfa yenileme, giriş açma yok). Bu TV de akışı göstermiyor (t=, fr 0); 0.9.94'ten beri
+  // böyle TV'de ne 'stalled' ne öne geliş kurdurur, siyah ekran kendiliğinden toparlanmazsa kullanıcı girişi yeniden
+  // seçene kadar siyah kalır. Ekran koruyucu sorusu ilk karartmadan sonra geldi (ilk fotoğrafta "saver registered",
+  // ekran zaten siyah): geç yanıt kararmanın nedeni değil, sayfanın o sırada arka planda/askıda kalmasının (bg) izi;
+  // yanıtı yalnız denetimi öne çeker, kurdurmaz. 65UR91006LA'da (#1055) aynı kural PS tuşundan dönüşteki kararmayı
+  // gidermişti: sayfa iki TV'yi ayıramaz. Artık:
+  // - Akışı görünmeyen TV'de oturmuş görüntüde (ilk kareden STALL_FRESH_MS sonra) ve öne gelişten BLIND_RETURN_MS sonra
+  //   gelen 'stalled' görüntünün gerçekten düştüğü andır (ör. uzaktan oynatma başlarken HDMI yeniden el sıkışır): <video>
+  //   STALL_CHECK_MS sonra bir kez yeniden kurulur, STALL_REBUILD_WINDOW_MS içinde en çok BLIND_STALL_MAX kez. Yeni
+  //   <video>'nun taze 'stalled'ı ve öne gelişteki 'stalled' eskisi gibi dokunulmaz (#1055'in kararmaları).
+  // - Dokunulmayan 'stalled' ya da öne gelişten BLIND_DOUBT_MS içinde kullanıcı aynı girişi yeniden seçerse (ekran
+  //   siyahtı) TV "öne gelişte kararan TV" olarak saklanır (BLACK_KEY): artık öne gelişte ve oturmuş görüntüdeki
+  //   'stalled'da 0.9.94 öncesi gibi kurulur; taze 'stalled' yine dokunulmaz.
+  // - Tanıda 'stalled'ın ilk kareden kaç sn sonra geldiği ("stall 1 blind 42s"), öne gelişte dokunulmayan görüntü
+  //   ("blind resume <n>") ve öğrenilmiş TV ("blk") yazar.
+  var BLIND_RETURN_MS = 30000;
+  var BLIND_STALL_MAX = 2;
+  var BLIND_DOUBT_MS = 3 * 60000;
+  var BLACK_KEY = 'couchsubs.hdmiBlindBlack';
+  var black = { known: readFlag(BLACK_KEY), skippedAt: 0, resumeSkips: 0, returnedAt: 0, rebuilds: [] };
+
+  // Akışı görünmeyen TV'de dokunulmayan görüntü: kullanıcı kısa süre içinde girişi yeniden seçerse siyahtı.
+  function noteBlindSkip(now) {
+    black.skippedAt = now;
+  }
+
+  // Kullanıcı aynı girişi yeniden seçti (showHdmi): dokunulmayan görüntüden kısa süre sonraysa TV saklanır.
+  function noteBlindReselect(now) {
+    if (!black.skippedAt || now - black.skippedAt >= BLIND_DOUBT_MS) return;
+    black.skippedAt = 0;
+    if (black.known) return;
+    black.known = true;
+    writeFlag(BLACK_KEY, true);
+  }
+
+  // Akışı görünmeyen TV'de bu 'stalled' görüntüyü yeniden kurdurur mu (oturmuş görüntü, öne gelişin hemen ardı değil).
+  function blindStallActs(now) {
+    if (freshPicture(now)) return false;
+    if (!black.known && black.returnedAt && now - black.returnedAt < BLIND_RETURN_MS) return false;
+    while (black.rebuilds.length && now - black.rebuilds[0] >= STALL_REBUILD_WINDOW_MS) black.rebuilds.shift();
+    return black.rebuilds.length < BLIND_STALL_MAX;
   }
 
   // Görüntünün ilk karesinden bu yana STALL_FRESH_MS geçmedi.
@@ -600,9 +646,15 @@
     }
     // Denetim zaten bekliyorsa ya da kurma sıradaysa art arda gelen olay onu ertelemez.
     if (hdmi.stallTimer !== null || hdmi.pending !== null || hdmi.building !== null) return;
-    if (flowBlind(video)) {
-      hdmi.stallNote = 'blind';
-      return;
+    var blind = flowBlind(video);
+    if (blind) {
+      var at = nowMs();
+      hdmi.stallAge = hdmi.firstFrameAt ? Math.round((at - hdmi.firstFrameAt) / 1000) : -1;
+      if (!blindStallActs(at)) {
+        hdmi.stallNote = 'blind';
+        noteBlindSkip(at);
+        return;
+      }
     }
     var now = nowMs();
     var fresh = freshPicture(now);
@@ -622,7 +674,8 @@
       return;
     }
     var waiting = !!hdmi.stallRebuiltAt && nowMs() - hdmi.stallRebuiltAt < STALL_EVENT_WAIT_MS;
-    hdmi.stallNote = waiting ? 'wait' : 'check';
+    hdmi.stallNote = blind ? 'blind check' : waiting ? 'wait' : 'check';
+    hdmi.stallBlind = blind;
     hdmi.stallVideo = video;
     var mark = progressMark(video);
     hdmi.stallTime = mark.time;
@@ -718,6 +771,9 @@
       hdmi.stallRebuiltAt = nowMs();
       hdmi.stallRebuilds.push(hdmi.stallRebuiltAt);
       hdmi.stallNote = 'rebuilt';
+      // Akışı görünmeyen TV'de oturmuş görüntünün 'stalled'ı yüzünden kuruldu (#1323): ayrı sınır.
+      if (hdmi.stallBlind) black.rebuilds.push(hdmi.stallRebuiltAt);
+      hdmi.stallBlind = false;
     }
     clearTimeout(hdmi.stallTimer);
     hdmi.stallTimer = null;
@@ -805,7 +861,13 @@
         hdmi.soonTimer = null;
         hdmi.soonStrict = false;
         if (pageHidden() || hdmi.video !== video || hdmi.pending !== null || hdmi.building !== null) return;
-        if (progressedSince(video, before) || flowBlind(video)) return;
+        if (progressedSince(video, before)) return;
+        // Akışı görünmeyen TV'de oynayan görüntüye dokunulmaz (0.9.94); öne gelişte kararan TV öğrenildiyse kurulur (#1323).
+        if (flowBlind(video) && !black.known) {
+          black.resumeSkips++;
+          noteBlindSkip(nowMs());
+          return;
+        }
         schedule('resume', true);
       }, 1500);
     }, delay);
@@ -817,6 +879,7 @@
       return;
     }
     var strict = hdmi.wasHidden;
+    if (strict) black.returnedAt = nowMs();
     hdmi.wasHidden = false;
     checkSoon(1500, strict);
   }
@@ -859,7 +922,12 @@
     if (hdmi.rebuilds) text += ' · rebuilt ' + hdmi.rebuilds + ' (' + hdmi.reason + ')';
     if (hdmi.lastError) text += ' · last error ' + hdmi.lastError;
     if (hdmi.lastEvent) text += ' · ev ' + hdmi.lastEvent;
-    if (hdmi.stalls) text += ' · stall ' + hdmi.stalls + (hdmi.stallNote ? ' ' + hdmi.stallNote : '');
+    if (hdmi.stalls) {
+      text += ' · stall ' + hdmi.stalls + (hdmi.stallNote ? ' ' + hdmi.stallNote : '') +
+        (hdmi.stallAge >= 0 ? ' ' + hdmi.stallAge + 's' : '');
+    }
+    if (black.resumeSkips) text += ' · blind resume ' + black.resumeSkips;
+    if (black.known) text += ' · blk';
     if (relaunches) text += ' · rl ' + relaunches;
     if (video) text += ' · ' + audioText(video);
     return text;
@@ -1059,6 +1127,8 @@
     showHdmi: function (port, host, onStatus) {
       // Dokunulmayan taze 'stalled'dan hemen sonra giriş yeniden seçildiyse ekran siyahtı: TV "gürültülü" sayılmaz.
       if (hdmi.host) noteReselect(nowMs());
+      // Akışı görünmeyen TV'de dokunulmayan görüntüden hemen sonra aynı giriş yeniden seçildiyse ekran siyahtı (#1323).
+      if (hdmi.host && hdmi.video && port === hdmi.port && host === hdmi.host) noteBlindReselect(nowMs());
       clearTimeout(hdmi.pending);
       clearTimeout(hdmi.building);
       clearTimeout(hdmi.soonTimer);

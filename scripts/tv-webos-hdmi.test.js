@@ -111,7 +111,7 @@ function startTv(options = {}) {
   const host = new Element('div');
 
   const tv = {
-    platform, document, videos, statuses, host, calls, sent,
+    platform, document, window, videos, statuses, host, calls, sent,
     get video() { return videos[videos.length - 1]; },
     show(port) { platform.showHdmi(port || 3, host, (kind) => statuses.push(kind)); },
     // Saati ilerletir; her adımda (varsa) canlı görüntünün sayacı da ilerler.
@@ -881,6 +881,147 @@ test('webOS HDMI 0.9.94 (#1055): kare sayacı hep 0 olan TV\'de (t= fr 0) çevir
   tv.video.fire('error');
   tv.advance(5000);
   assert.strictEqual(tv.videos.length, 2, 'hata verince kuruldu');
+});
+
+// 0.9.111 (#1323): LG OLED55CS3VA webOS 43.21.96, kare sayacı hep 0 (t= fr 0). Panel: "ev stalled · stall 1 blind · rl 7",
+// bg 5, "saver reply failed: The response is too late @2", bağlantı yok; "rebuilt" hiç yok.
+const BLACK_KEY = 'couchsubs.hdmiBlindBlack';
+const SAVER_REGISTER = 'luna://com.webos.service.tvpower/power/registerScreenSaverRequest';
+const SAVER_RESPONSE = 'luna://com.webos.service.tvpower/power/responseScreenSaverRequest';
+
+function blindTv(options = {}) {
+  const tv = startTv({ storage: options.storage || {}, luna: options.luna });
+  tv.show(2);
+  tv.video.webkitDecodedFrameCount = 0;
+  tv.video.start();
+  return tv;
+}
+
+test('webOS HDMI #1323: geç gelen ekran koruyucu yanıtı, öne gelişler ve yeniden açılışlar görüntüyü kurdurmaz, sayfayı yenilemez', () => {
+  const tv = blindTv({
+    luna: (uri) => {
+      if (uri === SAVER_REGISTER) return { returnValue: true, subscribed: true };
+      if (uri === SAVER_RESPONSE) return { returnValue: false, errorCode: -1, errorText: 'The response is too late' };
+      return null;
+    }
+  });
+  tv.platform.init();
+  tv.advance(3000);
+  tv.video.fire('stalled');
+  tv.advance(2 * 60000);
+  for (let ask = 1; ask <= 2; ask++) {
+    // TV boşta sayıp ekran koruyucuyu soruyor; yanıt geç kalıyor, TV ekran koruyucuya geçip sayfayı arkaya atıyor.
+    tv.window.__screenSaverBridge.onservicecallback(JSON.stringify({ state: 'Active', timestamp: 1000 + ask }));
+    tv.advance(500);
+    tv.hide();
+    tv.advance(20000);
+    tv.unhide();
+    tv.advance(60000);
+  }
+  // Telefonun bekçisi uygulamayı art arda yeniden açıyor (rl 7).
+  for (let i = 0; i < 7; i++) {
+    tv.document.fire('webOSRelaunch');
+    tv.advance(5000);
+  }
+  tv.advance(5 * 60000);
+  assert.match(tv.window.__screenSaverStatus, /reply failed: The response is too late @2 \(new\)/);
+  assert.strictEqual(tv.videos.length, 1, 'görüntü yeniden kurulmadı');
+  assert.strictEqual(tv.video.loads, 0, 'boru hattı bırakılmadı');
+  assert.strictEqual(tv.host.children.length, 1);
+  assert.doesNotMatch(tv.platform.diagnostics(), /rebuilt/);
+  assert.match(tv.platform.diagnostics(), /t= fr 0 · ev stalled · stall 1 blind 3s · blind resume 2 · rl 7 · snd/);
+});
+
+test('webOS HDMI #1323: olay akışı (stalled) taze görüntüde ve öne gelişin ardından dokunulmaz; oturmuş görüntüde bir kez kurdurur', () => {
+  const tv = blindTv();
+  // Yeni <video>'nun taze 'stalled'ı (#1055): dokunulmaz.
+  tv.advance(3000);
+  tv.video.fire('stalled');
+  tv.advance(60000);
+  assert.strictEqual(tv.videos.length, 1);
+  // PS tuşundan dönüş ve hemen ardından gelen 'stalled': dokunulmaz.
+  tv.hide();
+  tv.advance(8000);
+  tv.unhide();
+  tv.advance(2000);
+  tv.video.fire('stalled');
+  tv.advance(60000);
+  assert.strictEqual(tv.videos.length, 1, 'öne gelişin ardındaki stalled kurdurmadı');
+  // Oyunun ortasında (uzaktan oynatma başlarken HDMI yeniden el sıkışır) gelen 'stalled': görüntü düştü, bir kez kurulur.
+  tv.advance(60000);
+  tv.video.fire('stalled');
+  tv.advance(1000);
+  assert.strictEqual(tv.videos.length, 1, 'hemen değil');
+  tv.advance(3000);
+  assert.strictEqual(tv.videos.length, 2, 'oturmuş görüntüde stalled kurdurdu');
+  assert.match(tv.platform.diagnostics(), /rebuilt 1 \(ev stalled\)/);
+  // Yeni <video>'nun taze 'stalled'ı yine dokunulmaz: döngü yok.
+  tv.video.webkitDecodedFrameCount = 0;
+  tv.video.start();
+  tv.advance(3000);
+  tv.video.fire('stalled');
+  tv.advance(60000);
+  assert.strictEqual(tv.videos.length, 2, 'yeni görüntünün taze stalled\'ı kurdurmadı');
+  // 10 dakikada en çok iki kez.
+  tv.video.fire('stalled');
+  tv.advance(5000);
+  assert.strictEqual(tv.videos.length, 3);
+  tv.video.webkitDecodedFrameCount = 0;
+  tv.video.start();
+  tv.advance(60000);
+  tv.video.fire('stalled');
+  tv.advance(60000);
+  assert.strictEqual(tv.videos.length, 3, 'sınır doldu');
+  assert.match(tv.platform.diagnostics(), /stall \d+ blind \d+s/);
+});
+
+test('webOS HDMI #1323: öne gelişte kararan TV kullanıcı girişi yeniden seçince öğrenilir; sonra öne gelişte kurulur', () => {
+  const storage = {};
+  const tv = blindTv({ storage });
+  tv.advance(60000);
+  tv.hide();
+  tv.advance(10000);
+  tv.unhide();
+  tv.advance(5000);
+  assert.strictEqual(tv.videos.length, 1, '0.9.94 gibi dokunulmadı');
+  assert.match(tv.platform.diagnostics(), /blind resume 1/);
+  // Ekran siyah: kullanıcı kumandada 2'ye basar.
+  tv.advance(30000);
+  tv.show(2);
+  tv.advance(2000);
+  assert.strictEqual(storage[BLACK_KEY], '1', 'TV saklandı');
+  assert.match(tv.platform.diagnostics(), /blk/);
+
+  // Sonraki açılış: öne gelişte görüntü bir kez yeniden kurulur, taze stalled yine dokunulmaz.
+  const next = blindTv({ storage });
+  next.advance(3000);
+  next.video.fire('stalled');
+  next.advance(60000);
+  assert.strictEqual(next.videos.length, 1, 'taze stalled kurdurmadı');
+  next.hide();
+  next.advance(10000);
+  next.unhide();
+  next.advance(5000);
+  assert.strictEqual(next.videos.length, 2, 'öne gelişte kuruldu');
+  assert.match(next.platform.diagnostics(), /rebuilt 1 \(resume\)/);
+});
+
+test('webOS HDMI #1323: girişi yeniden seçmeyen TV (#1055, 65UR91006LA) öğrenilmez; uzun süre sonra yeniden seçim de saymaz', () => {
+  const storage = {};
+  const tv = blindTv({ storage });
+  for (let press = 0; press < 3; press++) {
+    tv.advance(60000);
+    tv.hide();
+    tv.advance(8000);
+    tv.unhide();
+    tv.document.fire('webOSRelaunch');
+    tv.advance(60000);
+  }
+  assert.strictEqual(tv.videos.length, 1);
+  tv.advance(10 * 60000);
+  tv.show(2);
+  tv.advance(2000);
+  assert.strictEqual(storage[BLACK_KEY], undefined);
 });
 
 test('webOS HDMI #643: ses adımları açıkken stalled olursa adımlar kapanır, yeni <video>\'ya dokunulmaz', () => {

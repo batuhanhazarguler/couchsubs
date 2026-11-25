@@ -1,0 +1,1 @@
+0.9.111: On LG TVs that do not report playback progress, a picture lost mid-game is rebuilt; a TV that goes black when returning to the app is learned after the input is reselected once.
