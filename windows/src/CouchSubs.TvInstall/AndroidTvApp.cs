@@ -58,7 +58,17 @@ public static partial class AndroidTvApp
     /// <param name="stallLimits">Testler için adım süreleri; verilmezse <see cref="TvStall.LimitFor"/>.</param>
     public static async Task<(string Version, bool Installed)> EnsureInstalledAsync(AndroidTvInstaller installer, string host,
         string keyDirectory, string apkPath, string version, bool openIfInstalled, Action? onApprovalNeeded, Action<string>? log,
-        CancellationToken cancellationToken = default, Func<string, TimeSpan?>? stallLimits = null)
+        CancellationToken cancellationToken = default, Func<string, TimeSpan?>? stallLimits = null, TvLane? lane = null)
+    {
+        // Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin açma denemesi kurulum
+        // bitene kadar bekler (#1223).
+        return await (lane ?? TvLane.Shared).InstallAsync(host, () => EnsureInstalledNowAsync(installer, host, keyDirectory, apkPath,
+            version, openIfInstalled, onApprovalNeeded, log, cancellationToken, stallLimits), log, cancellationToken);
+    }
+
+    private static async Task<(string Version, bool Installed)> EnsureInstalledNowAsync(AndroidTvInstaller installer, string host,
+        string keyDirectory, string apkPath, string version, bool openIfInstalled, Action? onApprovalNeeded, Action<string>? log,
+        CancellationToken cancellationToken, Func<string, TimeSpan?>? stallLimits)
     {
         return await LoggedAsync($"TV {host}:{AndroidTvInstaller.DefaultPort}, paket {version}", log, async () =>
         {
@@ -80,8 +90,9 @@ public static partial class AndroidTvApp
                             stall.Enter("launching");
                             await using var adb = await ConnectAsync(host, keyDirectory, onApprovalNeeded, token);
                             stall.OnStall(() => _ = adb.DisposeAsync().AsTask().ContinueWith(t => _ = t.Exception, TaskScheduler.Default));
-                            var started = await adb.RunAsync(AndroidTvInstaller.StartCommand(installer.LaunchParams), cancellationToken: token);
-                            log?.Invoke($"Android TV: uygulama güncel ({found.Version}), açıldı: {started.Trim()}");
+                            // TV "zaten çalışıyor, öne getirildi" derse eski ekran kapatılıp temiz açılır (Samsung'daki gibi).
+                            var started = await AndroidTvInstaller.StartFreshAsync(adb, installer.LaunchParams, log, token);
+                            log?.Invoke($"Android TV: uygulama güncel ({found.Version}), açıldı: {started}");
                         }
                         return found;
                     });

@@ -686,15 +686,21 @@ final class SamsungInstaller {
 
     /// TV'deki sürüm (kurmadan); TV'ye bağlanılamazsa hata.
     func installedVersion() throws -> String? {
-        let device = try connect()
-        defer { device.close() }
-        return readInstalledVersion(device)
+        try TVLane.shared.run(host: host, "sürüm denetimi", log: { log.write($0) }) {
+            let device = try connect()
+            defer { device.close() }
+            return readInstalledVersion(device)
+        }
     }
 
     /// TV'deki durum (kurmadan): sürüm, kesin "CouchSubs yok" ya da bilinmiyor (liste okunamadı, aynı kimlikle başka
     /// uygulama). TV'ye bağlanılamazsa hata. Telefonun sessiz sürüm denetimi "yok"u ayırmıyordu; TV'den silinen uygulama
     /// telefonda "kurulu" kalıyordu (#1158).
     func installedPresence() throws -> TVAppVersionCheck.Outcome {
+        try TVLane.shared.run(host: host, "sürüm denetimi", log: { log.write($0) }) { try installedPresenceNow() }
+    }
+
+    private func installedPresenceNow() throws -> TVAppVersionCheck.Outcome {
         let device = try connect()
         defer { device.close() }
         let version = readInstalledVersion(device)
@@ -712,7 +718,13 @@ final class SamsungInstaller {
     /// `SamsungLauncher`; Mac ve Windows'taki samsung-open ile aynı). sdb izin sormaz, TV'de bildirim çıkarmaz.
     /// Geliştirici modu kapalıysa ya da Host PC IP başka cihazınsa `.failed`; uygulama zaten çalışıyorsa `.resumed`.
     /// `restart`: uygulama önce `was_kill` ile kapatılır, sonra açılır (sayfa temiz yüklenir; #1248).
+    ///
+    /// Aynı TV'de kurulum ya da başka bir sdb oturumu sürüyorsa sırası beklenir (#1223; `TVLane`).
     func openApp(restart: Bool = false) -> SamsungSdbOpen {
+        TVLane.shared.run(host: host, restart ? "kapatıp açma" : "açma", log: { log.write($0) }) { openAppNow(restart: restart) }
+    }
+
+    private func openAppNow(restart: Bool) -> SamsungSdbOpen {
         log.write(restart ? "--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV \(host))"
                           : "--- Samsung: TV uygulaması bağlı değil, açılıyor (TV \(host))")
         do {
@@ -729,7 +741,16 @@ final class SamsungInstaller {
 
     /// TV'deki CouchSubs yoksa ya da `version`'dan eskiyse imzalayıp kurar, sonra açar.
     /// `replaceForeign`: TV'de CouchSubs kimliğiyle başka bir uygulama varsa kullanıcı onayladı; o kaldırılıp CouchSubs kurulur.
+    ///
+    /// Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin sdb açması kurulum bitene
+    /// kadar bekler (#1223; `TVLane`, Windows, Mac ve Android ile aynı).
     func ensureInstalled(wgt: () throws -> [UInt8], version: String?, replaceForeign: Bool = false) throws -> Result {
+        try TVLane.shared.install(host: host, log: { log.write($0) }) {
+            try ensureInstalledNow(wgt: wgt, version: version, replaceForeign: replaceForeign)
+        }
+    }
+
+    private func ensureInstalledNow(wgt: () throws -> [UInt8], version: String?, replaceForeign: Bool) throws -> Result {
         log.write("--- Samsung kurulumu (iPhone) başlıyor: TV \(host), paket \(version ?? "?")")
         installCompleted = false
         do {

@@ -390,6 +390,10 @@ final class AndroidTvInstaller {
 
     /// TV'deki sürüm (kurmadan). TV onay sorarsa (bu telefon tanınmıyor) vazgeçilir: sessiz denetim TV'de pencere açmaz.
     func installedVersion() throws -> String? {
+        try TVLane.shared.run(host: host, "sürüm denetimi", log: { log.write($0) }) { try installedVersionNow() }
+    }
+
+    private func installedVersionNow() throws -> String? {
         let adb = try AdbConnection.connect(host: host, port: port, key: try adbKey(),
                                             onApprovalNeeded: { throw AndroidInstallFailure(error: .notApproved, detail: "onay gerekiyor") })
         defer { adb.close() }
@@ -399,7 +403,16 @@ final class AndroidTvInstaller {
     /// Uygulama eksikse ya da eskiyse kurar ve açar. `allowReplace`: TV'deki bizim imzalı ama kurulamayan (daha yeni) kopya
     /// kaldırılsın mı. `replaceForeign`: TV'de com.couchsubs.tv adıyla başka bir uygulama varsa kullanıcı onayladı; o
     /// kaldırılıp CouchSubs kurulur.
+    ///
+    /// Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin açma denemesi kurulum bitene
+    /// kadar bekler (#1223; `TVLane`, Windows, Mac ve Android ile aynı).
     func ensureInstalled(apk: () throws -> [UInt8], version: String?, allowReplace: Bool = false, replaceForeign: Bool = false) throws -> Result {
+        try TVLane.shared.install(host: host, log: { log.write($0) }) {
+            try ensureInstalledNow(apk: apk, version: version, allowReplace: allowReplace, replaceForeign: replaceForeign)
+        }
+    }
+
+    private func ensureInstalledNow(apk: () throws -> [UInt8], version: String?, allowReplace: Bool, replaceForeign: Bool) throws -> Result {
         log.write("--- Android TV kurulumu (iPhone) başlıyor: TV \(host):\(port), paket \(version ?? "?")"
             + (pairing.map { ", eşleme portu \($0.port)" } ?? ""))
         paired = false
@@ -566,7 +579,18 @@ final class AndroidTvInstaller {
 
     private func launch(_ adb: AdbConnection) {
         progress(.launching)
-        log.write("Uygulama açılıyor: \(((try? adb.run(Self.startCommand(launchParams))) ?? "açılamadı").trimmingCharacters(in: .whitespacesAndNewlines))")
+        let started = ((try? adb.run(Self.startCommand(launchParams))) ?? "açılamadı").trimmingCharacters(in: .whitespacesAndNewlines)
+        log.write("Uygulama açılıyor: \(started)")
+        // TV "zaten çalışıyor, öne getirildi" derse eski ekran kapatılıp temiz açılır (Samsung'daki "resumed" gibi, #1248).
+        guard started.contains("Activity not started") else { return }
+        log.write("Uygulama zaten çalışıyordu (eski ekran); kapatılıp (am force-stop) yeniden açılıyor")
+        log.write("Uygulama açılıyor: \(((try? Self.restart(adb, launchParams: launchParams)) ?? "açılamadı"))")
+    }
+
+    /// Uygulamayı kapatır (`am force-stop`) ve temiz açar (`am start`); `am start` çıktısı döner.
+    static func restart(_ adb: AdbConnection, launchParams: String?) throws -> String {
+        _ = try? adb.run(forceStopCommand)
+        return try adb.run(startCommand(launchParams)).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Uygulama açılırken verilecek başlatma parametreleri (`{"server":"http://…"}`); TV telefonu ağda aramadan bağlanır.
@@ -599,11 +623,22 @@ final class AndroidTvInstaller {
     /// zaten çalışıyorsa (ekranı önde ya da arkada, ya da katmanı) `am start` gönderilmez, `AndroidTVApp.alreadyRunning`
     /// döner: `am start` çalışan uygulamayı öne çekiyor, TV uygulaması da parametreli açılışta katmana dönüp ekranı
     /// kapatıyordu (X, Android TV 8, beta.74; Windows ve Android telefonla aynı).
-    func open(launchParams: String?, connectTimeout: TimeInterval = 3) throws -> String {
+    ///
+    /// `restart`: uygulama çalışıyor olsa da kapatılıp (`am force-stop`) temiz açılır: bekçi uygulamayı çalışırken buldu ama
+    /// uygulama 10 sn'de bağlanmadı (`AndroidTVLauncher`, Samsung'daki #1248 ile aynı). Aynı TV'de kurulum ya da başka bir
+    /// ADB oturumu sürüyorsa sırası beklenir (#1223; `TVLane`).
+    func open(launchParams: String?, restart: Bool = false, connectTimeout: TimeInterval = 3) throws -> String {
+        try TVLane.shared.run(host: host, restart ? "kapatıp açma" : "açma", log: { log.write($0) }) {
+            try openNow(launchParams: launchParams, restart: restart, connectTimeout: connectTimeout)
+        }
+    }
+
+    private func openNow(launchParams: String?, restart: Bool, connectTimeout: TimeInterval) throws -> String {
         let adb = try AdbConnection.connect(host: host, port: port, key: try adbKey(),
                                             onApprovalNeeded: { throw AndroidInstallFailure(error: .notApproved, detail: "onay gerekiyor") },
                                             connectTimeout: connectTimeout)
         defer { adb.close() }
+        if restart { return try Self.restart(adb, launchParams: launchParams) }
         if AndroidTVApp.isRunning((try? adb.run(AndroidTVApp.runningCommand)) ?? "") {
             // Çalışan uygulama telefona bağlı değil (bekçi yalnız o zaman açar): kayıtlı eski bir adrese bağlı kalmış olabilir.
             // Adres ekranı öne çekmeden bildirilir (TV 0.9.63+; eski TV uygulaması yok sayar). Windows/Mac ve Android'le aynı.
@@ -633,7 +668,10 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     private enum FollowUp { case relocate, learn }
     private let launchParams: String?
     private let appConnected: @Sendable () -> Bool
-    private let open: @Sendable (String, UInt16, String?) throws -> String
+    /// (adres, ADB portu, başlatma parametreleri, kapatıp aç) → açma çıktısı.
+    private let open: @Sendable (String, UInt16, String?, Bool) throws -> String
+    /// Çalışan uygulamanın kendiliğinden bağlanması için beklenen süre (testlerde kısaltılır).
+    private let resumeWait: TimeInterval
     private let log: @Sendable (String) -> Void
     /// Her açma denemesinin sonucu (ana ekrandaki satır): açıldıysa nil.
     private let onOpenResult: @Sendable (TVOpenProblem?) -> Void
@@ -645,10 +683,12 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     init(host: String, port: UInt16, server: String, appConnected: @escaping @Sendable () -> Bool,
          relaunchInterval: TimeInterval = AndroidTVOpenRule.defaultInterval, maxOpens: Int = AndroidTVOpenRule.defaultMaxOpens,
          locator: AndroidTVLocator? = nil,
-         open: @escaping @Sendable (String, UInt16, String?) throws -> String = { host, port, params in
-             try AndroidTvInstaller(host: host, port: port).open(launchParams: params)
+         open: @escaping @Sendable (String, UInt16, String?, Bool) throws -> String = { host, port, params, restart in
+             try AndroidTvInstaller(host: host, port: port).open(launchParams: params, restart: restart)
          }, log: @escaping @Sendable (String) -> Void = { InstallLog.shared.write($0) },
-         onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in }) {
+         onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in },
+         resumeWait: TimeInterval = TimeInterval(SamsungLauncher.resumeWait.components.seconds)) {
+        self.resumeWait = resumeWait
         self.host = host
         self.locator = locator
         self.onOpenResult = onOpenResult
@@ -673,7 +713,11 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
         guard due else { return }
         let result: String
         do {
-            let output = try open(host, port, launchParams)
+            // Uygulama çalışıyor ama 10 sn'de bağlanmazsa bir kez kapatılıp (am force-stop) temiz açılır (Samsung'daki #1248 ile
+            // aynı; `AndroidTVLauncher`, Windows, Mac ve Android ile aynı).
+            let port = self.port, params = launchParams
+            let output = try AndroidTVLauncher.openBlocking({ restart in try open(host, port, params, restart) },
+                                                            appConnected: appConnected, resumeWait: resumeWait, log: log)
             // Uygulama TV'de çalışırken bulunduysa `am start` gönderilmedi: açılış sayılmaz.
             if output != AndroidTVApp.alreadyRunning {
                 lock.lock()
@@ -732,11 +776,23 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
         stop()
         loop = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
-                self?.tick()
-                await self?.afterTick()
+                // Güçlü başvuru yalnız tur boyunca tutulur (beklerken bekçi bırakılabilsin).
+                if let keeper = self { await keeper.round() } else { return }
                 try? await Task.sleep(for: interval)
             }
         }
+    }
+
+    /// Bir tur: kontrol ve ardından gelen ağ işi. `tick` bloklar (ADB, 10 sn bağlanma beklemesi, aynı TV'de süren kurulumun
+    /// sırası): iş parçacığı havuzunu tıkamasın diye ayrı kuyrukta çalışır.
+    private func round() async {
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                self.tick()
+                done.resume()
+            }
+        }
+        await afterTick()
     }
 
     func stop() {

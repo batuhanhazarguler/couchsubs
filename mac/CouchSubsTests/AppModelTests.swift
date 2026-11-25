@@ -182,8 +182,21 @@ final class FakeServices: AppServices {
     func checkSamsung(host: String) async -> SamsungPreflight { samsungCheck }
     /// Samsung TV'de kurulu sürüm (sahte TV'nin vd_applist'i); nil: uygulama yok.
     var samsungOnTV: String?
+    /// true ise bir sonraki Samsung kurulumu `releaseSamsungInstall`'a kadar sürer (TV'de kurulum uzun sürüyor).
+    var holdSamsungInstall = false
+    private(set) var heldSamsungInstall: CheckedContinuation<Void, Never>?
+    var samsungInstallCalls = 0
+    func releaseSamsungInstall() {
+        heldSamsungInstall?.resume()
+        heldSamsungInstall = nil
+    }
     func installSamsungApp(host: String, app: BundledTVApp,
                            onEvent: @escaping @Sendable (TVInstallEvent) -> Void) async throws -> (version: String, installed: Bool) {
+        samsungInstallCalls += 1
+        if holdSamsungInstall {
+            holdSamsungInstall = false
+            await withCheckedContinuation { heldSamsungInstall = $0 }
+        }
         if let onTV = samsungOnTV, !DevModeInstaller.isNewer(app.version, than: onTV) { return (onTV, false) }
         events.forEach(onEvent)
         if let installError { throw installError }
@@ -1796,6 +1809,37 @@ final class TVAppInstallTests: XCTestCase {
 
     private let samsung = LGTV(name: "Samsung", host: "192.168.1.20", brand: .samsung)
     private let app = BundledTVApp(url: URL(fileURLWithPath: "/tmp/couchsubs-samsung_0.7.0.wgt"), version: "0.7.0")
+
+    /// #1223: "güncelle"ye arka arkaya basılınca aynı Samsung TV'ye birden çok kurulum başlıyordu (TV sdb bağlantılarını
+    /// kapattı). Kurulum sürerken düğmeler kapalı; yine gelen istek yeni kurulum başlatmaz, sürenin bitmesini bekler
+    /// (Windows ile aynı).
+    func testSecondUpdatePressWaitsForTheRunningSamsungInstall() async throws {
+        let services = FakeServices()
+        services.samsungDevMode = true
+        services.bundled[.samsung] = app
+        let model = model(services)
+        model.tv = samsung
+        await model.refreshTVApp()
+        XCTAssertEqual(services.brandInstalls.count, 1)
+        services.samsungOnTV = "0.6.0"
+        services.holdSamsungInstall = true
+        let calls = services.samsungInstallCalls
+        let first = Task { await model.updateTVApp() }
+        for _ in 0..<200 where services.heldSamsungInstall == nil { try await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertNotNil(services.heldSamsungInstall)
+        let second = Task { await model.updateTVApp() }
+        let third = Task { await model.reinstallTVApp() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(services.samsungInstallCalls, calls + 1)
+        services.releaseSamsungInstall()
+        await first.value
+        await second.value
+        await third.value
+        XCTAssertEqual(services.samsungInstallCalls, calls + 1)
+        XCTAssertEqual(services.brandInstalls.count, 2)
+        XCTAssertEqual(TVInstallLog.tail(of: TVInstallLog.file).components(separatedBy: "yeni kurulum başlatılmadı").count - 1, 2)
+        XCTAssertEqual(model.tvApp, .upToDate("0.7.0"))
+    }
 
     func testSamsungWithDevModeOffShowsTheSteps() async {
         let services = FakeServices()

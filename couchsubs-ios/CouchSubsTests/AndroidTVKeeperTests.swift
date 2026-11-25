@@ -45,7 +45,7 @@ final class AndroidTVKeeperTests: XCTestCase {
         let connected = Calls()
         let keeper = AndroidTVKeeper(host: "192.168.1.120", port: 5555, server: "http://192.168.1.124:8787",
                                      appConnected: { connected.all.last == "1" }, relaunchInterval: 30,
-                                     open: { host, port, params in opened.add("\(host):\(port) \(params ?? "-")"); return "Starting" },
+                                     open: { host, port, params, _ in opened.add("\(host):\(port) \(params ?? "-")"); return "Starting" },
                                      log: { logged.add($0) })
         let start = Date()
         keeper.tick(now: start)
@@ -78,15 +78,18 @@ final class AndroidTVKeeperTests: XCTestCase {
         let running = Calls()
         let keeper = AndroidTVKeeper(host: "192.168.1.120", port: 5555, server: "http://192.168.1.124:8787",
                                      appConnected: { false }, relaunchInterval: 30,
-                                     open: { _, _, _ in
+                                     open: { _, _, _, restart in
+                                         // Çalışan ama bağlanmayan uygulama bir kez kapatılıp açılır (#1248 yolu); o ayrı sayılır.
+                                         if restart { running.add("restart"); return "Starting" }
                                          opened.add("try")
                                          if running.all.last == "approve" { throw AndroidInstallFailure(error: .notApproved, detail: "onay gerekiyor") }
                                          return AndroidTVApp.alreadyRunning
-                                     }, log: { _ in })
+                                     }, log: { _ in }, resumeWait: 0)
         let start = Date()
         running.add("1")
         for step in 0..<20 { keeper.tick(now: start.addingTimeInterval(Double(step) * 31)) }
         XCTAssertEqual(opened.all.count, 3)
+        XCTAssertEqual(running.all.filter { $0 == "restart" }.count, 3)
         running.add("approve")
         keeper.reconnect()
         for step in 20..<200 { keeper.tick(now: start.addingTimeInterval(Double(step) * 31)) }
@@ -97,7 +100,7 @@ final class AndroidTVKeeperTests: XCTestCase {
         let opened = Calls()
         let keeper = AndroidTVKeeper(host: "192.168.1.120", port: 5555, server: "http://192.168.1.124:8787",
                                      appConnected: { true }, relaunchInterval: 0,
-                                     open: { _, _, _ in opened.add("try"); return "Starting" }, log: { _ in })
+                                     open: { _, _, _, _ in opened.add("try"); return "Starting" }, log: { _ in })
         let start = Date()
         for step in 0..<100 { keeper.tick(now: start.addingTimeInterval(Double(step) * 5)) }
         XCTAssertEqual(opened.all.count, 0)
@@ -107,7 +110,7 @@ final class AndroidTVKeeperTests: XCTestCase {
         let logged = Calls()
         let keeper = AndroidTVKeeper(host: "192.168.1.120", port: 5555, server: "http://192.168.1.124:8787", appConnected: { false },
                                      relaunchInterval: 0,
-                                     open: { _, _, _ in throw AndroidInstallFailure(error: .unreachable, detail: "kapalı") },
+                                     open: { _, _, _, _ in throw AndroidInstallFailure(error: .unreachable, detail: "kapalı") },
                                      log: { logged.add($0) })
         keeper.tick()
         keeper.tick()
@@ -121,7 +124,7 @@ final class AndroidTVKeeperTests: XCTestCase {
         let failure = Calls()
         let keeper = AndroidTVKeeper(host: "192.168.1.120", port: 5555, server: "http://192.168.1.124:8787", appConnected: { false },
                                      relaunchInterval: 0,
-                                     open: { _, _, _ in
+                                     open: { _, _, _, _ in
                                          switch failure.all.last {
                                          case "approve": throw AndroidInstallFailure(error: .notApproved, detail: "onay gerekiyor")
                                          case "off": throw AndroidInstallFailure(error: .unreachable, detail: "kapalı")

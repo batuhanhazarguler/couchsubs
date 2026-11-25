@@ -18,8 +18,11 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     private let locator: AndroidTVLocator?
     private let launchParams: String?
     private let appConnected: @Sendable () -> Bool
-    private let open: @Sendable (String, String?) async throws -> String
+    /// (adres, başlatma parametreleri, kapatıp aç) → açma çıktısı.
+    private let open: @Sendable (String, String?, Bool) async throws -> String
     private let onOpenResult: @Sendable (TVOpenProblem?) -> Void
+    /// Çalışan uygulamanın kendiliğinden bağlanması için beklenen süre (testlerde kısaltılır).
+    private let resumeWait: Duration
     private let lock = NSLock()
     private var loop: Task<Void, Never>?
     private var rule: AndroidTVOpenRule
@@ -28,9 +31,10 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
 
     init(host: String, server: String, appConnected: @escaping @Sendable () -> Bool, relaunchInterval: Duration = .seconds(30),
          maxOpens: Int = AndroidTVOpenRule.defaultMaxOpens, locator: AndroidTVLocator? = nil,
-         open: @escaping @Sendable (String, String?) async throws -> String = AndroidTVKeeper.openWithHelper,
-         onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in }) {
+         open: @escaping @Sendable (String, String?, Bool) async throws -> String = AndroidTVKeeper.openWithHelper,
+         onOpenResult: @escaping @Sendable (TVOpenProblem?) -> Void = { _ in }, resumeWait: Duration = SamsungLauncher.resumeWait) {
         self.host = host
+        self.resumeWait = resumeWait
         self.locator = locator
         launchParams = Self.launchParams(server: server)
         self.appConnected = appConnected
@@ -50,12 +54,16 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     }
 
     /// Kurulu uygulamayı gömülü yardımcıyla açar; TV onay sorarsa beklenmez (NotApproved), ADB kapalıysa Unreachable.
-    /// Uygulama TV'de zaten çalışıyorsa yardımcı `am start` göndermez, `AndroidTVApp.alreadyRunning` döner.
-    static let openWithHelper: @Sendable (String, String?) async throws -> String = { host, params in
-        let result = try await TVHelper.run(["android-open", "--host", host,
-                                             "--key-dir", TVHelper.dataDirectory.appendingPathComponent("adb").path]
-                                            + (params.map { ["--params", $0] } ?? []))
-        return result.version ?? ""
+    /// Uygulama TV'de zaten çalışıyorsa yardımcı `am start` göndermez, `AndroidTVApp.alreadyRunning` döner. `restart`:
+    /// uygulama kapatılıp (`am force-stop`) temiz açılır (`--restart`). Aynı TV'de kurulum ya da başka bir ADB oturumu
+    /// sürüyorsa sırası beklenir (#1223; `TVLane`).
+    static let openWithHelper: @Sendable (String, String?, Bool) async throws -> String = { host, params, restart in
+        try await TVLane.shared.runAsync(host: host, restart ? "kapatıp açma" : "açma", log: { TVInstallLog.write($0) }) {
+            let result = try await TVHelper.run(["android-open", "--host", host,
+                                                 "--key-dir", TVHelper.dataDirectory.appendingPathComponent("adb").path]
+                                                + (params.map { ["--params", $0] } ?? []) + (restart ? ["--restart"] : []))
+            return result.version ?? ""
+        }
     }
 
     /// Açılamamanın nedeni: TV hata ayıklama iznini onaylamadıysa ayrı, gerisi "ulaşılamıyor".
@@ -94,12 +102,20 @@ final class AndroidTVKeeper: KeeperControlling, @unchecked Sendable {
     /// Açar; TV'ye ulaşılamadıysa (onay sorusu değil) ve TV ağda yeni adreste bulunursa yeni adresle bir kez daha dener.
     private func openOrRelocate(_ host: String) async throws -> String {
         do {
-            return try await open(host, launchParams)
+            return try await launch(host)
         } catch {
             guard Self.problem(error) == .debugOff, let locator, let moved = await locator.relocate() else { throw error }
             lock.withLock { self.host = moved }
-            return try await open(moved, launchParams)
+            return try await launch(moved)
         }
+    }
+
+    /// Uygulama çalışıyor ama 10 sn'de bağlanmazsa bir kez kapatılıp (am force-stop) temiz açılır (Samsung'daki #1248 ile
+    /// aynı; `AndroidTVLauncher`, Windows ve telefonlarla aynı).
+    private func launch(_ host: String) async throws -> String {
+        let params = launchParams
+        return try await AndroidTVLauncher.open({ restart in try await self.open(host, params, restart) }, appConnected: appConnected,
+                                                resumeWait: resumeWait, log: { TVInstallLog.write($0) })
     }
 
     func start(interval: Duration) {

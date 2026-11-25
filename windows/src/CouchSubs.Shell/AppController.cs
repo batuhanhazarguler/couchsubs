@@ -44,6 +44,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     private bool tvAppMissing;
     /// <summary>TV uygulaması denetimi sürüyor (bekleme ekranı ve çeviri başlangıcı aynı anda çağırabilir).</summary>
     private bool refreshingTvApp;
+    /// <summary>Süren TV uygulaması denetiminin/kurulumunun bitişi (ikinci "güncelle" yeni kurulum başlatmaz, bunu bekler).</summary>
+    private TaskCompletionSource? tvAppRefreshDone;
     /// <summary>"TV uygulamasını yeniden kur"a basıldı: Samsung ve Android TV'de uygulama kuruluysa da TV'de açılır.</summary>
     private bool openTvAppAfterCheck;
     /// <summary>Birden çok Android TV bulununca kullanıcının seçtiği TV; yalnız bir sonraki denetimde kullanılır. Kurulum
@@ -417,6 +419,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public async Task UpdateTvAppAsync()
     {
         TvAppUpdating = true;
+        if (await JoinRunningTvAppRefreshAsync("\"TV uygulamasını güncelle\"")) return;
         services.WriteTvInstallLog($"--- Ana ekrandan \"TV uygulamasını güncelle\" (TV {tvAppOutdated?.Installed ?? "?"} → {tvAppOutdated?.Bundled ?? "?"}).");
         await ReinstallTvAppAsync();
     }
@@ -431,8 +434,14 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     public bool TvAppUpdating
     {
         get => tvAppUpdating;
-        private set => Set(ref tvAppUpdating, value, [nameof(ShowTvAppUpdateDone)]);
+        private set => Set(ref tvAppUpdating, value, [nameof(ShowTvAppUpdateDone), nameof(CanStartTvAppUpdate)]);
     }
+
+    /// <summary>
+    /// "TV uygulamasını güncelle / yeniden kur" basılabilir: güncelleme kartı "kuruluyor" gösterirken düğmeler kapalıdır (Mac
+    /// ile aynı). Önceden arka arkaya basılınca aynı TV'ye birden çok kurulum başlıyordu (#1223).
+    /// </summary>
+    public bool CanStartTvAppUpdate => !(tvAppUpdating && tvApp.Kind == TvAppKind.Working);
 
     /// <summary>Ana ekrandaki güncelleme kartı sonucu gösteriyor: "Kapat" görünür.</summary>
     public bool ShowTvAppUpdateDone => tvAppUpdating && tvApp.Kind == TvAppKind.UpToDate;
@@ -1285,7 +1294,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         private set
         {
             tvApp = value;
-            Changed(nameof(TvApp), nameof(ShowTvAppUpdateDone));
+            Changed(nameof(TvApp), nameof(ShowTvAppUpdateDone), nameof(CanStartTvAppUpdate));
             // Kurulum ya da sürüm denetimi TV'deki uygulamayı güncel buldu: "TV uygulamasını güncelle" kalkar.
             if (value is { Kind: TvAppKind.UpToDate, Version: { } current } && tvAppOutdated is { } outdated
                 && !DevModeInstaller.IsNewer(outdated.Bundled, current)) TvAppOutdated = null;
@@ -1321,6 +1330,8 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
     {
         if (tv is not { } target || refreshingTvApp) return;
         refreshingTvApp = true;
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        tvAppRefreshDone = done;
         try
         {
             switch (target.Brand)
@@ -1333,7 +1344,20 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
         finally
         {
             refreshingTvApp = false;
+            done.TrySetResult();
         }
+    }
+
+    /// <summary>
+    /// Samsung ve Android TV'de denetim ya da kurulum sürüyorsa yenisi başlatılmaz: günlüğe yazılır ve sürenin bitmesi
+    /// beklenir (true). #1223: "güncelle"ye üç kez basılınca aynı TV'ye üç kurulum başlıyordu; TV sdb bağlantılarını kapattı.
+    /// </summary>
+    private async Task<bool> JoinRunningTvAppRefreshAsync(string what)
+    {
+        if (tv is not { Brand: TvBrand.Samsung or TvBrand.AndroidTv } || !refreshingTvApp || tvAppRefreshDone is not { } running) return false;
+        services.WriteTvInstallLog($"{what}: TV uygulaması denetimi/kurulumu zaten sürüyor; yeni kurulum başlatılmadı, sürenin bitmesi bekleniyor.");
+        await running.Task;
+        return true;
     }
 
     private string? InstalledAppVersion => store.Load<string>(StoreKeys.TvAppVersion);
@@ -1678,6 +1702,7 @@ public sealed class AppController : INotifyPropertyChanged, IDisposable
             await ReinstallLgAppAsync(lg);
             return;
         }
+        if (await JoinRunningTvAppRefreshAsync("\"TV uygulamasını yeniden kur\"")) return;
         store.Remove(StoreKeys.TvAppVersion);
         openTvAppAfterCheck = true;
         TvApp = TvAppState.Unknown;

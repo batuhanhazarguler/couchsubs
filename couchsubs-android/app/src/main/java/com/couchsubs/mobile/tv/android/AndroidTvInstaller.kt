@@ -258,7 +258,15 @@ class AndroidTvInstaller(
      * @param allowReplace TV'deki kopya başka imzalıysa ya da bu kimlikle başka bir uygulama kuruluysa kaldırılıp kurulsun
      *   mu (yalnız kullanıcı onayıyla; masaüstündeki replaceForeign).
      */
-    fun ensureInstalled(apk: () -> ByteArray, version: String?, allowReplace: Boolean = false): Result {
+    fun ensureInstalled(apk: () -> ByteArray, version: String?, allowReplace: Boolean = false): Result =
+        // Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin açma denemesi kurulum bitene
+        // kadar bekler (#1223; TvLane, Windows, Mac ve iPhone ile aynı).
+        lane.install(host, log::write) { ensureInstalledNow(apk, version, allowReplace) }
+
+    /** Aynı TV'nin ADB işlemlerini sıraya koyan kanal (testlerde ayrı kanal verilir). */
+    internal var lane: com.couchsubs.mobile.tv.TvLane = com.couchsubs.mobile.tv.TvLane.shared
+
+    private fun ensureInstalledNow(apk: () -> ByteArray, version: String?, allowReplace: Boolean): Result {
         log.write("--- Android TV kurulumu (telefon) başlıyor: TV $host:$port, paket $version${if (pairing != null) ", eşleme portu ${pairing.port}" else ""}")
         paired = false
         installCompleted = false
@@ -288,9 +296,9 @@ class AndroidTvInstaller(
      * Yalnız TV'deki CouchSubs sürümünü okur (kurmaz, açmaz); uygulama yoksa null. Güncelleme denetimi için: TV bu
      * telefonu onaylamamışsa onay beklenmez, NOT_APPROVED ile vazgeçilir.
      */
-    fun installedVersion(): String? {
+    fun installedVersion(): String? = lane.run(host, "sürüm denetimi", log::write) {
         val key = adbKey()
-        return connector(key) { throw AndroidInstallException(AndroidInstallError.NOT_APPROVED, "denetimde onay beklenmez") }.use { adb ->
+        connector(key) { throw AndroidInstallException(AndroidInstallError.NOT_APPROVED, "denetimde onay beklenmez") }.use { adb ->
             // Bu kimlikle başka bir uygulama kuruluysa CouchSubs yok sayılır (denetim hiçbir şeyi kaldırmaz).
             adb.run("shell:dumpsys package $PACKAGE_NAME").let { if (isForeign(it)) null else installedVersionFromDumpsys(it) }
         }
@@ -303,9 +311,22 @@ class AndroidTvInstaller(
      * TV uygulaması da parametreli açılışta katmana dönüp ekranı kapatıyordu (X, Android TV 8, beta.74; Windows ve iPhone'la
      * aynı).
      */
-    fun open(params: String? = launchParams): String {
+    fun open(params: String? = launchParams, restart: Boolean = false): String =
+        // [restart]: uygulama çalışıyor olsa da kapatılıp (`am force-stop`) temiz açılır: bekçi uygulamayı çalışırken buldu
+        // ama uygulama 10 sn'de bağlanmadı (TvSessionLauncher.openAndroidTv; Samsung'daki #1248 ile aynı). Aynı TV'de kurulum ya
+        // da başka bir ADB oturumu sürüyorsa sırası beklenir (#1223; TvLane).
+        lane.run(host, if (restart) "kapatıp açma" else "açma", log::write) { openNow(params, restart) }
+
+    /** Uygulamayı kapatır (`am force-stop`) ve temiz açar (`am start`); `am start` çıktısı döner. */
+    private fun restartOn(adb: AdbConnection, params: String?): String {
+        runCatching { adb.run(FORCE_STOP_COMMAND) }
+        return adb.run(startCommand(params)).trim()
+    }
+
+    private fun openNow(params: String?, restart: Boolean): String {
         val key = adbKey()
         return connector(key) { throw AndroidInstallException(AndroidInstallError.NOT_APPROVED, "açılışta onay beklenmez") }.use { adb ->
+            if (restart) return@use restartOn(adb, params)
             val running = try { adb.run(RUNNING_COMMAND) } catch (_: IOException) { "" }
             if (isRunning(running)) {
                 // Çalışan uygulama telefona bağlı değil (bekçi yalnız o zaman açar): kayıtlı eski bir adrese bağlı kalmış
@@ -447,7 +468,13 @@ class AndroidTvInstaller(
     private fun launch(adb: AdbConnection) {
         step(InstallStep.LAUNCHING)
         try {
-            log.write("Uygulama açılıyor: ${adb.run(startCommand(launchParams)).trim()}")
+            val started = adb.run(startCommand(launchParams)).trim()
+            log.write("Uygulama açılıyor: $started")
+            // TV "zaten çalışıyor, öne getirildi" derse eski ekran kapatılıp temiz açılır (Samsung'daki "resumed" gibi, #1248).
+            if (started.contains("Activity not started")) {
+                log.write("Uygulama zaten çalışıyordu (eski ekran); kapatılıp (am force-stop) yeniden açılıyor")
+                log.write("Uygulama açılıyor: ${restartOn(adb, launchParams)}")
+            }
         } catch (error: IOException) {
             log.write("Uygulama açılamadı (kurulum yine tamam): ${error.message}")
         }

@@ -143,9 +143,9 @@
                                             Visibility="{Binding NeedsTv, Converter={StaticResource VisibleIf}}" />
                                     <Button Content="{t:T 'Connect TV'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnConnectTv"
                                             Visibility="{Binding CanReconnectTv, Converter={StaticResource VisibleIf}}" />
-                                    <Button Content="{t:T 'Update the TV App'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnUpdateTvApp"
+                                    <Button Content="{t:T 'Update the TV App'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnUpdateTvApp" IsEnabled="{Binding CanStartTvAppUpdate}"
                                             Visibility="{Binding ShowTvAppUpdate, Converter={StaticResource VisibleIf}}" />
-                                    <Button Content="{t:T 'Reinstall the TV App'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnReinstallTvApp"
+                                    <Button Content="{t:T 'Reinstall the TV App'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnReinstallTvApp" IsEnabled="{Binding CanStartTvAppUpdate}"
                                             Visibility="{Binding CanReinstallTvApp, Converter={StaticResource VisibleIf}}" />
                                     <Button Content="{t:T 'Change the TV'}" Style="{StaticResource SmallSecondaryButton}" Margin="{t:Sp '0,xs,xs,0'}" Click="OnConnectTv"
                                             Visibility="{Binding CanChangeTv, Converter={StaticResource VisibleIf}}" />

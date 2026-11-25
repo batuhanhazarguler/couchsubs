@@ -154,7 +154,10 @@ public sealed class LiveServices : IAppServices
             Action<string> installLog = new TvInstall.InstallLog(TvInstallLogPath).Write;
             // TV'ye ulaşılamazsa ağda yeniden aranır (LG ve Samsung'daki TvLocator gibi; Mac ve iPhone ile aynı).
             var androidLocator = new AndroidTvLocator(tv, onMoved, log: installLog);
-            return new AndroidKeeper(new AndroidTvKeeper(() => AndroidTvInstaller.OpenAsync(androidLocator.Host, DataDirectory("adb"), launch),
+            // Uygulama çalışıyor ama 10 sn'de bağlanmazsa bir kez kapatılıp (am force-stop) temiz açılır (Samsung'daki #1248 ile
+            // aynı; AndroidTvLauncher). ADB işlemleri TV başına sıradadır: kurulum sürerken açma denemesi bekler (#1223).
+            return new AndroidKeeper(new AndroidTvKeeper(() => new AndroidTvLauncher(restart => AndroidTvInstaller.OpenAsync(androidLocator.Host,
+                    DataDirectory("adb"), launch, restart, log: installLog), appConnected, log: installLog).OpenAsync(),
                 appConnected, AndroidOpenProblem, onOpenResult, installLog, locator: androidLocator));
         }
         if (tv.Brand == TvBrand.Samsung)

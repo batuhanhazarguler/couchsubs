@@ -449,9 +449,14 @@ final class LiveServices: AppServices {
 
     func installSamsungApp(host: String, app: BundledTVApp, replaceForeign: Bool,
                            onEvent: @escaping @Sendable (TVInstallEvent) -> Void) async throws -> (version: String, installed: Bool) {
-        let result = try await TVHelper.run(["samsung-install", "--host", host, "--package", app.url.path, "--version", app.version,
-                                    "--profiles", TVHelper.dataDirectory.appendingPathComponent("samsung").path,
-                                    "--log", TVInstallLog.file.path] + (replaceForeign ? ["--replace-foreign"] : []), onEvent: onEvent)
+        // Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin sdb açması kurulum bitene
+        // kadar bekler (#1223; TVLane, Windows ve telefonlarla aynı).
+        let arguments = ["samsung-install", "--host", host, "--package", app.url.path, "--version", app.version,
+                         "--profiles", TVHelper.dataDirectory.appendingPathComponent("samsung").path,
+                         "--log", TVInstallLog.file.path] + (replaceForeign ? ["--replace-foreign"] : [])
+        let result = try await TVLane.shared.installAsync(host: host, log: { TVInstallLog.write($0) }) {
+            try await TVHelper.run(arguments, onEvent: onEvent)
+        }
         let version = result.version.flatMap { $0.isEmpty ? nil : $0 } ?? app.version
         return (version, result.installed)
     }
@@ -461,9 +466,13 @@ final class LiveServices: AppServices {
     /// ve yalnız öne geldiyse `.resumed`.
     static func openSamsungApp(host: String, restart: Bool = false) async -> SamsungSdbOpen {
         guard !host.isEmpty, await isPortOpen(host: host, port: 26101) else { return .failed }
-        let result = try? await TVHelper.run(["samsung-open", "--host", host,
-                                              "--profiles", TVHelper.dataDirectory.appendingPathComponent("samsung").path,
-                                              "--log", TVInstallLog.file.path] + (restart ? ["--restart"] : []))
+        let arguments = ["samsung-open", "--host", host,
+                         "--profiles", TVHelper.dataDirectory.appendingPathComponent("samsung").path,
+                         "--log", TVInstallLog.file.path] + (restart ? ["--restart"] : [])
+        // Aynı TV'de kurulum ya da başka bir sdb oturumu sürüyorsa sırası beklenir (#1223; TVLane).
+        let result = await TVLane.shared.runAsync(host: host, restart ? "kapatıp açma" : "açma", log: { TVInstallLog.write($0) }) {
+            try? await TVHelper.run(arguments)
+        }
         return result.map(TVHelper.sdbOpen) ?? .failed
     }
 
@@ -479,11 +488,13 @@ final class LiveServices: AppServices {
 
     func installAndroidApp(host: String, app: BundledTVApp, open: Bool, replaceForeign: Bool,
                            onEvent: @escaping @Sendable (TVInstallEvent) -> Void) async throws -> String {
-        let result = try await TVHelper.run(["android-install", "--host", host, "--package", app.url.path, "--version", app.version,
-                                             "--key-dir", TVHelper.dataDirectory.appendingPathComponent("adb").path,
-                                             "--log", TVInstallLog.file.path] + (open ? ["--open"] : [])
-                                                + (replaceForeign ? ["--replace-foreign"] : []),
-                                            onEvent: onEvent)
+        let arguments = ["android-install", "--host", host, "--package", app.url.path, "--version", app.version,
+                         "--key-dir", TVHelper.dataDirectory.appendingPathComponent("adb").path,
+                         "--log", TVInstallLog.file.path] + (open ? ["--open"] : []) + (replaceForeign ? ["--replace-foreign"] : [])
+        // Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz; bekçinin ADB açması kurulum bitene kadar bekler (#1223).
+        let result = try await TVLane.shared.installAsync(host: host, log: { TVInstallLog.write($0) }) {
+            try await TVHelper.run(arguments, onEvent: onEvent)
+        }
         return result.version ?? app.version
     }
 
@@ -1786,6 +1797,7 @@ final class AppModel: ObservableObject {
     /// onaylanınca aynı ana ekrana dönülüyordu.
     func updateTVApp() async {
         tvAppUpdating = true
+        if await joinRunningTVAppRefresh("\"TV uygulamasını güncelle\"") { return }
         TVInstallLog.write("--- Ana ekrandan \"TV uygulamasını güncelle\" (TV \(tvAppOutdated?.installed ?? "?") → \(tvAppOutdated?.bundled ?? "?")).")
         await reinstallTVApp()
     }
@@ -1815,12 +1827,30 @@ final class AppModel: ObservableObject {
             return
         }
         refreshingTVApp = true
-        defer { refreshingTVApp = false }
+        defer {
+            refreshingTVApp = false
+            let waiting = refreshWaiters
+            refreshWaiters = []
+            waiting.forEach { $0.resume() }
+        }
         switch tv.brand {
         case .lg: await refreshLGApp(tv)
         case .samsung: await refreshSamsungApp(tv)
         case .androidTV: await refreshAndroidApp(tv)
         }
+    }
+
+    /// Süren TV uygulaması denetiminin/kurulumunun bitmesini bekleyenler.
+    private var refreshWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Samsung ve Android TV'de denetim ya da kurulum sürüyorsa yenisi başlatılmaz: günlüğe yazılır ve sürenin bitmesi
+    /// beklenir (true). #1223: "güncelle"ye üç kez basılınca aynı TV'ye üç kurulum başlıyordu; TV sdb bağlantılarını kapattı
+    /// (Windows ile aynı).
+    func joinRunningTVAppRefresh(_ what: String) async -> Bool {
+        guard let tv, tv.brand != .lg, refreshingTVApp else { return false }
+        TVInstallLog.write("\(what): TV uygulaması denetimi/kurulumu zaten sürüyor; yeni kurulum başlatılmadı, sürenin bitmesi bekleniyor.")
+        await withCheckedContinuation { refreshWaiters.append($0) }
+        return true
     }
 
     /// Samsung ya da Android TV'ye daha önce CouchSubs'ın kurduğu sürüm.
@@ -2108,6 +2138,7 @@ final class AppModel: ObservableObject {
             await reinstallLGApp(tv)
             return
         }
+        if await joinRunningTVAppRefresh("\"TV uygulamasını yeniden kur\"") { return }
         store.remove(StoreKey.tvAppVersion)
         openTVAppAfterCheck = true
         tvApp = .unknown

@@ -119,7 +119,7 @@ class TvSessionLauncherTest {
         var rounds = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120", 41235), "http://192.168.1.124:8787",
             active = { rounds < 4 }, connected = { rounds >= 2 },
-            open = { host, port, params -> opened += "$host:$port $params"; "Starting" }, log = { logged += it },
+            open = { host, port, params, _ -> opened += "$host:$port $params"; "Starting" }, log = { logged += it },
             sleep = { rounds++; false }, now = { rounds * 30_000L })
         assertEquals(List(2) { """192.168.1.120:41235 {"server":"http://192.168.1.124:8787"}""" }, opened)
         assertEquals(1, logged.size)
@@ -134,7 +134,7 @@ class TvSessionLauncherTest {
         var rounds = 0
         var opens = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
-            active = { rounds < 40 }, connected = { rounds == 3 }, open = { _, _, _ -> opens++; "Starting" },
+            active = { rounds < 40 }, connected = { rounds == 3 }, open = { _, _, _, _ -> opens++; "Starting" },
             sleep = { rounds++; false }, now = { rounds * 5_000L })
         assertEquals(1, opens)
 
@@ -142,8 +142,12 @@ class TvSessionLauncherTest {
         var tries = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
             active = { rounds < 120 }, connected = { false },
-            open = { _, _, _ -> tries++; if (rounds < 30) com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING else "Starting" },
-            sleep = { rounds++; rounds == 100 }, now = { rounds * 5_000L })
+            open = { _, _, _, restart ->
+                // Çalışan ama bağlanmayan uygulama bir kez kapatılıp açılır (#1248 yolu); o aynı denemenin parçası, sayılmaz.
+                if (!restart) tries++
+                if (restart || rounds >= 30) "Starting" else com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING
+            },
+            sleep = { rounds++; rounds == 100 }, now = { rounds * 5_000L }, resumeWaitMs = 0)
         // X (beta.77), "izni sürekli yeniden istiyor": "zaten açık" da bir ADB bağlantısıdır ve sayılır (eskiden sayılmıyor,
         // 30 sn'de bir sınırsız bağlantı açılıyordu). İlk 3 deneme; 100. turda yeniden dene: 3 deneme daha.
         assertEquals(3 + 3, tries)
@@ -155,7 +159,7 @@ class TvSessionLauncherTest {
         var tries = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
             active = { rounds < 720 }, connected = { false },
-            open = { _, _, _ -> tries++
+            open = { _, _, _, _ -> tries++
                 throw com.couchsubs.mobile.tv.android.AndroidInstallException(com.couchsubs.mobile.tv.android.AndroidInstallError.NOT_APPROVED) },
             sleep = { rounds++; false }, now = { rounds * 5_000L })
         assertEquals(3, tries)
@@ -172,7 +176,7 @@ class TvSessionLauncherTest {
         var saved = InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120")
         TvSessionLauncher.keepAndroidTvOpen(saved, "http://192.168.1.124:8787",
             active = { rounds < 12 }, connected = { false },
-            open = { host, port, _ -> opened += "$host:$port"; throw java.io.IOException("ADB kapalı") }, log = { logged += it },
+            open = { host, port, _, _ -> opened += "$host:$port"; throw java.io.IOException("ADB kapalı") }, log = { logged += it },
             sleep = { rounds++; if (rounds == 4) saved = InstalledTv(TvBrand.ANDROID_TV, "192.168.1.121"); false },
             now = { rounds * 30_000L }, current = { saved })
         assertEquals(listOf("192.168.1.120:5555", "192.168.1.120:5555", "192.168.1.120:5555",
@@ -184,9 +188,48 @@ class TvSessionLauncherTest {
         var rounds = 0
         var tries = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
-            active = { rounds < 720 }, connected = { true }, open = { _, _, _ -> tries++; "Starting" },
+            active = { rounds < 720 }, connected = { true }, open = { _, _, _, _ -> tries++; "Starting" },
             sleep = { rounds++; false }, now = { rounds * 5_000L })
         assertEquals(0, tries)
+    }
+
+    /**
+     * Android TV bekçisi Samsung'daki #1248 yolunu izler: uygulama çalışıyor ama 10 sn'de bağlanmıyorsa bir kez kapatılıp
+     * (am force-stop) temiz açılır; bağlanırsa dokunulmaz (Windows AndroidTvLauncherTests, Mac/iPhone AndroidTVLauncherTests).
+     */
+    @Test fun runningAndroidTvAppThatDoesNotConnectIsForceStoppedAndStartedOnce() {
+        val opens = mutableListOf<Boolean>()
+        val logged = mutableListOf<String>()
+        var clock = 0L
+        val output = TvSessionLauncher.openAndroidTv({ restart -> opens += restart
+            if (restart) "Starting: Intent" else com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING },
+            connected = { false }, now = { clock }, sleep = { clock += it }, log = { logged += it })
+        assertEquals(listOf(false, true), opens)
+        assertEquals("Starting: Intent", output)
+        assertEquals(TvSessionLauncher.SAMSUNG_RESUME_WAIT_MS, clock)
+        assertTrue(logged.single().contains("am force-stop"))
+    }
+
+    @Test fun runningAndroidTvAppThatConnectsIsLeftAlone() {
+        val opens = mutableListOf<Boolean>()
+        var clock = 0L
+        TvSessionLauncher.openAndroidTv({ opens += it; com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING },
+            connected = { clock >= 2_000 }, now = { clock }, sleep = { clock += it })
+        assertEquals(listOf(false), opens)
+    }
+
+    @Test fun closedOrBroughtToFrontAndroidTvApp() {
+        val opens = mutableListOf<Boolean>()
+        TvSessionLauncher.openAndroidTv({ opens += it; "Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }" }, connected = { false },
+            sleep = { })
+        assertEquals(listOf(false), opens)
+        opens.clear()
+        var clock = 0L
+        TvSessionLauncher.openAndroidTv({ opens += it; "Warning: Activity not started, its current task has been brought to the front" },
+            connected = { false }, now = { clock }, sleep = { clock += it })
+        assertEquals(listOf(false, true), opens)
+        assertTrue(TvSessionLauncher.androidTvResumed(com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING))
+        assertFalse(TvSessionLauncher.androidTvResumed("Starting: Intent"))
     }
 
     @Test fun runningTvAppIsRecognised() {
@@ -204,7 +247,7 @@ class TvSessionLauncherTest {
         var rounds = 0
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
             active = { rounds < 3 }, connected = { false },
-            open = { _, port, _ -> assertEquals(5555, port); throw java.io.IOException("ADB kapalı") }, log = { logged += it },
+            open = { _, port, _, _ -> assertEquals(5555, port); throw java.io.IOException("ADB kapalı") }, log = { logged += it },
             sleep = { rounds++; false }, now = { rounds * 30_000L })
         assertEquals(listOf("Android TV (192.168.1.120:5555) telefonun adresiyle açılamadı: ADB kapalı"), logged)
     }
@@ -217,7 +260,7 @@ class TvSessionLauncherTest {
             com.couchsubs.mobile.tv.android.AndroidInstallException(com.couchsubs.mobile.tv.android.AndroidInstallError.NOT_APPROVED), null))
         TvSessionLauncher.keepAndroidTvOpen(InstalledTv(TvBrand.ANDROID_TV, "192.168.1.120"), "http://192.168.1.124:8787",
             active = { rounds < 3 }, connected = { false },
-            open = { _, _, _ -> failures.removeFirst()?.let { throw it }; "Starting" }, sleep = { rounds++; false },
+            open = { _, _, _, _ -> failures.removeFirst()?.let { throw it }; "Starting" }, sleep = { rounds++; false },
             onOpenResult = { results += it }, now = { rounds * 30_000L })
         assertEquals(listOf(TvOpenProblem.DEBUG_OFF, TvOpenProblem.DEBUG_NOT_APPROVED, null), results)
     }

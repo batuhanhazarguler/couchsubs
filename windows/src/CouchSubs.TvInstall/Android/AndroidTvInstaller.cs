@@ -151,7 +151,7 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
         Installed = true;
         Stall?.Enter("launching");
         await GrantOverlayAsync(adb, cancellationToken);
-        await adb.RunAsync(StartCommand(LaunchParams), cancellationToken: cancellationToken);
+        await StartFreshAsync(adb, LaunchParams, null, cancellationToken);
         return (version, true);
     }
 
@@ -273,6 +273,35 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
     }
 
     /// <summary>
+    /// <c>am start</c> çıktısı uygulamanın zaten çalıştığını söylüyor mu ("Warning: Activity not started, intent has been
+    /// delivered to currently running top-most instance" / "its current task has been brought to the front"): ekran yalnız
+    /// öne geldi, sayfa yeniden açılmadı. Samsung'daki "resumed"ın karşılığı; Core'daki AndroidTvLauncher.IsResumed,
+    /// Mac/iPhone AndroidTVLauncher ve Android telefondaki ile aynı.
+    /// </summary>
+    public static bool StartedExisting(string output) => output.Contains("Activity not started", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Uygulamayı açar; TV "zaten çalışıyor, yalnız öne getirildi" derse eski ekran kapatılıp (<c>am force-stop</c>) temiz
+    /// açılır. Samsung kurulumundaki "resumed → was_kill + was_execute" ile aynı (#1248): eski sayfa çalışmayı sürdürüp akışa
+    /// bağlanmıyordu.
+    /// </summary>
+    internal static async Task<string> StartFreshAsync(AdbConnection adb, string? launchParams, Action<string>? log,
+        CancellationToken cancellationToken)
+    {
+        var started = (await adb.RunAsync(StartCommand(launchParams), cancellationToken: cancellationToken)).Trim();
+        if (!StartedExisting(started)) return started;
+        log?.Invoke($"Android TV: uygulama zaten çalışıyordu ({started}); kapatılıp (am force-stop) yeniden açılıyor");
+        return await RestartOnAsync(adb, launchParams, cancellationToken);
+    }
+
+    /// <summary>Uygulamayı kapatır (<c>am force-stop</c>) ve temiz açar (<c>am start</c>); <c>am start</c> çıktısı döner.</summary>
+    internal static async Task<string> RestartOnAsync(AdbConnection adb, string? launchParams, CancellationToken cancellationToken)
+    {
+        await ForceStopAsync(adb, null, cancellationToken);
+        return (await adb.RunAsync(StartCommand(launchParams), cancellationToken: cancellationToken)).Trim();
+    }
+
+    /// <summary>
     /// Kurulu uygulamayı bu bilgisayarın adresiyle açar (kurmadan, sessizce; çeviri başlarken bekçi çağırır). TV bu
     /// bilgisayarı hiç onaylamadıysa onay sorusu beklenmez: <see cref="AndroidInstallError.NotApproved"/> fırlatılır.
     /// ADB kapalıysa <see cref="AndroidInstallError.Unreachable"/>.
@@ -284,14 +313,27 @@ public sealed partial class AndroidTvInstaller(string host, string keyDirectory,
     /// CouchSubs'ın ekranında HDMI seçemiyor, TV'nin kendi girişindeyken de CouchSubs öne geliyordu.
     /// </remarks>
     /// <returns><c>am start</c> çıktısı ya da <see cref="AlreadyRunning"/>.</returns>
-    public static async Task<string> OpenAsync(string host, string keyDirectory, string? launchParams, int port = DefaultPort,
-        CancellationToken cancellationToken = default)
+    public static Task<string> OpenAsync(string host, string keyDirectory, string? launchParams, int port = DefaultPort,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(host, keyDirectory, launchParams, restart: false, port, cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// <see cref="OpenAsync(string, string, string?, int, CancellationToken)"/>; <paramref name="restart"/> ise uygulama
+    /// çalışıyor olsa da kapatılıp (<c>am force-stop</c>) temiz açılır: bekçi uygulamayı çalışırken buldu ama uygulama
+    /// <c>SamsungLauncher.ResumeWait</c> içinde bağlanmadı (Samsung'daki #1248 ile aynı yol). Aynı TV'de kurulum ya da başka
+    /// bir ADB oturumu sürüyorsa sırası beklenir (#1223; <see cref="TvLane"/>).
+    /// </summary>
+    public static async Task<string> OpenAsync(string host, string keyDirectory, string? launchParams, bool restart,
+        int port = DefaultPort, TvLane? lane = null, Action<string>? log = null, CancellationToken cancellationToken = default)
     {
         if (!await IsReachableAsync(host, port, TimeSpan.FromSeconds(2)))
             throw new AndroidInstallException(AndroidInstallError.Unreachable, "ADB kapalı");
-        await using var adb = await AdbConnection.ConnectAsync(host, port, LoadOrCreateKey(keyDirectory),
-            () => throw new AndroidInstallException(AndroidInstallError.NotApproved, "onay gerekiyor"), cancellationToken: cancellationToken);
-        return await OpenOnAsync(adb, launchParams, cancellationToken);
+        return await (lane ?? TvLane.Shared).RunAsync(host, restart ? "kapatıp açma" : "açma", async () =>
+        {
+            await using var adb = await AdbConnection.ConnectAsync(host, port, LoadOrCreateKey(keyDirectory),
+                () => throw new AndroidInstallException(AndroidInstallError.NotApproved, "onay gerekiyor"), cancellationToken: cancellationToken);
+            return restart ? await RestartOnAsync(adb, launchParams, cancellationToken) : await OpenOnAsync(adb, launchParams, cancellationToken);
+        }, log, cancellationToken);
     }
 
     /// <summary><see cref="OpenAsync"/>'in kurulmuş bağlantıdaki adımları: çalışıyorsa dokunmaz, değilse <c>am start</c>.</summary>

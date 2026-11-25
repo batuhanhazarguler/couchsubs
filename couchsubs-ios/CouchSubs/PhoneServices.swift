@@ -235,7 +235,13 @@ final class LivePhoneServices: PhoneServices {
     /// beklemeden `.failed`.
     static func openSamsungApp(host: String, restart: Bool = false) async -> SamsungSdbOpen {
         guard !host.isEmpty, await DevModeInstaller.isPortOpen(host: host, port: 26101) else { return .failed }
-        return await Task.detached(priority: .utility) { SamsungInstaller(host: host, signIn: nil).openApp(restart: restart) }.value
+        // openApp bloklar (sdb; aynı TV'de kurulum sürüyorsa sırası beklenir, #1223): iş parçacığı havuzunu tıkamasın diye
+        // ayrı kuyrukta çalışır.
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                continuation.resume(returning: SamsungInstaller(host: host, signIn: nil).openApp(restart: restart))
+            }
+        }
     }
 
     func checkDeepLKey(_ key: String) async -> OnlineKeyCheck { await DeepLTranslator.check(key: key) }

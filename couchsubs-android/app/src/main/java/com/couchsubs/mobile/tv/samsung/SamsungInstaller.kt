@@ -257,7 +257,15 @@ class SamsungInstaller(
      * @param wgt İmzasız paket (uygulamayla gelir).
      * @param replaceForeign Bizim kimliğimizle başka bir uygulama kuruluysa kaldırılıp kurulsun mu (yalnız kullanıcı onayıyla).
      */
-    fun ensureInstalled(wgt: () -> ByteArray, version: String?, replaceForeign: Boolean = false): Result {
+    fun ensureInstalled(wgt: () -> ByteArray, version: String?, replaceForeign: Boolean = false): Result =
+        // Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin sdb açması kurulum bitene
+        // kadar bekler (#1223; TvLane, Windows, Mac ve iPhone ile aynı).
+        lane.install(host, log::write) { ensureInstalledNow(wgt, version, replaceForeign) }
+
+    /** Aynı TV'nin sdb işlemlerini sıraya koyan kanal (testlerde ayrı kanal verilir). */
+    internal var lane: com.couchsubs.mobile.tv.TvLane = com.couchsubs.mobile.tv.TvLane.shared
+
+    private fun ensureInstalledNow(wgt: () -> ByteArray, version: String?, replaceForeign: Boolean): Result {
         log.write("--- Samsung kurulumu (telefon) başlıyor: TV $host, paket $version")
         installCompleted = false
         try {
@@ -287,16 +295,20 @@ class SamsungInstaller(
     }
 
     /** Yalnız TV'deki CouchSubs sürümünü okur (kurmaz, açmaz); uygulama yoksa null. Güncelleme denetimi için. */
-    fun installedVersion(): String? = connect().use { device -> readInstalledVersion(device).takeUnless { lastForeign } }
+    fun installedVersion(): String? = lane.run(host, "sürüm denetimi", log::write) {
+        connect().use { device -> readInstalledVersion(device).takeUnless { lastForeign } }
+    }
 
     /**
      * TV'deki durum (kurmadan): sürüm, kesin "CouchSubs yok" ya da bilinmiyor (liste okunamadı, aynı kimlikle başka
      * uygulama). TV'ye bağlanılamazsa hata. Sessiz sürüm denetimi "yok"u ayırmıyordu; TV'den silinen uygulama telefonda
      * "kurulu" kalıyordu (#1158). iPhone ile aynı.
      */
-    fun installedPresence(): InstalledPresence = connect().use { device ->
-        val version = readInstalledVersion(device)
-        presence(version, lastListRead, lastForeign)
+    fun installedPresence(): InstalledPresence = lane.run(host, "sürüm denetimi", log::write) {
+        connect().use { device ->
+            val version = readInstalledVersion(device)
+            presence(version, lastListRead, lastForeign)
+        }
     }
 
     /**
@@ -305,7 +317,11 @@ class SamsungInstaller(
      * cihazınsa [SdbOpen.FAILED]; uygulama zaten çalışıyorsa [SdbOpen.RESUMED]. [restart]: önce `was_kill` ile kapatılır,
      * sonra açılır (sayfa temiz yüklenir; #1248).
      */
-    fun openApp(restart: Boolean = false): SdbOpen {
+    fun openApp(restart: Boolean = false): SdbOpen =
+        // Aynı TV'de kurulum ya da başka bir sdb oturumu sürüyorsa sırası beklenir (#1223; TvLane).
+        lane.run(host, if (restart) "kapatıp açma" else "açma", log::write) { openAppNow(restart) }
+
+    private fun openAppNow(restart: Boolean): SdbOpen {
         log.write(if (restart) "--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV $host)"
                   else "--- Samsung: TV uygulaması bağlı değil, açılıyor (TV $host)")
         return try {

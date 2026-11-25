@@ -154,7 +154,14 @@ public sealed partial class SamsungTvInstaller(string host, string profilesDirec
     /// <paramref name="restart"/>: uygulama önce <c>was_kill</c> ile kapatılır, sonra açılır (sayfa temiz yüklenir). #1248:
     /// akışı kopan TV uygulaması çalışmayı sürdürüyordu, <c>was_execute</c> "resumed" diyor ve sayfa yeniden bağlanmıyordu.
     /// </remarks>
-    public async Task<SamsungAppLaunch> OpenAsync(bool restart = false, CancellationToken cancellationToken = default)
+    public Task<SamsungAppLaunch> OpenAsync(bool restart = false, CancellationToken cancellationToken = default) =>
+        // Aynı TV'de kurulum ya da başka bir sdb oturumu sürüyorsa sırası beklenir (#1223; TvLane).
+        Lane.RunAsync(host, "açma", () => OpenNowAsync(restart, cancellationToken), Log.Write, cancellationToken);
+
+    /// <summary>Aynı TV'nin sdb işlemlerini sıraya koyan kanal (testlerde ayrı kanal verilir).</summary>
+    internal TvLane Lane { get; init; } = TvLane.Shared;
+
+    private async Task<SamsungAppLaunch> OpenNowAsync(bool restart, CancellationToken cancellationToken)
     {
         Log.Write(restart
             ? $"--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV {host})"
@@ -223,7 +230,10 @@ public sealed partial class SamsungTvInstaller(string host, string profilesDirec
     }
 
     /// <summary>Bu TV için kayıtlı geçerli sertifika var mı (giriş gerekmeden kurulabilir mi)?</summary>
-    public async Task<bool> HasCertificateAsync(CancellationToken cancellationToken = default)
+    public Task<bool> HasCertificateAsync(CancellationToken cancellationToken = default) =>
+        Lane.RunAsync(host, "sertifika denetimi", () => HasCertificateNowAsync(cancellationToken), Log.Write, cancellationToken);
+
+    private async Task<bool> HasCertificateNowAsync(CancellationToken cancellationToken)
     {
         await using var device = await ConnectAsync(cancellationToken);
         var duid = await ReadDuidAsync(device, cancellationToken);
@@ -243,8 +253,16 @@ public sealed partial class SamsungTvInstaller(string host, string profilesDirec
     /// </summary>
     /// <param name="version">Paketin sürümü; null ise TV'deki sürüme bakılmadan kurulur.</param>
     /// <returns>TV'deki sürüm ve bu çağrının kurup kurmadığı.</returns>
-    public async Task<(string Version, bool Installed)> EnsureInstalledAsync(string wgtPath, string? version,
-        CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// Aynı TV'de kurulum zaten sürüyorsa yenisi başlatılmaz, sürenin sonucu döner; bekçinin açma denemesi kurulum bitene
+    /// kadar bekler (#1223; <see cref="TvLane"/>).
+    /// </remarks>
+    public Task<(string Version, bool Installed)> EnsureInstalledAsync(string wgtPath, string? version,
+        CancellationToken cancellationToken = default) =>
+        Lane.InstallAsync(host, () => EnsureInstalledNowAsync(wgtPath, version, cancellationToken), Log.Write, cancellationToken);
+
+    private async Task<(string Version, bool Installed)> EnsureInstalledNowAsync(string wgtPath, string? version,
+        CancellationToken cancellationToken)
     {
         Log.Write($"--- Samsung kurulumu başlıyor: TV {host}, paket {Path.GetFileName(wgtPath)}");
         installCompleted = false;

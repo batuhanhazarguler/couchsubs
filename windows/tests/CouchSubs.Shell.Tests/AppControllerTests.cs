@@ -348,8 +348,15 @@ internal sealed class FakeServices : IAppServices
     public string? SamsungOnTv { get; set; }
     /// <summary>Her Samsung denetiminde "güncelse de aç" istendi mi.</summary>
     public List<bool> SamsungOpenRequests { get; } = [];
+    /// <summary>Verilirse bir sonraki Samsung kurulumu bu görev bitene kadar sürer (TV'de kurulum uzun sürüyor).</summary>
+    public Task? SamsungInstallGate { get; set; }
     public Task<(string Version, bool Installed)> InstallSamsungAppAsync(string host, BundledTvApp app, bool openIfInstalled, Action<TvInstallEvent> onEvent)
     {
+        if (SamsungInstallGate is { } gate)
+        {
+            SamsungInstallGate = null;
+            return gate.ContinueWith(_ => InstallSamsungAppAsync(host, app, openIfInstalled, onEvent), TaskScheduler.Default).Unwrap();
+        }
         TvCalls++;
         SamsungOpenRequests.Add(openIfInstalled);
         if (SamsungOnTv is { } onTv && !DevModeInstaller.IsNewer(app.Version, onTv)) return Task.FromResult((onTv, false));
@@ -2578,6 +2585,36 @@ public class TvAppInstallTests
         Assert.Equal("0.7.0", store.Load<string>(StoreKeys.TvAppVersion));
         await controller.RefreshTvAppAsync();
         Assert.Single(services.BrandInstalls);
+    }
+
+    /// <summary>
+    /// #1223: "güncelle"ye arka arkaya basılınca aynı Samsung TV'ye birden çok kurulum başlıyordu (TV sdb bağlantılarını
+    /// kapattı). Kurulum sürerken düğmeler kapalı; yine gelen istek yeni kurulum başlatmaz, sürenin bitmesini bekler.
+    /// </summary>
+    [Fact]
+    public async Task SecondUpdatePressWaitsForTheRunningSamsungInstall()
+    {
+        var services = new FakeServices { SamsungDevMode = true };
+        services.Bundled[TvBrand.Samsung] = SamsungApp;
+        var controller = Make(services);
+        await controller.PairAsync(Samsung);
+        Assert.Single(services.BrandInstalls);
+        services.SamsungOnTv = "0.6.0";
+        var gate = new TaskCompletionSource();
+        services.SamsungInstallGate = gate.Task;
+        var first = controller.UpdateTvAppAsync();
+        Assert.False(controller.CanStartTvAppUpdate);
+        var second = controller.UpdateTvAppAsync();
+        var third = controller.ReinstallTvAppAsync();
+        await Task.Delay(50);
+        Assert.False(second.IsCompleted);
+        Assert.False(third.IsCompleted);
+        gate.SetResult();
+        await Task.WhenAll(first, second, third).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(2, services.BrandInstalls.Count);
+        Assert.Equal(2, services.InstallLog.Count(line => line.Contains("yeni kurulum başlatılmadı")));
+        Assert.Equal(new TvAppState(TvAppKind.UpToDate, "0.7.0"), controller.TvApp);
+        Assert.True(controller.CanStartTvAppUpdate);
     }
 
     [Fact]

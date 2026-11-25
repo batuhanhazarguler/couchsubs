@@ -426,6 +426,43 @@ public class AdbConnectionTests
         Assert.DoesNotContain(tv.OpenedServices, service => service.StartsWith("shell:am start", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Bekçinin "kapat ve aç" denemesi (uygulama çalışıyordu ama 10 sn'de bağlanmadı): önce am force-stop, sonra am start;
+    /// çalışıyor denetimi yapılmaz (Samsung'daki was_kill + was_execute ile aynı sıra).
+    /// </summary>
+    [Fact]
+    public async Task RestartForceStopsThenStarts()
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        using var key = AndroidTvInstaller.LoadOrCreateKey(dir);
+        await using var tv = new FakeAdbd { TrustedKey = key, Reply = "Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }\n" };
+        tv.Serve();
+        await using (var adb = await AdbConnection.ConnectAsync("127.0.0.1", tv.Port, key, () => { }))
+            await AndroidTvInstaller.RestartOnAsync(adb, null, CancellationToken.None);
+        Assert.Equal([AndroidTvInstaller.ForceStopCommand, "shell:am start -n com.couchsubs.tv/.MainActivity"], tv.OpenedServices);
+    }
+
+    /// <summary>
+    /// Kurulumdan sonra açışta TV "zaten çalışıyor, öne getirildi" derse eski ekran kapatılıp temiz açılır (Samsung'da
+    /// "resumed"daki gibi); yeni açıldıysa dokunulmaz.
+    /// </summary>
+    [Theory]
+    [InlineData("Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\n", true)]
+    [InlineData("Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }\n", false)]
+    public async Task StartAfterInstallRestartsAnAppThatWasAlreadyRunning(string reply, bool restarted)
+    {
+        var dir = Directory.CreateTempSubdirectory().FullName;
+        using var key = AndroidTvInstaller.LoadOrCreateKey(dir);
+        await using var tv = new FakeAdbd { TrustedKey = key, Reply = reply };
+        tv.Serve();
+        List<string> lines = [];
+        await using (var adb = await AdbConnection.ConnectAsync("127.0.0.1", tv.Port, key, () => { }))
+            await AndroidTvInstaller.StartFreshAsync(adb, null, lines.Add, CancellationToken.None);
+        const string start = "shell:am start -n com.couchsubs.tv/.MainActivity";
+        Assert.Equal(restarted ? [start, AndroidTvInstaller.ForceStopCommand, start] : [start], tv.OpenedServices);
+        Assert.Equal(restarted, lines.Any(line => line.Contains("am force-stop")));
+    }
+
     [Theory]
     [InlineData(null, null)]
     [InlineData("", null)]

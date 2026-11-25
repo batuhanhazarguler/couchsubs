@@ -172,18 +172,20 @@ object TvSessionLauncher {
      * ekrandaki kodun onayıyla (/pair) eşleşir. Eskiden telefon Android TV'ye hiç dokunmuyor, TV uygulaması telefonu ağ
      * taramasıyla bulamazsa "Ağda CouchSubs aranıyor…"da kalıyordu. ADB kapalıysa sessizce vazgeçilir; tarama yolu sürer.
      *
-     * @param open (adres, ADB portu, başlatma parametreleri) → `am start` çıktısı ya da AndroidTvInstaller.ALREADY_RUNNING;
-     *   testlerde sahtesi verilir.
+     * @param open (adres, ADB portu, başlatma parametreleri, kapatıp aç) → `am start` çıktısı ya da
+     *   AndroidTvInstaller.ALREADY_RUNNING; testlerde sahtesi verilir. Uygulama çalışıyor ama [resumeWaitMs] içinde
+     *   bağlanmazsa bir kez kapatılıp (`am force-stop`) temiz açılır ([openAndroidTv]; Samsung'daki #1248 ile aynı).
      * @param sleep en çok verilen süre bekler; "Otomatik açmayı dene" istendiyse true döner (sayaç sıfırlanır).
      * @param current kayıtlı TV (her turda okunur): Android TV DHCP'den yeni adres alıp kurulum onu yeni adreste bulunca
      *   bekçi yeni adrese geçer. Eskiden çeviri boyunca eski adreste açmaya çalışıyordu (#985; Mac, Windows, iPhone ile aynı).
      */
     internal fun keepAndroidTvOpen(
         tv: InstalledTv, server: String, active: () -> Boolean, connected: () -> Boolean,
-        open: (String, Int, String?) -> String, log: (String) -> Unit = {},
+        open: (String, Int, String?, Boolean) -> String, log: (String) -> Unit = {},
         sleep: (Long) -> Boolean = { TvOpenRetry.waitOrRetry(it) },
         onOpenResult: (TvOpenProblem?) -> Unit = {}, now: () -> Long = { android.os.SystemClock.elapsedRealtime() },
         rule: AndroidTvOpenRule = AndroidTvOpenRule(), current: () -> InstalledTv? = { tv },
+        resumeWaitMs: Long = SAMSUNG_RESUME_WAIT_MS,
     ) {
         var target = tv
         var adbPort = adbPortOf(target)
@@ -200,7 +202,9 @@ object TvSessionLauncher {
             }
             if (rule.shouldTry(connected(), now())) {
                 val result = try {
-                    val output = open(target.host, adbPort, params)
+                    val host = target.host
+                    val port = adbPort
+                    val output = openAndroidTv({ restart -> open(host, port, params, restart) }, connected, waitMs = resumeWaitMs, log = log)
                     // Uygulama TV'de çalışırken bulunduysa `am start` gönderilmedi: açılış sayılmaz.
                     if (output != com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING) rule.opened()
                     onOpenResult(null)
@@ -215,6 +219,37 @@ object TvSessionLauncher {
             }
             if (sleep(ANDROID_CHECK_MS)) rule.reset()
         }
+    }
+
+    /**
+     * Açma sonucu uygulamanın zaten çalıştığını söylüyor mu: açıcı `am start` göndermedi ("zaten açık") ya da `am start`
+     * "Activity not started" dedi (ekran yalnız öne geldi). Samsung'daki "resumed"ın karşılığı; Windows ve Mac/iPhone'daki
+     * AndroidTvLauncher.IsResumed ile aynı.
+     */
+    fun androidTvResumed(output: String): Boolean = output.trim().let {
+        it == com.couchsubs.mobile.tv.android.AndroidTvInstaller.ALREADY_RUNNING || it.contains("Activity not started")
+    }
+
+    /**
+     * Android TV'yi açar; Samsung'daki [openSamsungWithSdb] ile aynı kural (#1248). Uygulama TV'de çalışırken bulunursa ya da
+     * `am start` "zaten çalışıyor" derse, uygulamaya kendisi bağlanması için [waitMs] (10 sn) tanınır; bağlanmazsa bir kez
+     * kapatılıp (`am force-stop`) temiz açılır. Bağlanırsa dokunulmaz. Eskiden Android TV'de bu yol yoktu: akışı kopan ama
+     * çalışmayı sürdüren TV uygulaması "zaten açık" sayılıyor, çeviri boyunca bağlanmıyordu. Windows, Mac ve iPhone'daki
+     * AndroidTvLauncher ile aynı. Son açma çıktısı döner; açılamazsa hata.
+     */
+    internal fun openAndroidTv(open: (Boolean) -> String, connected: () -> Boolean, waitMs: Long = SAMSUNG_RESUME_WAIT_MS,
+                               pollMs: Long = 500, now: () -> Long = { System.nanoTime() / 1_000_000 },
+                               sleep: (Long) -> Unit = { Thread.sleep(it) }, log: (String) -> Unit = {}): String {
+        val output = open(false).trim()
+        if (!androidTvResumed(output)) return output
+        val deadline = now() + waitMs
+        while (now() < deadline) {
+            if (connected()) return output
+            sleep(pollMs)
+        }
+        if (connected()) return output
+        log("Android TV: TV uygulaması çalışıyordu ($output) ama ${waitMs / 1000} sn'de bağlanmadı; kapatılıp (am force-stop) yeniden açılıyor")
+        return open(true).trim()
     }
 
     private fun adbPortOf(tv: InstalledTv) = tv.port.takeIf { it > 0 } ?: com.couchsubs.mobile.tv.android.AdbConnection.DEFAULT_PORT
@@ -383,10 +418,11 @@ object TvSessionLauncher {
         val server = serverAddress(remote, port) ?: return
         if (tv.brand == TvBrand.ANDROID_TV) {
             if (adbKeyFile == null) return
-            keepAndroidTvOpen(tv, server, active, connected, open = { host, adbPort, params ->
+            keepAndroidTvOpen(tv, server, active, connected, open = { host, adbPort, params, restart ->
                 if (!com.couchsubs.mobile.tv.android.AndroidTvInstaller.isReachable(host, adbPort)) throw java.io.IOException("ADB kapalı")
                 com.couchsubs.mobile.tv.android.AndroidTvInstaller(host, adbPort,
-                    adbKey = { com.couchsubs.mobile.tv.samsung.AdbKey.loadOrCreate(adbKeyFile) }).open(params)
+                    adbKey = { com.couchsubs.mobile.tv.samsung.AdbKey.loadOrCreate(adbKeyFile) })
+                    .open(params, restart)
             }, log = log, onOpenResult = onOpenResult, current = { settings.installedTv })
             return
         }

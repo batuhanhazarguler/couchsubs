@@ -75,8 +75,11 @@ try
         {
             // Çeviri başlarken Mac'in bekçisi kurulu TV uygulamasını Mac'in adresiyle açar; TV onay sorarsa beklenmez
             // (NotApproved), ADB kapalıysa Unreachable.
+            // --restart: uygulama çalışıyor ama bağlanmadı; kapatılıp (am force-stop) temiz açılır (Samsung'daki samsung-open
+            // --restart ile aynı, #1248).
             var started = await AndroidTvInstaller.OpenAsync(Option("--host"), Option("--key-dir"),
-                args.SkipWhile(a => a != "--params").Skip(1).FirstOrDefault(), cancellationToken: cancel.Token);
+                args.SkipWhile(a => a != "--params").Skip(1).FirstOrDefault(), args.Contains("--restart"), log: log.Write,
+                cancellationToken: cancel.Token);
             Emit("done", ("version", started), ("installed", true));
             return 0;
         }
@@ -120,7 +123,7 @@ try
             return 0;
 
         default:
-            Console.Error.WriteLine("kullanım: couchsubs-tv-helper android-scan | android-install --host IP --package APK --version V --key-dir DİZİN [--open] [--replace-foreign] | android-open --host IP --key-dir DİZİN [--params JSON] | samsung-install --host IP --package WGT --version V --profiles DİZİN [--log DOSYA] [--replace-foreign] | samsung-open --host IP --profiles DİZİN [--log DOSYA] [--restart] | self-test");
+            Console.Error.WriteLine("kullanım: couchsubs-tv-helper android-scan | android-install --host IP --package APK --version V --key-dir DİZİN [--open] [--replace-foreign] | android-open --host IP --key-dir DİZİN [--params JSON] [--restart] | samsung-install --host IP --package WGT --version V --profiles DİZİN [--log DOSYA] [--replace-foreign] | samsung-open --host IP --profiles DİZİN [--log DOSYA] [--restart] | self-test");
             return 2;
     }
 }

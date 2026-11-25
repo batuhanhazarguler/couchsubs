@@ -157,6 +157,72 @@ class AndroidTvTest {
     }
 
     /**
+     * Bekçinin "kapat ve aç" denemesi (uygulama çalışıyordu ama 10 sn'de bağlanmadı): önce am force-stop, sonra am start;
+     * çalışıyor denetimi yapılmaz (Samsung'daki was_kill + was_execute ile aynı sıra).
+     */
+    @Test
+    fun restartForceStopsThenStarts() {
+        val key = tempKey()
+        val adbd = FakeAdbd(authorized = mutableListOf(key.publicKey), services = { _, _ -> "Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }\n" }).start()
+        val output = AndroidTvInstaller("127.0.0.1", adbd.port, { key }).apply { lane = com.couchsubs.mobile.tv.TvLane() }
+            .open(null, restart = true)
+        assertTrue(output.startsWith("Starting"))
+        assertEquals(listOf(AndroidTvInstaller.FORCE_STOP_COMMAND, "shell:am start -n com.couchsubs.tv/.MainActivity"), adbd.opened)
+        adbd.join()
+    }
+
+    /** Güncel uygulamayı açarken TV "zaten çalışıyor, öne getirildi" derse eski ekran kapatılıp temiz açılır. */
+    @Test
+    fun upToDateAppThatWasAlreadyRunningIsRestarted() {
+        val key = tempKey()
+        val adbd = FakeAdbd(services = { service, _ ->
+            when {
+                service.startsWith("shell:dumpsys") -> dumpsys("0.9.104")
+                service.startsWith("shell:am start") ->
+                    "Starting: Intent { cmp=com.couchsubs.tv/.MainActivity }\nWarning: Activity not started, its current task has been brought to the front\n"
+                else -> ""
+            }
+        }).start()
+        assertEquals(AndroidTvInstaller.Result("0.9.104", false), installer(adbd, key).ensureInstalled({ apk }, "0.9.104"))
+        val start = "shell:am start -n com.couchsubs.tv/.MainActivity"
+        assertEquals(listOf(start, AndroidTvInstaller.FORCE_STOP_COMMAND, start), adbd.opened.filter { it.startsWith("shell:am ") })
+        adbd.join()
+    }
+
+    /**
+     * #1223: aynı TV'ye kurulum sürerken gelen ikinci kurulum isteği (ikinci "güncelle") yeni ADB oturumu açmaz, sürenin
+     * sonucunu alır.
+     */
+    @Test
+    fun secondInstallOnTheSameTvJoinsTheRunningOne() {
+        val key = tempKey()
+        val release = java.util.concurrent.CountDownLatch(1)
+        val adbd = FakeAdbd(services = { service, _ ->
+            when {
+                service.startsWith("shell:dumpsys") -> { release.await(); dumpsys("0.9.104") }
+                else -> ""
+            }
+        }).start()
+        val lane = com.couchsubs.mobile.tv.TvLane()
+        val logFile = java.io.File.createTempFile("tvinstall", ".log").apply { deleteOnExit() }
+        fun make() = AndroidTvInstaller("127.0.0.1", adbd.port, { key }, log = com.couchsubs.mobile.tv.samsung.InstallLog(logFile))
+            .apply { this.lane = lane }
+        var first: AndroidTvInstaller.Result? = null
+        val worker = thread { first = make().ensureInstalled({ apk }, "0.9.104") }
+        Thread.sleep(150)
+        assertTrue(lane.isInstalling("127.0.0.1"))
+        val joiner = thread { Thread.sleep(100); release.countDown() }
+        val second = make().ensureInstalled({ apk }, "0.9.104")
+        worker.join()
+        joiner.join()
+        assertEquals(first, second)
+        val text = logFile.readText()
+        assertEquals(1, Regex("--- Android TV kurulumu").findAll(text).count())
+        assertTrue(text.contains("yeni kurulum başlatılmadı"))
+        adbd.join()
+    }
+
+    /**
      * TV kurulum akışına yanıt vermiyor: önceden 120 sn'lik okuma süresinden sonra "bağlantı koptu" deniyordu, yeniden
      * deneme yoktu. Bekçi adımın süresi dolunca bağlantıyı kapatır, yeni bağlantıyla bir kez daha dener.
      */
