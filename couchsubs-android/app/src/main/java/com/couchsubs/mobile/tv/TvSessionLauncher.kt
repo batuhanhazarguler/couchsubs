@@ -275,7 +275,7 @@ object TvSessionLauncher {
      * dener (bkz. [launch]). [lastResult]: ana ekranda şu an gösterilen neden. Her denemenin sonucu [log]'a yazılır.
      */
     fun keepSamsungOpen(settings: AppSettings, port: Int, key: String, connected: () -> Boolean, log: (String) -> Unit = {},
-                        onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: (() -> Boolean)? = null,
+                        onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: ((Boolean) -> com.couchsubs.mobile.tv.samsung.SdbOpen)? = null,
                         lastResult: () -> TvOpenProblem? = { null }, installLog: (String) -> Unit = {},
                         relocate: () -> Boolean = { false }, active: () -> Boolean) =
         keepSamsungOpen(settings.installedTv, connected, active, log = log,
@@ -334,9 +334,47 @@ object TvSessionLauncher {
         }
     }
 
+    /** "resumed"dan sonra TV uygulamasının kendiliğinden bağlanması için beklenen süre (Windows/Mac/iPhone ResumeWait). */
+    const val SAMSUNG_RESUME_WAIT_MS = 10_000L
+
+    /**
+     * Samsung'u geliştirici bağlantısıyla (sdb) açar; true ise uzaktan kumanda (8002) yoluna geçilmez.
+     *
+     * #1248 (beta.95, Samsung 2020): bilgisayar altyazı akışını "alındı gelmedi" diye kapattıktan sonra TV uygulaması hâlâ
+     * çalışıyordu; `was_execute` her seferinde "resumed" diyordu (uygulama yalnız öne geliyor, sayfa yeniden yüklenmiyor ve
+     * akışa bağlanmıyordu). "resumed" başarısız sayıldığı için 8002 yoluna düşülüyor, TV "Samsung sunucusuna
+     * bağlanılamıyor (AS400)" diyordu. Artık "resumed" uygulamanın çalıştığı sayılır: sayfaya kendisi yeniden bağlanması
+     * için [waitMs] tanınır (TV uygulaması 0.9.104'ten beri öne gelince akışı yeniden kurar), bağlanmazsa uygulama sdb ile
+     * kapatılıp yeniden açılır (sayfa temiz yüklenir). Kapatıp açma da tutmazsa yine 8002'ye geçilmez; bekçi yeniden dener.
+     * Windows, Mac ve iPhone'daki SamsungLauncher ile aynı.
+     */
+    internal fun openSamsungWithSdb(openWithSdb: (Boolean) -> com.couchsubs.mobile.tv.samsung.SdbOpen, connected: () -> Boolean,
+                                    waitMs: Long = SAMSUNG_RESUME_WAIT_MS, pollMs: Long = 500,
+                                    now: () -> Long = { System.nanoTime() / 1_000_000 },
+                                    sleep: (Long) -> Unit = { Thread.sleep(it) }, log: (String) -> Unit = {}): Boolean {
+        when (openWithSdb(false)) {
+            com.couchsubs.mobile.tv.samsung.SdbOpen.LAUNCHED -> return true
+            com.couchsubs.mobile.tv.samsung.SdbOpen.FAILED -> return false
+            com.couchsubs.mobile.tv.samsung.SdbOpen.RESUMED -> {
+                val deadline = now() + waitMs
+                while (now() < deadline) {
+                    if (connected()) return true
+                    sleep(pollMs)
+                }
+                if (connected()) return true
+                log("Samsung: TV uygulaması çalışıyordu (resumed) ama ${waitMs / 1000} sn'de bağlanmadı; kapatılıp yeniden açılıyor")
+                val restarted = openWithSdb(true)
+                if (restarted != com.couchsubs.mobile.tv.samsung.SdbOpen.LAUNCHED) {
+                    log("Samsung: TV uygulaması kapatılıp açılamadı (${restarted.name.lowercase()}); uzaktan kumanda yolu denenmiyor, bekçi yeniden dener")
+                }
+                return true
+            }
+        }
+    }
+
     /** [onOpenResult]: açma denemesinin sonucu (ana ekrandaki satır); TV izni alındıysa ya da açıldıysa null. */
     fun launch(settings: AppSettings, port: Int, key: String, adbKeyFile: java.io.File? = null, connected: () -> Boolean = { false },
-               log: (String) -> Unit = {}, onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: (() -> Boolean)? = null,
+               log: (String) -> Unit = {}, onOpenResult: (TvOpenProblem?) -> Unit = {}, openWithSdb: ((Boolean) -> com.couchsubs.mobile.tv.samsung.SdbOpen)? = null,
                installLog: (String) -> Unit = {}, active: () -> Boolean) {
         val tv = settings.installedTv ?: return
         if (!active()) return
@@ -361,7 +399,10 @@ object TvSessionLauncher {
             onOpenResult(null)
             return
         }
-        if (tv.brand == TvBrand.SAMSUNG && openWithSdb?.invoke() == true) {
+        if (tv.brand == TvBrand.SAMSUNG && openWithSdb != null && openSamsungWithSdb(openWithSdb, connected, log = { line ->
+                log(line)
+                installLog(line)
+            })) {
             log("Samsung (${tv.host}) TV uygulaması geliştirici bağlantısıyla açıldı")
             onOpenResult(null)
             return

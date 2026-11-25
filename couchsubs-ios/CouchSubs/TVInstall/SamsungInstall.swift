@@ -680,18 +680,20 @@ final class SamsungInstaller {
 
     /// Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, `was_execute`) açar; arka plandaysa öne getirir (bekçi, bkz.
     /// `SamsungLauncher`; Mac ve Windows'taki samsung-open ile aynı). sdb izin sormaz, TV'de bildirim çıkarmaz.
-    /// Geliştirici modu kapalıysa ya da Host PC IP başka cihazınsa false.
-    func openApp() -> Bool {
-        log.write("--- Samsung: TV uygulaması bağlı değil, açılıyor (TV \(host))")
+    /// Geliştirici modu kapalıysa ya da Host PC IP başka cihazınsa `.failed`; uygulama zaten çalışıyorsa `.resumed`.
+    /// `restart`: uygulama önce `was_kill` ile kapatılır, sonra açılır (sayfa temiz yüklenir; #1248).
+    func openApp(restart: Bool = false) -> SamsungSdbOpen {
+        log.write(restart ? "--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV \(host))"
+                          : "--- Samsung: TV uygulaması bağlı değil, açılıyor (TV \(host))")
         do {
             let device = try connect()
             defer { device.close() }
-            let reply = try device.shell("0 was_execute \(Self.appId)")
-            log.write("Uygulama açılıyor: \(reply.trimmingCharacters(in: .whitespacesAndNewlines))")
-            return SamsungLauncher.sdbLaunched(reply)
+            return try SamsungLauncher.openOverSdb(restart: restart, appId: Self.appId, packageId: Self.packageId,
+                                                   shell: { try device.shell($0) }, pause: { Thread.sleep(forTimeInterval: 1.5) },
+                                                   log: { log.write($0) })
         } catch {
             log.write("Uygulama açılamadı: \(error)")
-            return false
+            return .failed
         }
     }
 
@@ -901,10 +903,21 @@ final class SamsungInstaller {
         return version
     }
 
+    /// Kurulumdan sonra açar. TV "resumed" derse eski sayfa hâlâ çalışıyordur (yeni sürüm yüklenmedi, akışa bağlanmıyor;
+    /// #1248): uygulama kapatılıp yeniden açılır (Windows, Mac ve Android ile aynı).
     private func launch(_ device: SdbConnection) {
         progress(.launching)
-        let output = (try? device.shell("0 was_execute \(Self.appId)")) ?? "açılamadı"
-        log.write("Uygulama açılıyor: \(output.trimmingCharacters(in: .whitespacesAndNewlines))")
+        let shell: (String) throws -> String = { try device.shell($0) }
+        let pause = { Thread.sleep(forTimeInterval: 1.5) }
+        guard let opened = try? SamsungLauncher.openOverSdb(restart: false, appId: Self.appId, packageId: Self.packageId,
+                                                            shell: shell, pause: pause, log: { log.write($0) }) else {
+            log.write("Uygulama açılıyor: açılamadı")
+            return
+        }
+        guard opened == .resumed else { return }
+        log.write("Uygulama zaten çalışıyordu (eski sayfa); kapatılıp yeniden açılıyor")
+        _ = try? SamsungLauncher.openOverSdb(restart: true, appId: Self.appId, packageId: Self.packageId,
+                                             shell: shell, pause: pause, log: { log.write($0) })
     }
 
     /// Tizen 2.4–4.0: cihaz profili TV'ye gönderilir (`deviceProfileRemotePath`); Tizen 2.x'te `/home/developer`'a

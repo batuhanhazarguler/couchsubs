@@ -487,10 +487,10 @@ final class TVKeeperTests: XCTestCase {
     func testSamsungLauncherTriesDeveloperConnectionFirst() async throws {
         let remote = FakeControl(foreground: [])
         var remoteConnects = 0
-        let bySdb = SamsungLauncher(openWithSdb: { true }, connectRemote: { remoteConnects += 1; return remote })
+        let bySdb = SamsungLauncher(openWithSdb: { _ in .launched }, connectRemote: { remoteConnects += 1; return remote })
         try await bySdb.launch(appId: "x", params: [:])
         XCTAssertEqual(remoteConnects, 0)
-        let byRemote = SamsungLauncher(openWithSdb: { false }, connectRemote: { remoteConnects += 1; return remote })
+        let byRemote = SamsungLauncher(openWithSdb: { _ in .failed }, connectRemote: { remoteConnects += 1; return remote })
         try await byRemote.launch(appId: "x", params: [:])
         XCTAssertEqual(remoteConnects, 1)
         XCTAssertEqual(remote.launches.count, 1)
@@ -498,6 +498,80 @@ final class TVKeeperTests: XCTestCase {
         XCTAssertTrue(SamsungLauncher.sdbLaunched("launch app CouchSubsT.CouchSubs\napp_id[CouchSubsT.CouchSubs] launched\n"))
         XCTAssertFalse(SamsungLauncher.sdbLaunched("app_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] launch failed"))
         XCTAssertFalse(SamsungLauncher.sdbLaunched(""))
+    }
+
+    /// #1248: `was_execute` "resumed" dedi (uygulama çalışıyor, yalnız öne geldi). Başarısızlık sayılıp 8002 yoluna
+    /// düşülmez (TV "AS400" diyordu); "launched"dan ayrılır.
+    func testSamsungSdbReplyTellsResumedFromLaunched() {
+        let resumed = "launch app CouchSubsT.CouchSubs\napp_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] resumed\nspend time for wascmd is [82]ms"
+        XCTAssertEqual(SamsungLauncher.sdbOpen(resumed), .resumed)
+        XCTAssertFalse(SamsungLauncher.sdbLaunched(resumed))
+        XCTAssertEqual(SamsungLauncher.sdbOpen("app_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] launched"), .launched)
+        XCTAssertEqual(SamsungLauncher.sdbOpen("app_id[CouchSubsT.CouchSubs] launch failed"), .failed)
+        XCTAssertEqual(SamsungLauncher.sdbOpen("error: closed"), .failed)
+    }
+
+    /// "resumed": uygulama süre içinde kendisi bağlanırsa dokunulmaz; uzaktan kumanda yolu hiç denenmez.
+    func testSamsungResumedAppThatReconnectsIsLeftAlone() async throws {
+        let remote = FakeControl(foreground: [])
+        var remoteConnects = 0
+        var restarts: [Bool] = []
+        let connected = Flag()
+        let launcher = SamsungLauncher(openWithSdb: { restart in
+            restarts.append(restart)
+            connected.value = true
+            return .resumed
+        }, appConnected: { connected.value }, resumeWait: .seconds(2), poll: .milliseconds(10), log: { _ in },
+           connectRemote: { remoteConnects += 1; return remote })
+        try await launcher.launch(appId: "x", params: [:])
+        XCTAssertEqual(restarts, [false])
+        XCTAssertEqual(remoteConnects, 0)
+    }
+
+    /// "resumed" ve süre içinde bağlanmadı: uygulama sdb ile kapatılıp yeniden açılır; 8002'ye düşülmez.
+    func testSamsungResumedAppThatStaysAwayIsRestarted() async throws {
+        let remote = FakeControl(foreground: [])
+        var remoteConnects = 0
+        var restarts: [Bool] = []
+        let lines = Lines()
+        let launcher = SamsungLauncher(openWithSdb: { restart in
+            restarts.append(restart)
+            return restart ? .launched : .resumed
+        }, appConnected: { false }, resumeWait: .milliseconds(50), poll: .milliseconds(10), log: { lines.add($0) },
+           connectRemote: { remoteConnects += 1; return remote })
+        try await launcher.launch(appId: "x", params: [:])
+        XCTAssertEqual(restarts, [false, true])
+        XCTAssertEqual(remoteConnects, 0)
+        XCTAssertTrue(lines.all.contains { $0.contains("kapatılıp yeniden açılıyor") })
+
+        // Kapatıp açma da olmadı: yine 8002'ye geçilmez (bekçi sonra yeniden dener).
+        let stuck = SamsungLauncher(openWithSdb: { _ in .resumed }, appConnected: { false }, resumeWait: .milliseconds(20),
+                                    poll: .milliseconds(5), log: { _ in }, connectRemote: { remoteConnects += 1; return remote })
+        try await stuck.launch(appId: "x", params: [:])
+        XCTAssertEqual(remoteConnects, 0)
+    }
+
+    /// sdb ile kapatıp açma sırası: was_kill (uygulama kimliği) → was_execute; TV hâlâ "resumed" derse paket kimliğiyle bir kez daha.
+    func testSamsungRestartKillsThenExecutes() throws {
+        var commands: [String] = []
+        var pauses = 0
+        let replies = ["0 was_execute": ["app_id[A.B] resumed", "app_id[A.B] launched"]]
+        var executes = 0
+        let result = try SamsungLauncher.openOverSdb(restart: true, appId: "A.B", packageId: "A", shell: { command in
+            commands.append(command)
+            guard command.hasPrefix("0 was_execute") else { return "" }
+            defer { executes += 1 }
+            return replies["0 was_execute"]![executes]
+        }, pause: { pauses += 1 }, log: { _ in })
+        XCTAssertEqual(result, .launched)
+        XCTAssertEqual(commands, ["0 was_kill A.B", "0 was_execute A.B", "0 was_kill A", "0 was_execute A.B"])
+        XCTAssertEqual(pauses, 2)
+
+        commands = []
+        let plain = try SamsungLauncher.openOverSdb(restart: false, appId: "A.B", packageId: "A", shell: { commands.append($0); return "app_id[A.B] resumed" },
+                                                    pause: { XCTFail("beklenmemeli") }, log: { _ in })
+        XCTAssertEqual(plain, .resumed)
+        XCTAssertEqual(commands, ["0 was_execute A.B"])
     }
 
     /// Samsung: TV uygulaması hiç bağlanmazsa açma seyrelir (30 sn, 1, 2, 5 dk) ve en çok 6 deneme olur; eskiden çeviri boyunca
@@ -570,4 +644,11 @@ private final class Flag: @unchecked Sendable {
         get { lock.withLock { stored } }
         set { lock.withLock { stored = newValue } }
     }
+}
+
+private final class Lines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func add(_ line: String) { lock.withLock { stored.append(line) } }
+    var all: [String] { lock.withLock { stored } }
 }

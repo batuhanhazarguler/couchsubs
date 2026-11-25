@@ -783,12 +783,17 @@
 
     launchParams: requestedParams,
 
+    // Çalışan uygulama yeniden açıldı (appcontrol). Geliştirici bağlantısıyla açmada (sdb was_execute) parametre gelmez;
+    // eskiden yalnız parametreli açılış bildiriliyordu ve "resumed" ile öne getirilen sayfa kopan akışı yeniden kurmuyordu
+    // (#1248). Artık her yeniden açılış bildirilir (parametre yoksa null).
     onRelaunch: function (callback) {
       window.addEventListener('appcontrol', function () {
-        var params = requestedParams();
-        if (params) callback(params);
+        callback(requestedParams());
       });
     },
+    // Bilgisayar/telefon Samsung'da uygulamayı yalnız TV'yi bağlı görmediğinde açar: yeniden açılışta bağlantı açık görünse
+    // de yeniden kurulur (app.js).
+    reconnectOnRelaunch: true,
 
     // onStatus: 'loading' | 'ready' | 'playing' | 'inputError' | 'sourceError'
     showHdmi: function (port, host, onStatus) {

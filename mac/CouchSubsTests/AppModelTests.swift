@@ -1983,6 +1983,19 @@ final class TVAppInstallTests: XCTestCase {
         XCTAssertNil(TVHelper.parse("Unhandled exception."))
     }
 
+    /// #1248: samsung-open "resumed"i ayrı bildirir (uygulama çalışıyor, yalnız öne geldi); bekçi bunu 8002'ye düşmeden
+    /// bekler, bağlanmazsa `--restart` ile kapatıp açar. Eski yardımcı `state` yazmaz: "installed" açıldı mı demektir.
+    func testHelperSamsungOpenStateIsRead() {
+        guard case .finished(let resumed)? = TVHelper.parse(#"{"event":"done","version":"","installed":true,"state":"resumed"}"#) else {
+            return XCTFail("done okunmadı")
+        }
+        XCTAssertEqual(TVHelper.sdbOpen(resumed), .resumed)
+        XCTAssertEqual(TVHelper.sdbOpen(TVHelper.Result(version: "", installed: true, state: "launched")), .launched)
+        XCTAssertEqual(TVHelper.sdbOpen(TVHelper.Result(version: "", installed: false, state: "failed")), .failed)
+        XCTAssertEqual(TVHelper.sdbOpen(TVHelper.Result(version: "", installed: true)), .launched)
+        XCTAssertEqual(TVHelper.sdbOpen(TVHelper.Result(version: "", installed: false)), .failed)
+    }
+
     func testHelperErrorCodesMapToTheirOwnErrors() {
         XCTAssertEqual(TVHelper.error(code: "CertificateMismatch"), .certificateMismatch)
         XCTAssertEqual(TVHelper.error(code: "CertificateRejected"), .certificateRejected)

@@ -550,6 +550,16 @@ public final class SamsungClient: NSObject, TVControlling, URLSessionDelegate, @
     }
 }
 
+/// sdb `0 was_execute` yanıtının anlamı (Windows SamsungAppLaunch, Android SdbOpen ile aynı).
+public enum SamsungSdbOpen: String, Equatable, Sendable {
+    /// Açılamadı: geliştirici modu kapalı, Host PC IP başka cihaz, TV "launch failed" dedi ya da yanıt anlaşılmadı.
+    case failed
+    /// Uygulama kapalıydı, yeni açıldı ("app_id[…] launched"): sayfa baştan yüklenir.
+    case launched
+    /// Uygulama zaten çalışıyordu, yalnız öne geldi ("app_id[…] resumed"): sayfa yeniden yüklenmez.
+    case resumed
+}
+
 /// Bekçinin Samsung'da TV uygulamasını açma yolu: önce geliştirici bağlantısı (sdb `0 was_execute`), olmazsa uzaktan kumanda
 /// bağlantısı (8002, ilk bağlantıda TV izin sorar). Samsung önplandaki uygulamayı söylemez; bekçi yalnız açar.
 ///
@@ -557,30 +567,108 @@ public final class SamsungClient: NSObject, TVControlling, URLSessionDelegate, @
 /// (ve Android telefon) yalnız uzaktan kumanda yolunu kullanıyordu: TV komutu alıp açmayınca kullanıcı CouchSubs'ı
 /// kumandayla açmak zorunda kalıyordu (iPhone, TestFlight build 27, 21 Kas). sdb yalnız TV'nin geliştirici modu açık ve
 /// Host PC IP bu cihazsa çalışır (telefondan kurulduysa öyledir); değilse hemen uzaktan kumandaya geçilir.
+///
+/// #1248 (beta.95, Samsung 2020): bilgisayar altyazı akışını "alındı gelmedi" diye kapattıktan sonra TV uygulaması hâlâ
+/// çalışıyordu; `was_execute` her seferinde "resumed" diyordu (uygulama yalnız öne geliyor, sayfa yeniden yüklenmiyor ve
+/// akışa bağlanmıyordu). "resumed" başarısız sayıldığı için bekçi 8002 yoluna düşüyor, TV "Samsung sunucusuna
+/// bağlanılamıyor (AS400)" diyordu; düzelmesi için TV'yi fişten çekmek gerekiyordu. Artık "resumed" uygulamanın çalıştığı
+/// sayılır, 8002'ye geçilmez: sayfaya kendisi yeniden bağlanması için `resumeWait` kadar süre tanınır (TV uygulaması
+/// 0.9.104'ten beri öne gelince akışı yeniden kurar), bağlanmazsa uygulama sdb ile kapatılıp yeniden açılır (sayfa temiz
+/// yüklenir). Windows ve Android ile aynı.
 public final class SamsungLauncher: TVControlling, @unchecked Sendable {
-    private let openWithSdb: () async -> Bool
+    /// "resumed"dan sonra TV uygulamasının kendiliğinden bağlanması için beklenen süre.
+    public static let resumeWait: Duration = .seconds(10)
+
+    /// `restart` true ise uygulama önce kapatılır, sonra açılır.
+    private let openWithSdb: (_ restart: Bool) async -> SamsungSdbOpen
+    private let appConnected: @Sendable () -> Bool
+    private let resumeWait: Duration
+    private let poll: Duration
+    private let log: @Sendable (String) -> Void
     private let connectRemote: () async throws -> TVControlling
 
-    public init(openWithSdb: @escaping () async -> Bool, connectRemote: @escaping () async throws -> TVControlling) {
+    public init(openWithSdb: @escaping (_ restart: Bool) async -> SamsungSdbOpen,
+                appConnected: @escaping @Sendable () -> Bool = { false },
+                resumeWait: Duration = SamsungLauncher.resumeWait, poll: Duration = .milliseconds(500),
+                log: @escaping @Sendable (String) -> Void = { SubtitleLog.write($0) },
+                connectRemote: @escaping () async throws -> TVControlling) {
         self.openWithSdb = openWithSdb
+        self.appConnected = appConnected
+        self.resumeWait = resumeWait
+        self.poll = poll
+        self.log = log
         self.connectRemote = connectRemote
     }
 
     public func launch(appId: String, params: [String: Any]) async throws {
-        if await openWithSdb() { return }
-        let remote = try await connectRemote()
-        defer { remote.close() }
-        try await remote.launch(appId: appId, params: params)
+        switch await openWithSdb(false) {
+        case .launched:
+            return
+        case .resumed:
+            if await waitForConnection() { return }
+            log("Samsung: TV uygulaması çalışıyordu (resumed) ama \(resumeWait.components.seconds) sn'de bağlanmadı; kapatılıp yeniden açılıyor")
+            let restarted = await openWithSdb(true)
+            if restarted != .launched {
+                log("Samsung: TV uygulaması kapatılıp açılamadı (\(restarted.rawValue)); uzaktan kumanda yolu denenmiyor, bekçi yeniden dener")
+            }
+        case .failed:
+            let remote = try await connectRemote()
+            defer { remote.close() }
+            try await remote.launch(appId: appId, params: params)
+        }
+    }
+
+    /// TV uygulaması `resumeWait` içinde bağlandıysa true.
+    private func waitForConnection() async -> Bool {
+        let deadline = ContinuousClock.now + resumeWait
+        while ContinuousClock.now < deadline {
+            if appConnected() { return true }
+            try? await Task.sleep(for: poll)
+        }
+        return appConnected()
     }
 
     public func foregroundAppId() async throws -> String { "" }
 
     public func close() {}
 
-    /// `0 was_execute` yanıtı uygulamanın açıldığını söylüyor mu ("app_id[…] launched"); Windows'taki
+    /// `0 was_execute` yanıtı uygulamanın yeni açıldığını söylüyor mu ("app_id[…] launched"); Windows'taki
     /// SamsungTvInstaller.Launched ile aynı.
-    public static func sdbLaunched(_ reply: String) -> Bool {
-        reply.contains("] launched") && reply.range(of: "fail", options: .caseInsensitive) == nil
+    public static func sdbLaunched(_ reply: String) -> Bool { sdbOpen(reply) == .launched }
+
+    /// `0 was_execute` yanıtı: "app_id[…] launched" yeni açıldı, "app_id[…] resumed" zaten çalışıyordu ve öne geldi.
+    public static func sdbOpen(_ reply: String) -> SamsungSdbOpen {
+        if reply.range(of: "fail", options: .caseInsensitive) != nil { return .failed }
+        if reply.contains("] launched") { return .launched }
+        if reply.contains("] resumed") { return .resumed }
+        return .failed
+    }
+
+    /// Çalışan uygulamayı kapatma komutları: önce uygulama kimliği, sonra paket kimliği (TV yazılımına göre biri tutar).
+    public static func killCommands(appId: String, packageId: String) -> [String] {
+        ["0 was_kill \(appId)", "0 was_kill \(packageId)"]
+    }
+
+    /// Uygulamayı sdb ile açar (Mac yardımcısı ve Windows: SamsungTvInstaller.OpenWithAsync; iPhone ve Android aynı sıra).
+    /// `restart`: önce `was_kill` ile kapatılır, `pause` kadar beklenip açılır; TV hâlâ "resumed" derse paket kimliğiyle bir
+    /// kez daha kapatılıp açılır. `shell` sdb komutunu çalıştırır.
+    public static func openOverSdb(restart: Bool, appId: String, packageId: String, shell: (String) throws -> String,
+                                   pause: () -> Void, log: (String) -> Void) throws -> SamsungSdbOpen {
+        func execute() throws -> SamsungSdbOpen {
+            let reply = try shell("0 was_execute \(appId)")
+            log("Uygulama açılıyor: \(reply.trimmingCharacters(in: .whitespacesAndNewlines))")
+            return sdbOpen(reply)
+        }
+        guard restart else { return try execute() }
+        var result = SamsungSdbOpen.failed
+        for kill in killCommands(appId: appId, packageId: packageId) {
+            let reply = (try? shell(kill)) ?? ""
+            log("Uygulama kapatılıyor (\(kill)): \(reply.trimmingCharacters(in: .whitespacesAndNewlines))")
+            pause()
+            result = try execute()
+            if result != .resumed { return result }
+        }
+        return result
     }
 }
 

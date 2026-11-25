@@ -104,11 +104,12 @@ try
 
         case "samsung-open":
         {
-            // Bekçi kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, was_execute) açar; "installed" açıldı mı.
+            // Bekçi kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, was_execute) açar; "installed" uygulama çalışıyor
+            // mu, "state" TV'nin yanıtı (launched: yeni açıldı, resumed: zaten çalışıyordu, failed). --restart: önce kapatır.
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
             var installer = new SamsungTvInstaller(Option("--host"), Option("--profiles"), new SamsungCertificates(http, log)) { Log = log };
-            var opened = await installer.OpenAsync(cancel.Token);
-            Emit("done", ("version", ""), ("installed", opened));
+            var opened = await installer.OpenAsync(args.Contains("--restart"), cancel.Token);
+            Emit("done", ("version", ""), ("installed", opened != SamsungAppLaunch.Failed), ("state", opened.ToString().ToLowerInvariant()));
             return 0;
         }
 
@@ -119,7 +120,7 @@ try
             return 0;
 
         default:
-            Console.Error.WriteLine("kullanım: couchsubs-tv-helper android-scan | android-install --host IP --package APK --version V --key-dir DİZİN [--open] [--replace-foreign] | android-open --host IP --key-dir DİZİN [--params JSON] | samsung-install --host IP --package WGT --version V --profiles DİZİN [--log DOSYA] [--replace-foreign] | samsung-open --host IP --profiles DİZİN [--log DOSYA] | self-test");
+            Console.Error.WriteLine("kullanım: couchsubs-tv-helper android-scan | android-install --host IP --package APK --version V --key-dir DİZİN [--open] [--replace-foreign] | android-open --host IP --key-dir DİZİN [--params JSON] | samsung-install --host IP --package WGT --version V --profiles DİZİN [--log DOSYA] [--replace-foreign] | samsung-open --host IP --profiles DİZİN [--log DOSYA] [--restart] | self-test");
             return 2;
     }
 }

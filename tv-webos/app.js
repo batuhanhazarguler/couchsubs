@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.103';
+  var APP_VERSION = '0.9.104';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -2702,6 +2702,7 @@
     // Yeni bilgisayar/telefon akışın kimliğini bildirir; TV her ping'de alındı gönderir (bkz. sendAck).
     onEvent('link', function (data) {
       linkId = /^[A-Za-z0-9]{1,64}$/.test(data.id || '') ? data.id : null;
+      ackMisses = 0;
       senderLatest = /^[0-9.]{1,20}$/.test(data.latest || '') ? data.latest : '';
       renderVersion();
       renderDiag();
@@ -2764,20 +2765,54 @@
   // bildirirse TV her ping'de `/ack?c=<kimlik>` gönderir; alındı kesilince bilgisayar/telefon bağlantıyı kapatıp
   // "Yeniden bağlanılıyor" der, TV uygulamasını yeniden öne getirir. 404: bilgisayar bu akışı artık tanımıyor (yeniden
   // açıldı, bağlantıyı kopmuş saydı): TV beklemeden yeniden bağlanır. `link` göndermeyen eski sürümlere alındı gitmez.
+  //
+  // Alındı üst üste ACK_MISS_LIMIT kez ulaşmazsa (ağ hatası, zaman aşımı, 404 dışı hata) TV de yeniden bağlanır: bilgisayar
+  // /telefon 3 alındısız ping turundan sonra akışı kapatıyor, TV ise bağlantıyı açık görüp "Bağlı" diyor ve bir daha
+  // bağlanmıyordu (#1248, Samsung 2020; bilgisayar uygulamayı her 30-60 sn'de öne getirdiği halde). Sınır karşı tarafınkinden
+  // (3) küçüktür: TV akış kapanmadan yenisini kurar.
   var linkId = null;
+  var ACK_MISS_LIMIT = 2;
+  var ackMisses = 0;
 
   function sendAck() {
     if (!linkId || !server || !eventSource) return;
-    var id = linkId, source = eventSource, xhr = new XMLHttpRequest();
-    xhr.onload = function () {
-      if (xhr.status !== 404 || id !== linkId || source !== eventSource || pausedByHidden) return;
+    var id = linkId, source = eventSource, xhr = new XMLHttpRequest(), settled = false;
+    function current() { return id === linkId && source === eventSource && !pausedByHidden; }
+    function missed() {
+      if (settled) return;
+      settled = true;
+      if (!current()) return;
+      ackMisses++;
+      if (ackMisses < ACK_MISS_LIMIT) return;
+      ackMisses = 0;
       linkId = null;
       diag.drops++;
       renderDiag();
       connect(server);
+    }
+    xhr.onload = function () {
+      if (settled) return;
+      if (xhr.status === 404) {
+        settled = true;
+        if (!current()) return;
+        ackMisses = 0;
+        linkId = null;
+        diag.drops++;
+        renderDiag();
+        connect(server);
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        settled = true;
+        if (current()) ackMisses = 0;
+        return;
+      }
+      missed();
     };
+    xhr.onerror = missed;
+    xhr.ontimeout = missed;
     try { xhr.open('GET', authenticatedUrl(server, '/ack?c=' + encodeURIComponent(id))); xhr.timeout = 4000; xhr.send(); }
-    catch (e) {}
+    catch (e) { missed(); }
   }
 
   // --- Türkçe dublaj ---
@@ -3641,7 +3676,21 @@
     if (platform.reloadIfStale) platform.reloadIfStale(APP_VERSION);
     var before = connectionGeneration;
     applyParams(parseParams(raw));
-    if (connectionGeneration === before && !document.hidden) reviveStream();
+    if (connectionGeneration !== before || document.hidden) return;
+    // Samsung (platform.reconnectOnRelaunch): bilgisayar/telefon uygulamayı yalnız TV'yi bağlı görmediğinde açar. Bağlantı
+    // TV'de açık görünse de karşı taraf onu kapatmıştır (alındı gitmedi, #1248): beklemeden yeniden kurulur. Eskiden
+    // sayfa açık bağlantıya güveniyor, bilgisayar uygulamayı her seferinde boşuna öne getiriyordu. Sayfa görünür ama arka
+    // planda bırakılan bağlantı geri kurulmamışsa (öne gelişin visibilitychange'i gelmedi) o kurulur.
+    if (platform.reconnectOnRelaunch) {
+      if (resumeAfterHidden()) return;
+      if (server && !pausedByHidden && !pairingActive && !demoRunning()) {
+        diag.revived = (diag.revived || 0) + 1;
+        renderDiag();
+        connect(server);
+        return;
+      }
+    }
+    reviveStream();
   });
 
   platform.init();

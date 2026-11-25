@@ -9,6 +9,17 @@ using TizenSdb.SigningManager;
 
 namespace CouchSubs.TvInstall.Samsung;
 
+/// <summary>sdb <c>0 was_execute</c> yanıtının anlamı (Mac/iPhone SamsungSdbOpen, Android SdbOpen ile aynı).</summary>
+public enum SamsungAppLaunch
+{
+    /// <summary>Açılamadı: geliştirici modu kapalı, Host PC IP başka cihaz, TV "launch failed" dedi ya da yanıt anlaşılmadı.</summary>
+    Failed,
+    /// <summary>Uygulama kapalıydı, yeni açıldı ("app_id[…] launched"): sayfa baştan yüklenir.</summary>
+    Launched,
+    /// <summary>Uygulama zaten çalışıyordu, yalnız öne geldi ("app_id[…] resumed"): sayfa yeniden yüklenmez.</summary>
+    Resumed,
+}
+
 public enum SamsungInstallError
 {
     /// <summary>TV'de geliştirici modu kapalı ya da TV'ye girilen bilgisayar IP'si bu bilgisayarınki değil.</summary>
@@ -139,26 +150,77 @@ public sealed partial class SamsungTvInstaller(string host, string profilesDirec
     /// Uzaktan kumanda bağlantısıyla (8002) açma bazı TV'lerde (Tizen 9.0) sessizce çalışmıyordu; sdb izin sormaz ve
     /// TV'de bildirim çıkarmaz. Geliştirici modu kapalıysa ya da Host PC IP başka bilgisayarınsa false döner.
     /// </summary>
-    public async Task<bool> OpenAsync(CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// <paramref name="restart"/>: uygulama önce <c>was_kill</c> ile kapatılır, sonra açılır (sayfa temiz yüklenir). #1248:
+    /// akışı kopan TV uygulaması çalışmayı sürdürüyordu, <c>was_execute</c> "resumed" diyor ve sayfa yeniden bağlanmıyordu.
+    /// </remarks>
+    public async Task<SamsungAppLaunch> OpenAsync(bool restart = false, CancellationToken cancellationToken = default)
     {
-        Log.Write($"--- Samsung: TV uygulaması bağlı değil, açılıyor (TV {host})");
+        Log.Write(restart
+            ? $"--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV {host})"
+            : $"--- Samsung: TV uygulaması bağlı değil, açılıyor (TV {host})");
         try
         {
             await using var device = await ConnectAsync(cancellationToken);
-            var reply = await device.ShellCommandAsync($"0 was_execute {AppId}", cancellationToken);
-            Log.Write($"Uygulama açılıyor: {reply.Trim()}");
-            return Launched(reply);
+            return await OpenWithAsync(command => device.ShellCommandAsync(command, cancellationToken), restart, Log,
+                () => Task.Delay(KillSettle, cancellationToken));
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {
             Log.Write($"Uygulama açılamadı: {error.Message}");
-            return false;
+            return SamsungAppLaunch.Failed;
         }
     }
 
-    /// <summary><c>was_execute</c> yanıtı uygulamanın açıldığını söylüyor mu ("app_id[…] launched").</summary>
-    internal static bool Launched(string reply) =>
-        reply.Contains("] launched", StringComparison.Ordinal) && !reply.Contains("fail", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Kapatma ile yeniden açma arasındaki bekleme (TV süreci bırakabilsin).</summary>
+    internal static readonly TimeSpan KillSettle = TimeSpan.FromSeconds(1.5);
+
+    /// <summary>Çalışan uygulamayı kapatma komutları: önce uygulama kimliği, sonra paket kimliği (TV yazılımına göre biri tutar).</summary>
+    internal static string[] KillCommands => [$"0 was_kill {AppId}", $"0 was_kill {PackageId}"];
+
+    /// <summary>
+    /// sdb ile açar (Mac/iPhone SamsungLauncher.openOverSdb ve Android ile aynı sıra). <paramref name="restart"/>: önce
+    /// <c>was_kill</c>, <paramref name="pause"/> kadar beklenip <c>was_execute</c>; TV hâlâ "resumed" derse paket
+    /// kimliğiyle bir kez daha kapatılıp açılır.
+    /// </summary>
+    internal static async Task<SamsungAppLaunch> OpenWithAsync(Func<string, Task<string>> shell, bool restart, InstallLog log,
+        Func<Task> pause)
+    {
+        async Task<SamsungAppLaunch> ExecuteAsync()
+        {
+            var reply = await shell($"0 was_execute {AppId}");
+            log.Write($"Uygulama açılıyor: {reply.Trim()}");
+            return LaunchResult(reply);
+        }
+        if (!restart) return await ExecuteAsync();
+        var result = SamsungAppLaunch.Failed;
+        foreach (var kill in KillCommands)
+        {
+            string reply;
+            try { reply = await shell(kill); }
+            catch (Exception error) when (error is not OperationCanceledException) { reply = error.Message; }
+            log.Write($"Uygulama kapatılıyor ({kill}): {reply.Trim()}");
+            await pause();
+            result = await ExecuteAsync();
+            if (result != SamsungAppLaunch.Resumed) return result;
+        }
+        return result;
+    }
+
+    /// <summary><c>was_execute</c> yanıtı uygulamanın yeni açıldığını söylüyor mu ("app_id[…] launched").</summary>
+    internal static bool Launched(string reply) => LaunchResult(reply) == SamsungAppLaunch.Launched;
+
+    /// <summary>
+    /// <c>was_execute</c> yanıtı: "app_id[…] launched" yeni açıldı; "app_id[…] resumed" zaten çalışıyordu, yalnız öne geldi
+    /// (sayfa yeniden yüklenmez). Mac/iPhone SamsungLauncher.sdbOpen ve Android ile aynı.
+    /// </summary>
+    internal static SamsungAppLaunch LaunchResult(string reply)
+    {
+        if (reply.Contains("fail", StringComparison.OrdinalIgnoreCase)) return SamsungAppLaunch.Failed;
+        if (reply.Contains("] launched", StringComparison.Ordinal)) return SamsungAppLaunch.Launched;
+        if (reply.Contains("] resumed", StringComparison.Ordinal)) return SamsungAppLaunch.Resumed;
+        return SamsungAppLaunch.Failed;
+    }
 
     /// <summary>Bu TV için kayıtlı geçerli sertifika var mı (giriş gerekmeden kurulabilir mi)?</summary>
     public async Task<bool> HasCertificateAsync(CancellationToken cancellationToken = default)
@@ -482,14 +544,19 @@ public sealed partial class SamsungTvInstaller(string host, string profilesDirec
 
     /// <summary>
     /// Uygulamayı açar; açılmasa da kurulum başarılıdır (Mac ve Windows uygulaması da ayrıca açar). TizenSdb ve
-    /// Apps2Samsung <c>was_execute</c> kullanır; eski <c>execute</c> bazı TV'lerde yoktur.
+    /// Apps2Samsung <c>was_execute</c> kullanır; eski <c>execute</c> bazı TV'lerde yoktur. TV "resumed" derse eski sayfa
+    /// hâlâ çalışıyordur (yeni sürüm yüklenmedi, akışa bağlanmıyor; #1248): uygulama kapatılıp yeniden açılır (Mac,
+    /// iPhone ve Android ile aynı).
     /// </summary>
     private async Task LaunchAsync(SdbTcpDevice device, CancellationToken cancellationToken)
     {
         try
         {
-            var reply = await device.ShellCommandAsync($"0 was_execute {AppId}", cancellationToken);
-            Log.Write($"Uygulama açılıyor: {reply.Trim()}");
+            Task<string> Shell(string command) => device.ShellCommandAsync(command, cancellationToken);
+            Task Pause() => Task.Delay(KillSettle, cancellationToken);
+            if (await OpenWithAsync(Shell, restart: false, Log, Pause) != SamsungAppLaunch.Resumed) return;
+            Log.Write("Uygulama zaten çalışıyordu (eski sayfa); kapatılıp yeniden açılıyor");
+            await OpenWithAsync(Shell, restart: true, Log, Pause);
         }
         catch (Exception error) when (error is not OperationCanceledException)
         {

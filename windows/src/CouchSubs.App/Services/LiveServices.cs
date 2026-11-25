@@ -178,8 +178,10 @@ public sealed class LiveServices : IAppServices
                 }
             }, () => SamsungDiscovery.SearchAsync(), onMoved, log: new TvInstall.InstallLog(TvInstallLogPath).Write);
             // Önce geliştirici bağlantısı (sdb) denenir; uzaktan kumanda bağlantısıyla açma bazı TV'lerde sessizce çalışmıyordu.
+            // "resumed" (uygulama çalışıyor ama bağlı değil) 8002'ye düşmez; bağlanmazsa sdb ile kapatılıp açılır (#1248).
             var host = tv.Host;
-            return new Keeper(new TvKeeper(() => Task.FromResult<ITvControl>(new SamsungLauncher(() => OpenSamsungAppAsync(host), samsungLocator.ConnectAsync)),
+            return new Keeper(new TvKeeper(() => Task.FromResult<ITvControl>(new SamsungLauncher(restart => OpenSamsungAppAsync(host, restart),
+                    appConnected, samsungLocator.ConnectAsync)),
                 SamsungClient.AppId, parameters, appConnected, onOpenResult: onOpenResult));
         }
         var locator = new TvLocator(tv, async target =>
@@ -303,42 +305,29 @@ public sealed class LiveServices : IAppServices
     public Task<bool> IsSamsungDevModeOnAsync(string host) => SamsungTvInstaller.IsDevModeOnAsync(host);
 
     /// <summary>
-    /// Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb) açar. Geliştirici modu kapalıysa, Host PC IP başka
-    /// bilgisayarınsa ya da TV açmadıysa false döner.
+    /// Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb) açar; <paramref name="restart"/> ise önce kapatır. Geliştirici
+    /// modu kapalıysa, Host PC IP başka bilgisayarınsa ya da TV açmadıysa Failed; uygulama zaten çalışıyorsa Resumed.
     /// </summary>
-    private static async Task<bool> OpenSamsungAppAsync(string host)
+    private static async Task<SamsungSdbOpen> OpenSamsungAppAsync(string host, bool restart)
     {
-        if (string.IsNullOrEmpty(host) || !await SamsungTvInstaller.IsDevModeOnAsync(host)) return false;
+        if (string.IsNullOrEmpty(host) || !await SamsungTvInstaller.IsDevModeOnAsync(host)) return SamsungSdbOpen.Failed;
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         var log = new TvInstall.InstallLog(TvInstallLogPath);
         var installer = new SamsungTvInstaller(host, DataDirectory("samsung"), new SamsungCertificates(http, log)) { Log = log };
         try
         {
-            return await Task.Run(() => installer.OpenAsync());
+            return await Task.Run(() => installer.OpenAsync(restart)) switch
+            {
+                SamsungAppLaunch.Launched => SamsungSdbOpen.Launched,
+                SamsungAppLaunch.Resumed => SamsungSdbOpen.Resumed,
+                _ => SamsungSdbOpen.Failed,
+            };
         }
         catch (Exception error)
         {
             log.Write($"Uygulama açılamadı: {error.Message}");
-            return false;
+            return SamsungSdbOpen.Failed;
         }
-    }
-
-    /// <summary>
-    /// Bekçinin Samsung'da TV uygulamasını açma yolu: önce geliştirici bağlantısı (sdb), olmazsa uzaktan kumanda
-    /// bağlantısı (8002, ilk bağlantıda TV izin sorar). Samsung önplandaki uygulamayı söylemez; bekçi yalnız açar.
-    /// </summary>
-    private sealed class SamsungLauncher(Func<Task<bool>> openWithSdb, Func<Task<ITvControl>> connectRemote) : ITvControl
-    {
-        public async Task LaunchAsync(string appId, IReadOnlyDictionary<string, string> parameters, CancellationToken cancellationToken = default)
-        {
-            if (await openWithSdb()) return;
-            using var remote = await connectRemote();
-            await remote.LaunchAsync(appId, parameters, cancellationToken);
-        }
-
-        public Task<string> ForegroundAppIdAsync(CancellationToken cancellationToken = default) => Task.FromResult("");
-
-        public void Dispose() { }
     }
 
     public async Task<SamsungPreflight> CheckSamsungAsync(string host)

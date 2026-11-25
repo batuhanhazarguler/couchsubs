@@ -105,6 +105,43 @@ public class SamsungInstallTests
     public void LaunchReplyIsRead(string reply, bool launched) =>
         Assert.Equal(launched, SamsungTvInstaller.Launched(reply));
 
+    [Theory]
+    // #1248 (Samsung 2020, gerçek yanıt): uygulama zaten çalışıyordu, yalnız öne geldi. Başarısızlık değil.
+    [InlineData("launch app CouchSubsT.CouchSubs\napp_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] resumed\nspend time for wascmd is [82]ms", SamsungAppLaunch.Resumed)]
+    [InlineData("launch app CouchSubsT.CouchSubs\napp_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] launched\nspend time for wascmd is [331]ms", SamsungAppLaunch.Launched)]
+    [InlineData("app_id[CouchSubsT.CouchSubs] launch start\napp_id[CouchSubsT.CouchSubs] launch failed", SamsungAppLaunch.Failed)]
+    [InlineData("", SamsungAppLaunch.Failed)]
+    public void LaunchReplyTellsResumedFromLaunched(string reply, SamsungAppLaunch expected) =>
+        Assert.Equal(expected, SamsungTvInstaller.LaunchResult(reply));
+
+    [Fact]
+    public async Task RestartKillsThenExecutesAndTriesThePackageIdIfStillResumed()
+    {
+        List<string> commands = [];
+        var executes = new Queue<string>(["app_id[CouchSubsT.CouchSubs] resumed", "app_id[CouchSubsT.CouchSubs] launched"]);
+        var pauses = 0;
+        var log = TempLog();
+        var result = await SamsungTvInstaller.OpenWithAsync(command =>
+        {
+            commands.Add(command);
+            return Task.FromResult(command.StartsWith("0 was_execute", StringComparison.Ordinal) ? executes.Dequeue() : "");
+        }, restart: true, log, () => { pauses++; return Task.CompletedTask; });
+        Assert.Equal(SamsungAppLaunch.Launched, result);
+        Assert.Equal(["0 was_kill CouchSubsT.CouchSubs", "0 was_execute CouchSubsT.CouchSubs",
+                      "0 was_kill CouchSubsT", "0 was_execute CouchSubsT.CouchSubs"], commands);
+        Assert.Equal(2, pauses);
+        Assert.Contains("Uygulama kapatılıyor (0 was_kill CouchSubsT.CouchSubs)", File.ReadAllText(log.Path!));
+
+        commands.Clear();
+        var plain = await SamsungTvInstaller.OpenWithAsync(command =>
+        {
+            commands.Add(command);
+            return Task.FromResult("app_id[CouchSubsT.CouchSubs] resumed");
+        }, restart: false, new InstallLog(null), () => throw new InvalidOperationException("beklenmemeli"));
+        Assert.Equal(SamsungAppLaunch.Resumed, plain);
+        Assert.Equal(["0 was_execute CouchSubsT.CouchSubs"], commands);
+    }
+
     [Fact]
     public void UnrelatedFailedWordIsNotAFailure()
     {

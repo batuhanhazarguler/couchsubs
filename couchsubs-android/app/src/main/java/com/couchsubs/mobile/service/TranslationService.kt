@@ -375,18 +375,21 @@ class TranslationService : Service() {
             if (LiveState.status.value.tvOpenProblem != shown) LiveState.update { it.copy(tvOpenProblem = shown) }
         }
         // Samsung: önce geliştirici bağlantısı (sdb `was_execute`); sdb portu kapalıysa beklemeden uzaktan kumandaya geçilir.
-        val openWithSdb: () -> Boolean = {
+        // "resumed" (uygulama çalışıyor ama bağlı değil) 8002'ye düşmez; bağlanmazsa sdb ile kapatılıp açılır (#1248).
+        val openWithSdb: (Boolean) -> com.couchsubs.mobile.tv.samsung.SdbOpen = open@{ restart ->
             val tv = settings.installedTv
-            tv != null && tv.brand == com.couchsubs.mobile.tv.TvBrand.SAMSUNG &&
-                com.couchsubs.mobile.tv.android.AndroidTvInstaller.isReachable(tv.host, com.couchsubs.mobile.tv.samsung.SdbConnection.PORT) &&
-                com.couchsubs.mobile.tv.samsung.SamsungInstaller(
+            if (tv == null || tv.brand != com.couchsubs.mobile.tv.TvBrand.SAMSUNG ||
+                !com.couchsubs.mobile.tv.android.AndroidTvInstaller.isReachable(tv.host, com.couchsubs.mobile.tv.samsung.SdbConnection.PORT)) {
+                return@open com.couchsubs.mobile.tv.samsung.SdbOpen.FAILED
+            }
+            com.couchsubs.mobile.tv.samsung.SamsungInstaller(
                     host = tv.host,
                     profilesDirectory = java.io.File(noBackupFilesDir, "samsung"),
                     adbKey = { com.couchsubs.mobile.tv.samsung.AdbKey.loadOrCreate(java.io.File(noBackupFilesDir, "sdb/adbkey")) },
                     certificates = com.couchsubs.mobile.tv.samsung.SamsungCertificates(),
                     signIn = null,
                     log = com.couchsubs.mobile.tv.samsung.InstallLog(java.io.File(filesDir, "tvinstall.log")),
-                ).openApp()
+                ).openApp(restart)
         }
         // Gönderilmeyen açma isteği (kurulu olduğu doğrulanmadı) tvinstall.log'a da yazılır (Windows/Mac/iPhone ile aynı).
         val tvInstallLog = com.couchsubs.mobile.tv.samsung.InstallLog(java.io.File(filesDir, "tvinstall.log"))

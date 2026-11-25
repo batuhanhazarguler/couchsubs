@@ -751,3 +751,16 @@ test('Tizen 2.3: TVWindow show istisna atarsa ya da reddederse uygulama kapanmaz
   assert.deepEqual(statuses, ['loading', 'inputError']);
   assert.match(loaded.diagnostics[loaded.diagnostics.length - 1], /front fail NotSupportedError/);
 });
+
+// #1248: sdb was_execute çalışan uygulamayı parametresiz öne getirir ("resumed"); eskiden parametresiz appcontrol sayfaya
+// bildirilmiyordu ve kopan akış yeniden kurulmuyordu. Her yeniden açılış bildirilir, Samsung bağlantıyı yeniden kurar.
+test('Tizen: parametresiz yeniden açılış (appcontrol) da sayfaya bildirilir; yeniden açılışta bağlantı yenilenir', () => {
+  const loaded = load(1920, 1080);
+  const listeners = {};
+  loaded.window.addEventListener = (name, fn) => { listeners[name] = fn; };
+  const calls = [];
+  loaded.platform.onRelaunch((params) => calls.push(params));
+  listeners.appcontrol();
+  assert.deepEqual(calls, [null]);
+  assert.equal(loaded.platform.reconnectOnRelaunch, true);
+});

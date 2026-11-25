@@ -37,6 +37,12 @@ class InstallLog(val file: File?) {
 enum class InstallStep { CONNECTING, READING, SIGN_IN, CERTIFICATE, SIGNING, INSTALLING, UNINSTALLING, LAUNCHING, PAIRING, APPROVE_ON_TV, KEY, OPEN_PLAY }
 
 /**
+ * sdb `0 was_execute` yanıtının anlamı (Windows SamsungAppLaunch, Mac/iPhone SamsungSdbOpen ile aynı). FAILED: açılamadı;
+ * LAUNCHED: kapalıydı, yeni açıldı; RESUMED: zaten çalışıyordu, yalnız öne geldi (sayfa yeniden yüklenmez).
+ */
+enum class SdbOpen { FAILED, LAUNCHED, RESUMED }
+
+/**
  * CouchSubs'ın Samsung TV uygulamasını geliştirici modu açık TV'ye bu telefondan kurar: TV'nin DUID'ini okur, gerekirse
  * Samsung hesabıyla TV'ye özel sertifika alır, paketi imzalar, kurar ve açar. Çağrılar bloklar; IO iş parçacığında çalışır.
  *
@@ -76,8 +82,47 @@ class SamsungInstaller(
         /** Bu sürüme kadar (dahil) TV, kurulumdan önce dağıtıcının cihaz profilini (device-profile.xml) ister. */
         const val DEVICE_PROFILE_UP_TO = "4.0"
 
-        /** `0 was_execute` yanıtı uygulamanın açıldığını söylüyor mu ("app_id[…] launched"; Windows/Mac/iPhone ile aynı). */
-        fun sdbLaunched(reply: String): Boolean = reply.contains("] launched") && !reply.contains("fail", ignoreCase = true)
+        /** `0 was_execute` yanıtı uygulamanın yeni açıldığını söylüyor mu ("app_id[…] launched"; Windows/Mac/iPhone ile aynı). */
+        fun sdbLaunched(reply: String): Boolean = sdbOpen(reply) == SdbOpen.LAUNCHED
+
+        /**
+         * `0 was_execute` yanıtı: "app_id[…] launched" yeni açıldı; "app_id[…] resumed" zaten çalışıyordu, yalnız öne geldi
+         * (sayfa yeniden yüklenmez; #1248). Windows SamsungTvInstaller.LaunchResult, Mac/iPhone SamsungLauncher.sdbOpen ile aynı.
+         */
+        fun sdbOpen(reply: String): SdbOpen = when {
+            reply.contains("fail", ignoreCase = true) -> SdbOpen.FAILED
+            reply.contains("] launched") -> SdbOpen.LAUNCHED
+            reply.contains("] resumed") -> SdbOpen.RESUMED
+            else -> SdbOpen.FAILED
+        }
+
+        /** Kapatma ile yeniden açma arasındaki bekleme (TV süreci bırakabilsin). */
+        const val KILL_SETTLE_MS = 1_500L
+
+        /** Çalışan uygulamayı kapatma komutları: önce uygulama kimliği, sonra paket kimliği (TV yazılımına göre biri tutar). */
+        val KILL_COMMANDS = listOf("0 was_kill $APP_ID", "0 was_kill $PACKAGE_ID")
+
+        /**
+         * sdb ile açar (Windows OpenWithAsync, Mac/iPhone SamsungLauncher.openOverSdb ile aynı sıra). [restart]: önce
+         * `was_kill`, [pause] kadar beklenip `was_execute`; TV hâlâ "resumed" derse paket kimliğiyle bir kez daha.
+         */
+        internal fun openOverSdb(restart: Boolean, shell: (String) -> String, pause: () -> Unit, log: (String) -> Unit): SdbOpen {
+            fun execute(): SdbOpen {
+                val reply = shell("0 was_execute $APP_ID")
+                log("Uygulama açılıyor: ${reply.trim()}")
+                return sdbOpen(reply)
+            }
+            if (!restart) return execute()
+            var result = SdbOpen.FAILED
+            for (kill in KILL_COMMANDS) {
+                val reply = try { shell(kill) } catch (error: IOException) { error.message ?: "" }
+                log("Uygulama kapatılıyor ($kill): ${reply.trim()}")
+                pause()
+                result = execute()
+                if (result != SdbOpen.RESUMED) return result
+            }
+            return result
+        }
 
         fun isTooOld(platform: String) =platform.isNotEmpty() && SamsungDiagnostics.isNewer(MINIMUM_TIZEN, platform)
 
@@ -207,19 +252,19 @@ class SamsungInstaller(
     /**
      * Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, `was_execute`) açar; arka plandaysa öne getirir (Windows, Mac ve
      * iPhone'daki bekçiyle aynı). sdb izin sormaz, TV'de bildirim çıkarmaz. Geliştirici modu kapalıysa ya da Host PC IP başka
-     * cihazınsa false.
+     * cihazınsa [SdbOpen.FAILED]; uygulama zaten çalışıyorsa [SdbOpen.RESUMED]. [restart]: önce `was_kill` ile kapatılır,
+     * sonra açılır (sayfa temiz yüklenir; #1248).
      */
-    fun openApp(): Boolean {
-        log.write("--- Samsung: TV uygulaması bağlı değil, açılıyor (TV $host)")
+    fun openApp(restart: Boolean = false): SdbOpen {
+        log.write(if (restart) "--- Samsung: TV uygulaması çalışıyor ama bağlanmadı, kapatılıp açılıyor (TV $host)"
+                  else "--- Samsung: TV uygulaması bağlı değil, açılıyor (TV $host)")
         return try {
             connect().use { device ->
-                val reply = device.shell("0 was_execute $APP_ID")
-                log.write("Uygulama açılıyor: ${reply.trim()}")
-                sdbLaunched(reply)
+                openOverSdb(restart, shell = { device.shell(it) }, pause = { Thread.sleep(KILL_SETTLE_MS) }, log = log::write)
             }
         } catch (error: Exception) {
             log.write("Uygulama açılamadı: ${error.message}")
-            false
+            SdbOpen.FAILED
         }
     }
 
@@ -349,11 +394,18 @@ class SamsungInstaller(
         null
     }
 
-    /** Uygulamayı açar; açılmasa da kurulum başarılıdır. */
+    /**
+     * Uygulamayı açar; açılmasa da kurulum başarılıdır. TV "resumed" derse eski sayfa hâlâ çalışıyordur (yeni sürüm
+     * yüklenmedi, akışa bağlanmıyor; #1248): uygulama kapatılıp yeniden açılır (Windows, Mac ve iPhone ile aynı).
+     */
     private fun launch(device: SdbConnection) {
         progress(InstallStep.LAUNCHING)
         try {
-            log.write("Uygulama açılıyor: ${device.shell("0 was_execute $APP_ID").trim()}")
+            val shell: (String) -> String = { device.shell(it) }
+            val pause = { Thread.sleep(KILL_SETTLE_MS) }
+            if (openOverSdb(false, shell, pause, log::write) != SdbOpen.RESUMED) return
+            log.write("Uygulama zaten çalışıyordu (eski sayfa); kapatılıp yeniden açılıyor")
+            openOverSdb(true, shell, pause, log::write)
         } catch (error: IOException) {
             log.write("Uygulama açılamadı (kurulum yine tamam): ${error.message}")
         }

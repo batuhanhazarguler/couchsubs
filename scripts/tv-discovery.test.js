@@ -67,8 +67,8 @@ function element() {
 // {"app":"couchsubs"} döner. savedId: TV'nin kayıtlı CouchSubs kimliği. params: başlatma parametreleri.
 // auth: sunucunun eşleştirme durumu; storedKeys/identities: TV'de kayıtlı anahtarlar ve sunucu kimlikleri.
 // noPicture: görüntü vermeyen girişler; noPictureHelp: görüntü gelmezse app.js kutuyu açar (LG, Samsung gibi);
-// labels: platform.inputLabel'ın verdiği giriş adları.
-function startTv({ saved, alive, localIp, localMask, hasLocalAddress, consolePort, savedHdmi, resolution, closeWhenHidden, panelTips, hello, savedId, params,
+// labels: platform.inputLabel'ın verdiği giriş adları. reconnectOnRelaunch: yeniden açılışta bağlantı yeniden kurulur (Samsung).
+function startTv({ saved, alive, localIp, localMask, hasLocalAddress, consolePort, savedHdmi, resolution, closeWhenHidden, reconnectOnRelaunch, panelTips, hello, savedId, params,
                    auth = null, storedKeys = null, identities = null, noPicture = [], noPictureHelp = false, labels = null,
                    subtitleBand = 0 }) {
   const clock = makeClock();
@@ -178,6 +178,7 @@ function startTv({ saved, alive, localIp, localMask, hasLocalAddress, consolePor
   }
   if (hasLocalAddress) platform.localAddress = (cb) => clock.setTimeout(() => cb(localIp || null, localMask || null), 10);
   if (closeWhenHidden) platform.closeWhenHidden = true;
+  if (reconnectOnRelaunch) platform.reconnectOnRelaunch = true;
   if (noPictureHelp) platform.noPictureHelp = true;
   if (labels) platform.inputLabel = (port) => labels[port] || '';
   if (subtitleBand) platform.subtitleBand = subtitleBand;
@@ -227,6 +228,7 @@ function startTv({ saved, alive, localIp, localMask, hasLocalAddress, consolePor
 
   return {
     clock,
+    document,
     saved: () => storage.get('couchsubs.server'),
     requests,
     storage,
@@ -720,6 +722,48 @@ test('Samsung: arka plana düşen uygulama bağlantıyı kapatır, yeniden bağl
   tv.clock.advance(1000);
   assert.strictEqual(tv.openStreams().length, 1);
   assert.strictEqual(tv.lastOpened(), 'http://192.168.1.109:8787/events');
+});
+
+// #1248 (Samsung 2020): bilgisayar akışı "alındı gelmedi" diye kapatmıştı, TV bağlantıyı açık görüp "Bağlı" diyordu.
+// Bilgisayar uygulamayı sdb ile öne getirdi (was_execute "resumed", parametresiz appcontrol): bağlantı yeniden kurulur.
+test('Samsung: parametresiz yeniden açılışta açık görünen bağlantı da yeniden kurulur', () => {
+  const tv = startTv({ saved: 'http://192.168.1.109:8787', alive: new Set(['http://192.168.1.109:8787']),
+    hasLocalAddress: false, closeWhenHidden: true, reconnectOnRelaunch: true });
+  tv.clock.advance(1000);
+  const count = tv.streamCount();
+  assert.strictEqual(tv.openStreams().length, 1);
+  tv.relaunch(null);
+  tv.clock.advance(150);
+  assert.strictEqual(tv.streamCount(), count + 1, 'yeniden açılışta bağlantı kurulmadı');
+  assert.strictEqual(tv.openStreams().length, 1);
+  assert.strictEqual(tv.lastOpened(), 'http://192.168.1.109:8787/events');
+  // Arka plandayken gelen açılışa dokunulmaz (öne gelince visibilitychange kurar).
+  tv.setHidden(true);
+  tv.relaunch(null);
+  tv.clock.advance(150);
+  assert.strictEqual(tv.openStreams().length, 0);
+});
+
+test('Samsung: öne gelişin visibilitychange\'i gelmese de yeniden açılış arka planda bırakılan bağlantıyı kurar', () => {
+  const tv = startTv({ saved: 'http://192.168.1.109:8787', alive: new Set(['http://192.168.1.109:8787']),
+    hasLocalAddress: false, closeWhenHidden: true, reconnectOnRelaunch: true });
+  tv.clock.advance(1000);
+  tv.setHidden(true);
+  assert.strictEqual(tv.openStreams().length, 0);
+  // TV sayfayı görünür yaptı ama olay göndermedi; bilgisayar uygulamayı yeniden açtı.
+  tv.document.hidden = false;
+  tv.relaunch(null);
+  tv.clock.advance(150);
+  assert.strictEqual(tv.openStreams().length, 1);
+});
+
+test('LG: yeniden açılışta açık bağlantıya dokunulmaz (reconnectOnRelaunch yalnız Samsung)', () => {
+  const tv = startTv({ saved: 'http://192.168.1.109:8787', alive: new Set(['http://192.168.1.109:8787']), hasLocalAddress: false });
+  tv.clock.advance(1000);
+  const count = tv.streamCount();
+  tv.relaunch(null);
+  tv.clock.advance(150);
+  assert.strictEqual(tv.streamCount(), count);
 });
 
 // X (TCL Q6C Google TV): PS5 60 Hz'e geçince TV kendi HDMI oynatıcısını öne çekiyor, CouchSubs arka planda kalıyordu;

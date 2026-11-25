@@ -20,6 +20,9 @@ function couchsubs({ link, latest }) {
   const acks = [];
   let opened = 0;
   let known = new Set();
+  // Alındı isteği bağlantı kesilerek düşürülür (ağ hatası) ya da 500 alır.
+  let ackFault = null;
+  let ackFaultsLeft = null;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://x');
     if (url.pathname === '/hello') return res.end(JSON.stringify({ app: 'couchsubs', auth: 1, id: ID, tvs: streams.length }));
@@ -28,6 +31,10 @@ function couchsubs({ link, latest }) {
     }
     if (url.pathname === '/ack' && url.searchParams.get('k') === KEY) {
       acks.push(url.searchParams.get('c'));
+      const fault = ackFault;
+      if (fault !== null && ackFaultsLeft !== null && --ackFaultsLeft <= 0) { ackFault = null; ackFaultsLeft = null; }
+      if (fault === 'drop') return req.socket.destroy();
+      if (fault === 500) { res.statusCode = 500; return res.end(); }
       res.statusCode = known.has(url.searchParams.get('c')) ? 204 : 404;
       return res.end();
     }
@@ -53,6 +60,8 @@ function couchsubs({ link, latest }) {
     acks,
     opened: () => opened,
     forget() { known = new Set(); },
+    // count verilirse yalnız o kadar alındı bozulur.
+    failAcks(fault, count = null) { ackFault = fault; ackFaultsLeft = count; },
     close() { clearInterval(pings); for (const res of streams) res.destroy(); server.close(); }
   })));
 }
@@ -88,6 +97,47 @@ test('TV her ping\'de alındı gönderir; bilgisayar akışı tanımazsa hemen y
     await until(() => server.opened() === 2, 'yeniden bağlanma', 3000);
     await until(() => server.acks.includes('link2'), 'yeni akışın alındısı');
     assert.doesNotMatch(page.diag(), / err /);
+  } finally {
+    page.close();
+    server.close();
+  }
+});
+
+// #1248 (Samsung 2020): alındı bilgisayara ulaşmıyordu; bilgisayar 3 turdan sonra akışı kapattı, TV bağlantıyı açık görüp
+// "Bağlı" demeyi sürdürdü ve bir daha bağlanmadı. Alındı üst üste ulaşmazsa TV de beklemeden yeniden bağlanır.
+for (const fault of ['drop', 500]) {
+  test(`alındı üst üste ulaşmazsa (${fault === 'drop' ? 'ağ hatası' : 'HTTP 500'}) TV yeniden bağlanır`, async () => {
+    const server = await couchsubs({ link: true });
+    const page = pageFor(server.address);
+    try {
+      await until(() => page.status() === 'bağlı' && server.opened() === 1, 'bağlanma');
+      await until(() => server.acks.filter((c) => c === 'link1').length >= 2, 'alındılar');
+      server.failAcks(fault);
+      await until(() => server.opened() === 2, 'yeniden bağlanma', 3000);
+      server.failAcks(null);
+      await until(() => server.acks.includes('link2'), 'yeni akışın alındısı');
+      // Alındı yeniden ulaşıyor: bağlantı yerinde kalır.
+      const opened = server.opened();
+      await new Promise((r) => setTimeout(r, 600));
+      assert.equal(server.opened(), opened);
+    } finally {
+      page.close();
+      server.close();
+    }
+  });
+}
+
+test('tek bir ulaşmayan alındı bağlantıyı yenilemez', async () => {
+  const server = await couchsubs({ link: true });
+  const page = pageFor(server.address);
+  try {
+    await until(() => page.status() === 'bağlı' && server.opened() === 1, 'bağlanma');
+    await until(() => server.acks.length >= 2, 'alındılar');
+    const before = server.acks.length;
+    server.failAcks(500, 1);
+    await until(() => server.acks.length >= before + 3, 'sonraki alındılar');
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(server.opened(), 1);
   } finally {
     page.close();
     server.close();

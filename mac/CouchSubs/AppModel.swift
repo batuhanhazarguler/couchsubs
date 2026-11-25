@@ -349,7 +349,9 @@ final class LiveServices: AppServices {
             // Önce geliştirici bağlantısı (sdb) denenir: uzaktan kumanda bağlantısıyla açma Tizen 9.0'da (2025 Neo QLED,
             // OLED) sessizce çalışmıyor, arka plana düşen TV uygulaması geri gelmiyordu (Windows'ta #412).
             let host = tv.host
-            return TVKeeper(connect: { SamsungLauncher(openWithSdb: { await Self.openSamsungApp(host: host) },
+            // "resumed" (uygulama çalışıyor ama bağlı değil) 8002'ye düşmez; bağlanmazsa sdb ile kapatılıp açılır (#1248).
+            return TVKeeper(connect: { SamsungLauncher(openWithSdb: { await Self.openSamsungApp(host: host, restart: $0) },
+                                                       appConnected: appConnected,
                                                        connectRemote: { try await locator.connect() }) },
                             appId: AppIdentity.samsungAppId, params: params, appConnected: appConnected, onOpenResult: onOpenResult)
         case .lg:
@@ -454,14 +456,15 @@ final class LiveServices: AppServices {
         return (version, result.installed)
     }
 
-    /// Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, `was_execute`) açar. Geliştirici modu kapalıysa, Host PC IP
-    /// başka bilgisayarınsa ya da TV açmadıysa false döner.
-    static func openSamsungApp(host: String) async -> Bool {
-        guard !host.isEmpty, await isPortOpen(host: host, port: 26101) else { return false }
+    /// Kurulu TV uygulamasını geliştirici bağlantısıyla (sdb, `was_execute`) açar; `restart` ise önce kapatır (`was_kill`).
+    /// Geliştirici modu kapalıysa, Host PC IP başka bilgisayarınsa ya da TV açmadıysa `.failed`; uygulama zaten çalışıyor
+    /// ve yalnız öne geldiyse `.resumed`.
+    static func openSamsungApp(host: String, restart: Bool = false) async -> SamsungSdbOpen {
+        guard !host.isEmpty, await isPortOpen(host: host, port: 26101) else { return .failed }
         let result = try? await TVHelper.run(["samsung-open", "--host", host,
                                               "--profiles", TVHelper.dataDirectory.appendingPathComponent("samsung").path,
-                                              "--log", TVInstallLog.file.path])
-        return result?.installed == true
+                                              "--log", TVInstallLog.file.path] + (restart ? ["--restart"] : []))
+        return result.map(TVHelper.sdbOpen) ?? .failed
     }
 
     func isAndroidDebugOn(host: String) async -> Bool { await Self.isPortOpen(host: host, port: 5555) }

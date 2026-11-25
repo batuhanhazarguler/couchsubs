@@ -118,6 +118,14 @@ enum TVHelper {
         var version: String?
         var installed = false
         var hosts: [String] = []
+        /// samsung-open: `was_execute` yanıtı ("launched", "resumed", "failed"); eski yardımcı yazmaz.
+        var state: String?
+    }
+
+    /// samsung-open sonucu: `state` yoksa (eski yardımcı) "installed" açıldı mı demektir.
+    static func sdbOpen(_ result: Result) -> SamsungSdbOpen {
+        if let state = result.state, let open = SamsungSdbOpen(rawValue: state) { return open }
+        return result.installed ? .launched : .failed
     }
 
     /// Yardımcının bir çıktı satırı.
@@ -212,7 +220,7 @@ enum TVHelper {
         case "progress": return .event(.progress(event["step"] as? String ?? ""))
         case "done", "found":
             return .finished(Result(version: event["version"] as? String, installed: event["installed"] as? Bool ?? false,
-                                    hosts: event["hosts"] as? [String] ?? []))
+                                    hosts: event["hosts"] as? [String] ?? [], state: event["state"] as? String))
         case "error": return .failed(failure(code: event["code"] as? String, message: event["message"] as? String))
         default: return nil
         }
