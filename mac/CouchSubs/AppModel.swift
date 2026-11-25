@@ -3666,8 +3666,8 @@ final class AppModel: ObservableObject {
                 SubtitleLog.write("takılan okuma bırakıldı, okuyucu yeniden kuruldu: okuma \(ms) ms'dir dönmüyordu; \(rescued ? "yeni okuyucu sınanıyor, altyazı yedek okuyucudan sürüyor" : "okuma yeni okuyucuda sürüyor")")
             case .recoveredAfterRebuild(let reads):
                 SubtitleLog.write("okuma düzeldi (yeniden kurulumdan sonra): yeni okuyucu art arda \(reads) okumayı süresinde bitirdi; asıl okuyucuya dönüldü, yedek kapatıldı")
-            case .parked(let still, let rescued):
-                SubtitleLog.write("yeni okuyucu da tek okuma bitiremeden takıldı: macOS yazı tanıma kilidi bırakılan okumada (bitmeyen: \(still)); yeniden kurma durdu, \(rescued ? "okumalar yedek okuyucuda (ayrı süreç) sürüyor" : "yedek okuyucu yok"); kilit serbest kalınca asıl okuyucuya dönülecek")
+            case .parked(let still, _):
+                SubtitleLog.write("yeni okuyucu da tek okuma bitiremeden takıldı: macOS yazı tanıma kilidi bırakılan okumada (bitmeyen: \(still)); yeniden kurma durdu, okumalar yedek okuyucuda (ayrı süreç) sürüyor; kilit serbest kalınca asıl okuyucuya dönülecek")
             }
             Task { @MainActor in self?.readQueueChanged() }
         }
