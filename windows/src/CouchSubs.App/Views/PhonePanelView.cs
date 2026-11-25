@@ -62,6 +62,62 @@ internal static class PhonePanelView
         return root;
     }
 
+    /// <summary>
+    /// Hizalı panel (<see cref="ScreenPhoneCard.ChatPanel.Aligned"/>; Mac/iPhone PhonePanelAligned, Android PhonePanel, TV
+    /// app.js placeAlignedPanel aynı çizim): zemin kartı ve simge yok; her parça kendi kutusunda (Türkçe balon telefondaki
+    /// İngilizce balonuyla aynı yükseklikte), telefonun balon renginde %85 örtülü, yuvarlak köşeli; gelen sola, giden sağa
+    /// yaslı; kişi adı üstte küçük başlık. Gerçek yazı tahminden uzunsa alttaki parça en az kaydırmayla itilir (yazı
+    /// küçülmez, yatayda sıkıştırılmaz). Dönen öğeler alandaki yerleriyle (piksel).
+    /// </summary>
+    public static List<(FrameworkElement View, double Left, double Top)> Aligned(ScreenTranslation.Item? title,
+        IReadOnlyList<ScreenTranslation.Item> messages, double fontSize, double width, double height)
+    {
+        fontSize = Math.Max(8, fontSize);
+        var parts = title is null ? messages.ToList() : [title, .. messages];
+        var result = new List<(FrameworkElement View, double Left, double Top)>();
+        double bottom = 0, plannedBottom = 0;
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var item = parts[i];
+            var isTitle = item == title;
+            var listed = IsListRow(item);
+            var note = item.Panel == ScreenPhoneCard.PanelPart.Note && !listed;
+            var mine = item.Panel == ScreenPhoneCard.PanelPart.Mine;
+            var text = new TextBlock
+            {
+                Text = item.Translation,
+                FontSize = isTitle ? fontSize * 0.8 : listed ? fontSize * 0.92 : note ? fontSize * 0.8 : fontSize,
+                FontWeight = isTitle || item.Look?.Bold == true ? FontWeights.Bold : listed ? FontWeights.Normal
+                    : note ? FontWeights.Medium : FontWeights.SemiBold,
+                FontStretch = FontStretches.Normal,
+                Foreground = new SolidColorBrush(Parse(item.Style?.Foreground, Colors.White)),
+                TextWrapping = isTitle ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                TextTrimming = isTitle ? TextTrimming.CharacterEllipsis : TextTrimming.None,
+                TextAlignment = note ? TextAlignment.Center : TextAlignment.Left,
+            };
+            var boxWidth = Math.Max(1, (item.Box.Right - item.Box.Left) * width);
+            var bubble = new Border
+            {
+                MaxWidth = boxWidth,
+                Padding = new Thickness(fontSize * 0.6, fontSize * 0.3, fontSize * 0.6, fontSize * 0.3),
+                CornerRadius = new CornerRadius(fontSize * 0.75),
+                Background = new SolidColorBrush(Parse(item.Style?.Background, Colors.Black)) { Opacity = ScreenPhoneCard.BubbleOpacity },
+                HorizontalAlignment = mine ? HorizontalAlignment.Right : note ? HorizontalAlignment.Center : HorizontalAlignment.Left,
+                Child = text,
+            };
+            var row = new Grid { Width = boxWidth, IsHitTestVisible = false };
+            row.Children.Add(bubble);
+            row.Measure(new Size(boxWidth, double.PositiveInfinity));
+            var top = item.Box.Top * height;
+            // Çakışma: üsttekinin gerçek altına, bilgisayarın bıraktığı aralık (en çok olağan boşluk) korunarak.
+            if (i > 0) top = Math.Max(top, bottom + Math.Max(0, Math.Min(top - plannedBottom, fontSize / 0.95 * 0.6)));
+            plannedBottom = item.Box.Bottom * height;
+            bottom = top + row.DesiredSize.Height;
+            result.Add((row, item.Box.Left * width, top));
+        }
+        return result;
+    }
+
     /// <summary>Sohbet listesinin satırı (kişi adı, önizleme, bölüm başlığı): sola yaslı not; ad ve başlık kalın. Mac ile aynı.</summary>
     internal static bool IsListRow(ScreenTranslation.Item item) =>
         item.Panel == ScreenPhoneCard.PanelPart.Note && item.Look?.Align == "left";

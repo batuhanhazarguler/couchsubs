@@ -364,8 +364,10 @@ final class PhoneRegionSessionTests: XCTestCase {
             XCTAssertTrue(item.box.left >= card.left - 1e-9 && item.box.right <= card.right + 1e-9
                           && item.box.top >= card.top - 1e-9 && item.box.bottom <= card.bottom + 1e-9)
         }
-        XCTAssertEqual(items[2].style, ScreenPhoneCard.incomingColor)
-        XCTAssertEqual(items[3].style, ScreenPhoneCard.outgoingColor)
+        // Balonlar telefondaki balonun renginde (deneme karesinin balonları gri), panel hizalı.
+        XCTAssertEqual(items[2].style?.background, "#C0C0C0")
+        XCTAssertEqual(items[3].style?.background, "#C0C0C0")
+        XCTAssertTrue(items[0].aligned)
         XCTAssertLessThan(items[2].box.left, items[3].box.left, "karşı taraf solda, oyuncu sağda")
         XCTAssertLessThan(items[2].box.top, items[3].box.top)
         XCTAssertGreaterThanOrEqual(items[2].lineHeight, ScreenPhoneCard.minLine - 1e-9)

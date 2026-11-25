@@ -303,13 +303,15 @@ internal static class PhoneSteady
     internal static bool SamePicture(IReadOnlyList<ScreenTranslation.Item> a, IReadOnlyList<ScreenTranslation.Item> b)
     {
         if (a.Count != b.Count) return false;
+        // Hizalı panelde parçalar kutularının yerinde çizilir: kutuları da aynı olmalı (Mac ile aynı).
+        var aligned = a.Any(item => item.Panel == ScreenPhoneCard.PanelPart.Card && item.Aligned);
         for (int i = 0; i < a.Count; i++)
         {
             var (x, y) = (a[i], b[i]);
             bool icons = x.Icons is null ? y.Icons is null : y.Icons is not null && x.Icons.SequenceEqual(y.Icons);
             if (x.Panel != y.Panel || x.Translation != y.Translation || x.Style != y.Style || x.Look != y.Look || !icons
-                || x.Bubble != y.Bubble || x.LineHeight != y.LineHeight) return false;
-            if (x.Panel is null or ScreenPhoneCard.PanelPart.Card && x.Box != y.Box) return false;
+                || x.Bubble != y.Bubble || x.LineHeight != y.LineHeight || x.Aligned != y.Aligned) return false;
+            if ((aligned || x.Panel is null or ScreenPhoneCard.PanelPart.Card) && x.Box != y.Box) return false;
         }
         return true;
     }

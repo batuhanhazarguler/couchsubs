@@ -272,10 +272,12 @@ object PhoneSteady {
      */
     fun samePicture(a: List<ScreenTranslation.Item>, b: List<ScreenTranslation.Item>): Boolean {
         if (a.size != b.size) return false
+        // Hizalı panelde parçalar kutularının yerinde çizilir: kutuları da aynı olmalı (Mac ile aynı).
+        val aligned = a.any { it.panel == ScreenPhoneCard.PanelPart.CARD && it.aligned }
         return a.zip(b).all { (x, y) ->
             x.panel == y.panel && x.translation == y.translation && x.surface == y.surface && x.look == y.look &&
-                x.icons == y.icons && x.bubble == y.bubble && x.lineHeight == y.lineHeight &&
-                ((x.panel != null && x.panel != ScreenPhoneCard.PanelPart.CARD) || x.box == y.box)
+                x.icons == y.icons && x.bubble == y.bubble && x.lineHeight == y.lineHeight && x.aligned == y.aligned &&
+                ((!aligned && x.panel != null && x.panel != ScreenPhoneCard.PanelPart.CARD) || x.box == y.box)
         }
     }
 }

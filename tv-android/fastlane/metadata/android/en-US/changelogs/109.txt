@@ -1,0 +1,2 @@
+0.9.106: Redesigned GTA 6 phone panel; each Turkish bubble sits at the same height as its English bubble on the phone, in the phone's bubble colour.
+0.9.105: The GTA 6 phone translation stays steady on the same screen; text size and box no longer jump.

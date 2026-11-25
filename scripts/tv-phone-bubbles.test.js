@@ -39,8 +39,8 @@ function slice(app, from, to) {
   return app.slice(start, end);
 }
 
-function page(script) {
-  const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+function page(script, source) {
+  const app = source || fs.readFileSync(path.join(root, 'app.js'), 'utf8');
   const fill = slice(app, '  function fillText(', '\n  }\n') + '\n  }\n';
   const screen = slice(app, '  var screenTimer = null;', '\n  // --- Ek alanlar');
   const regions = slice(app, '  var regionBoxes = {};', '\n  // Konum hem');
@@ -66,13 +66,14 @@ function page(script) {
     </script>`;
 }
 
-function run(html, extra) {
+function run(html, extra, screen) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'couchsubs-phone-test-'));
   try {
     const file = path.join(temp, 'test.html');
     fs.writeFileSync(file, html);
     const result = spawnSync(browser, ['--headless=new', '--disable-gpu', '--disable-background-networking', '--no-first-run',
-      '--no-default-browser-check', '--hide-scrollbars', '--force-device-scale-factor=1', '--window-size=1920,1080',
+      '--no-default-browser-check', '--hide-scrollbars', '--force-device-scale-factor=' + ((screen && screen.dpr) || 1),
+      '--window-size=' + ((screen && screen.size) || '1920,1080'),
       '--allow-file-access-from-files', ...(process.platform === 'linux' ? ['--no-sandbox'] : []),
       '--user-data-dir=' + path.join(temp, 'profile'), ...extra, pathToFileURL(file).href],
     { encoding: 'utf8', timeout: 30000, windowsHide: true });
@@ -83,8 +84,8 @@ function run(html, extra) {
   }
 }
 
-function measure(script) {
-  const out = run(page(script), ['--dump-dom']);
+function measure(script, source, screen) {
+  const out = run(page(script, source), ['--dump-dom'], screen);
   const match = out.match(/<pre id="result">([^<]+)<\/pre>/);
   assert.ok(match, 'Tarayıcı ölçüm üretmedi');
   return JSON.parse(match[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#39;/g, "'"));
@@ -329,4 +330,151 @@ test('Mesajlar listesi sola yaslı liste: ad kalın, önizleme altında, başlı
   assert.equal(r.kept, true, 'aynı liste satırları yeniden yarattı');
   assert.equal(r.only, true, 'değişen tek önizleme dışında satırlar yeniden yaratıldı');
   shoot(messageList, 'tv-phone-list.png');
+});
+
+// Hizalı panel (TV uygulaması 0.9.106; Sinan Bey'in beğendiği görünüm): bilgisayar zemine `aligned: true` koyar. Zemin
+// kartı ve kanepe simgesi çizilmez; her Türkçe balon gönderilen kutusunda (telefondaki İngilizce balonuyla aynı
+// yükseklikte), telefonun balon renginde %85 örtülü; gelen sola, giden sağa yaslı; kişi adı üstte küçük başlık. Gerçek
+// yazı tahminden uzunsa alttaki balon en az kaydırmayla itilir, panel uzar. Aynı gönderi satırları yeniden yaratmaz,
+// yeri değişen satır aynı düğümle kayar. Bayraksız gönderi (eski bilgisayar) eskisi gibi akışla çizilir (yukarıdaki testler).
+const cream = { background: '#F0E8E0', foreground: '#282828' };
+const blue = { background: '#D0D8F0', foreground: '#282828' };
+const alignedBlocks = () => [
+  Object.assign(part('card', ' ', [0.31, 0.26, 0.592, 0.81], cardStyle), { aligned: true }),
+  part('title', 'Lucia', [0.323, 0.262, 0.579, 0.293], cardStyle),
+  part('theirs', 'Neredesin?', [0.323, 0.30, 0.42, 0.335], cream),
+  part('mine', 'Yoldayım, beş dakikaya oradayım.', [0.42, 0.42, 0.579, 0.455], blue),
+  // Tahmin kısa: gerçek yazı üç satır tutar, alttaki balonun kutusuyla çakışır.
+  part('theirs', 'Malzemeleri getir, sakın unutma, bu sefer gerçekten önemli, herkes bekliyor seni orada', [0.323, 0.50, 0.50, 0.535], cream),
+  part('mine', 'Tamam', [0.50, 0.545, 0.579, 0.58], blue)];
+const alignedPanel = `
+  var region = { id: 'game-phone', text: 'x', box: { left: 0.31, top: 0.26, right: 0.79, bottom: 0.81 }, blocks: ${JSON.stringify(alignedBlocks())} };
+  showRegion(region);
+  var panel = document.querySelector('.phone-panel');
+  var nodes = Array.prototype.slice.call(panel.querySelectorAll('.panel-row'));
+  nodes.forEach(function (row, i) { row.couchsubsMark = i; });
+  var rows = nodes.map(function (row) {
+    var bubble = row.querySelector('.panel-bubble'), style = getComputedStyle(bubble);
+    return { text: bubble.textContent, cls: row.className, background: style.backgroundColor, color: style.color,
+      font: parseFloat(style.fontSize), box: rect(bubble) };
+  });
+  var style = getComputedStyle(panel);
+  var info = { cls: panel.className, background: style.backgroundColor, couch: !!panel.querySelector('.panel-couch'),
+    list: !!panel.querySelector('.panel-messages'), panel: rect(panel), loose: document.querySelectorAll('#regions .item').length };
+  // Aynı gönderi: hiçbir satır yeniden yaratılmaz.
+  showRegion(JSON.parse(JSON.stringify(region)));
+  var same = Array.prototype.every.call(panel.querySelectorAll('.panel-row'), function (row, i) { return row.couchsubsMark === i; });
+  // Sohbet kaydı: kutular yukarı kayar; aynı düğümler yeni yerlerinde.
+  var moved = JSON.parse(JSON.stringify(region));
+  moved.blocks.forEach(function (b, i) { if (i > 2) { b.box.top -= 0.05; b.box.bottom -= 0.05; } });
+  showRegion(moved);
+  var after = Array.prototype.slice.call(panel.querySelectorAll('.panel-row'));
+  var follows = document.querySelector('.phone-panel') === panel && after.length === nodes.length &&
+    after.every(function (row, i) { return row.couchsubsMark === i; }) &&
+    Math.abs(parseFloat(after[2].style.top) - Math.round((0.37 - 0.26) * window.innerHeight)) <= 1;
+  $('result').textContent = JSON.stringify({ rows: rows, info: info, same: same, follows: follows, h: window.innerHeight, w: window.innerWidth });`;
+
+test('hizalı panel: her balon İngilizce balonunun yüksekliğinde, zeminsiz; çakışan balon itilir, düğümler korunur', { skip: !browser && 'Chromium/Chrome bulunamadı' }, () => {
+  const r = measure(alignedPanel);
+  assert.equal(r.info.cls, 'phone-panel aligned');
+  assert.equal(r.info.loose, 0, 'panel parçaları ayrıca yerinde çizilmez');
+  assert.equal(r.info.couch, false, 'simge çizildi');
+  assert.equal(r.info.list, false, 'akış listesi kuruldu');
+  assert.equal(r.info.background, 'rgba(0, 0, 0, 0)', 'panelin zemini var: ' + r.info.background);
+  assert.deepEqual(r.rows.map(row => row.text), ['Lucia', 'Neredesin?', 'Yoldayım, beş dakikaya oradayım.',
+    alignedBlocks()[4].text, 'Tamam']);
+  const blocks = alignedBlocks(), card = blocks[0].box;
+  // Ekrandaki yer: panelin köşesinden, sayfanın görünen boyuyla (gönderilen kutu karenin oranıdır).
+  const y = v => r.info.panel.top + (v - card.top) * r.h, x = v => r.info.panel.left + (v - card.left) * r.w;
+  // Üst kenar gönderilen kutuda (±3 piksel): telefondaki İngilizce balonla aynı yükseklik.
+  for (const i of [0, 1, 2, 3]) assert.ok(Math.abs(r.rows[i].box.top - y(blocks[i + 1].box.top)) <= 3, 'balon hizasız: ' + JSON.stringify(r.rows[i]));
+  // Gelen sola (kutunun solu), giden sağa (kutunun sağı) yaslı.
+  assert.ok(Math.abs(r.rows[1].box.left - x(blocks[2].box.left)) <= 3, 'gelen balon sola yaslı değil');
+  assert.ok(Math.abs(r.rows[2].box.right - x(blocks[3].box.right)) <= 3, 'giden balon sağa yaslı değil');
+  // Telefonun balon rengi, %85 örtü.
+  assert.equal(r.rows[1].background, 'rgba(240, 232, 224, 0.85)');
+  assert.equal(r.rows[2].background, 'rgba(208, 216, 240, 0.85)');
+  assert.equal(r.rows[1].color, 'rgb(40, 40, 40)');
+  // Kişi adı küçük başlık (balondan küçük).
+  assert.ok(r.rows[0].cls.indexOf('title') >= 0 && r.rows[0].font < r.rows[1].font, 'başlık küçük değil');
+  assert.ok(r.rows.slice(1).every(row => row.font >= 18) && r.rows[0].font >= 15, 'yazı okunamayacak kadar küçük');
+  // Uzun balon tahminden uzun: "Tamam" en az kaydırmayla altına itilir (gönderilen 0,01 aralık korunur), panel uzar.
+  const gap = Math.round((blocks[5].box.top - card.top) * r.h) - Math.round((blocks[4].box.bottom - card.top) * r.h);
+  assert.ok(r.rows[3].box.bottom > y(blocks[4].box.bottom) + 10, 'deneme: uzun balon tahmini aşmadı');
+  assert.ok(Math.abs(r.rows[4].box.top - (r.rows[3].box.bottom + gap)) <= 2, 'çakışan balon en az kaydırmayla itilmedi: ' + JSON.stringify(r.rows));
+  for (let i = 0; i + 1 < r.rows.length; i++) assert.ok(r.rows[i].box.bottom <= r.rows[i + 1].box.top + 1, 'balonlar üst üste');
+  assert.ok(r.info.panel.bottom >= r.rows[4].box.bottom - 1, 'panel uzamadı');
+  assert.equal(r.same, true, 'aynı gönderi satırları yeniden yarattı');
+  assert.equal(r.follows, true, 'kayan sohbette satırlar yeniden yaratıldı ya da yeni yerine geçmedi');
+  shoot(alignedPanel, 'tv-phone-aligned.png');
+});
+
+// Eski TV ile yeni bilgisayar: 0.9.105 `aligned`'ı tanımaz; aynı hizalı gönderiyi eskisi gibi kartta akışla çizer, bütün
+// mesajlar görünür (git geçmişindeki 0.9.105 sayfası; geçmiş yoksa atlanır). Yeni TV bayraksız gönderiyi (eski bilgisayar)
+// yukarıdaki Yanda Panel testlerindeki gibi akışla çizer.
+const oldApp = (() => {
+  const r = spawnSync('git', ['show', '95200990:tv-webos/app.js'], { cwd: path.join(__dirname, '..'), encoding: 'utf8', maxBuffer: 1 << 26 });
+  return r.status === 0 ? r.stdout : null;
+})();
+const oldTvAligned = `
+  showRegion({ id: 'game-phone', text: 'x', box: { left: 0.31, top: 0.26, right: 0.79, bottom: 0.81 }, blocks: ${JSON.stringify(alignedBlocks())} });
+  var panel = document.querySelector('.phone-panel');
+  var list = panel.querySelector('.panel-messages');
+  $('result').textContent = JSON.stringify({ cls: panel.className, rows: panel.querySelectorAll('.panel-row').length,
+    title: (panel.querySelector('.panel-title') || {}).textContent, fits: list.scrollHeight <= list.clientHeight + 1 });`;
+
+test('eski TV (0.9.105) hizalı gönderiyi eskisi gibi akışla çizer', { skip: (!browser && 'Chromium/Chrome bulunamadı') || (!oldApp && 'git geçmişi yok') }, () => {
+  const r = measure(oldTvAligned, oldApp);
+  assert.equal(r.cls, 'phone-panel');
+  assert.equal(r.title, 'Lucia');
+  assert.equal(r.rows, 4, 'eski TV mesajları düşürdü');
+  assert.equal(r.fits, true);
+});
+
+// Hizalı panel her TV'de aynı oranda (720p, 1080p, 4K; cihaz piksel oranı 1, 2, 3): balonların yeri ve yazı boyu ekrana
+// oranla aynı, yazı yatayda sıkıştırılmaz (dar aile, harf aralığı yok). Panel gelirken solarak belirir; telefon kalkınca
+// hemen silinmez, solarak kaybolur (PANEL_FADE_MS sonra kalkar).
+const alignedScale = `
+  showRegion({ id: 'game-phone', text: 'x', box: { left: 0.31, top: 0.26, right: 0.79, bottom: 0.81 }, blocks: ${JSON.stringify(alignedBlocks())} });
+  var panel = document.querySelector('.phone-panel');
+  var w = window.innerWidth, h = window.innerHeight;
+  var rows = Array.prototype.map.call(panel.querySelectorAll('.panel-bubble'), function (bubble) {
+    var r = rect(bubble), style = getComputedStyle(bubble);
+    return { left: r.left / w, top: r.top / h, right: r.right / w, font: parseFloat(style.fontSize) / h,
+      stretch: style.fontStretch, spacing: style.letterSpacing, transform: getComputedStyle(bubble.parentNode).transform };
+  });
+  var fadeIn = getComputedStyle(panel).animationName;
+  var host = panel.parentNode;
+  hideRegion('game-phone');
+  var leaving = host.parentNode === $('regions') && /leaving/.test(host.className) && !regionBoxes['game-phone'];
+  $('result').textContent = JSON.stringify({ rows: rows, fadeIn: fadeIn, leaving: leaving, dpr: window.devicePixelRatio, h: h });`;
+
+test('hizalı panel 720p, 1080p, 4K ve dpr 1/2/3 aynı oranda; sıkıştırma yok; solarak gelir ve gider', { skip: !browser && 'Chromium/Chrome bulunamadı' }, () => {
+  const screens = [];
+  for (const size of ['1280,720', '1920,1080', '3840,2160']) for (const dpr of [1, 2, 3]) screens.push({ size, dpr });
+  // Başsız tarayıcının penceresi görünen alandan biraz yüksek: görünen alan TV gibi tam 16:9 olsun diye pencere uzatılır.
+  const sixteenNine = screen => {
+    const [w, h] = screen.size.split(',').map(Number);
+    const first = measure(alignedScale, null, screen);
+    if (first.h === h) return first;
+    return measure(alignedScale, null, { size: w + ',' + (2 * h - first.h), dpr: screen.dpr });
+  };
+  const base = sixteenNine(screens[3]);
+  assert.equal(base.fadeIn, 'phone-panel-in', 'panel solarak gelmiyor');
+  assert.equal(base.leaving, true, 'telefon kalkınca panel solmadan silindi');
+  for (const screen of screens) {
+    const r = screen === screens[3] ? base : sixteenNine(screen);
+    assert.equal(r.h, Number(screen.size.split(',')[1]), 'görünen alan 16:9 değil');
+    assert.equal(r.dpr, screen.dpr, 'dpr uygulanmadı');
+    assert.equal(r.rows.length, base.rows.length);
+    r.rows.forEach((row, i) => {
+      const ref = base.rows[i], tag = screen.size + '@' + screen.dpr + ' #' + i;
+      assert.ok(Math.abs(row.left - ref.left) <= 0.004 && Math.abs(row.top - ref.top) <= 0.006, 'yer oranı farklı: ' + tag);
+      assert.ok(Math.abs(row.font - ref.font) <= 0.0015, 'yazı boyu oranı farklı: ' + tag);
+      assert.ok(row.font * r.h >= (i ? 18 : 15) * r.h / 1080 - 0.5, 'yazı alt sınırın altında: ' + tag);
+      assert.equal(row.stretch, '100%', 'yazı yatayda sıkıştırıldı: ' + tag);
+      assert.equal(row.spacing, 'normal', 'harf aralığı daraltıldı: ' + tag);
+      assert.equal(row.transform, 'none', 'satır ölçeklendi: ' + tag);
+    });
+  }
 });

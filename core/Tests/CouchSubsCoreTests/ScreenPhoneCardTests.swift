@@ -128,9 +128,9 @@ final class ScreenPhoneCardTests: XCTestCase {
         XCTAssertEqual(backdrop.box.top, phone.bounds.top)
         XCTAssertEqual(backdrop.box.bottom, phone.bounds.bottom)
         XCTAssertLessThan(backdrop.box.right, phone.bounds.left)
-        // Kişi adı çevrilmese de kartın başlığıdır: ortalı, kalın; yazı TV'de okunacak boyda.
+        // Kişi adı çevrilmese de panelin başlığıdır: balonların hizasında (sola yaslı), kalın; yazı TV'de okunacak boyda.
         XCTAssertEqual(laid[2].translation, "Brian")
-        XCTAssertEqual(laid[2].look?.align, .center)
+        XCTAssertEqual(laid[2].look?.align, .left)
         XCTAssertEqual(laid[2].look?.bold, true)
         XCTAssertEqual(laid[2].lineHeight, ScreenPhoneCard.minLine)
         XCTAssertEqual(laid[3].style, ScreenPhoneCard.incomingColor)
@@ -166,11 +166,70 @@ final class ScreenPhoneCardTests: XCTestCase {
         gray.style = PhoneTextStyle(background: "#E5E5EA", foreground: "#000000")
         let laid = ScreenPhoneCard.layout([blue, gray, item("Lucia", "Lucia", role: .contact, top: 0.6, unchanged: true),
                                            item("You coming?", "Geliyor musun?", role: .preview, top: 0.65)], handset: handset(upright))
-        XCTAssertEqual(laid[1].style, ScreenPhoneCard.outgoingColor)
-        XCTAssertEqual(laid[2].style, ScreenPhoneCard.incomingColor)
+        // Balon telefondaki balonun renginde (mavi giden, gri gelen); taraf da renkten.
+        XCTAssertEqual(laid[1].panel, .mine)
+        XCTAssertEqual(laid[1].style, blue.style)
+        XCTAssertEqual(laid[2].panel, .theirs)
+        XCTAssertEqual(laid[2].style, gray.style)
         XCTAssertEqual(laid[3].look?.bold, true)
         XCTAssertEqual(laid[3].look?.align, .left)
         XCTAssertEqual(laid[4].style, ScreenPhoneCard.cardColor)
+    }
+
+    /// Hizalı panel (Sinan Bey'in beğendiği görünüm): her Türkçe balon telefondaki İngilizce balonuyla aynı yükseklikte
+    /// (üst kenarı ±birkaç piksel), çakışan balon en az kaydırmayla aşağı itilir; balon telefonun balon renginde, giden sağa,
+    /// gelen sola yaslı; kişi adı panelin üstünde küçük başlık. Aynı içerik birebir aynı çıktıyı verir.
+    func testAlignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble() {
+        let phone = handset(upright)
+        func message(_ source: String, _ translation: String, role: ScreenPhoneCard.Role, top: Double, height: Double,
+                     style: PhoneTextStyle?) -> ScreenTranslation.Item {
+            var item = item(source, translation, role: role, top: (top - phone.bounds.top) / (phone.bounds.bottom - phone.bounds.top))
+            item.box = TextBox(left: 0.72, top: top, right: 0.84, bottom: top + height)
+            item.style = style
+            return item
+        }
+        let cream = PhoneTextStyle(background: "#F0E8E0", foreground: "#282828")
+        let blue = PhoneTextStyle(background: "#D0D8F0", foreground: "#282828")
+        var header = item("Brian", "Brian", role: .header, top: 0.02, unchanged: true)
+        header.box = TextBox(left: 0.76, top: 0.24, right: 0.80, bottom: 0.26)
+        let items = [header,
+                     message("Where are you", "Neredesin", role: .incoming, top: 0.30, height: 0.02, style: cream),
+                     message("On my way", "Yoldayım", role: .outgoing, top: 0.42, height: 0.02, style: blue),
+                     // Uzun Türkçe: altındaki balonun İngilizcesiyle çakışır, o balon aşağı itilir.
+                     message("Bring the stuff", String(repeating: "Malzemeleri getir hemen ", count: 6), role: .incoming,
+                             top: 0.50, height: 0.02, style: cream),
+                     message("Ok", "Tamam", role: .outgoing, top: 0.53, height: 0.02, style: nil)]
+        let laid = ScreenPhoneCard.layout(items, handset: phone)
+        XCTAssertEqual(laid, ScreenPhoneCard.layout(items, handset: phone), "aynı içerik birebir aynı çıktı")
+        let panel = try! XCTUnwrap(ScreenPhoneCard.panel(laid))
+        XCTAssertTrue(panel.aligned)
+        XCTAssertEqual(SubtitleServer.json(panel.card, phone: true)["aligned"] as? Bool, true)
+        let line = panel.card.lineHeight, pixel = 1.0 / 1080
+        let rows = panel.messages
+        XCTAssertEqual(rows.map(\.translation).prefix(2), ["Neredesin", "Yoldayım"])
+        // Üst kenar hizası: Türkçe balonun yazısı İngilizce yazının üstünde başlar (balon dolgusu kadar yukarıdan).
+        for (row, english) in zip(rows.prefix(3), [0.30, 0.42, 0.50]) {
+            XCTAssertEqual(row.box.top + line * ScreenPhoneCard.bubblePadding / 2, english, accuracy: 3 * pixel, row.translation)
+        }
+        // Çakışma: "Tamam" İngilizcesinin yüksekliğinde duramaz, uzun balonun hemen altına (en az kaydırmayla) itilir.
+        XCTAssertGreaterThan(rows[3].box.top, ScreenPhoneCard.alignedTop(items[4], line: line))
+        XCTAssertEqual(rows[3].box.top, rows[2].box.bottom + line * ScreenPhoneCard.bubbleSpacing, accuracy: 1e-9)
+        XCTAssertGreaterThanOrEqual(panel.card.box.bottom, rows[3].box.bottom, "panel aşağı uzar")
+        // Renk: telefonun balonundan; örneği olmayan balon yedek renkte. Gelen sola, giden sağa yaslı.
+        XCTAssertEqual(rows[0].style, cream)
+        XCTAssertEqual(rows[1].style, blue)
+        XCTAssertEqual(rows[3].style, ScreenPhoneCard.outgoingColor)
+        XCTAssertLessThan(rows[0].box.left, rows[1].box.left)
+        XCTAssertEqual(rows[1].box.right, rows[3].box.right, accuracy: 1e-9)
+        // Kişi adı panelin üstünde, balonların hizasında küçük başlık.
+        let title = try! XCTUnwrap(panel.title)
+        XCTAssertEqual(title.box.left, rows[0].box.left, accuracy: 1e-9)
+        XCTAssertLessThan(title.box.bottom, rows[0].box.top)
+        // Okunmayan örnek (nötr yedek) ve okunmayan yazı rengi: yedek renk ya da zemine göre koyu/açık yazı.
+        XCTAssertEqual(ScreenPhoneCard.bubbleColor(GamePhonePalette.neutral, fallback: ScreenPhoneCard.incomingColor),
+                       ScreenPhoneCard.incomingColor)
+        XCTAssertEqual(ScreenPhoneCard.bubbleColor(PhoneTextStyle(background: "#F0E8E0", foreground: "#E8E0D8"),
+                                                   fallback: ScreenPhoneCard.incomingColor).foreground, "#17181B")
     }
 
     /// Telefonun ana ekranı sohbet değildir: kart kurulmaz, bileşenin yazıları kendi yerinde kalır, uygulama adı ("WhatUp")
@@ -270,6 +329,8 @@ final class ScreenPhoneCardTests: XCTestCase {
             struct Message: Decodable {
                 let role: String; let source: String; let translation: String; let top: Double; let left: Double
                 let right: Double; let line: Double; let unchanged: Bool
+                /// İngilizce balonun karedeki kutusu (hizalı panel bu yüksekliğe dizer).
+                let box: [Double]?
             }
             struct Outside: Decodable { let source: String; let translation: String; let box: [Double] }
             let name: String; let pose: [Double]; let items: [Message]; let outside: [Outside]?
@@ -301,7 +362,8 @@ final class ScreenPhoneCardTests: XCTestCase {
             }
             items += vector.items.map { message in
                 var item = ScreenTranslation.Item(source: message.source, translation: message.translation,
-                                                  box: TextBox(left: 0.8, top: 0.2, right: 0.9, bottom: 0.22), lineHeight: message.line)
+                                                  box: message.box.map(box) ?? TextBox(left: 0.8, top: 0.2, right: 0.9, bottom: 0.22),
+                                                  lineHeight: message.line)
                 item.unchanged = message.unchanged
                 item.phone = ScreenPhoneCard.Placement(role: ScreenPhoneCard.Role(rawValue: message.role)!,
                                                        spot: TextBox(left: message.left, top: message.top, right: message.right,
@@ -316,7 +378,15 @@ final class ScreenPhoneCardTests: XCTestCase {
             let line = rows.first!.lineHeight
             for (upper, lower) in zip(rows, rows.dropFirst()) {
                 XCTAssertGreaterThanOrEqual(lower.box.top - upper.box.bottom, line * 0.5 - 1e-9, vector.name)
+                // Hizalı: balon İngilizce balonunun yüksekliğinde; çakışırsa üsttekinin altına en az kaydırmayla itilir
+                // (ekranın alt payına dayanmış panelde satırlar alttan yukarı itilir).
+                let wanted = ScreenPhoneCard.alignedTop(items.first { $0.source == lower.source }!, line: line)
+                if rows.last!.box.bottom < 1 - ScreenPhoneCard.screenMargin - 1e-9 {
+                    XCTAssertEqual(lower.box.top, max(wanted, upper.box.bottom + line * ScreenPhoneCard.bubbleSpacing),
+                                   accuracy: 1e-9, vector.name)
+                }
             }
+            XCTAssertTrue(laid[outsideCount].aligned, vector.name)
             XCTAssertTrue(laid[(outsideCount + 1)...].allSatisfy { $0.box.left >= card.left && $0.box.right <= card.right
                 && $0.box.top >= card.top - 1e-9 && $0.box.bottom <= card.bottom + 1e-9 }, vector.name)
             XCTAssertGreaterThanOrEqual(card.top, ScreenPhoneCard.screenMargin - 1e-9, vector.name)

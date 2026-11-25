@@ -671,6 +671,8 @@ struct SubtitleScreen: View {
                 }
             }
             .allowsHitTesting(false)
+            // Hizalı telefon paneli solarak gelir ve gider (TV, Mac, Windows, Android ile aynı).
+            .animation(.easeOut(duration: 0.25), value: panel == nil)
             VStack(spacing: Mobile.Space.micro) {
                 Text("Drag the subtitle up or down; pinch to change the text size.")
                 Text("Keep the phone screen on while you play; translation stops when the screen turns off. Keep it plugged in.")

@@ -247,12 +247,16 @@ public static class ScreenPhoneCard
     private sealed record Row(ScreenTranslation.Item Item, double Width, double Height, string Side);
 
     /// <summary>
-    /// Telefondaki öğeleri (<c>Phone</c> bilgisi olanlar) kart olarak dizer. Telefonda çevrilmiş öğe yoksa liste olduğu gibi
-    /// döner. Çevrilmemiş öğeler (<c>Unchanged</c>: kişi adı, "ok") kartta aslıyla görünür; kart dışındakiler sonra atılır.
-    /// Balonlar arasında en az <see cref="BubbleSpacing"/> satır boşluk kalır; mesajlar telefon boyuna sığmazsa kart uzar,
-    /// yine sığmazsa en eski mesajlar düşer. Kartın altında kalan başka bir çeviri kartın dışına, yanına alınır.
+    /// Telefondaki öğeleri (<c>Phone</c> bilgisi olanlar) telefonun yanındaki panelde dizer (Mac: ScreenPhoneCard.layout ile
+    /// birebir). Telefonda çevrilmiş öğe yoksa liste olduğu gibi döner. Çevrilmemiş öğeler (<c>Unchanged</c>: kişi adı, "ok")
+    /// panelde aslıyla görünür; panel dışındakiler sonra atılır. Hizalı panel (<c>Aligned</c>): her Türkçe balon telefondaki
+    /// İngilizce balonuyla aynı yükseklikte durur (<see cref="AlignedTop"/>); çakışan balon en az kaydırmayla aşağı itilir
+    /// (aralarında en az <see cref="BubbleSpacing"/> satır), panel gerekirse aşağı uzar; ekranın alt payına dayanınca satırlar
+    /// alttan yukarı itilir, yukarıda da yer kalmazsa en eski mesajlar düşer. Yazı küçülmez. Balonlar telefonun balon
+    /// renginde (<see cref="BubbleColor"/>). Kartın altında kalan başka bir çeviri kartın dışına, yanına alınır.
     /// <paramref name="lockedLine"/>: telefondaki satır yüksekliği yerine kullanılacak kilitli ölçüm
-    /// (<see cref="PhonePanelSteady.SteadyLine"/>, #1152); verilmezse bu karenin ölçümü (<see cref="MeasuredLine"/>).
+    /// (<see cref="PhonePanelSteady.SteadyLine"/>, #1152); verilmezse bu karenin ölçümü (<see cref="MeasuredLine"/>). Kartın
+    /// kutusu, akışla çizen eski TV için bütün satırları ve dolguyu alacak boydadır.
     /// </summary>
     public static IReadOnlyList<ScreenTranslation.Item> Layout(IReadOnlyList<ScreenTranslation.Item> items, Handset handset,
                                                                double textScale = 1, double? lockedLine = null)
@@ -276,7 +280,8 @@ public static class ScreenPhoneCard
         }
         var headerHeight = header is null ? 0 : line * 1.4 + spacing;
 
-        // Her satırın kartta kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
+        // Her satırın panelde kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
+        // Not ve liste satırı da balon gibi dolgulu, koyu yarı saydam zeminde çizilir (oyunun üstünde okunsun).
         var rows = body.Select(item =>
         {
             var role = item.Phone!.Role == Role.Message ? (IsOutgoing(item.Style) ? Role.Outgoing : Role.Incoming) : item.Phone!.Role;
@@ -293,34 +298,55 @@ public static class ScreenPhoneCard
                 Style = role switch
                 {
                     // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı (Mac ile aynı).
-                    Role.Outgoing => OutgoingColor, Role.Incoming => IncomingColor, Role.Note or Role.Heading => NoteColor,
+                    Role.Outgoing => BubbleColor(item.Style, OutgoingColor), Role.Incoming => BubbleColor(item.Style, IncomingColor),
+                    Role.Note or Role.Heading => NoteColor,
                     _ => CardColor,
                 },
                 Panel = role switch { Role.Outgoing => PanelPart.Mine, Role.Incoming => PanelPart.Theirs, _ => PanelPart.Note },
                 Look = Flat(side, role is Role.Contact or Role.Heading),
             };
-            var inside = line * (bubble ? BubblePadding : 0.3);
-            return new Row(placed, width, lines.Count * line * LineSpacing + inside, side);
+            return new Row(placed, width, lines.Count * line * LineSpacing + line * BubblePadding, side);
         }).ToList();
         // Sohbet listesinde önizleme kişi adının hemen altındadır (ListGap); öbür satırlar arasında spacing kalır (Mac ile aynı).
         double RowGap(int index) =>
             index > 0 && rows[index].Item.Phone?.Role == Role.Preview && rows[index - 1].Item.Phone?.Role == Role.Contact
                 ? line * ListGap : spacing;
-        // Mesajlar telefon boyuna sığmazsa kart önce aşağı, sonra yukarı uzar (ekranın kenar payına kadar).
-        double Needed() => 2 * padY + headerHeight + rows.Sum(row => row.Height) +
-            Enumerable.Range(1, Math.Max(0, rows.Count - 1)).Sum(RowGap);
-        double top = card.Top, bottom = card.Bottom;
-        var extra = Needed() - (bottom - top);
-        if (extra > 0)
+        var limit = 1 - ScreenMargin;
+        // Kişi adı panelin üstünde, balonların hizasında küçük başlık: telefondaki yerinde, telefonun üstünden yukarı çıkmaz.
+        double? titleTop = header is null ? null : Math.Max(ScreenMargin, Math.Min(AlignedTop(header, line), card.Top));
+        var bodyTop = titleTop is { } t ? t + line * (TitleHeight + TitleGap) : ScreenMargin;
+        // Her balon kendi İngilizce balonunun yüksekliğinde; çakışan balon üsttekinin altına en az kaydırmayla itilir. Panel
+        // ekranın alt kenar payını aşarsa satırlar alttan yukarı itilir; yukarıda da yer kalmazsa en eski satırlar düşer.
+        double[] AlignedTops()
         {
-            var down = Math.Min(extra, Math.Max(0, 1 - ScreenMargin - bottom));
-            bottom += down;
-            extra -= down;
-            top -= Math.Min(extra, Math.Max(0, top - ScreenMargin));
-            card = new TextBox(card.Left, top, card.Right, bottom);
+            var tops = new double[rows.Count];
+            for (var i = 0; i < rows.Count; i++)
+            {
+                var below = i == 0 ? bodyTop : tops[i - 1] + rows[i - 1].Height + RowGap(i);
+                tops[i] = Math.Max(AlignedTop(rows[i].Item, line), below);
+            }
+            var floor = limit;
+            for (var i = rows.Count - 1; i >= 0; i--)
+            {
+                tops[i] = Math.Min(tops[i], floor - rows[i].Height);
+                floor = tops[i] - RowGap(i);
+            }
+            return tops;
         }
-        // Yine sığmazsa en eski (en üstteki) satırlar düşer: son mesajlar görünür kalır.
-        while (rows.Count > 1 && Needed() > card.Bottom - card.Top + 1e-9) rows.RemoveAt(0);
+        var tops = AlignedTops();
+        while (rows.Count > 1 && tops[0] < bodyTop - 1e-9)
+        {
+            rows.RemoveAt(0);
+            tops = AlignedTops();
+        }
+        if (tops.Length > 0 && tops[0] < bodyTop) tops[0] = bodyTop;
+        var contentTop = Math.Min(titleTop ?? card.Top, tops.Length > 0 ? tops[0] : card.Top);
+        var contentBottom = rows.Count > 0 ? tops[^1] + rows[^1].Height : card.Bottom;
+        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, başlık, aralıklar) da sığar.
+        var flow = 2 * padY + headerHeight + rows.Sum(row => row.Height) + Enumerable.Range(1, Math.Max(0, rows.Count - 1)).Sum(RowGap);
+        var cardTop = Math.Max(ScreenMargin, Math.Min(card.Top, contentTop));
+        card = new TextBox(card.Left, cardTop, card.Right,
+                           Math.Min(limit, Math.Max(Math.Max(card.Bottom, contentBottom + padY), cardTop + flow)));
 
         var result = new List<ScreenTranslation.Item>(others);
         // Kartın altında kalan başka bir çeviri kartın telefondan uzak yanına alınır; oraya sığmazsa yerinde kalır.
@@ -335,37 +361,17 @@ public static class ScreenPhoneCard
         }
         result.Add(new ScreenTranslation.Item("", BackdropText, card, line)
         {
-            Style = CardColor, Look = Flat("left", false), Panel = PanelPart.Card,
+            Style = CardColor, Look = Flat("left", false), Panel = PanelPart.Card, Aligned = true,
         });
 
-        var bodyTop = card.Top + padY;
-        if (header is not null)
+        if (header is not null && titleTop is { } top)
         {
-            var placed = header with
+            result.Add(header with
             {
                 Unchanged = false,
-                Box = new TextBox(card.Left + pad, bodyTop, card.Right - pad, bodyTop + line * 1.4),
-                LineHeight = line, Style = CardColor, Look = Flat("center", true), Panel = PanelPart.Title,
-            };
-            result.Add(placed);
-            bodyTop = placed.Box.Bottom + spacing;
-        }
-        var limit = card.Bottom - padY;
-        // Önce telefondaki yerine (oranla) yakın, üsttekinin altında; taşan satırlar alttan yukarı itilir.
-        var phone = handset.Bounds;
-        var tops = new double[rows.Count];
-        var cursor = bodyTop;
-        for (var i = 0; i < rows.Count; i++)
-        {
-            var wanted = phone.Top + rows[i].Item.Phone!.Spot.Top * (phone.Bottom - phone.Top);
-            tops[i] = i > 0 && RowGap(i) < spacing ? cursor : Math.Max(wanted, cursor);
-            cursor = tops[i] + rows[i].Height + (i + 1 < rows.Count ? RowGap(i + 1) : spacing);
-        }
-        var floor = limit;
-        for (var i = rows.Count - 1; i >= 0; i--)
-        {
-            tops[i] = Math.Max(bodyTop, Math.Min(tops[i], floor - rows[i].Height));
-            floor = tops[i] - RowGap(i);
+                Box = new TextBox(card.Left + pad, top, card.Right - pad, top + line * TitleHeight),
+                LineHeight = line, Style = CardColor, Look = Flat("left", true), Panel = PanelPart.Title,
+            });
         }
         for (var i = 0; i < rows.Count; i++)
         {
@@ -375,6 +381,51 @@ public static class ScreenPhoneCard
             result.Add(row.Item with { Box = new TextBox(left, tops[i], left + row.Width, tops[i] + row.Height) });
         }
         return result;
+    }
+
+    /// <summary>
+    /// Hizalı panelde satırın istenen üst kenarı: Türkçe yazının üstü İngilizce yazının üstünde (<c>Box</c>, karede); balon
+    /// üst dolgusu kadar yukarıdan başlar (Mac ile aynı).
+    /// </summary>
+    internal static double AlignedTop(ScreenTranslation.Item item, double line) => item.Box.Top - line * BubblePadding / 2;
+
+    /// <summary>Kişi adının (başlık) yüksekliği ve altındaki boşluk (satır yüksekliğine oranla); başlık balondan küçük.</summary>
+    internal const double TitleHeight = 1.4, TitleGap = 0.3;
+    /// <summary>Hizalı panelde balonların, notların ve başlığın zemin örtüsü.</summary>
+    public const double BubbleOpacity = 0.85;
+
+    /// <summary>
+    /// Balonun rengi: telefondaki balondan örneklenen zemin ve yazı (<see cref="GamePhonePalette"/>); örnek yoksa ya da
+    /// okunamadıysa (nötr yedek, geçersiz renk) <paramref name="fallback"/>. Örneğin yazısı zeminde okunmuyorsa (kontrast
+    /// 4,5'ten az) zemine göre koyu ya da açık yazı (Mac ile aynı).
+    /// </summary>
+    internal static PhoneTextStyle BubbleColor(PhoneTextStyle? style, PhoneTextStyle fallback)
+    {
+        if (style is null || string.Equals(style.Background, GamePhonePalette.Neutral.Background, StringComparison.OrdinalIgnoreCase)
+            || Rgb(style.Background) is not { } background) return fallback;
+        if (Rgb(style.Foreground) is { } ink && Contrast(background, ink) >= 4.5) return style;
+        const string dark = "#17181B", light = "#F3EEE4";
+        return style with { Foreground = Contrast(background, Rgb(dark)!.Value) >= Contrast(background, Rgb(light)!.Value) ? dark : light };
+    }
+
+    private static (double R, double G, double B)? Rgb(string hex)
+    {
+        if (hex.Length != 7 || hex[0] != '#' || !int.TryParse(hex.AsSpan(1), System.Globalization.NumberStyles.HexNumber, null, out var value))
+            return null;
+        return ((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
+    }
+
+    /// <summary>İki rengin WCAG kontrast oranı.</summary>
+    internal static double Contrast((double R, double G, double B) a, (double R, double G, double B) b)
+    {
+        static double Linear(double n)
+        {
+            var s = n / 255;
+            return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
+        }
+        static double Luminance((double R, double G, double B) c) => 0.2126 * Linear(c.R) + 0.7152 * Linear(c.G) + 0.0722 * Linear(c.B);
+        double x = Luminance(a), y = Luminance(b);
+        return (Math.Max(x, y) + 0.05) / (Math.Min(x, y) + 0.05);
     }
 
     /// <summary>Metni sözcük sözcük en çok <paramref name="perLine"/> harflik satırlara böler (çok uzun sözcük kendi satırında kalır).</summary>
@@ -409,7 +460,11 @@ public static class ScreenPhoneCard
 
     /// <summary>Çizilecek sohbet paneli: zemin, kişinin adı, mesajlar telefondaki sırasıyla ve panel dışındaki öğeler.</summary>
     public sealed record ChatPanel(ScreenTranslation.Item Card, ScreenTranslation.Item? Title,
-                               IReadOnlyList<ScreenTranslation.Item> Messages, IReadOnlyList<ScreenTranslation.Item> Outside);
+                               IReadOnlyList<ScreenTranslation.Item> Messages, IReadOnlyList<ScreenTranslation.Item> Outside)
+    {
+        /// <summary>Hizalı panel: zemin çizilmez, her parça kendi kutusunun yerinde; değilse akışla, kartta.</summary>
+        public bool Aligned => Card.Aligned;
+    }
 
     /// <summary>Öğelerde panel varsa parçaları; yoksa null (Mac: ScreenPhoneCard.panel).</summary>
     public static ChatPanel? PanelOf(IReadOnlyList<ScreenTranslation.Item> items)

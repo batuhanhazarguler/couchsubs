@@ -52,6 +52,12 @@ object ScreenTranslation {
          * eski TV kutuları yerinde çizer (Mac ile aynı).
          */
         val panel: ScreenPhoneCard.PanelPart? = null,
+        /**
+         * Panelin zemininde ([ScreenPhoneCard.PanelPart.CARD]): parçalar akışla değil kutularının yerinde çizilir; her
+         * Türkçe balon telefondaki İngilizce balonuyla aynı yükseklikte ([ScreenPhoneCard.layout], JSON `aligned`). Eski TV
+         * yok sayar (Mac ile aynı).
+         */
+        val aligned: Boolean = false,
         /** Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; [ScreenFit]); null ise bilinmiyor. */
         val room: TextBox? = null,
         /** Özgün yazının satır sayısı ([Group.rows]). */

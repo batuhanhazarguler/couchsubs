@@ -594,6 +594,8 @@ public final class SubtitleServer: @unchecked Sendable {
         // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla, yuvarlak köşeli yarı saydam kartta çizer;
         // eski TV alanı yok sayar, öğeyi stilli kutu olarak yerinde çizer.
         if let panel = item.panel { result["panel"] = panel.rawValue }
+        // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer.
+        if item.aligned { result["aligned"] = true }
         return result
     }
 

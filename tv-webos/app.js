@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.105';
+  var APP_VERSION = '0.9.106';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1264,6 +1264,15 @@
       else messages.push(item);
     }
     messages.sort(function (a, b) { return ((validBox(a.box) || {}).top || 0) - ((validBox(b.box) || {}).top || 0); });
+    // Bilgisayar paneli hizalı gönderdiyse (card.aligned) parçalar kutularının yerinde çizilir; akışla hizalı çizim arasında
+    // geçişte panelin içi baştan kurulur.
+    var aligned = card.aligned === true;
+    if (!!panel.couchsubsAligned !== aligned) {
+      while (panel.firstChild) panel.removeChild(panel.firstChild);
+      panel.couchsubsAligned = aligned;
+    }
+    panel.className = aligned ? 'phone-panel aligned' : 'phone-panel';
+    if (aligned) return placeAlignedPanel(host, panel, box, title, messages, width, height, line);
     var name = null, list = null, couch = null;
     for (var c = 0; c < panel.children.length; c++) {
       var child = panel.children[c];
@@ -1342,6 +1351,85 @@
     return panel;
   }
 
+  // Hizalı panel (TV uygulaması 0.9.106; Sinan Bey'in beğendiği görünüm): zemin kartı ve kanepe simgesi yok; her Türkçe
+  // balon bilgisayarın gönderdiği kutuda, telefondaki İngilizce balonuyla aynı yükseklikte, oyunun üstünde doğrudan
+  // çizilir (telefonun balon renginde, %85 örtülü; gelen sola, giden sağa yaslı). Kişi adı üstte küçük başlık, not ve liste
+  // satırları koyu yarı saydam zeminde. Satırlar anahtarla yeniden kullanılır (yazısı ve rengi aynı satır yeniden
+  // yaratılmaz); yeri değişen satır kısa CSS geçişiyle kayar. Gerçek yazı bilgisayarın tahmininden uzun çıkarsa alttaki
+  // satırlar en az kaydırmayla (bilgisayarın bıraktığı aralık korunarak) aşağı itilir, panel aşağı uzar; yazı küçülmez.
+  // Mac, Windows, iPhone ve Android (PhonePanelAligned, PhoneBlocksCanvas, PhonePanel) aynı kutuları çizer.
+  var PANEL_BUBBLE_OPACITY = 0.85;
+  // Panel gelirken ve telefon kalkınca kaybolurken solma süresi (ms; style.css phone-panel-in, .leaving ile aynı).
+  var PANEL_FADE_MS = 250;
+
+  function placeAlignedPanel(host, panel, box, title, messages, width, height, line) {
+    panel.style.backgroundColor = 'transparent';
+    // Yazı boyu tam piksele yuvarlanmaz: 720p, 1080p ve 4K'da ekrana oranı (ve satır kırılımı) aynı kalır.
+    panel.style.fontSize = Math.max(BUBBLE_MIN_FONT * height / 1080, line * 0.95).toFixed(2) + 'px';
+    var parts = title ? [title].concat(messages) : messages;
+    var old = {};
+    for (var r = 0; r < panel.children.length; r++) {
+      var key = panel.children[r].couchsubsKey;
+      if (key) (old[key] = old[key] || []).push(panel.children[r]);
+    }
+    var seen = {}, rows = [], previous = null;
+    for (var j = 0; j < parts.length; j++) {
+      var item = parts[j];
+      var at = validBox(item.box);
+      if (!at) continue;
+      var part = item === title ? 'title' : item.panel;
+      var listed = panelListRow(item);
+      var strong = listed && item.style.bold === true;
+      var base = part + (listed ? (strong ? '+list+strong' : '+list') : '') + '|' + item.text;
+      seen[base] = (seen[base] || 0) + 1;
+      var rowKey = base + '#' + seen[base];
+      var colors = item.surface;
+      var paint = colors && phoneColor(colors.background) && phoneColor(colors.foreground)
+        ? colors.background + '/' + colors.foreground : '';
+      var row = old[rowKey] && old[rowKey].shift();
+      var rowClass = 'panel-row ' + part + (listed ? ' list' : '') + (strong ? ' strong' : '');
+      if (!row || row.couchsubsPaint !== paint) {
+        row = document.createElement('div');
+        var bubble = document.createElement('div');
+        bubble.className = 'panel-bubble';
+        fillText(bubble, item.text, item.icons);
+        if (paint) {
+          bubble.style.backgroundColor = translucent(colors.background, PANEL_BUBBLE_OPACITY);
+          bubble.style.color = colors.foreground;
+        }
+        row.appendChild(bubble);
+        row.couchsubsKey = rowKey;
+        row.couchsubsPaint = paint;
+      }
+      if (row.className !== rowClass) row.className = rowClass;
+      var left = Math.round((at.left - box.left) * width), top = Math.round((at.top - box.top) * height);
+      var rowWidth = Math.max(1, Math.round((at.right - at.left) * width));
+      if (row.style.left !== left + 'px') row.style.left = left + 'px';
+      if (row.style.width !== rowWidth + 'px') row.style.width = rowWidth + 'px';
+      // Çakışmada korunacak aralık: bilgisayarın bıraktığı (üstteki satırın tahmini altından bu satırın üstüne), en çok
+      // balonlar arası olağan boşluk (satırın 0,6'sı; ScreenPhoneCard.bubbleSpacing).
+      var gap = previous ? Math.max(0, Math.min(top - previous.planned, Math.round(line * 0.6))) : 0;
+      rows.push({ row: row, top: top, gap: gap });
+      previous = { planned: Math.round((at.bottom - box.top) * height) };
+    }
+    // Sıra yalnız değiştiyse taşınır; yerinde kalan satıra dokunulmaz. Panelde artık olmayan satırlar kalkar.
+    for (var k = 0; k < rows.length; k++) {
+      if (panel.children[k] !== rows[k].row) panel.insertBefore(rows[k].row, panel.children[k] || null);
+    }
+    while (panel.children.length > rows.length) panel.removeChild(panel.lastChild);
+    if (panel.parentNode !== host) host.appendChild(panel);
+    // Gerçek yükseklikle çakışma denetimi: satır ancak üsttekinin gerçek altına (aralıkla) binerse, en az kaydırmayla itilir.
+    var bottom = 0;
+    for (var m = 0; m < rows.length; m++) {
+      var place = m === 0 ? rows[m].top : Math.max(rows[m].top, bottom + rows[m].gap);
+      if (rows[m].row.style.top !== place + 'px') rows[m].row.style.top = place + 'px';
+      bottom = place + rows[m].row.offsetHeight;
+    }
+    var cardHeight = Math.round((box.bottom - box.top) * height);
+    panel.style.height = Math.max(cardHeight, bottom) + 'px';
+    return panel;
+  }
+
   // Yeriyle gelen çevirileri (ekranı çevir öğeleri, ek alan blokları) kendi İngilizce yazılarının üstüne koyar.
   // Oyun telefonunun öğeleri yerinde güncellenir (TV uygulaması 0.9.78): aynı yazının kutusu (anahtarı: yazısı ve kaçıncı
   // tekrarı) yeniden yaratılmaz; yeri değişirse CSS geçişiyle kayar, kalkan yazının kutusu kaldırılır.
@@ -1350,7 +1438,7 @@
     for (var i = 0; i < host.children.length; i++) {
       var child = host.children[i];
       taken.all.push(child);
-      if (child.className === 'phone-panel') taken.panel = child;
+      if (child.className === 'phone-panel' || child.className === 'phone-panel aligned') taken.panel = child;
       else if (child.couchsubsKey) (taken.items[child.couchsubsKey] = taken.items[child.couchsubsKey] || []).push(child);
     }
     return taken;
@@ -1885,12 +1973,15 @@
   // değişiyor"): panelin mesajları, kişi adı ve notları kartın içinde akışla çizilir, kutuları çizimi değiştirmez. Yalnız
   // kutuları oynayan aynı içerik yeniden dizilmez, yazı boyu yeniden hesaplanmaz (bilgisayardaki PhoneSteady.samePicture ile
   // aynı kural); panelin zemini ve panel dışındaki her öğe yeriyle karşılaştırılır.
+  // Hizalı panelde (card.aligned, TV uygulaması 0.9.106) parçalar kutularının yerinde çizilir: kutuları da karşılaştırılır
+  // (bilgisayar küçük oynamayı zaten göndermez, PhoneSteady.samePicture).
   function phonePayload(blocks) {
     var card = panelCard(blocks);
+    var flow = card && card.aligned !== true;
     var parts = [];
     for (var i = 0; i < blocks.length; i++) {
       var block = blocks[i];
-      if (card && block && PANEL_PARTS[block.panel]) {
+      if (flow && block && PANEL_PARTS[block.panel]) {
         var copy = {};
         for (var key in block) if (Object.prototype.hasOwnProperty.call(block, key) && key !== 'box') copy[key] = block[key];
         parts.push(copy);
@@ -1988,7 +2079,11 @@
     var el = regionBoxes[id];
     if (!el) return;
     delete regionBoxes[id];
-    $('regions').removeChild(el);
+    // Hizalı telefon paneli (0.9.106) telefon ekrandan kalkınca yumuşakça kaybolur (CSS .leaving), sonra kaldırılır.
+    if (id === 'game-phone' && el.querySelector && el.querySelector('.phone-panel.aligned')) {
+      el.className += ' leaving';
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, PANEL_FADE_MS);
+    } else $('regions').removeChild(el);
     resolveLayers();
     avoidRegions();
   }

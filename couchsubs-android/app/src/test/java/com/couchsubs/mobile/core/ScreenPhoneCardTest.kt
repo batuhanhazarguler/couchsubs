@@ -136,7 +136,8 @@ class ScreenPhoneCardTest {
         val width = backdrop.box.right - backdrop.box.left
         // Kişi adı çevrilmese de kartın başlığıdır: ortalı, kalın; yazı TV'de okunacak boyda.
         assertEquals("Brian", laid[2].translation)
-        assertEquals("center", laid[2].look?.align)
+        // Kişi adı panelin başlığı: balonların hizasında (sola yaslı), kalın (Mac ile aynı).
+        assertEquals("left", laid[2].look?.align)
         assertEquals(true, laid[2].look?.bold)
         assertEquals(ScreenPhoneCard.MIN_LINE, laid[2].lineHeight, 0.0)
         assertEquals(ScreenPhoneCard.INCOMING, laid[3].surface)
@@ -169,6 +170,50 @@ class ScreenPhoneCardTest {
         assertTrue(rows.first().box.top >= card.top)
     }
 
+    /**
+     * Hizalı panel (Mac testAlignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble ile aynı): her Türkçe balon telefondaki
+     * İngilizce balonuyla aynı yükseklikte (üst kenarı ±birkaç piksel), çakışan balon en az kaydırmayla aşağı itilir; balon
+     * telefonun balon renginde, giden sağa, gelen sola yaslı; kişi adı panelin üstünde küçük başlık; aynı içerik aynı çıktı.
+     */
+    @Test
+    fun alignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble() {
+        val phone = handset(upright)
+        fun message(source: String, translation: String, role: ScreenPhoneCard.Role, top: Double, surface: TextSurface?) =
+            item(source, translation, role, (top - phone.bounds.top) / (phone.bounds.bottom - phone.bounds.top), surface = surface)
+                .copy(box = TextBox(0.72, top, 0.84, top + 0.02))
+        val cream = TextSurface("#F0E8E0", "#282828")
+        val blue = TextSurface("#D0D8F0", "#282828")
+        val header = item("Brian", "Brian", ScreenPhoneCard.Role.HEADER, 0.02, unchanged = true).copy(box = TextBox(0.76, 0.24, 0.80, 0.26))
+        val items = listOf(header,
+            message("Where are you", "Neredesin", ScreenPhoneCard.Role.INCOMING, 0.30, cream),
+            message("On my way", "Yoldayım", ScreenPhoneCard.Role.OUTGOING, 0.42, blue),
+            // Uzun Türkçe: altındaki balonun İngilizcesiyle çakışır, o balon aşağı itilir.
+            message("Bring the stuff", "Malzemeleri getir hemen ".repeat(6), ScreenPhoneCard.Role.INCOMING, 0.50, cream),
+            message("Ok", "Tamam", ScreenPhoneCard.Role.OUTGOING, 0.53, null))
+        val laid = ScreenPhoneCard.layout(items, phone)
+        assertEquals(laid, ScreenPhoneCard.layout(items, phone))
+        val panel = ScreenPhoneCard.panel(laid)!!
+        assertTrue(panel.aligned)
+        val line = panel.card.lineHeight
+        val pixel = 1.0 / 1080
+        val rows = panel.messages
+        listOf(0.30, 0.42, 0.50).forEachIndexed { i, english ->
+            assertEquals(rows[i].translation, english, rows[i].box.top + line * ScreenPhoneCard.BUBBLE_PADDING / 2, 3 * pixel)
+        }
+        assertTrue(rows[3].box.top > ScreenPhoneCard.alignedTop(items[4], line))
+        assertEquals(rows[2].box.bottom + line * ScreenPhoneCard.BUBBLE_SPACING, rows[3].box.top, 1e-9)
+        assertTrue(panel.card.box.bottom >= rows[3].box.bottom)
+        assertEquals(cream, rows[0].surface)
+        assertEquals(blue, rows[1].surface)
+        assertEquals(ScreenPhoneCard.OUTGOING, rows[3].surface)
+        assertTrue(rows[0].box.left < rows[1].box.left)
+        assertEquals(rows[1].box.right, rows[3].box.right, 1e-9)
+        assertEquals(rows[0].box.left, panel.title!!.box.left, 1e-9)
+        assertTrue(panel.title!!.box.bottom < rows[0].box.top)
+        assertEquals(ScreenPhoneCard.INCOMING, ScreenPhoneCard.bubbleColor(GamePhonePalette.neutral, ScreenPhoneCard.INCOMING))
+        assertEquals("#17181B", ScreenPhoneCard.bubbleColor(TextSurface("#F0E8E0", "#E8E0D8"), ScreenPhoneCard.INCOMING).foreground)
+    }
+
     @Test
     fun ambiguousBubbleSideComesFromItsColorAndListRowsAreLeftAligned() {
         val laid = ScreenPhoneCard.layout(listOf(
@@ -177,8 +222,11 @@ class ScreenPhoneCardTest {
             item("Lucia", "Lucia", ScreenPhoneCard.Role.CONTACT, 0.6, unchanged = true),
             item("You coming?", "Geliyor musun?", ScreenPhoneCard.Role.PREVIEW, 0.65),
         ), handset(upright))
-        assertEquals(ScreenPhoneCard.OUTGOING, laid[1].surface)
-        assertEquals(ScreenPhoneCard.INCOMING, laid[2].surface)
+        // Balon telefondaki balonun renginde (mavi giden, gri gelen); taraf da renkten (Mac ile aynı).
+        assertEquals(ScreenPhoneCard.PanelPart.MINE, laid[1].panel)
+        assertEquals(TextSurface("#1E6FE0", "#FFFFFF"), laid[1].surface)
+        assertEquals(ScreenPhoneCard.PanelPart.THEIRS, laid[2].panel)
+        assertEquals(TextSurface("#E5E5EA", "#000000"), laid[2].surface)
         assertEquals(true, laid[3].look?.bold)
         assertEquals("left", laid[3].look?.align)
         assertEquals(ScreenPhoneCard.CARD, laid[4].surface)
@@ -290,7 +338,9 @@ class ScreenPhoneCardTest {
                 objects(vector.getJSONArray("items")).map { m ->
                     val role = ScreenPhoneCard.Role.values().first { it.wire == m.getString("role") }
                     val top = m.getDouble("top")
-                    ScreenTranslation.Item(m.getString("source"), m.getString("translation"), TextBox(0.8, 0.2, 0.9, 0.22), m.getDouble("line"),
+                    // İngilizce balonun karedeki kutusu (hizalı panel bu yüksekliğe dizer).
+                    val english = m.optJSONArray("box")?.let(::box) ?: TextBox(0.8, 0.2, 0.9, 0.22)
+                    ScreenTranslation.Item(m.getString("source"), m.getString("translation"), english, m.getDouble("line"),
                         unchanged = m.getBoolean("unchanged"),
                         phone = ScreenPhoneCard.Placement(role, TextBox(m.getDouble("left"), top, m.getDouble("right"), top + 0.03)))
                 }
@@ -300,7 +350,15 @@ class ScreenPhoneCardTest {
             assertTrue(name, ScreenPhoneCard.isBackdrop(laid[n]))
             val rows = laid.drop(n + 1).filter { it.phone?.role != ScreenPhoneCard.Role.HEADER }
             val line = rows.first().lineHeight
-            for (i in 0 until rows.size - 1) assertTrue(name, rows[i + 1].box.top - rows[i].box.bottom >= line * 0.5 - 1e-9)
+            for (i in 0 until rows.size - 1) {
+                assertTrue(name, rows[i + 1].box.top - rows[i].box.bottom >= line * 0.5 - 1e-9)
+                // Hizalı: balon İngilizce balonunun yüksekliğinde; çakışırsa üsttekinin altına en az kaydırmayla itilir
+                // (ekranın alt payına dayanmış panelde satırlar alttan yukarı itilir).
+                val wanted = ScreenPhoneCard.alignedTop(items.first { it.source == rows[i + 1].source }, line)
+                if (rows.last().box.bottom < 1 - ScreenPhoneCard.SCREEN_MARGIN - 1e-9)
+                    assertEquals(name, maxOf(wanted, rows[i].box.bottom + line * ScreenPhoneCard.BUBBLE_SPACING), rows[i + 1].box.top, 1e-9)
+            }
+            assertTrue(name, laid[n].aligned)
             assertTrue(name, laid.drop(n + 1).all {
                 it.box.left >= card.left && it.box.right <= card.right && it.box.top >= card.top - 1e-9 && it.box.bottom <= card.bottom + 1e-9
             })
@@ -414,8 +472,10 @@ class ScreenPhoneCardTest {
             ScreenPhoneCard.PanelPart.MINE), panel.map { it.panel })
         val card = panel[0].box
         assertTrue(card.right <= pose.bounds.left || card.left >= pose.bounds.right)
+        // Örneklenmiş renk yok: yedek renkler; panel hizalı.
         assertEquals(ScreenPhoneCard.INCOMING, panel[2].surface)
         assertEquals(ScreenPhoneCard.OUTGOING, panel[3].surface)
+        assertTrue(panel[0].aligned)
         assertTrue(panel[2].box.left < panel[3].box.left && panel[2].box.top < panel[3].box.top)
         assertEquals("card", ScreenPhoneCard.PanelPart.CARD.wire)
 

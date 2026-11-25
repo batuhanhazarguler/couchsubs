@@ -3,6 +3,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using CouchSubs.Core;
 
 namespace CouchSubs.App.Views;
@@ -20,6 +21,9 @@ internal sealed class PhoneBlocksCanvas : Canvas
     private const double MinScale = 0.55;
 
     private IReadOnlyList<ScreenTranslation.Item> items = [];
+    /// <summary>Hizalı panelin çizili öğeleri: telefon kalkınca solarak kaybolurlar (TV, Mac ile aynı, 250 ms).</summary>
+    private List<FrameworkElement> alignedViews = [];
+    private static readonly Duration Fade = new(TimeSpan.FromMilliseconds(250));
 
     public PhoneBlocksCanvas()
     {
@@ -44,12 +48,25 @@ internal sealed class PhoneBlocksCanvas : Canvas
 
     private void Layout()
     {
+        var leaving = alignedViews;
         Children.Clear();
+        alignedViews = [];
         double width = ActualWidth, height = ActualHeight;
         if (width <= 0 || height <= 0) return;
         // Yanda Panel: telefonun mesajları sohbet panelinde (PhonePanelView), panel dışındaki yazılar kendi yerinde.
         var panel = ScreenPhoneCard.PanelOf(items);
-        if (panel is not null) AddPanel(panel, width, height);
+        if (panel is not null) AddPanel(panel, width, height, appearing: leaving.Count == 0);
+        // Hizalı panel kalktı: eski öğeler solarak kaybolur.
+        if (alignedViews.Count == 0)
+        {
+            foreach (var view in leaving)
+            {
+                Children.Add(view);
+                var fade = new DoubleAnimation(0, Fade);
+                fade.Completed += (_, _) => Children.Remove(view);
+                view.BeginAnimation(OpacityProperty, fade);
+            }
+        }
         foreach (var item in panel?.Outside ?? items)
         {
             if (ScreenPhoneCard.IsBackdrop(item) || item.Translation.Length == 0) continue;
@@ -78,8 +95,21 @@ internal sealed class PhoneBlocksCanvas : Canvas
         }
     }
 
-    private void AddPanel(ScreenPhoneCard.ChatPanel panel, double width, double height)
+    private void AddPanel(ScreenPhoneCard.ChatPanel panel, double width, double height, bool appearing)
     {
+        if (panel.Aligned && PanelFont is null)
+        {
+            // Hizalı panel: her parça kendi kutusunda, zeminsiz (PhonePanelView.Aligned); ilk görünüşte solarak gelir.
+            foreach (var (part, x, y) in PhonePanelView.Aligned(panel.Title, panel.Messages, panel.Card.LineHeight * height * 0.85, width, height))
+            {
+                SetLeft(part, x);
+                SetTop(part, y);
+                Children.Add(part);
+                alignedViews.Add(part);
+                if (appearing) part.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, Fade));
+            }
+            return;
+        }
         FrameworkElement view;
         double left, top;
         if (PanelFont is { } font)

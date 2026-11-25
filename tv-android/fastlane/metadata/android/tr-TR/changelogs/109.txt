@@ -1,0 +1,2 @@
+0.9.106: GTA 6 telefon paneli yenilendi; her Türkçe balon telefondaki İngilizce balonuyla aynı yükseklikte, telefonun balon renginde duruyor.
+0.9.105: GTA 6 telefonu çevirisi aynı ekranda sabit kalıyor; yazı boyu ve kutu oynamıyor.

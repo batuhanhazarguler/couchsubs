@@ -1518,7 +1518,13 @@
      "left": 0.1,
      "right": 0.7,
      "line": 0.018,
-     "unchanged": true
+     "unchanged": true,
+     "box": [
+      0.6,
+      0.20463,
+      0.7,
+      0.23463
+     ]
     },
     {
      "role": "incoming",
@@ -1528,7 +1534,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.25756,
+      0.7,
+      0.28756
+     ]
     },
     {
      "role": "outgoing",
@@ -1538,7 +1550,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.30387,
+      0.7,
+      0.33387
+     ]
     },
     {
      "role": "incoming",
@@ -1548,7 +1566,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.35019,
+      0.7,
+      0.38019
+     ]
     },
     {
      "role": "outgoing",
@@ -1558,7 +1582,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.3965,
+      0.7,
+      0.4265
+     ]
     },
     {
      "role": "incoming",
@@ -1568,7 +1598,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.44282,
+      0.7,
+      0.47282
+     ]
     },
     {
      "role": "outgoing",
@@ -1578,7 +1614,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.48913,
+      0.7,
+      0.51913
+     ]
     }
    ],
    "card": [
@@ -1597,7 +1639,7 @@
    ]
   },
   {
-   "name": "uzun sohbet: kart uzar, eskiler düşer",
+   "name": "uzun sohbet: balonlar alttan yukarı itilir, eskiler düşer",
    "pose": [
     0.78,
     0.3,
@@ -1613,7 +1655,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.32729,
+      0.7,
+      0.35729
+     ]
     },
     {
      "role": "outgoing",
@@ -1623,7 +1671,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.36013,
+      0.7,
+      0.39013
+     ]
     },
     {
      "role": "incoming",
@@ -1633,7 +1687,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.39297,
+      0.7,
+      0.42297
+     ]
     },
     {
      "role": "outgoing",
@@ -1643,7 +1703,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.42581,
+      0.7,
+      0.45581
+     ]
     },
     {
      "role": "incoming",
@@ -1653,7 +1719,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.45865,
+      0.7,
+      0.48865
+     ]
     },
     {
      "role": "outgoing",
@@ -1663,7 +1735,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.49149,
+      0.7,
+      0.52149
+     ]
     },
     {
      "role": "incoming",
@@ -1673,7 +1751,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.52432,
+      0.7,
+      0.55432
+     ]
     },
     {
      "role": "outgoing",
@@ -1683,7 +1767,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.55716,
+      0.7,
+      0.58716
+     ]
     },
     {
      "role": "incoming",
@@ -1693,7 +1783,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.59,
+      0.7,
+      0.62
+     ]
     },
     {
      "role": "outgoing",
@@ -1703,7 +1799,13 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.62284,
+      0.7,
+      0.65284
+     ]
     },
     {
      "role": "incoming",
@@ -1713,7 +1815,13 @@
      "left": 0.05,
      "right": 0.6,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.65568,
+      0.7,
+      0.68568
+     ]
     },
     {
      "role": "outgoing",
@@ -1723,16 +1831,23 @@
      "left": 0.4,
      "right": 0.95,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.68852,
+      0.7,
+      0.71852
+     ]
     }
    ],
    "card": [
     0.4887187,
-    0.03,
+    0.0328,
     0.7087187,
     0.97
    ],
    "kept": [
+    "m6",
     "m7",
     "m8",
     "m9",
@@ -1769,7 +1884,13 @@
      "left": 0.1,
      "right": 0.7,
      "line": 0.018,
-     "unchanged": false
+     "unchanged": false,
+     "box": [
+      0.6,
+      0.31049,
+      0.7,
+      0.34049
+     ]
     }
    ],
    "card": [

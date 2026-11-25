@@ -152,8 +152,10 @@ public class ScreenPhoneCardTests
                       ScreenPhoneCard.PanelPart.Mine], panel.Select(item => item.Panel!.Value));
         var card = panel[0].Box;
         Assert.True(card.Right <= pose.Bounds.Left || card.Left >= pose.Bounds.Right);
+        // Örneklenmiş renk yok: yedek renkler; panel hizalı.
         Assert.Equal(ScreenPhoneCard.IncomingColor, panel[2].Style);
         Assert.Equal(ScreenPhoneCard.OutgoingColor, panel[3].Style);
+        Assert.True(panel[0].Aligned);
         Assert.True(panel[2].Box.Left < panel[3].Box.Left && panel[2].Box.Top < panel[3].Box.Top);
         Assert.Equal("card", ScreenPhoneCard.PanelPart.Card.Json());
 
@@ -180,9 +182,9 @@ public class ScreenPhoneCardTests
         Assert.Equal(phone.Bounds.Top, backdrop.Box.Top);
         Assert.Equal(phone.Bounds.Bottom, backdrop.Box.Bottom);
         Assert.True(backdrop.Box.Right < phone.Bounds.Left);
-        // Kişi adı çevrilmese de kartın başlığıdır: ortalı, kalın; yazı TV'de okunacak boyda.
+        // Kişi adı çevrilmese de panelin başlığıdır: balonların hizasında (sola yaslı), kalın; yazı TV'de okunacak boyda.
         Assert.Equal("Brian", laid[2].Translation);
-        Assert.Equal("center", laid[2].Look?.Align);
+        Assert.Equal("left", laid[2].Look?.Align);
         Assert.True(laid[2].Look?.Bold);
         Assert.Equal(ScreenPhoneCard.MinLine, laid[2].LineHeight);
         var width = backdrop.Box.Right - backdrop.Box.Left;
@@ -195,6 +197,55 @@ public class ScreenPhoneCardTests
         for (var i = 2; i + 1 < laid.Count; i++) Assert.True(laid[i].Box.Bottom <= laid[i + 1].Box.Top);
         Assert.All(laid.Skip(2), item => Assert.True(item.Box.Left >= backdrop.Box.Left && item.Box.Right <= backdrop.Box.Right
             && item.Box.Top >= backdrop.Box.Top && item.Box.Bottom <= backdrop.Box.Bottom));
+    }
+
+    /// <summary>
+    /// Hizalı panel (Mac testAlignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble ile aynı): her Türkçe balon telefondaki
+    /// İngilizce balonuyla aynı yükseklikte (üst kenarı ±birkaç piksel), çakışan balon en az kaydırmayla aşağı itilir; balon
+    /// telefonun balon renginde, giden sağa, gelen sola yaslı; kişi adı panelin üstünde küçük başlık; aynı içerik aynı çıktı.
+    /// </summary>
+    [Fact]
+    public void AlignedPanelPutsEachBubbleAtTheHeightOfItsEnglishBubble()
+    {
+        var phone = Handset(Upright);
+        ScreenTranslation.Item Message(string source, string translation, ScreenPhoneCard.Role role, double top, PhoneTextStyle? style) =>
+            OnPhone(source, translation, role, (top - phone.Bounds.Top) / (phone.Bounds.Bottom - phone.Bounds.Top)) with
+            {
+                Box = new TextBox(0.72, top, 0.84, top + 0.02), Style = style,
+            };
+        var cream = new PhoneTextStyle("#F0E8E0", "#282828");
+        var blue = new PhoneTextStyle("#D0D8F0", "#282828");
+        var header = OnPhone("Brian", "Brian", ScreenPhoneCard.Role.Header, 0.02, unchanged: true) with { Box = new TextBox(0.76, 0.24, 0.80, 0.26) };
+        List<ScreenTranslation.Item> items =
+        [
+            header,
+            Message("Where are you", "Neredesin", ScreenPhoneCard.Role.Incoming, 0.30, cream),
+            Message("On my way", "Yoldayım", ScreenPhoneCard.Role.Outgoing, 0.42, blue),
+            // Uzun Türkçe: altındaki balonun İngilizcesiyle çakışır, o balon aşağı itilir.
+            Message("Bring the stuff", string.Concat(Enumerable.Repeat("Malzemeleri getir hemen ", 6)), ScreenPhoneCard.Role.Incoming, 0.50, cream),
+            Message("Ok", "Tamam", ScreenPhoneCard.Role.Outgoing, 0.53, null),
+        ];
+        var laid = ScreenPhoneCard.Layout(items, phone);
+        Assert.Equal(laid, ScreenPhoneCard.Layout(items, phone));
+        var panel = ScreenPhoneCard.PanelOf(laid)!;
+        Assert.True(panel.Aligned);
+        double line = panel.Card.LineHeight, pixel = 1.0 / 1080;
+        var rows = panel.Messages;
+        double[] english = [0.30, 0.42, 0.50];
+        for (var i = 0; i < 3; i++)
+            Assert.True(Math.Abs(rows[i].Box.Top + line * ScreenPhoneCard.BubblePadding / 2 - english[i]) <= 3 * pixel, rows[i].Translation);
+        Assert.True(rows[3].Box.Top > ScreenPhoneCard.AlignedTop(items[4], line));
+        Assert.Equal(rows[2].Box.Bottom + line * ScreenPhoneCard.BubbleSpacing, rows[3].Box.Top, 9);
+        Assert.True(panel.Card.Box.Bottom >= rows[3].Box.Bottom);
+        Assert.Equal(cream, rows[0].Style);
+        Assert.Equal(blue, rows[1].Style);
+        Assert.Equal(ScreenPhoneCard.OutgoingColor, rows[3].Style);
+        Assert.True(rows[0].Box.Left < rows[1].Box.Left);
+        Assert.Equal(rows[1].Box.Right, rows[3].Box.Right, 9);
+        Assert.Equal(rows[0].Box.Left, panel.Title!.Box.Left, 9);
+        Assert.True(panel.Title.Box.Bottom < rows[0].Box.Top);
+        Assert.Equal(ScreenPhoneCard.IncomingColor, ScreenPhoneCard.BubbleColor(GamePhonePalette.Neutral, ScreenPhoneCard.IncomingColor));
+        Assert.Equal("#17181B", ScreenPhoneCard.BubbleColor(new PhoneTextStyle("#F0E8E0", "#E8E0D8"), ScreenPhoneCard.IncomingColor).Foreground);
     }
 
     [Fact]
@@ -226,8 +277,11 @@ public class ScreenPhoneCardTests
         };
         var laid = ScreenPhoneCard.Layout([blue, gray, OnPhone("Lucia", "Lucia", ScreenPhoneCard.Role.Contact, 0.6, unchanged: true),
             OnPhone("You coming?", "Geliyor musun?", ScreenPhoneCard.Role.Preview, 0.65)], Handset(Upright));
-        Assert.Equal(ScreenPhoneCard.OutgoingColor, laid[1].Style);
-        Assert.Equal(ScreenPhoneCard.IncomingColor, laid[2].Style);
+        // Balon telefondaki balonun renginde (mavi giden, gri gelen); taraf da renkten (Mac ile aynı).
+        Assert.Equal(ScreenPhoneCard.PanelPart.Mine, laid[1].Panel);
+        Assert.Equal(blue.Style, laid[1].Style);
+        Assert.Equal(ScreenPhoneCard.PanelPart.Theirs, laid[2].Panel);
+        Assert.Equal(gray.Style, laid[2].Style);
         Assert.True(laid[3].Look?.Bold);
         Assert.Equal("left", laid[3].Look?.Align);
         Assert.Equal(ScreenPhoneCard.CardColor, laid[4].Style);
@@ -390,8 +444,10 @@ public class ScreenPhoneCardTests
             {
                 var top = message.GetProperty("top").GetDouble();
                 var role = Enum.Parse<ScreenPhoneCard.Role>(message.GetProperty("role").GetString()!, ignoreCase: true);
+                // İngilizce balonun karedeki kutusu (hizalı panel bu yüksekliğe dizer).
+                var english = message.TryGetProperty("box", out var given) ? Box(Numbers(given)) : new TextBox(0.8, 0.2, 0.9, 0.22);
                 items.Add(new ScreenTranslation.Item(message.GetProperty("source").GetString()!, message.GetProperty("translation").GetString()!,
-                                                     new TextBox(0.8, 0.2, 0.9, 0.22), message.GetProperty("line").GetDouble())
+                                                     english, message.GetProperty("line").GetDouble())
                 {
                     Unchanged = message.GetProperty("unchanged").GetBoolean(),
                     Phone = new ScreenPhoneCard.Placement(role, new TextBox(message.GetProperty("left").GetDouble(), top,
@@ -403,7 +459,16 @@ public class ScreenPhoneCardTests
             Assert.True(ScreenPhoneCard.IsBackdrop(laid[outsideCount]), name);
             var rows = laid.Skip(outsideCount + 1).Where(item => item.Phone?.Role != ScreenPhoneCard.Role.Header).ToList();
             var line = rows[0].LineHeight;
-            for (var i = 0; i + 1 < rows.Count; i++) Assert.True(rows[i + 1].Box.Top - rows[i].Box.Bottom >= line * 0.5 - 1e-9, name);
+            for (var i = 0; i + 1 < rows.Count; i++)
+            {
+                Assert.True(rows[i + 1].Box.Top - rows[i].Box.Bottom >= line * 0.5 - 1e-9, name);
+                // Hizalı: balon İngilizce balonunun yüksekliğinde; çakışırsa üsttekinin altına en az kaydırmayla itilir
+                // (ekranın alt payına dayanmış panelde satırlar alttan yukarı itilir).
+                var wanted = ScreenPhoneCard.AlignedTop(items.First(item => item.Source == rows[i + 1].Source), line);
+                if (rows[^1].Box.Bottom < 1 - ScreenPhoneCard.ScreenMargin - 1e-9)
+                    Assert.Equal(Math.Max(wanted, rows[i].Box.Bottom + line * ScreenPhoneCard.BubbleSpacing), rows[i + 1].Box.Top, 9);
+            }
+            Assert.True(laid[outsideCount].Aligned, name);
             Assert.All(laid.Skip(outsideCount + 1), item => Assert.True(item.Box.Left >= card.Left && item.Box.Right <= card.Right
                 && item.Box.Top >= card.Top - 1e-9 && item.Box.Bottom <= card.Bottom + 1e-9, name));
             Assert.True(card.Top >= ScreenPhoneCard.ScreenMargin - 1e-9, name);

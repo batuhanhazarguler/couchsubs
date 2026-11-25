@@ -156,10 +156,66 @@ public struct PhonePanelInFrame: View {
 
     public var body: some View {
         let box = panel.box
-        PhonePanelView(parts, fontSize: max(minFont, panel.lineHeight * size.height * 0.85),
-                       radius: max(6, ScreenPhoneCard.panelRadius * size.height / 1080))
-            .frame(width: max(0, box.right - box.left) * size.width, height: max(0, box.bottom - box.top) * size.height)
-            .position(x: (box.left + box.right) * 0.5 * size.width, y: (box.top + box.bottom) * 0.5 * size.height)
+        if parts.aligned {
+            PhonePanelAligned(parts, size: size, minFont: minFont)
+                .transition(.opacity)
+        } else {
+            PhonePanelView(parts, fontSize: max(minFont, panel.lineHeight * size.height * 0.85),
+                           radius: max(6, ScreenPhoneCard.panelRadius * size.height / 1080))
+                .frame(width: max(0, box.right - box.left) * size.width, height: max(0, box.bottom - box.top) * size.height)
+                .position(x: (box.left + box.right) * 0.5 * size.width, y: (box.top + box.bottom) * 0.5 * size.height)
+        }
+    }
+}
+
+/// Hizalı panel (`ScreenPhoneCard.Panel.aligned`; TV app.js `placePanel`, Windows PhoneBlocksCanvas, Android PhonePanel
+/// aynı çizim): zemin kartı ve simge yok; her Türkçe balon kendi kutusunda, telefondaki İngilizce balonuyla aynı
+/// yükseklikte, oyunun üstünde doğrudan çizilir. Balon telefonun balon renginde, %85 örtülü, yuvarlak köşeli; gelen sola,
+/// giden sağa yaslı. Kişi adı üstte küçük başlık, notlar ortada koyu zeminde. Yer değişince kısa geçişle kayar.
+public struct PhonePanelAligned: View {
+    let parts: ScreenPhoneCard.Panel
+    let size: CGSize
+    let minFont: CGFloat
+
+    public init(_ parts: ScreenPhoneCard.Panel, size: CGSize, minFont: CGFloat = 0) {
+        self.parts = parts
+        self.size = size
+        self.minFont = minFont
+    }
+
+    public var body: some View {
+        let font = max(8, minFont, parts.card.lineHeight * size.height * 0.85)
+        ZStack(alignment: .topLeading) {
+            if let title = parts.title { part(title, font: font, title: true) }
+            // Anahtarlı liste: yeni mesaj eklenince ya da eskisi düşünce kalan balonlar yeniden yaratılmaz.
+            ForEach(PhonePanelView.keys(parts.messages), id: \.self) { key in
+                part(parts.messages[key.index], font: font, title: false)
+            }
+        }
+        .frame(width: size.width, height: size.height, alignment: .topLeading)
+        .animation(.easeOut(duration: 0.2), value: parts.messages.map(\.box.top))
+        .allowsHitTesting(false)
+    }
+
+    @ViewBuilder private func part(_ item: ScreenTranslation.Item, font: CGFloat, title: Bool) -> some View {
+        let box = item.box
+        let width = max(0, box.right - box.left) * size.width
+        let listed = PhonePanelView.isListRow(item), note = item.panel == .note && !listed
+        let points = title ? font * 0.8 : listed ? font * 0.92 : note ? font * 0.8 : font
+        let weight: Font.Weight = title || item.look?.bold == true ? .bold : listed ? .regular : note ? .medium : .semibold
+        let alignment: Alignment = item.panel == .mine ? .trailing : note ? .center : .leading
+        Text(verbatim: item.translation)
+            .font(.system(size: points, weight: weight))
+            .foregroundStyle(PhonePanelView.color(item.style?.foreground, fallback: .white))
+            .multilineTextAlignment(note ? .center : .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, font * 0.6)
+            .padding(.vertical, font * 0.3)
+            .background(RoundedRectangle(cornerRadius: font * 0.75, style: .continuous)
+                .fill(PhonePanelView.color(item.style?.background, fallback: .black).opacity(ScreenPhoneCard.bubbleOpacity)))
+            .frame(maxWidth: width, alignment: alignment)
+            .frame(width: width, alignment: alignment)
+            .offset(x: box.left * size.width, y: box.top * size.height)
     }
 }
 #endif

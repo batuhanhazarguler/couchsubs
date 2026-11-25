@@ -829,6 +829,8 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
         if (item.Bubble) json["bubble"] = true;
         // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla çizer; eski TV alanı yok sayar.
         if (item.Panel is { } panel) json["panel"] = panel.Json();
+        // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer (Mac ile aynı).
+        if (item.Aligned) json["aligned"] = true;
         return json;
     }
 

@@ -45,6 +45,11 @@ public static class ScreenTranslation
         /// çizer, eski TV kutuları yerinde çizer (Mac ile aynı).
         /// </summary>
         public ScreenPhoneCard.PanelPart? Panel { get; init; }
+        /// <summary>
+        /// Panelin zemininde (<c>Card</c>): parçalar akışla değil kutularının yerinde çizilir; her Türkçe balon telefondaki
+        /// İngilizce balonuyla aynı yükseklikte (<see cref="ScreenPhoneCard.Layout"/>, JSON <c>aligned</c>). Eski TV yok sayar.
+        /// </summary>
+        public bool Aligned { get; init; }
         /// <summary>Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; <see cref="ScreenFit"/>); null ise bilinmiyor.</summary>
         public TextBox? Room { get; init; }
         /// <summary>Özgün yazının satır sayısı (<see cref="Group.Rows"/>).</summary>

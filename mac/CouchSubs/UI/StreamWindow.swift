@@ -283,6 +283,8 @@ struct GamePhoneBlocks: View {
         }
         .clipped()
         .allowsHitTesting(false)
+        // Hizalı telefon paneli telefon görününce solarak gelir, kalkınca solarak kaybolur (TV ile aynı, 250 ms).
+        .animation(.easeOut(duration: 0.25), value: panel == nil)
     }
 
     private static func color(_ hex: String?, fallback: Color) -> Color {
@@ -363,6 +365,7 @@ struct ScreenTextBlocks: View {
         }
         .clipped()
         .allowsHitTesting(false)
+        .animation(.easeOut(duration: 0.25), value: panel == nil)
     }
 
     /// Bir blok, TV ile aynı yerleşimle (`ScreenFit.lines`): yazı boyu satır yüksekliğinin 0,95'i; yazının alanı özgün kutu

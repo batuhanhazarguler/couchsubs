@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package com.couchsubs.mobile.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -15,11 +19,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +37,8 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,19 +51,91 @@ import com.couchsubs.mobile.core.ScreenTranslation
 
 /**
  * GTA 6 telefonunun yanındaki sohbet paneli, karedeki yerinde ([width]×[height] karenin gösterildiği alan). Yazı boyu
- * panelin satır yüksekliğinden; küçük ekranda en az [minFont] (sığmayan eski mesajlar üstten kırpılır). Mac/iPhone
- * PhonePanelView, Windows PhonePanelView.cs, TV app.js placePanel ile aynı çizim.
+ * panelin satır yüksekliğinden; küçük ekranda en az [minFont]. Hizalı panelde ([ScreenPhoneCard.Panel.aligned]) her
+ * parça kendi kutusunda ([PhonePanelAligned]); değilse akışla kartta ([PhonePanelView]). Mac/iPhone PhonePanelInFrame,
+ * Windows PhoneBlocksCanvas, TV app.js placePanel ile aynı çizim.
  */
 @Composable
 fun PhonePanelInFrame(panel: ScreenPhoneCard.Panel, width: Dp, height: Dp, minFont: Float = 12f) {
     val box = panel.card.box
     val font = maxOf(minFont, (height.value * panel.card.lineHeight * 0.85).toFloat())
+    if (panel.aligned) {
+        PhonePanelAligned(panel, width, height, font)
+        return
+    }
     PhonePanelView(panel, font, maxOf(6f, (ScreenPhoneCard.PANEL_RADIUS * height.value / 1080).toFloat()).dp,
         Modifier
             .offset(x = width * box.left.toFloat(), y = height * box.top.toFloat())
             .size(width * (box.right - box.left).toFloat(), height * (box.bottom - box.top).toFloat()))
 }
 
+/**
+ * Telefon paneli görününce solarak gelir, telefon kalkınca (panel null) solarak kaybolur (TV, Mac, iPhone, Windows ile
+ * aynı, 250 ms); kaybolurken son panel çizilmeye devam eder.
+ */
+@Composable
+fun FadingPhonePanel(panel: ScreenPhoneCard.Panel?, width: Dp, height: Dp, minFont: Float = 12f) {
+    var last by remember { mutableStateOf(panel) }
+    if (panel != null) last = panel
+    AnimatedVisibility(visible = panel != null, enter = fadeIn(tween(250)), exit = fadeOut(tween(250))) {
+        last?.let { PhonePanelInFrame(it, width, height, minFont) }
+    }
+}
+
+/**
+ * Hizalı panel (Mac/iPhone PhonePanelAligned, Windows PhonePanelView.Aligned, TV app.js placeAlignedPanel aynı çizim):
+ * zemin kartı ve simge yok; her parça kendi kutusunda (Türkçe balon telefondaki İngilizce balonuyla aynı yükseklikte),
+ * telefonun balon renginde %85 örtülü, yuvarlak köşeli; gelen sola, giden sağa yaslı; kişi adı üstte küçük başlık. Gerçek
+ * yazı tahminden uzunsa alttaki parça en az kaydırmayla itilir (yazı küçülmez, yatayda sıkıştırılmaz).
+ */
+@Composable
+fun PhonePanelAligned(panel: ScreenPhoneCard.Panel, width: Dp, height: Dp, fontSize: Float) {
+    val font = maxOf(8f, fontSize)
+    val parts = listOfNotNull(panel.title) + panel.messages
+    val density = LocalDensity.current
+    Layout(content = {
+        parts.forEach { item -> AlignedPart(item, item === panel.title, font, width * (item.box.right - item.box.left).toFloat()) }
+    }) { measurables, constraints ->
+        val w = width.toPx()
+        val h = height.toPx()
+        val usual = with(density) { (font / 0.85f * 0.6f).dp.toPx() }
+        val placeables = measurables.map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+        val tops = IntArray(parts.size)
+        var bottom = 0f
+        var plannedBottom = 0f
+        parts.forEachIndexed { i, item ->
+            var top = (item.box.top * h).toFloat()
+            // Çakışma: üsttekinin gerçek altına, bilgisayarın bıraktığı aralık (en çok olağan boşluk) korunarak.
+            if (i > 0) top = maxOf(top, bottom + maxOf(0f, minOf(top - plannedBottom, usual)))
+            plannedBottom = (item.box.bottom * h).toFloat()
+            bottom = top + placeables[i].height
+            tops[i] = top.toInt()
+        }
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            placeables.forEachIndexed { i, placeable -> placeable.place((parts[i].box.left * w).toInt(), tops[i]) }
+        }
+    }
+}
+
+@Composable
+private fun AlignedPart(item: ScreenTranslation.Item, title: Boolean, font: Float, rowWidth: Dp) {
+    val listed = isListRow(item)
+    val note = item.panel == ScreenPhoneCard.PanelPart.NOTE && !listed
+    val mine = item.panel == ScreenPhoneCard.PanelPart.MINE
+    val size = if (title) font * 0.8f else if (listed) font * 0.92f else if (note) font * 0.8f else font
+    val weight = if (title || item.look?.bold == true) FontWeight.Bold else if (listed) FontWeight.Normal
+        else if (note) FontWeight.Medium else FontWeight.SemiBold
+    Row(Modifier.width(rowWidth), horizontalArrangement = if (mine) Arrangement.End else if (note) Arrangement.Center else Arrangement.Start) {
+        Text(item.translation, style = TextStyle(fontSize = size.sp, lineHeight = (size * 1.2f).sp, fontWeight = weight,
+            letterSpacing = 0.sp), color = color(item.surface?.foreground, Color.White),
+            textAlign = if (note) TextAlign.Center else TextAlign.Start, maxLines = if (title) 1 else Int.MAX_VALUE,
+            overflow = if (title) TextOverflow.Ellipsis else TextOverflow.Clip,
+            modifier = Modifier.widthIn(max = rowWidth)
+                .clip(RoundedCornerShape((font * 0.75f).dp))
+                .background(color(item.surface?.background, Color.Black).copy(alpha = ScreenPhoneCard.BUBBLE_OPACITY.toFloat()))
+                .padding(horizontal = (font * 0.6f).dp, vertical = (font * 0.3f).dp))
+    }
+}
 /**
  * Sohbet paneli: yuvarlak köşeli, yarı saydam koyu kart; üstte kişinin adı, altında mesajlar sırayla (karşı taraf solda
  * krem, oyuncu sağda amber balon, not ortada). Sığmayan en eski mesajlar üstten kırpılır, son mesajlar görünür kalır. Sağ

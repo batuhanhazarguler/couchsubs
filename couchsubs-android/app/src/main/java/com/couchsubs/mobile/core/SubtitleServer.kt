@@ -354,6 +354,8 @@ class SubtitleServer(
             if (item.bubble) json["bubble"] = true
             // Telefonun yanındaki sohbet panelinin parçası: yeni TV paneli akışla çizer; eski TV alanı yok sayar.
             item.panel?.let { json["panel"] = it.wire }
+            // Hizalı panel (TV uygulaması 0.9.106): parçalar kutularının yerinde, zeminsiz; eski TV akışla çizer (Mac ile aynı).
+            if (item.aligned) json["aligned"] = true
             return json
         }
 

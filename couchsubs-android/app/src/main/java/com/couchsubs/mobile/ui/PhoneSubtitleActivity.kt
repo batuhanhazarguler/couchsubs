@@ -192,7 +192,7 @@ class PhoneSubtitleActivity : ComponentActivity() {
                     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
                         // GTA 6 telefonunun sohbet paneli akışla çizilir (PhonePanel; Mac, iPhone, Windows, TV ile aynı).
                         val screenPanel = com.couchsubs.mobile.core.ScreenPhoneCard.panel(status.screen)
-                        screenPanel?.let { PhonePanelInFrame(it, maxWidth, maxHeight) }
+                        FadingPhonePanel(screenPanel, maxWidth, maxHeight)
                         // Ölçüleri gelen öğeler yerinde birebir çizilir (ExactBlocks); kalanlar eski yolla.
                         val screenItems = screenPanel?.outside ?: status.screen
                         ExactBlocks(screenItems.filter { it.surface != null && it.paint != null })
@@ -216,13 +216,16 @@ class PhoneSubtitleActivity : ComponentActivity() {
                     }
                     // Ek alanların (görev, telefon, bildirim) çevirisi oyundaki yerinde küçük kutuda (TV ve iPhone'daki gibi).
                     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
+                        // Telefon paneli solarak gelir ve gider; "Ekranı çevir"in paneli ekrandayken o çizilir.
+                        FadingPhonePanel(status.regions.firstNotNullOfOrNull { region ->
+                            region.blocks?.let { com.couchsubs.mobile.core.ScreenPhoneCard.panel(it) }
+                        }?.takeIf { status.screen.none { it.panel == com.couchsubs.mobile.core.ScreenPhoneCard.PanelPart.CARD } },
+                            maxWidth, maxHeight)
                         status.regions.forEach { region ->
                             // Yanda Panel: GTA 6 telefonunun mesajları telefonun yanındaki sohbet panelinde (Mac, iPhone,
                             // Windows, TV ile aynı); "Ekranı çevir"in paneli ekrandayken o çizilir. Panel dışındaki yazılar yerinde.
                             val regionPanel = region.blocks?.let { com.couchsubs.mobile.core.ScreenPhoneCard.panel(it) }
                             if (regionPanel != null) {
-                                if (status.screen.none { it.panel == com.couchsubs.mobile.core.ScreenPhoneCard.PanelPart.CARD })
-                                    PhonePanelInFrame(regionPanel, maxWidth, maxHeight)
                                 com.couchsubs.mobile.core.ScreenTranslation.uncovered(regionPanel.outside.filter { it.surface != null }, status.screen)
                                     .forEach { item -> StyledBlock(item, maxWidth, maxHeight) }
                                 return@forEach

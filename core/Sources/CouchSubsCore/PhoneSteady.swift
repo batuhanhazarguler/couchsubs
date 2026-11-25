@@ -257,15 +257,16 @@ enum PhoneSteady {
         return result
     }
 
-    /// İki gönderi TV'de ve masaüstünde aynı görünür mü. Panelin mesajları, kişi adı ve notları akışla çizilir: onların
-    /// yalnız sırası, yazısı ve rengi önemlidir; kutuları (telefondaki yere göre biraz oynar) önemsizdir. Panelin zemini ve
-    /// panel dışındaki her öğe yeriyle birlikte aynı olmalıdır.
+    /// İki gönderi TV'de ve masaüstünde aynı görünür mü. Akışla çizilen panelde mesajların, kişi adının ve notların yalnız
+    /// sırası, yazısı ve rengi önemlidir; kutuları (telefondaki yere göre biraz oynar) önemsizdir. Hizalı panelde
+    /// (`aligned`) her parça kendi kutusunda çizilir: kutular da aynı olmalıdır (küçük oynamayı `steadyPositions` zaten
+    /// tutar). Panelin zemini ve panel dışındaki her öğe yeriyle birlikte aynı olmalıdır.
     static func samePicture(_ a: [ScreenTranslation.Item], _ b: [ScreenTranslation.Item]) -> Bool {
         guard a.count == b.count else { return false }
         return zip(a, b).allSatisfy { x, y in
             guard x.panel == y.panel, x.translation == y.translation, x.style == y.style, x.look == y.look,
-                  x.icons == y.icons, x.bubble == y.bubble, x.lineHeight == y.lineHeight else { return false }
-            if let part = x.panel, part != .card { return true }
+                  x.icons == y.icons, x.bubble == y.bubble, x.lineHeight == y.lineHeight, x.aligned == y.aligned else { return false }
+            if let part = x.panel, part != .card, !a.contains(where: { $0.panel == .card && $0.aligned }) { return true }
             return x.box == y.box
         }
     }

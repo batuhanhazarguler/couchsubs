@@ -241,12 +241,14 @@ object ScreenPhoneCard {
     private class Row(val item: ScreenTranslation.Item, val width: Double, val height: Double, val side: String)
 
     /**
-     * Telefondaki öğeleri (`phone` bilgisi olanlar) kart olarak dizer. Telefonda çevrilmiş öğe yoksa liste olduğu gibi
-     * döner. Çevrilmemiş öğeler ([ScreenTranslation.Item.unchanged]: kişi adı, "ok") kartta aslıyla görünür; kart
-     * dışındakiler sonra atılır. Balonlar arasında en az [BUBBLE_SPACING] satır boşluk kalır; mesajlar telefon boyuna
-     * sığmazsa kart uzar, yine sığmazsa en eski mesajlar düşer. Kartın altında kalan başka bir çeviri kartın dışına,
-     * yanına alınır. [lockedLine]: telefondaki satır yüksekliği yerine kullanılacak kilitli ölçüm
-     * ([PhonePanelSteady.steadyLine], #1152); verilmezse bu karenin ölçümü ([measuredLine]).
+     * Telefondaki öğeleri ([ScreenTranslation.Item.phone] bilgisi olanlar) telefonun yanındaki panelde dizer (Mac:
+     * ScreenPhoneCard.layout ile birebir). Telefonda çevrilmiş öğe yoksa liste olduğu gibi döner. Çevrilmemiş öğeler (kişi
+     * adı, "ok") panelde aslıyla görünür. Hizalı panel ([ScreenTranslation.Item.aligned]): her Türkçe balon telefondaki
+     * İngilizce balonuyla aynı yükseklikte durur ([alignedTop]); çakışan balon en az kaydırmayla aşağı itilir (aralarında en
+     * az [BUBBLE_SPACING] satır), panel gerekirse aşağı uzar; ekranın alt payına dayanınca satırlar alttan yukarı itilir,
+     * yukarıda da yer kalmazsa en eski mesajlar düşer. Yazı küçülmez. Balonlar telefonun balon renginde ([bubbleColor]).
+     * [lockedLine]: telefondaki satır yüksekliği yerine kullanılacak kilitli ölçüm ([PhonePanelSteady.steadyLine], #1152).
+     * Kartın kutusu, akışla çizen eski TV için bütün satırları ve dolguyu alacak boydadır.
      */
     fun layout(items: List<ScreenTranslation.Item>, handset: Handset, textScale: Double = 1.0,
                lockedLine: Double? = null): List<ScreenTranslation.Item> {
@@ -254,8 +256,6 @@ object ScreenPhoneCard {
         if (onPhone.none { !it.unchanged }) return items
         val others = items.filter { it.phone?.role?.inCard != true }
         val start = cardBox(handset.bounds, others.filter { !it.unchanged }.map { it.box })
-        var cardTop = start.top
-        var cardBottom = start.bottom
         val cardWidth = start.right - start.left
         val measured = lockedLine ?: measuredLine(onPhone) ?: 0.0
         val line = maxOf(MIN_LINE * minOf(MAX_SCALE, maxOf(MIN_SCALE, textScale)), measured)
@@ -272,7 +272,8 @@ object ScreenPhoneCard {
         }
         val headerHeight = if (header == null) 0.0 else line * 1.4 + spacing
 
-        // Her satırın kartta kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
+        // Her satırın panelde kaplayacağı yer: genişliği rolünden, yüksekliği Türkçenin o genişlikte kaç satır tuttuğundan.
+        // Not ve liste satırı da balon gibi dolgulu, koyu yarı saydam zeminde çizilir (oyunun üstünde okunsun).
         val rows = body.map { item ->
             val given = item.phone!!.role
             val role = if (given == Role.MESSAGE) (if (isOutgoing(item.surface)) Role.OUTGOING else Role.INCOMING) else given
@@ -283,8 +284,8 @@ object ScreenPhoneCard {
             val longest = (lines.maxOfOrNull { it.length } ?: 0) * line * CHAR_WIDTH / handset.aspect + 2 * pad
             val width = if (bubble) minOf(widest, maxOf(cardWidth * BUBBLE_MIN, longest)) else widest
             val surface = when (role) {
-                Role.OUTGOING -> OUTGOING
-                Role.INCOMING -> INCOMING
+                Role.OUTGOING -> bubbleColor(item.surface, OUTGOING)
+                Role.INCOMING -> bubbleColor(item.surface, INCOMING)
                 // Bölüm başlığı ("Önerilen", "Mesajlar") soluk ve kalın, sola yaslı; not ortalı (iPhone ile aynı).
                 Role.NOTE, Role.HEADING -> NOTE
                 else -> CARD
@@ -297,25 +298,44 @@ object ScreenPhoneCard {
             val side = if (role == Role.OUTGOING) "right" else if (role == Role.NOTE) "center" else "left"
             val placed = item.copy(unchanged = false, lineHeight = line, surface = surface,
                 look = flat(side, role == Role.CONTACT || role == Role.HEADING), panel = part)
-            val inside = line * (if (bubble) BUBBLE_PADDING else 0.3)
-            Row(placed, width, lines.size * line * LINE_SPACING + inside, side)
+            Row(placed, width, lines.size * line * LINE_SPACING + line * BUBBLE_PADDING, side)
         }.toMutableList()
         // Sohbet listesinde önizleme kişi adının hemen altındadır ([LIST_GAP]); öbür satırlar arasında spacing kalır.
         fun rowGap(index: Int): Double =
             if (index > 0 && rows[index].item.phone?.role == Role.PREVIEW && rows[index - 1].item.phone?.role == Role.CONTACT)
                 line * LIST_GAP else spacing
-        // Mesajlar telefon boyuna sığmazsa kart önce aşağı, sonra yukarı uzar (ekranın kenar payına kadar).
-        fun needed(): Double = 2 * padY + headerHeight + rows.sumOf { it.height } + (1 until rows.size).sumOf { rowGap(it) }
-        var extra = needed() - (cardBottom - cardTop)
-        if (extra > 0) {
-            val down = minOf(extra, maxOf(0.0, 1 - SCREEN_MARGIN - cardBottom))
-            cardBottom += down
-            extra -= down
-            cardTop -= minOf(extra, maxOf(0.0, cardTop - SCREEN_MARGIN))
+        val limit = 1 - SCREEN_MARGIN
+        // Kişi adı panelin üstünde, balonların hizasında küçük başlık: telefondaki yerinde, telefonun üstünden yukarı çıkmaz.
+        val titleTop = header?.let { maxOf(SCREEN_MARGIN, minOf(alignedTop(it, line), start.top)) }
+        val bodyTop = titleTop?.let { it + line * (TITLE_HEIGHT + TITLE_GAP) } ?: SCREEN_MARGIN
+        // Her balon kendi İngilizce balonunun yüksekliğinde; çakışan balon üsttekinin altına en az kaydırmayla itilir. Panel
+        // ekranın alt kenar payını aşarsa satırlar alttan yukarı itilir; yukarıda da yer kalmazsa en eski satırlar düşer.
+        fun alignedTops(): DoubleArray {
+            val tops = DoubleArray(rows.size)
+            for (i in rows.indices) {
+                val below = if (i == 0) bodyTop else tops[i - 1] + rows[i - 1].height + rowGap(i)
+                tops[i] = maxOf(alignedTop(rows[i].item, line), below)
+            }
+            var floor = limit
+            for (i in rows.indices.reversed()) {
+                tops[i] = minOf(tops[i], floor - rows[i].height)
+                floor = tops[i] - rowGap(i)
+            }
+            return tops
         }
-        // Yine sığmazsa en eski (en üstteki) satırlar düşer: son mesajlar görünür kalır.
-        while (rows.size > 1 && needed() > cardBottom - cardTop + 1e-9) rows.removeAt(0)
-        val card = TextBox(start.left, cardTop, start.right, cardBottom)
+        var tops = alignedTops()
+        while (rows.size > 1 && tops[0] < bodyTop - 1e-9) {
+            rows.removeAt(0)
+            tops = alignedTops()
+        }
+        if (tops.isNotEmpty() && tops[0] < bodyTop) tops[0] = bodyTop
+        val contentTop = minOf(titleTop ?: start.top, if (tops.isNotEmpty()) tops[0] else start.top)
+        val contentBottom = if (rows.isNotEmpty()) tops.last() + rows.last().height else start.bottom
+        // Kart: telefon boyunda, balonlar aşağı uzanırsa onlarla; eski TV'nin akışı (dolgu, başlık, aralıklar) da sığar.
+        val flow = 2 * padY + headerHeight + rows.sumOf { it.height } + (1 until rows.size).sumOf { rowGap(it) }
+        val cardTop = maxOf(SCREEN_MARGIN, minOf(start.top, contentTop))
+        val card = TextBox(start.left, cardTop, start.right,
+            minOf(limit, maxOf(start.bottom, contentBottom + padY, cardTop + flow)))
 
         // Kartın altında kalan başka bir çeviri kartın telefondan uzak yanına alınır; oraya sığmazsa yerinde kalır.
         val cardOnLeft = card.right <= handset.bounds.left + 1e-9
@@ -325,29 +345,12 @@ object ScreenPhoneCard {
             val left = if (cardOnLeft) card.left - GAP - width else card.right + GAP
             if (left >= 0 && left + width <= 1) item.copy(box = TextBox(left, item.box.top, left + width, item.box.bottom)) else item
         }.toMutableList()
-        result.add(ScreenTranslation.Item("", BACKDROP_TEXT, card, line, surface = CARD, look = flat("left", false), panel = PanelPart.CARD))
+        result.add(ScreenTranslation.Item("", BACKDROP_TEXT, card, line, surface = CARD, look = flat("left", false),
+            panel = PanelPart.CARD, aligned = true))
 
-        var bodyTop = card.top + padY
-        if (header != null) {
-            val placed = header.copy(box = TextBox(card.left + pad, bodyTop, card.right - pad, bodyTop + line * 1.4), lineHeight = line,
-                surface = CARD, look = flat("center", true), unchanged = false, panel = PanelPart.TITLE)
-            result.add(placed)
-            bodyTop = placed.box.bottom + spacing
-        }
-        val limit = card.bottom - padY
-        // Önce telefondaki yerine (oranla) yakın, üsttekinin altında; taşan satırlar alttan yukarı itilir.
-        val phone = handset.bounds
-        val tops = DoubleArray(rows.size)
-        var cursor = bodyTop
-        rows.forEachIndexed { index, row ->
-            val wanted = phone.top + row.item.phone!!.spot.top * (phone.bottom - phone.top)
-            tops[index] = if (index > 0 && rowGap(index) < spacing) cursor else maxOf(wanted, cursor)
-            cursor = tops[index] + row.height + (if (index + 1 < rows.size) rowGap(index + 1) else spacing)
-        }
-        var floor = limit
-        for (index in rows.indices.reversed()) {
-            tops[index] = maxOf(bodyTop, minOf(tops[index], floor - rows[index].height))
-            floor = tops[index] - rowGap(index)
+        if (header != null && titleTop != null) {
+            result.add(header.copy(box = TextBox(card.left + pad, titleTop, card.right - pad, titleTop + line * TITLE_HEIGHT),
+                lineHeight = line, surface = CARD, look = flat("left", true), unchanged = false, panel = PanelPart.TITLE))
         }
         rows.forEachIndexed { index, row ->
             val left = when (row.side) {
@@ -358,6 +361,51 @@ object ScreenPhoneCard {
             result.add(row.item.copy(box = TextBox(left, tops[index], left + row.width, tops[index] + row.height)))
         }
         return result
+    }
+
+    /**
+     * Hizalı panelde satırın istenen üst kenarı: Türkçe yazının üstü İngilizce yazının üstünde ([ScreenTranslation.Item.box],
+     * karede); balon üst dolgusu kadar yukarıdan başlar (Mac ile aynı).
+     */
+    fun alignedTop(item: ScreenTranslation.Item, line: Double): Double = item.box.top - line * BUBBLE_PADDING / 2
+
+    /** Kişi adının (başlık) yüksekliği ve altındaki boşluk (satır yüksekliğine oranla); başlık balondan küçük. */
+    const val TITLE_HEIGHT = 1.4
+    const val TITLE_GAP = 0.3
+    /** Hizalı panelde balonların, notların ve başlığın zemin örtüsü. */
+    const val BUBBLE_OPACITY = 0.85
+
+    /**
+     * Balonun rengi: telefondaki balondan örneklenen zemin ve yazı ([GamePhonePalette]); örnek yoksa ya da okunamadıysa
+     * (nötr yedek, geçersiz renk) [fallback]. Örneğin yazısı zeminde okunmuyorsa (kontrast 4,5'ten az) zemine göre koyu ya da
+     * açık yazı (Mac ile aynı).
+     */
+    fun bubbleColor(style: TextSurface?, fallback: TextSurface): TextSurface {
+        if (style == null || style.background.equals(GamePhonePalette.neutral.background, ignoreCase = true)) return fallback
+        val background = rgb(style.background) ?: return fallback
+        val ink = rgb(style.foreground)
+        if (ink != null && contrast(background, ink) >= 4.5) return style.copy(flat = true)
+        val dark = "#17181B"
+        val light = "#F3EEE4"
+        return TextSurface(style.background, if (contrast(background, rgb(dark)!!) >= contrast(background, rgb(light)!!)) dark else light)
+    }
+
+    private fun rgb(hex: String): DoubleArray? {
+        if (hex.length != 7 || hex[0] != '#') return null
+        val value = hex.substring(1).toIntOrNull(16) ?: return null
+        return doubleArrayOf(((value shr 16) and 0xFF).toDouble(), ((value shr 8) and 0xFF).toDouble(), (value and 0xFF).toDouble())
+    }
+
+    /** İki rengin WCAG kontrast oranı. */
+    internal fun contrast(a: DoubleArray, b: DoubleArray): Double {
+        fun linear(n: Double): Double {
+            val s = n / 255
+            return if (s <= 0.04045) s / 12.92 else Math.pow((s + 0.055) / 1.055, 2.4)
+        }
+        fun luminance(c: DoubleArray) = 0.2126 * linear(c[0]) + 0.7152 * linear(c[1]) + 0.0722 * linear(c[2])
+        val x = luminance(a)
+        val y = luminance(b)
+        return (maxOf(x, y) + 0.05) / (minOf(x, y) + 0.05)
     }
 
     /** Kartta dizilecek telefon yazılarının satır yüksekliklerinin ortancası (panelin yazı boyu); yoksa null. */
@@ -391,7 +439,10 @@ object ScreenPhoneCard {
         val title: ScreenTranslation.Item?,
         val messages: List<ScreenTranslation.Item>,
         val outside: List<ScreenTranslation.Item>,
-    )
+    ) {
+        /** Hizalı panel: zemin çizilmez, her parça kendi kutusunun yerinde; değilse akışla, kartta. */
+        val aligned: Boolean get() = card.aligned
+    }
 
     /** Öğelerde panel varsa parçaları; yoksa null (Mac: ScreenPhoneCard.panel). */
     fun panel(items: List<ScreenTranslation.Item>): Panel? {

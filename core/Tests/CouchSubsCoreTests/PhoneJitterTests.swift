@@ -214,6 +214,15 @@ final class PhoneJitterTests: XCTestCase {
                 let moved = try XCTUnwrap(server.sent.last)
                 XCTAssertEqual(moved.count, first.count)
                 XCTAssertTrue(zip(moved, first).allSatisfy { $0.box.top < $1.box.top - 0.01 }, "hepsi birlikte kaydı")
+            } else {
+                // Hizalı panel: Türkçe balonlar İngilizce balonlarla birlikte yukarı kayar (bir kez gönderilir).
+                XCTAssertEqual(server.sent.count, sends + 1, "kaydırma bir kez gönderilir")
+                let moved = try XCTUnwrap(ScreenPhoneCard.panel(try XCTUnwrap(server.sent.last))).messages
+                let before = try XCTUnwrap(ScreenPhoneCard.panel(first)).messages
+                // En üstteki ortak balon yukarı kayar (alttakiler uzayan Türkçe yüzünden itilebilir).
+                let common = try XCTUnwrap(moved.first { m in before.contains { $0.translation == m.translation } })
+                XCTAssertLessThan(common.box.top, before.first { $0.translation == common.translation }!.box.top - 0.01,
+                                  "balonlar kaydı")
             }
             let scrolled = server.sent.count
             for (dx, dy) in shakes.prefix(3) {

@@ -44,6 +44,9 @@ public enum ScreenTranslation {
         /// Telefonun yanındaki sohbet panelinin parçası (zemin, kişi adı, karşı tarafın ya da oyuncunun mesajı, not);
         /// yeni çiziciler paneli bunlarla akışta çizer (`ScreenPhoneCard.PanelPart`), eski TV kutuları yerinde çizer.
         public var panel: ScreenPhoneCard.PanelPart?
+        /// Panelin zemininde (`card`): parçalar akışla değil, kutularının yerinde çizilir; her Türkçe balon telefondaki
+        /// İngilizce balonuyla aynı yükseklikte durur (`ScreenPhoneCard.layout`, JSON `aligned`). Eski TV yok sayar.
+        public var aligned = false
         /// Kutunun genişleyebileceği yatay alan (simgelere ve komşu yazıya kadar; `ScreenFit`); nil ise bilinmiyor.
         public var room: TextBox?
         /// Özgün yazının satır sayısı (`Group.rows`).
