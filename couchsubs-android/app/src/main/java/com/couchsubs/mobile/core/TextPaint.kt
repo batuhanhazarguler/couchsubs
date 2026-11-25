@@ -46,10 +46,44 @@ data class TextPaint(
      * o simgeye girmez, yazı o yana yaslanır (TV'ye `align` olarak gider). null: simge yok.
      */
     val iconSide: String? = null,
+    /**
+     * Çizim kipi ([TextPainter.Target.kind] verilince seçilir; yalnız otomatik ekran yazısında): [MODE_COVER] örtme,
+     * [MODE_BESIDE] yanına yazma, [MODE_TWIN] ikiz panel. TV'ye `mode` olarak gider; eski TV yok sayıp örter.
+     */
+    val mode: String = MODE_COVER,
+    /** beside/twin: Türkçenin yazıldığı kutu. TV'ye `spot`. */
+    val spot: TextBox? = null,
+    /** [spot]'un yana uzayabileceği alan (yalnız sol ve sağ kenarı anlamlı). TV'ye `spotRoom`. */
+    val spotRoom: TextBox? = null,
+    /** twin: ikiz panelin kutusu (özgünün [TextPainter.TWIN_SCALE] katı, sol kenarı hizalı, üstte ya da altta). TV'ye `twinBox`. */
+    val twin: TextBox? = null,
+    /** twin: panelin köşe yarıçapı (ikizde), kare yüksekliğine oranla. TV'ye `radius`. */
+    val radius: Double = 0.0,
+    /** twin: ikizin özgüne oranı: yazı boyu ve satır aralığı bu katta. TV'ye `scale`. */
+    val scale: Double = 1.0,
+    /** twin: konuşma balonunun kuyruğu hangi alt köşede ("left"/"right"); null: yok. TV'ye `tail`. */
+    val tail: String? = null,
+    /** twin: panelin solundaki kare resim (kişi resmi): karedeki yeri ve ikiz paneldeki yeri. */
+    val portrait: TextBox? = null,
+    val portraitTwin: TextBox? = null,
+    /** Kesilmiş resim (PNG data: adresi, en çok [TextPainter.PORTRAIT_MAX] piksel); çağıran keser. TV'ye `icon`. */
+    val portraitImage: String? = null,
 ) {
     /** Bu ölçüler [area] içindeki oranlarsa, aynı yerin [area]'yı içeren çerçevedeki oranları. */
     fun placedIn(area: TextBox): TextPaint =
-        copy(cover = cover.placedIn(area), grow = grow?.placedIn(area), pitch = pitch * (area.bottom - area.top))
+        copy(cover = cover.placedIn(area), grow = grow?.placedIn(area), pitch = pitch * (area.bottom - area.top),
+            spot = spot?.placedIn(area), spotRoom = spotRoom?.placedIn(area), twin = twin?.placedIn(area),
+            radius = radius * (area.bottom - area.top), portrait = portrait?.placedIn(area),
+            portraitTwin = portraitTwin?.placedIn(area))
+
+    companion object {
+        /** Düz/opak panel zemininde özgün yazıyı örten kutu (eski davranış). */
+        const val MODE_COVER = "cover"
+        /** Desenli zeminde ya da oyun dünyası üstündeki istemde örtü yok; Türkçe yanındaki boş alana yazılır. */
+        const val MODE_BESIDE = "beside"
+        /** Yuvarlak köşeli düz panel örtülmez; Türkçesi küçük bir ikiz panel olarak hemen üstüne (yer yoksa altına). */
+        const val MODE_TWIN = "twin"
+    }
 }
 
 /**
@@ -69,7 +103,239 @@ object TextPainter {
         val upper: Boolean, val align: String,
         /** Okunan yazının sözcük sayısı (simge sanılan karakterler sayılmaz, [words]); 0: bilinmiyor, kutunun ucundaki simge aranmaz. */
         val words: Int = 0,
+        /** Yazının türü: verilirse çizim kipi seçilir ([TextPaint.mode]); null: hep örtme ("Ekranı çevir"). */
+        val kind: ScreenTextKind? = null,
+        /** Yazı bir tuş istemi/eylemi ("Hold L2 to aim"): düz zeminde de yanına yazılabilir. */
+        val prompt: Boolean = false,
     )
+
+    // Kip seçimi sabitleri (Mac/iPhone TextPaint.swift, Windows TextPaint.cs aynı)
+
+    /** Panel taramasında nokta zeminden en çok bu kadar uzaksa panelin zeminidir. */
+    const val PANEL_TOLERANCE = 24
+    /** Bir satır/sütunun en az bu kadarı zemin (ya da yazı) ise panel o yöne sürer. */
+    const val PANEL_SHARE = 0.7
+    /** Panel karenin en çok bu kadarı genişlikte/yükseklikte; daha büyüğü panel sayılmaz. */
+    const val PANEL_MAX_WIDTH = 0.45
+    const val PANEL_MAX_HEIGHT = 0.35
+    /** Panel yazının her yanında en az bu kadar satır yüksekliği (en az 2 piksel) taşmalı; taşmıyorsa düz kutudur. */
+    const val PANEL_PAD_LINES = 0.2
+    /** Köşe yuvarlak: köşeden köşegen boyunca en az bu kadar nokta zemin değil (aynı kenardaki iki köşede). */
+    const val CORNER_MIN = 2
+    /** Yanına yazmada yazı rengine bu kadar yakın noktaların payı [BESIDE_SHARE]'den azsa alan boştur. */
+    const val BESIDE_INK = 48
+    const val BESIDE_SHARE = 0.1
+    /** Türkçenin özgün yazıdan uzaklığı, satır yüksekliğinin katı. */
+    const val BESIDE_GAP_LINES = 0.5
+    /** Yanına yazma alanı en çok özgün yazının bu katı (+ bir satır yüksekliği) genişlikte taranır. */
+    const val BESIDE_MAX = 1.6
+    /** İkiz panel özgün panelin bu katı boyda (Sinan Bey, #1296). */
+    const val TWIN_SCALE = 0.58
+    /** İkizin yazısı en az karenin bu kadarı (TV app.js DIALOGUE_MIN_SHARE ile aynı). */
+    const val TWIN_MIN_SHARE = 0.022
+    /** Kişi resmi en çok bu kadar piksel kenarlı kesilir. */
+    const val PORTRAIT_MAX = 40
+
+    /** Piksel kutusu ([l, r) x [t, b)). */
+    data class Box(val l: Int, val t: Int, val r: Int, val b: Int)
+
+    /** [besideSpot] sonucu: yazı kutusu (piksel) ve uzayabileceği sol/sağ sınır. */
+    data class Spot(val l: Int, val t: Int, val r: Int, val b: Int, val roomL: Int, val roomR: Int)
+
+    /** [cornerRadius] sonucu: yarıçap (piksel) ve kuyruk. */
+    data class Corner(val radius: Double, val tail: String?)
+
+    /**
+     * Yazının (örtü kutusu) çevresindeki düz alan: kutu, satır/sütunlarının en az [PANEL_SHARE]'i zemin ([like]) olduğu
+     * sürece dört yana büyür. Karenin kenarına değen ya da çok büyük alan açık zemindir: null.
+     */
+    internal fun findPanel(l: Int, t: Int, r: Int, b: Int, width: Int, height: Int, like: (Int, Int) -> Boolean): Box? {
+        fun row(y: Int, x0: Int, x1: Int): Boolean {
+            val step = max(1, (x1 - x0) / 64)
+            var n = 0
+            var ok = 0
+            var x = x0
+            while (x < x1) {
+                n++
+                if (like(x, y)) ok++
+                x += step
+            }
+            return n > 0 && ok >= PANEL_SHARE * n
+        }
+        fun column(x: Int, y0: Int, y1: Int): Boolean {
+            val step = max(1, (y1 - y0) / 64)
+            var n = 0
+            var ok = 0
+            var y = y0
+            while (y < y1) {
+                n++
+                if (like(x, y)) ok++
+                y += step
+            }
+            return n > 0 && ok >= PANEL_SHARE * n
+        }
+        if (r <= l || b <= t) return null
+        val maxW = (PANEL_MAX_WIDTH * width).toInt()
+        val maxH = (PANEL_MAX_HEIGHT * height).toInt()
+        var pl = max(0, l)
+        var pt = max(0, t)
+        var pr = min(width, r)
+        var pb = min(height, b)
+        var grew = true
+        while (grew) {
+            grew = false
+            while (pl > 0 && column(pl - 1, pt, pb)) {
+                pl--
+                grew = true
+                if (pr - pl > maxW) return null
+            }
+            while (pr < width && column(pr, pt, pb)) {
+                pr++
+                grew = true
+                if (pr - pl > maxW) return null
+            }
+            while (pt > 0 && row(pt - 1, pl, pr)) {
+                pt--
+                grew = true
+                if (pb - pt > maxH) return null
+            }
+            while (pb < height && row(pb, pl, pr)) {
+                pb++
+                grew = true
+                if (pb - pt > maxH) return null
+            }
+        }
+        if (pl == 0 || pt == 0 || pr == width || pb == height) return null
+        return Box(pl, pt, pr, pb)
+    }
+
+    /**
+     * Panelin köşe yarıçapı (piksel) ve balonun kuyruğu: köşeler ([ground]) köşegen boyunca taranır; üst ya da alt kenarın
+     * iki köşesinde en az [CORNER_MIN] nokta zemin değilse panel yuvarlaktır. Üst köşeler yuvarlakken alt köşelerden
+     * yalnız biri köşeliyse orada kuyruk vardır. null: köşeli kutu.
+     */
+    internal fun cornerRadius(l: Int, t: Int, r: Int, b: Int, ground: (Int, Int) -> Boolean): Corner? {
+        val limit = max(1, min(r - l, b - t) / 4)
+        fun corner(x: Int, y: Int, dx: Int, dy: Int): Int {
+            var k = 0
+            while (k <= limit && !ground(x + dx * k, y + dy * k)) k++
+            return k
+        }
+        val tl = corner(l, t, 1, 1)
+        val tr = corner(r - 1, t, -1, 1)
+        val bl = corner(l, b - 1, 1, -1)
+        val br = corner(r - 1, b - 1, -1, -1)
+        fun round(k: Int) = k >= CORNER_MIN && k <= limit
+        val top = round(tl) && round(tr)
+        val bottom = round(bl) && round(br)
+        if (!top && !bottom) return null
+        val ks = (if (top) listOf(tl, tr) else emptyList()) + (if (bottom) listOf(bl, br) else emptyList())
+        val radius = ks.sum().toDouble() / ks.size / (1 - 1 / sqrt(2.0))
+        val tail = if (!top || bottom) null else if (!round(bl) && round(br)) "left" else if (round(bl) && !round(br)) "right" else null
+        return Corner(radius, tail)
+    }
+
+    /**
+     * Panelin solundaki kare resim (kişi resmi): panelin solu ile yazının arası, yazının satırı çevresinde; [off]
+     * noktalarının sınırı. En az 0,8 satır yüksekliği (en az 6 piksel), en çok 4 satır, kareye yakın ve yazıdan ayrıksa.
+     */
+    internal fun portrait(panelLeft: Int, panelTop: Int, panelBottom: Int, l: Int, t: Int, b: Int, line: Double,
+                          off: (Int, Int) -> Boolean): Box? {
+        val x0 = panelLeft + 2
+        val x1 = l
+        val y0 = max(panelTop + 2, t - round(line))
+        val y1 = min(panelBottom - 2, b + round(line))
+        if (x1 <= x0 || y1 <= y0) return null
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var maxX = -1
+        var maxY = -1
+        for (y in y0 until y1) for (x in x0 until x1) if (off(x, y)) {
+            minX = min(minX, x)
+            maxX = max(maxX, x)
+            minY = min(minY, y)
+            maxY = max(maxY, y)
+        }
+        if (maxX < 0) return null
+        val w = maxX - minX + 1
+        val h = maxY - minY + 1
+        val least = max(6, round(0.8 * line))
+        if (w < least || h < least || w > 4 * line || h > 4 * line || w < 0.75 * h || w > 1.33 * h ||
+            maxX + 1 + max(2, round(ScreenFit.GAP_LINES * line)) > l) return null
+        return Box(minX, minY, maxX + 1, maxY + 1)
+    }
+
+    /** Kişi resmini kareden keser: en çok [PORTRAIT_MAX] piksel kenarlı (en yakın nokta), opak PNG data: adresi. */
+    fun portraitImage(box: TextBox, width: Int, height: Int, color: (Int, Int) -> Int): String? {
+        val l = max(0, round(box.left * width))
+        val t = max(0, round(box.top * height))
+        val r = min(width, round(box.right * width))
+        val b = min(height, round(box.bottom * height))
+        if (r - l < 2 || b - t < 2) return null
+        val side = max(r - l, b - t)
+        val ow = max(1, min(r - l, (r - l) * PORTRAIT_MAX / side))
+        val oh = max(1, min(b - t, (b - t) * PORTRAIT_MAX / side))
+        val rgb = ByteArray(ow * oh * 3)
+        for (j in 0 until oh) for (i in 0 until ow) {
+            val c = color(l + i * (r - l) / ow, t + j * (b - t) / oh)
+            val p = (j * ow + i) * 3
+            rgb[p] = (c shr 16).toByte()
+            rgb[p + 1] = (c shr 8).toByte()
+            rgb[p + 2] = c.toByte()
+        }
+        return "data:image/png;base64," + java.util.Base64.getEncoder().encodeToString(ButtonIcons.pngRgb(rgb, ow, oh))
+    }
+
+    /**
+     * Yanına yazma alanı (Sinan Bey: "SELAMLA  GREET"): önce sol, sonra sağ, sonra üst (simgenin olduğu yana değil).
+     * [free]: null başka hedef ya da simge, true yazı rengine yakın nokta, false boş zemin.
+     */
+    internal fun besideSpot(l: Int, t: Int, r: Int, b: Int, line: Double, width: Int, height: Int, iconLeft: Boolean,
+                            iconRight: Boolean, free: (Int, Int) -> Boolean?): Spot? {
+        val w = r - l
+        val h = b - t
+        if (w <= 0 || h <= 0 || t < 0 || b > height) return null
+        val near = max(2, round(BESIDE_GAP_LINES * line))
+        val far = max(1, ceil(ScreenFit.GAP_LINES * line).toInt())
+        val most = round(BESIDE_MAX * w + line)
+        fun open(cells: List<Boolean?>): Boolean {
+            if (cells.isEmpty() || cells.any { it == null }) return false
+            return cells.count { it == true } < BESIDE_SHARE * cells.size
+        }
+        fun column(x: Int, y0: Int, y1: Int): Boolean {
+            if (x < 0 || x >= width || y0 < 0 || y1 > height || y1 <= y0) return false
+            return open((y0 until y1).map { free(x, it) })
+        }
+        fun row(y: Int, x0: Int, x1: Int): Boolean {
+            if (y < 0 || y >= height || x0 < 0 || x1 > width || x1 <= x0) return false
+            return open((x0 until x1).map { free(it, y) })
+        }
+        fun run(x: Int, step: Int, y0: Int, y1: Int, cap: Int): Int {
+            var n = 0
+            while (n < cap && column(x + step * n, y0, y1)) n++
+            return n
+        }
+        fun usable(n: Int, cap: Int) = min(most, n - near - (if (n < cap) far else 0))
+        val cap = near + most + far
+        if (!iconLeft) {
+            val room = usable(run(l - 1, -1, t, b, cap), cap)
+            if (room >= w) return Spot(l - near - w, t, l - near, b, l - near - room, l - near)
+        }
+        if (!iconRight) {
+            val room = usable(run(r, 1, t, b, cap), cap)
+            if (room >= w) return Spot(r + near, t, r + near + w, b, r + near, r + near + room)
+        }
+        val top = t - near - h
+        if (top >= 0 && (top until t - near).all { row(it, l, r) }) {
+            val side = w / 2
+            val nl = run(l - 1, -1, top, t - near, side + far)
+            val nr = run(r, 1, top, t - near, side + far)
+            val roomL = l - max(0, min(side, nl - (if (nl < side + far) far else 0)))
+            val roomR = r + max(0, min(side, nr - (if (nr < side + far) far else 0)))
+            return Spot(l, top, r, t - near, roomL, roomR)
+        }
+        return null
+    }
 
     /** Nokta zeminden bu kadar (en büyük renk bileşeni farkı) uzak ve yazı rengine zeminden yakınsa harf noktasıdır. */
     const val INK_DISTANCE = 40
@@ -193,6 +459,14 @@ object TextPainter {
             Rect(px(t.box.left, width, false), px(t.box.top, height, false), px(t.box.right, width, true), px(t.box.bottom, height, true))
         }
         val result = mutableListOf<TextPaint>()
+        // Kip seçimi için: örtü kutuları (piksel), satır yükseklikleri, zeminler ve panel adayları.
+        val covers = mutableListOf<Box>()
+        val lines = mutableListOf<Double>()
+        val grounds = mutableListOf<Rgb>()
+        val panels = sortedMapOf<Int, Box>()
+        fun rectHit(x: Int, y: Int, except: Int?): Boolean = rects.indices.any { j ->
+            j != except && x >= rects[j].l && x < rects[j].r && y >= rects[j].t && y < rects[j].b
+        }
         for ((index, target) in targets.withIndex()) {
             val bg = rgb(target.background)
             val fg = rgb(target.foreground)
@@ -398,7 +672,108 @@ object TextPainter {
                 if (band.isNotEmpty() && toRight) gr = max(cr, min(width, scan(cr, 1, endColor)))
                 if (gl < cl || gr > cr) paint = paint.copy(grow = TextBox(gl / fw, cover.top, gr / fw, cover.bottom))
             }
+
+            // 5) Kip (yalnız türü verilen yazıda): menü, görev/harita kartı ve telefon hep örtülür. Düz zemini sınırlı bir
+            // alansa (panel) karar döngüden sonra verilir; açık zeminde desenli zeminde ya da tek satırlık istemde Türkçe
+            // yanındaki boş alana yazılır; yer bulunamazsa örtülür.
+            covers.add(Box(cl, ct, cr, cb))
+            lines.add(line)
+            grounds.add(rgb(paint.background))
+            val kind = target.kind
+            if (kind != null && kind != ScreenTextKind.MENU && kind != ScreenTextKind.MISSION && kind != ScreenTextKind.PHONE) {
+                val ground = rgb(paint.background)
+                val panel = if (paint.patterned || paint.background2 != null) null
+                else findPanel(cl, ct, cr, cb, width, height) { px, py ->
+                    if (rectHit(px, py, index) || (px >= cl && px < cr && py >= ct && py < cb)) true
+                    else distance(pixel(px, py), ground) <= PANEL_TOLERANCE
+                }
+                if (panel != null) {
+                    panels[index] = panel
+                } else if (paint.patterned || (kind == ScreenTextKind.HELP && target.prompt && target.rows <= 1)) {
+                    val spot = besideSpot(cl, ct, cr, cb, line, width, height, iconLeft, iconRight) { px, py ->
+                        if (others(px, py)) null else distance(pixel(px, py), fg) <= BESIDE_INK
+                    }
+                    if (spot != null) {
+                        paint = paint.copy(mode = TextPaint.MODE_BESIDE, spot = TextBox(spot.l / fw, spot.t / fh, spot.r / fw, spot.b / fh),
+                            spotRoom = TextBox(spot.roomL / fw, spot.t / fh, spot.roomR / fw, spot.b / fh))
+                    }
+                }
+            }
             result.add(paint)
+        }
+        // İkiz paneller: kesişen paneller tek paneldir (bildirimin başlığı ve gövdesi), kutusu hepsinin birleşimi. Her yazı
+        // panelin içinde her yanda [PANEL_PAD_LINES] boşlukla durmalı; durmuyorsa ya da köşeler yuvarlak değilse örtülür.
+        // İkiz özgünün [TWIN_SCALE] katı boyda, sol kenarı hizalı; önce hemen üstte, yer yoksa altta (arada `GAP_LINES`).
+        val keys = panels.keys.toList()
+        val parent = keys.associateWith { it }.toMutableMap()
+        fun root(start: Int): Int {
+            var i = start
+            while (parent[i] != i) i = parent[i]!!
+            return i
+        }
+        for (a in keys) for (b in keys) {
+            if (b <= a) continue
+            val p = panels[a]!!
+            val q = panels[b]!!
+            if (min(p.r, q.r) > max(p.l, q.l) && min(p.b, q.b) > max(p.t, q.t)) parent[root(b)] = root(a)
+        }
+        for (members in keys.groupBy { root(it) }.values.map { it.sorted() }.sortedBy { it[0] }) {
+            val l = members.minOf { panels[it]!!.l }
+            val t = members.minOf { panels[it]!!.t }
+            val r = members.maxOf { panels[it]!!.r }
+            val b = members.maxOf { panels[it]!!.b }
+            val padded = members.all { m ->
+                val c = covers[m]
+                val pad = max(2, round(PANEL_PAD_LINES * lines[m]))
+                c.l - l >= pad && r - c.r >= pad && c.t - t >= pad && b - c.b >= pad
+            }
+            val ground = grounds[members[0]]
+            if (!padded) continue
+            val corner = cornerRadius(l, t, r, b) { px, py -> distance(pixel(px, py), ground) <= PANEL_TOLERANCE } ?: continue
+            // Küçük panelde ikizin yazısı okunabilirlik sınırının altına inmez (TV app.js DIALOGUE_MIN_SHARE); gerekirse ikiz
+            // özgün boyda.
+            val least = members.minOf { lines[it] }
+            val scale = min(1.0, max(TWIN_SCALE, TWIN_MIN_SHARE * height / (ScreenFit.EXACT_FONT * least)))
+            val h = round((b - t) * scale)
+            val gap = max(2, ceil(ScreenFit.GAP_LINES * lines[members[0]]).toInt())
+            fun clear(y0: Int, y1: Int): Boolean = y0 >= 0 && y1 <= height && rects.indices.none { j ->
+                j !in members && rects[j].l < r && rects[j].r > l && rects[j].t < y1 && rects[j].b > y0
+            }
+            val top = if (clear(t - gap - h, t - gap)) t - gap - h else if (clear(b + gap, b + gap + h)) b + gap else continue
+            fun sx(v: Int) = (l + (v - l) * scale) / fw
+            fun sy(v: Int) = (top + (v - t) * scale) / fh
+            var face: Box? = null
+            for (m in members) {
+                if (face != null) break
+                face = portrait(l, t, b, covers[m].l, covers[m].t, covers[m].b, lines[m]) { px, py ->
+                    !rectHit(px, py, null) && distance(pixel(px, py), ground) > 2 * PANEL_TOLERANCE
+                }
+            }
+            val inset = max(gap, members.minOf { covers[it].l - l })
+            for (m in members) {
+                val c = covers[m]
+                val left = targets[m].align == "left"
+                result[m] = result[m].copy(mode = TextPaint.MODE_TWIN, scale = scale, tail = corner.tail,
+                    twin = TextBox(sx(l), sy(t), sx(r), sy(b)), radius = corner.radius * scale / fh,
+                    spot = TextBox(sx(c.l), sy(c.t), sx(c.r), sy(c.b)),
+                    spotRoom = TextBox(if (left) sx(c.l) else sx(l + inset), sy(c.t),
+                        max(sx(c.r), (r - round(inset * scale)) / fw), sy(c.b)),
+                    portrait = face?.let { TextBox(it.l / fw, it.t / fh, it.r / fw, it.b / fh) },
+                    portraitTwin = face?.let { TextBox(sx(it.l), sy(it.t), sx(it.r), sy(it.b)) })
+            }
+        }
+        // Çakışma: yanına yazılan Türkçe başka bir hedefin Türkçesine (önceki yanına yazma alanı ya da ikiz panel) binerse
+        // örtmeye döner.
+        fun overlaps(a: TextBox, b: TextBox) = min(a.right, b.right) > max(a.left, b.left) && min(a.bottom, b.bottom) > max(a.top, b.top)
+        for (i in result.indices) {
+            if (result[i].mode != TextPaint.MODE_BESIDE) continue
+            val mine = result[i].spotRoom ?: continue
+            val hit = result.indices.any { j ->
+                if (j == i) false
+                else if (result[j].mode == TextPaint.MODE_TWIN && result[j].twin != null) overlaps(mine, result[j].twin!!)
+                else j < i && result[j].mode == TextPaint.MODE_BESIDE && result[j].spotRoom?.let { overlaps(mine, it) } == true
+            }
+            if (hit) result[i] = result[i].copy(mode = TextPaint.MODE_COVER, spot = null, spotRoom = null)
         }
         // 4) Grup: aynı sütunda (ortak sol ya da sağ kenar, düzenli aralık) ya da aynı satırda duran, BÜYÜK HARF'i ve
         // satır yüksekliği aynı tek satırlık etiketler.

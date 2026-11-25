@@ -33,8 +33,7 @@ class TextPaintTest {
         val rects = frame.getJSONArray("rects")
         for (k in rects.length() - 1 downTo 0) {
             val rect = rects.getJSONObject(k)
-            val b = doubles(rect.getJSONArray("box"))
-            if (x >= b[0] && x < b[2] && y >= b[1] && y < b[3]) return pack(TextPainter.rgb(rect.getString("color")))
+            if (inside(rect, x, y)) return pack(TextPainter.rgb(rect.getString("color")))
         }
         val background = frame.getJSONObject("background")
         val from = TextPainter.rgb(background.getString("from"))
@@ -56,6 +55,86 @@ class TextPaintTest {
     }
 
     private fun pack(c: TextPainter.Rgb) = (c.r shl 16) or (c.g shl 8) or c.b
+
+    /** Yuvarlak köşeli dikdörtgen (Mac `inside` ile aynı): köşedeki nokta, merkezi köşe dairesindeyse; `tail` köşesi köşeli. */
+    private fun inside(rect: JSONObject, x: Int, y: Int): Boolean {
+        val b = doubles(rect.getJSONArray("box"))
+        if (!(x >= b[0] && x < b[2] && y >= b[1] && y < b[3])) return false
+        val radius = rect.optInt("radius", 0)
+        if (radius <= 0) return true
+        val px = x + 0.5
+        val py = y + 0.5
+        val rr = radius.toDouble()
+        val left = px < b[0] + rr
+        val right = px > b[2] - rr
+        val top = py < b[1] + rr
+        val bottom = py > b[3] - rr
+        if (!((left || right) && (top || bottom))) return true
+        val tail = rect.optString("tail", "")
+        if (bottom && ((left && tail == "left") || (right && tail == "right"))) return true
+        val cx = if (left) b[0] + rr else b[2] - rr
+        val cy = if (top) b[1] + rr else b[3] - rr
+        return (px - cx) * (px - cx) + (py - cy) * (py - cy) <= rr * rr
+    }
+
+    /**
+     * Çizim kipi ([TextPaint.mode]): desenli zeminde yanına yazma (önce sol, yer yoksa sağ), simge örtülmez, köşeli düz
+     * kutu örtülür, yuvarlak panel küçük ikizle (resim, kuyruk) üstte ya da altta, yer yoksa örtme; menü ve türsüz yazı hep
+     * örtülür. Ortak vakalar fixtures/text-paint.json → modes (Mac, Windows aynı).
+     */
+    @Test
+    fun sharedModeVectors() {
+        val frames = fixture.getJSONArray("modes")
+        for (f in 0 until frames.length()) {
+            val frame = frames.getJSONObject(f)
+            val width = frame.getInt("width")
+            val height = frame.getInt("height")
+            val w = width.toDouble()
+            val h = height.toDouble()
+            val raw = frame.getJSONArray("targets")
+            val targets = (0 until raw.length()).map { k ->
+                val t = raw.getJSONObject(k)
+                val b = doubles(t.getJSONArray("box"))
+                TextPainter.Target(TextBox(b[0] / w, b[1] / h, b[2] / w, b[3] / h), t.getDouble("line") / h, t.getInt("rows"),
+                    t.getString("bg"), t.getString("fg"), t.getBoolean("upper"), t.getString("align"), t.optInt("words", 0),
+                    if (t.has("kind")) ScreenTextKind.valueOf(t.getString("kind").uppercase()) else null, t.optBoolean("prompt", false))
+            }
+            val paints = TextPainter.paints(targets, width, height) { x, y -> pixel(frame, x, y) }
+            val expects = frame.getJSONArray("expect")
+            val id = frame.getString("id")
+            assertEquals(id, expects.length(), paints.size)
+            fun px(b: TextBox?) = b?.let { listOf(it.left * w, it.top * h, it.right * w, it.bottom * h) }
+            for (k in 0 until minOf(expects.length(), paints.size)) {
+                val e = expects.getJSONObject(k)
+                val paint = paints[k]
+                val name = "$id#$k"
+                assertEquals(name, e.getString("mode"), paint.mode)
+                fun box(key: String, got: List<Double>?) {
+                    if (!e.has(key) || e.isNull(key)) return
+                    assertNotNull("$name $key yok", got)
+                    got!!.zip(doubles(e.getJSONArray(key))).forEach { (a, b) -> near(a, b, 1.01, "$name $key $got") }
+                }
+                box("spot", px(paint.spot))
+                box("room", px(paint.spotRoom)?.let { listOf(it[0], it[2]) })
+                box("twin", px(paint.twin))
+                box("portrait", px(paint.portrait))
+                box("portraitTwin", px(paint.portraitTwin))
+                if (e.has("radius")) near(paint.radius * h, e.getDouble("radius"), 1.5, "$name radius")
+                if (e.has("scale")) near(paint.scale, e.getDouble("scale"), 0.001, "$name scale")
+                if (e.has("twin")) {
+                    assertEquals("$name kuyruk", if (e.isNull("tail")) null else e.getString("tail"), paint.tail)
+                    if (e.isNull("portrait")) assertNull("$name resim", paint.portrait)
+                }
+                // Örtmeyen kipte Türkçe özgün yazıya (ve kutunun ucundaki simgeye) binmez.
+                val room = paint.spotRoom
+                if (paint.mode != TextPaint.MODE_COVER && room != null) {
+                    val tb = doubles(raw.getJSONObject(k).getJSONArray("box"))
+                    assertTrue("$name özgüne biner", !(room.right * w > tb[0] + 0.5 && room.left * w < tb[2] - 0.5 &&
+                        room.bottom * h > tb[1] + 0.5 && room.top * h < tb[3] - 0.5))
+                }
+            }
+        }
+    }
 
     @Test
     fun sharedPaintVectors() {

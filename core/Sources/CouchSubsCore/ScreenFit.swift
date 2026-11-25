@@ -371,15 +371,24 @@ public enum ScreenFit {
             self.group = group
         }
 
-        /// Ekrana oranlı öğeden (`Item.paint` olmalı) `width` x `height` piksellik çizim alanına.
+        /// Ekrana oranlı öğeden (`Item.paint` olmalı) `width` x `height` piksellik çizim alanına. Örtmeyen kipte
+        /// (`TextPaint.mode`) yazı `spot`'a, `spotRoom` içinde dizilir; ikizde yazı boyu `scale` katında. Yanına yazılan
+        /// Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola).
         public init?(_ item: ScreenTranslation.Item, width: Double, height: Double) {
             guard let paint = item.paint else { return nil }
-            self.init(text: item.translation, left: paint.cover.left * width, top: paint.cover.top * height,
-                      right: paint.cover.right * width, bottom: paint.cover.bottom * height,
-                      growLeft: paint.grow.map { $0.left * width }, growRight: paint.grow.map { $0.right * width },
-                      line: max(1, item.lineHeight * height), pitch: max(1, paint.pitch * height),
-                      rows: item.paragraphs ? max(2, item.rows) : item.rows, align: item.look?.align ?? .left,
-                      group: paint.group)
+            let free = paint.mode != .cover ? paint.spot : nil
+            let box = free ?? paint.cover
+            let room = free != nil ? paint.spotRoom : paint.grow
+            let scale = paint.mode == .twin ? paint.scale : 1
+            var align = item.look?.align ?? .left
+            if paint.mode == .beside {
+                if box.right <= paint.cover.left { align = .right } else if box.left >= paint.cover.right { align = .left }
+            }
+            self.init(text: item.translation, left: box.left * width, top: box.top * height, right: box.right * width,
+                      bottom: box.bottom * height, growLeft: room.map { $0.left * width }, growRight: room.map { $0.right * width },
+                      line: max(1, item.lineHeight * height * scale), pitch: max(1, paint.pitch * height * scale),
+                      rows: item.paragraphs ? max(2, item.rows) : item.rows, align: align,
+                      group: paint.mode == .cover ? paint.group : nil)
         }
     }
 

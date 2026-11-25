@@ -288,6 +288,11 @@ class PhoneSubtitleActivity : ComponentActivity() {
  * gölgesiz; zemin ölçülen renk ya da degrade (yatay/dikey), yazı özgün renk ve kalınlıkta; k. satır
  * `top + k * lineHeight`'ta, `rowHeight` yüksekliğinin dikey ortasında, hizaya göre. Grup aynı boyda çizilir, uzun çeviri
  * boş tarafa uzar; yazı kesilmez. Öğeler birlikte yerleşir (grubun ortak boyu için).
+ *
+ * Çizim kipi ([com.couchsubs.mobile.core.TextPaint.mode]; TV ve Mac/iPhone, Windows ile aynı): yanına yazmada kutu yok,
+ * yazı özgün renkte, okunurluk için yumuşak gölgeyle (açık yazıda koyu, koyu yazıda açık); ikizde her ikiz panel bir kez,
+ * yazılardan önce, ölçülen zeminle yuvarlak köşeli çizilir (kuyruk köşesi köşeli + küçük üçgen), genişliği içeriğe göre
+ * (sol iç boşluk sağda da); kişi resmi daire içinde; yazılar zeminsiz.
  */
 @androidx.compose.runtime.Composable
 private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.Item>) {
@@ -311,6 +316,56 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
         fun parse(hex: String?): Int? = hex?.let { runCatching { android.graphics.Color.parseColor(it) }.getOrNull() }
         drawIntoCanvas { canvas ->
             val native = canvas.nativeCanvas
+            // İkiz paneller (yazılardan önce, her kutu bir kez).
+            val drawnTwins = mutableSetOf<com.couchsubs.mobile.core.TextBox>()
+            for ((k, _) in placed.withIndex()) {
+                val paint = inputs[k].first.paint ?: continue
+                val twin = paint.twin ?: continue
+                if (paint.mode != com.couchsubs.mobile.core.TextPaint.MODE_TWIN || !drawnTwins.add(twin)) continue
+                val members = placed.indices.filter { inputs[it].first.paint?.twin == twin }
+                val tl = (twin.left * w).toFloat()
+                val tt = (twin.top * h).toFloat()
+                val tb = (twin.bottom * h).toFloat()
+                val pad = members.minOf { placed[it].left }.toFloat() - tl
+                val face = paint.portraitTwin
+                val content = maxOf(members.maxOf { placed[it].left + placed[it].width }.toFloat(),
+                    face?.let { (it.right * w).toFloat() } ?: tl)
+                val tr = maxOf(content + maxOf(0f, pad), tl + 1f)
+                val r = (paint.radius * h).toFloat()
+                val fill = android.graphics.Paint().apply {
+                    isAntiAlias = true
+                    style = android.graphics.Paint.Style.FILL
+                    color = parse(paint.background) ?: android.graphics.Color.BLACK
+                }
+                native.drawRoundRect(tl, tt, tr, tb, r, r, fill)
+                when (paint.tail) {
+                    "left" -> {
+                        native.drawRect(tl, tb - r, tl + r, tb, fill)
+                        native.drawPath(android.graphics.Path().apply {
+                            moveTo(tl, tb - 1); lineTo(tl + r, tb - 1); lineTo(tl, tb + 0.6f * r); close()
+                        }, fill)
+                    }
+                    "right" -> {
+                        native.drawRect(tr - r, tb - r, tr, tb, fill)
+                        native.drawPath(android.graphics.Path().apply {
+                            moveTo(tr, tb - 1); lineTo(tr - r, tb - 1); lineTo(tr, tb + 0.6f * r); close()
+                        }, fill)
+                    }
+                }
+                val image = paint.portraitImage
+                if (face != null && image != null) {
+                    val bytes = runCatching { android.util.Base64.decode(image.substringAfter(","), android.util.Base64.DEFAULT) }.getOrNull()
+                    val bitmap = bytes?.let { android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size) }
+                    if (bitmap != null) {
+                        val dst = android.graphics.RectF((face.left * w).toFloat(), (face.top * h).toFloat(),
+                            (face.right * w).toFloat(), (face.bottom * h).toFloat())
+                        native.save()
+                        native.clipPath(android.graphics.Path().apply { addOval(dst, android.graphics.Path.Direction.CW) })
+                        native.drawBitmap(bitmap, null, dst, android.graphics.Paint().apply { isFilterBitmap = true })
+                        native.restore()
+                    }
+                }
+            }
             for ((k, p) in placed.withIndex()) {
                 val item = inputs[k].first
                 val paint = item.paint ?: continue
@@ -318,6 +373,7 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
                 val top = p.top.toFloat()
                 val right = (p.left + p.width).toFloat()
                 val bottom = (p.top + p.height).toFloat()
+                val covering = paint.mode == com.couchsubs.mobile.core.TextPaint.MODE_COVER || paint.spot == null
                 val fill = android.graphics.Paint().apply { style = android.graphics.Paint.Style.FILL }
                 val first = parse(paint.background) ?: android.graphics.Color.BLACK
                 val second = parse(paint.background2)
@@ -325,14 +381,20 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
                     fill.shader = if (paint.direction == "v") android.graphics.LinearGradient(left, top, left, bottom, first, second, android.graphics.Shader.TileMode.CLAMP)
                     else android.graphics.LinearGradient(left, top, right, top, first, second, android.graphics.Shader.TileMode.CLAMP)
                 } else fill.color = first
-                native.drawRect(left, top, right, bottom, fill)
+                if (covering) native.drawRect(left, top, right, bottom, fill)
                 val text = paintFor(item.look?.bold == true, item.look?.condensed == true, p.fontSize).apply {
                     color = parse(item.surface?.foreground) ?: android.graphics.Color.WHITE
+                    if (paint.mode == com.couchsubs.mobile.core.TextPaint.MODE_BESIDE) {
+                        // Okunurluk: açık yazıda koyu, koyu yazıda açık yumuşak gölge (oyunun istem yazısı gibi).
+                        val light = android.graphics.Color.luminance(color) > 0.5f
+                        setShadowLayer(maxOf(1f, p.fontSize.toFloat() * 0.12f), 0f, 0f,
+                            if (light) android.graphics.Color.argb(200, 0, 0, 0) else android.graphics.Color.argb(200, 255, 255, 255))
+                    }
                 }
                 val metrics = text.fontMetrics
                 for ((row, line) in p.lines.withIndex()) {
                     val width = text.measureText(line)
-                    val x = when (item.look?.align) {
+                    val x = when (inputs[k].second.align) {
                         "right" -> right - width
                         "center" -> left + (p.width.toFloat() - width) / 2
                         else -> left

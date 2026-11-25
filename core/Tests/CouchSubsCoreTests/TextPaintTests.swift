@@ -12,10 +12,10 @@ import XCTest
 final class TextPaintTests: XCTestCase {
     struct Fixture: Decodable {
         struct Background: Decodable { let kind: String; let from: String; let to: String?; let cell: Int? }
-        struct Rect: Decodable { let box: [Int]; let color: String }
+        struct Rect: Decodable { let box: [Int]; let color: String; let radius: Int?; let tail: String? }
         struct Target: Decodable {
             let box: [Double]; let line: Double; let rows: Int; let bg: String; let fg: String; let upper: Bool; let align: String
-            let words: Int?
+            let words: Int?; let kind: String?; let prompt: Bool?
         }
         struct Expect: Decodable {
             let cover: [Double]?; let bg: String?; let bg2: String??; let bgDir: String?; let patterned: Bool?
@@ -39,6 +39,14 @@ final class TextPaintTests: XCTestCase {
             let id: String; let width: Int; let height: Int; let background: Background; let rects: [Rect]
             let targets: [Target]; let expect: [Expect]
         }
+        struct ModeExpect: Decodable {
+            let mode: String; let spot: [Double]?; let room: [Double]?; let twin: [Double]?; let radius: Double?
+            let scale: Double?; let tail: String?; let portrait: [Double]?; let portraitTwin: [Double]?
+        }
+        struct ModePaint: Decodable {
+            let id: String; let width: Int; let height: Int; let background: Background; let rects: [Rect]
+            let targets: [Target]; let expect: [ModeExpect]
+        }
         struct ExactItem: Decodable {
             let text: String; let box: [Double]; let grow: [Double]?; let line: Double; let pitch: Double?; let rows: Int?
             let align: String; let group: Int?
@@ -50,6 +58,7 @@ final class TextPaintTests: XCTestCase {
         struct Exact: Decodable { let id: String; let charWidth: Double; let items: [ExactItem]; let expect: [Placement]? }
         let paint: [Paint]
         let exact: [Exact]
+        let modes: [ModePaint]
     }
 
     static func fixture() throws -> Fixture {
@@ -59,9 +68,27 @@ final class TextPaintTests: XCTestCase {
 
     /// Yapay karenin noktası: zemin, üstüne sırayla çizilen dikdörtgenler.
     static func pixel(_ frame: Fixture.Paint, _ x: Int, _ y: Int) -> TextPainter.RGB {
-        for rect in frame.rects.reversed() where x >= rect.box[0] && x < rect.box[2] && y >= rect.box[1] && y < rect.box[3] {
-            return TextPainter.rgb(rect.color)
-        }
+        pixel(rects: frame.rects, background: frame.background, width: frame.width, height: frame.height, x, y)
+    }
+
+    /// Yuvarlak köşeli dikdörtgen: köşe karesindeki nokta, merkezi köşe dairesinin içindeyse boyanır; `tail` köşesi köşeli.
+    static func inside(_ rect: Fixture.Rect, _ x: Int, _ y: Int) -> Bool {
+        let b = rect.box
+        guard x >= b[0] && x < b[2] && y >= b[1] && y < b[3] else { return false }
+        guard let r = rect.radius, r > 0 else { return true }
+        let px = Double(x) + 0.5, py = Double(y) + 0.5, rr = Double(r)
+        let left = px < Double(b[0]) + rr, right = px > Double(b[2]) - rr
+        let top = py < Double(b[1]) + rr, bottom = py > Double(b[3]) - rr
+        guard (left || right) && (top || bottom) else { return true }
+        if bottom && ((left && rect.tail == "left") || (right && rect.tail == "right")) { return true }
+        let cx = left ? Double(b[0]) + rr : Double(b[2]) - rr, cy = top ? Double(b[1]) + rr : Double(b[3]) - rr
+        return (px - cx) * (px - cx) + (py - cy) * (py - cy) <= rr * rr
+    }
+
+    static func pixel(rects: [Fixture.Rect], background: Fixture.Background, width: Int, height: Int, _ x: Int, _ y: Int)
+        -> TextPainter.RGB {
+        for rect in rects.reversed() where inside(rect, x, y) { return TextPainter.rgb(rect.color) }
+        let frame = (background: background, width: width, height: height)
         let from = TextPainter.rgb(frame.background.from), to = TextPainter.rgb(frame.background.to ?? frame.background.from)
         func mix(_ f: Double) -> TextPainter.RGB {
             (Int((Double(from.r) + Double(to.r - from.r) * f).rounded()), Int((Double(from.g) + Double(to.g - from.g) * f).rounded()),
@@ -116,6 +143,71 @@ final class TextPaintTests: XCTestCase {
                 if let pitch = expect.pitch { XCTAssertEqual(paint.pitch * h, pitch, accuracy: 0.5, name) }
                 if let side = expect.side { XCTAssertEqual(paint.iconSide?.rawValue, side, "\(name) simge yanı") }
             }
+        }
+    }
+
+    /// Çizim kipi (`TextPaint.mode`): desenli zeminde yanına yazma (önce sol, yer yoksa sağ), simge örtülmez, köşeli düz
+    /// kutu örtülür, yuvarlak panel küçük ikizle (resim, kuyruk) üstte ya da altta, yer yoksa örtme; menü ve türsüz yazı
+    /// hep örtülür. Ortak vakalar Fixtures/text-paint.json → modes (Windows, Android aynı).
+    func testSharedModeVectors() throws {
+        var out: [String: Any] = [:]
+        for frame in try Self.fixture().modes {
+            let w = Double(frame.width), h = Double(frame.height)
+            let targets = frame.targets.map { t in
+                TextPainter.Target(box: TextBox(left: t.box[0] / w, top: t.box[1] / h, right: t.box[2] / w, bottom: t.box[3] / h),
+                                   lineHeight: t.line / h, rows: t.rows, background: t.bg, foreground: t.fg, upper: t.upper,
+                                   align: Self.align(t.align), words: t.words ?? 0,
+                                   kind: t.kind.flatMap(ScreenTextKind.init(rawValue:)), prompt: t.prompt ?? false)
+            }
+            let paints = TextPainter.paints(targets, width: frame.width, height: frame.height) { x, y in
+                Self.pixel(rects: frame.rects, background: frame.background, width: frame.width, height: frame.height, x, y)
+            }
+            func px(_ b: TextBox?) -> [Double]? {
+                b.map { [($0.left * w * 100).rounded() / 100, ($0.top * h * 100).rounded() / 100,
+                         ($0.right * w * 100).rounded() / 100, ($0.bottom * h * 100).rounded() / 100] }
+            }
+            out[frame.id] = paints.map { p -> [String: Any] in
+                var e: [String: Any] = ["mode": p.mode.rawValue]
+                if let spot = px(p.spot) { e["spot"] = spot }
+                if let room = px(p.spotRoom) { e["room"] = [room[0], room[2]] }
+                if let twin = px(p.twin) {
+                    e["twin"] = twin
+                    e["radius"] = (p.radius * h * 100).rounded() / 100
+                    e["scale"] = p.scale
+                    e["tail"] = p.tail ?? NSNull()
+                    e["portrait"] = px(p.portrait) ?? NSNull()
+                    if let face = px(p.portraitTwin) { e["portraitTwin"] = face }
+                }
+                return e
+            }
+            XCTAssertEqual(paints.count, frame.expect.count, frame.id)
+            for (k, (paint, e)) in zip(paints, frame.expect).enumerated() {
+                let name = "\(frame.id)#\(k)"
+                XCTAssertEqual(paint.mode.rawValue, e.mode, name)
+                func near(_ got: [Double]?, _ want: [Double]?, _ what: String, _ tolerance: Double = 1.01) {
+                    guard let want else { return }
+                    guard let got, got.count == want.count else { return XCTFail("\(name) \(what) yok") }
+                    for (a, b) in zip(got, want) { XCTAssertEqual(a, b, accuracy: tolerance, "\(name) \(what) \(got)") }
+                }
+                near(px(paint.spot), e.spot, "spot")
+                near(px(paint.spotRoom).map { [$0[0], $0[2]] }, e.room, "room")
+                near(px(paint.twin), e.twin, "twin")
+                if let radius = e.radius { XCTAssertEqual(paint.radius * h, radius, accuracy: 1.5, "\(name) radius") }
+                if let scale = e.scale { XCTAssertEqual(paint.scale, scale, accuracy: 0.001, name) }
+                if e.twin != nil { XCTAssertEqual(paint.tail, e.tail, "\(name) kuyruk") }
+                if e.twin != nil, e.portrait == nil { XCTAssertNil(paint.portrait, "\(name) resim") }
+                near(px(paint.portrait), e.portrait, "portrait")
+                near(px(paint.portraitTwin), e.portraitTwin, "portraitTwin")
+                // Örtmeyen kipte Türkçe özgün yazıya (ve kutunun ucundaki simgeye) binmez; ikiz özgün paneli örtmez.
+                if paint.mode != .cover, let room = paint.spotRoom {
+                    let target = frame.targets[k].box
+                    XCTAssertFalse(room.right * w > target[0] + 0.5 && room.left * w < target[2] - 0.5
+                                   && room.bottom * h > target[1] + 0.5 && room.top * h < target[3] - 0.5, "\(name) özgüne biner")
+                }
+            }
+        }
+        if let path = ProcessInfo.processInfo.environment["TEXT_PAINT_MODES_OUT"] {
+            try JSONSerialization.data(withJSONObject: out, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))
         }
     }
 

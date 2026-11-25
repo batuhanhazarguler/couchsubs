@@ -1,5 +1,5 @@
 {
-  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz; side: kutunun ucundaki simgenin yanı, TextPaint.iconSide; hedefte words: sözcük sayısı). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05).",
+  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz; side: kutunun ucundaki simgenin yanı, TextPaint.iconSide; hedefte words: sözcük sayısı). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05). 'modes': çizim kipi (TextPaint.mode; hedefte kind: ScreenTextKind, prompt: tuş istemi; dikdörtgende radius: yuvarlak köşe, nokta merkezi köşe dairesinin içindeyse boyanır; tail: o alt köşe köşeli kalır, balon kuyruğu). Beklenen: mode; spot [l,t,r,b], room [sol,sağ] (spotRoom), twin [l,t,r,b], radius (piksel ±1,5), scale, tail, portrait [l,t,r,b] ve portraitTwin (null: resim yok); kutular ±1.",
   "paint": [
     {
       "id": "duz-zemin-tasan-harf",
@@ -1265,6 +1265,664 @@
           ],
           "lineHeight": 20,
           "rowHeight": 20
+        }
+      ]
+    }
+  ],
+  "modes": [
+    {
+      "id": "desenli-zemin-sola-yazilir",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "checker",
+        "from": "#203040",
+        "to": "#506070",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left",
+          "kind": "other"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "beside",
+          "room": [
+            79,
+            192
+          ],
+          "spot": [
+            130,
+            89,
+            192,
+            105
+          ]
+        }
+      ]
+    },
+    {
+      "id": "solda-yer-yok-saga-yazilir",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "checker",
+        "from": "#203040",
+        "to": "#506070",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            30,
+            90,
+            90,
+            104
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            30,
+            90,
+            90,
+            104
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "other"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "beside",
+          "room": [
+            98,
+            211
+          ],
+          "spot": [
+            98,
+            89,
+            160,
+            105
+          ]
+        }
+      ]
+    },
+    {
+      "id": "istem-simge-ortulmez-sola-yazilir",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#304050"
+      },
+      "rects": [
+        {
+          "box": [
+            200,
+            90,
+            280,
+            104
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            286,
+            88,
+            302,
+            106
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            200,
+            88,
+            302,
+            106
+          ],
+          "line": 18,
+          "rows": 1,
+          "bg": "#304050",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "center",
+          "words": 1,
+          "kind": "help",
+          "prompt": true
+        }
+      ],
+      "expect": [
+        {
+          "mode": "beside",
+          "room": [
+            41,
+            190
+          ],
+          "spot": [
+            108,
+            87,
+            190,
+            107
+          ]
+        }
+      ]
+    },
+    {
+      "id": "duz-koseli-kutu-ortulur",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#101010"
+      },
+      "rects": [
+        {
+          "box": [
+            140,
+            70,
+            260,
+            130
+          ],
+          "color": "#303848"
+        },
+        {
+          "box": [
+            150,
+            90,
+            230,
+            104
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            150,
+            90,
+            230,
+            104
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#303848",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "help",
+          "prompt": true
+        }
+      ],
+      "expect": [
+        {
+          "mode": "cover"
+        }
+      ]
+    },
+    {
+      "id": "yuvarlak-balon-ikiz-ustte-resimli-kuyruklu",
+      "width": 600,
+      "height": 300,
+      "background": {
+        "kind": "solid",
+        "from": "#101010"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            150,
+            300,
+            230
+          ],
+          "color": "#D0E0C0",
+          "radius": 12,
+          "tail": "left"
+        },
+        {
+          "box": [
+            112,
+            170,
+            132,
+            190
+          ],
+          "color": "#C04040"
+        },
+        {
+          "box": [
+            140,
+            172,
+            190,
+            186
+          ],
+          "color": "#202020"
+        },
+        {
+          "box": [
+            112,
+            200,
+            280,
+            214
+          ],
+          "color": "#202020"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            140,
+            172,
+            190,
+            186
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#D0E0C0",
+          "fg": "#202020",
+          "upper": false,
+          "align": "left",
+          "kind": "help"
+        },
+        {
+          "box": [
+            112,
+            200,
+            280,
+            214
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#D0E0C0",
+          "fg": "#202020",
+          "upper": false,
+          "align": "left",
+          "kind": "help"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "twin",
+          "portrait": [
+            112,
+            170,
+            132,
+            190
+          ],
+          "portraitTwin": [
+            106.96,
+            111.6,
+            118.56,
+            123.2
+          ],
+          "radius": 7.92,
+          "room": [
+            122.62,
+            294
+          ],
+          "scale": 0.58,
+          "spot": [
+            122.62,
+            112.18,
+            152.78,
+            121.46
+          ],
+          "tail": "left",
+          "twin": [
+            100,
+            100,
+            216,
+            146.4
+          ]
+        },
+        {
+          "mode": "twin",
+          "portrait": [
+            112,
+            170,
+            132,
+            190
+          ],
+          "portraitTwin": [
+            106.96,
+            111.6,
+            118.56,
+            123.2
+          ],
+          "radius": 7.92,
+          "room": [
+            106.38,
+            294
+          ],
+          "scale": 0.58,
+          "spot": [
+            106.38,
+            128.42,
+            204.98,
+            137.7
+          ],
+          "tail": "left",
+          "twin": [
+            100,
+            100,
+            216,
+            146.4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "yuvarlak-panel-ustte-yer-yok-altta",
+      "width": 600,
+      "height": 300,
+      "background": {
+        "kind": "solid",
+        "from": "#101010"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            20,
+            300,
+            100
+          ],
+          "color": "#D0D0D0",
+          "radius": 12
+        },
+        {
+          "box": [
+            130,
+            50,
+            250,
+            64
+          ],
+          "color": "#202020"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            130,
+            50,
+            250,
+            64
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#D0D0D0",
+          "fg": "#202020",
+          "upper": false,
+          "align": "left",
+          "kind": "other"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "twin",
+          "portrait": null,
+          "radius": 7.92,
+          "room": [
+            116.82,
+            283
+          ],
+          "scale": 0.58,
+          "spot": [
+            116.82,
+            120.82,
+            187.58,
+            130.1
+          ],
+          "tail": null,
+          "twin": [
+            100,
+            104,
+            216,
+            150.4
+          ]
+        }
+      ]
+    },
+    {
+      "id": "yuvarlak-panel-yer-yok-ortulur",
+      "width": 600,
+      "height": 110,
+      "background": {
+        "kind": "solid",
+        "from": "#101010"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            15,
+            300,
+            95
+          ],
+          "color": "#D0D0D0",
+          "radius": 12
+        },
+        {
+          "box": [
+            130,
+            48,
+            250,
+            62
+          ],
+          "color": "#202020"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            130,
+            48,
+            250,
+            62
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#D0D0D0",
+          "fg": "#202020",
+          "upper": false,
+          "align": "left",
+          "kind": "other"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "cover"
+        }
+      ]
+    },
+    {
+      "id": "desenli-zemin-yer-yok-ortulur",
+      "width": 300,
+      "height": 60,
+      "background": {
+        "kind": "checker",
+        "from": "#203040",
+        "to": "#506070",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            10,
+            20,
+            150,
+            34
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            160,
+            20,
+            290,
+            34
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            10,
+            20,
+            150,
+            34
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "other"
+        },
+        {
+          "box": [
+            160,
+            20,
+            290,
+            34
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "other"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "cover"
+        },
+        {
+          "mode": "cover"
+        }
+      ]
+    },
+    {
+      "id": "menu-turu-hep-ortulur",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "checker",
+        "from": "#203040",
+        "to": "#506070",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "menu"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "cover"
+        }
+      ]
+    },
+    {
+      "id": "tur-yoksa-ortulur",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "checker",
+        "from": "#203040",
+        "to": "#506070",
+        "cell": 6
+      },
+      "rects": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            200,
+            90,
+            260,
+            104
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#384858",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "cover"
         }
       ]
     }

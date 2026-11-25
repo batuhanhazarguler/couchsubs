@@ -731,7 +731,7 @@ public sealed partial class RegionWatcher
             reading = echo.Filter(reading, place, geometry);
         }
         return MakeCandidate(reading, area.Region, image, SplitsMenuRows(Game?.Invoke()), auto: area.Auto, menu: area.Menu,
-                             styled: area.RequiresPanel);
+                             styled: area.RequiresPanel, kind: ScreenTextKinds.Of(area));
     }
 
     private static int IconCount(Candidate candidate) =>
@@ -802,7 +802,7 @@ public sealed partial class RegionWatcher
     /// sayaç ("12:00 pm") çevrilmez. Önceden hazır alanın çevirisi tek siyah kutuda görev resminin de üstünü örtüyordu (#856).
     /// </param>
     internal static Candidate MakeCandidate(Reading reading, CropRegion region, Frame? frame = null, bool menuRows = false, bool phone = false,
-                                            bool auto = false, bool menu = false, bool styled = false)
+                                            bool auto = false, bool menu = false, bool styled = false, ScreenTextKind? kind = null)
     {
         styled = (auto || styled) && !phone;
         var marked = frame is null || phone ? reading.WithButtonIcons() : reading.WithButtonIcons(frame, monochrome: auto);
@@ -876,11 +876,15 @@ public sealed partial class RegionWatcher
                     var group = groups[i];
                     var block = list[i];
                     var rows = group.Paragraphs.Count > 1 ? Math.Max(2, group.Rows) : group.Rows;
+                    var joined = string.Join(' ', group.Paragraphs);
                     return new TextPainter.Target(group.Box, group.LineHeight, rows, block.Style!.Background, block.Style.Foreground,
-                                                  block.Look!.Upper, block.Look.Align,
-                                                  TextPainter.WordCount(string.Join(' ', group.Paragraphs)));
+                                                  block.Look!.Upper, block.Look.Align, TextPainter.WordCount(joined),
+                                                  auto ? PaintKind(group, lines, cards, kind) : null,
+                                                  joined.Contains(ButtonIcons.Marker) || ButtonPrompts.IsPrompt(IconText.Plain(joined)));
                 }).ToList();
-                var paints = TextPainter.Paints(targets, frame);
+                var paints = TextPainter.Paints(targets, frame)
+                    .Select(paint => paint.Portrait is { } face ? paint with { PortraitImage = TextPainter.PortraitImage(face, frame) } : paint)
+                    .ToList();
                 for (var k = 0; k < painted.Count && k < paints.Count; k++)
                 {
                     var block = list[painted[k]] with { Paint = paints[k].PlacedIn(place) };
@@ -990,6 +994,19 @@ public sealed partial class RegionWatcher
         if (line.Box is not { } box || IconText.Plain(line.Text).Trim().Contains(' ')) return false;
         // Otomatik alan yazının yarım karo dışına kadar genişletilir: kenara değen sözcük alanın (ya da karenin) dışından taşıyor.
         return box.Left <= 0.005 || box.Right >= 0.995;
+    }
+
+    /// <summary>
+    /// Otomatik alandaki grubun çizim kipini seçen türü (<see cref="TextPainter.Target.Kind"/>): alanın yerinden belli türü
+    /// (menü, telefon, yardım köşesi, görev satırı), haritanın görev kartının parçası görev/hedef, kalanı okunan yazıdan
+    /// (<see cref="ScreenTextKinds.Of(IReadOnlyList{string})"/>). Mac (RegionWatcher.paintKind) ve Android (paintKind) aynı.
+    /// </summary>
+    internal static ScreenTextKind PaintKind(ScreenTranslation.Group group, IReadOnlyList<TextLine> lines,
+                                             IReadOnlyList<CouchSubs.Core.MissionCard.Card> cards, ScreenTextKind? area)
+    {
+        if (area is { } known) return known;
+        var card = cards.Any(c => c.All.Any(i => lines[i].Box is { } box && Inside(box, group.Box)));
+        return card ? ScreenTextKind.Mission : ScreenTextKinds.Of(group.Paragraphs);
     }
 
     private static bool Inside(TextBox line, TextBox group)
@@ -1401,7 +1418,8 @@ public sealed partial class RegionWatcher
             var range = Enumerable.Range(block.Start, block.Count).ToList();
             // Sohbet panelinde çevirisi aslıyla aynı mesaj ("ok", kişinin adı) da görünür; başka yerde atlanır.
             var unchanged = range.All(i => similar[i]);
-            if (unchanged && !(keepUnchanged && block.Phone is not null)) continue;
+            // İkiz panelde çevrilmeyen yazı (kişi adı) da özgün hâliyle yazılır: ikiz özgünün eksiksiz kopyası olsun.
+            if (unchanged && !(keepUnchanged && block.Phone is not null) && block.Paint?.Mode != PaintMode.Twin) continue;
             var joined = string.Join('\n', range.Select(i => text[i]));
             // Özgün yazı BÜYÜK HARF: çeviri de Türkçe kurallarıyla büyük harf (simge imleri harf değildir, korunur).
             if (block.Look is { Upper: true }) joined = TextStyleSampler.TurkishUpper(joined);

@@ -588,6 +588,22 @@ public final class SubtitleServer: @unchecked Sendable {
             result["cover"] = Self.json(paint.cover)
             if let grow = paint.grow { result["grow"] = Self.json(grow) }
             if let group = paint.group { result["group"] = group }
+            // Çizim kipi (`TextPaint.mode`; TV uygulaması 0.9.108): yanına yazma ya da ikiz panel. Eski TV alanları yok sayıp
+            // yukarıdaki örtüyle çizer.
+            if paint.mode != .cover, let spot = paint.spot, let room = paint.spotRoom {
+                result["mode"] = paint.mode.rawValue
+                result["spot"] = Self.json(spot)
+                result["spotRoom"] = Self.json(room)
+                if paint.mode == .twin, let twin = paint.twin {
+                    result["twinBox"] = Self.json(twin)
+                    result["radius"] = unitNumber(paint.radius)
+                    result["scale"] = unitNumber(paint.scale)
+                    if let tail = paint.tail { result["tail"] = tail }
+                    if let image = paint.portraitImage, let at = paint.portraitTwin {
+                        result["icon"] = ["src": image, "box": Self.json(at)] as [String: Any]
+                    }
+                }
+            }
         }
         // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
         if item.bubble { result["bubble"] = true }

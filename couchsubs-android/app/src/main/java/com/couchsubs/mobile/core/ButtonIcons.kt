@@ -574,6 +574,17 @@ object ButtonIcons {
             // Her satırın başında süzgeç türü: 0 (yok).
             System.arraycopy(frame.luma, (top + y) * frame.stride + left, raw, y * (width + 1) + 1, width)
         }
+        return encode(raw, width, height, colorType = 0)
+    }
+
+    /** [rgb] (satır satır, nokta başına 3 bayt R, G, B) [width]×[height] noktasını 8 bit renkli PNG'ye çevirir. */
+    fun pngRgb(rgb: ByteArray, width: Int, height: Int): ByteArray {
+        val raw = ByteArray(height * (width * 3 + 1))
+        for (y in 0 until height) System.arraycopy(rgb, y * width * 3, raw, y * (width * 3 + 1) + 1, width * 3)
+        return encode(raw, width, height, colorType = 2)
+    }
+
+    private fun encode(raw: ByteArray, width: Int, height: Int, colorType: Int): ByteArray {
         val deflater = Deflater(Deflater.BEST_COMPRESSION)
         val compressed = try {
             deflater.setInput(raw)
@@ -595,7 +606,7 @@ object ButtonIcons {
         writeBigEndian(header, 0, width)
         writeBigEndian(header, 4, height)
         header[8] = 8 // bit derinliği
-        header[9] = 0 // gri
+        header[9] = colorType.toByte() // 0: gri, 2: renkli
         chunk(png, "IHDR", header)
         chunk(png, "IDAT", compressed)
         chunk(png, "IEND", ByteArray(0))

@@ -386,15 +386,27 @@ public static class ScreenFit
 
         /// <summary>
         /// Ekrana oranlı öğeden (<see cref="ScreenTranslation.Item.Paint"/> olmalı) <paramref name="width"/> x
-        /// <paramref name="height"/> piksellik çizim alanına; Paint yoksa null.
+        /// <paramref name="height"/> piksellik çizim alanına; Paint yoksa null. Örtmeyen kipte (<see cref="TextPaint.Mode"/>)
+        /// yazı <see cref="TextPaint.Spot"/>'a, <see cref="TextPaint.SpotRoom"/> içinde dizilir; ikizde yazı boyu
+        /// <see cref="TextPaint.Scale"/> katında. Yanına yazılan Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola).
         /// </summary>
         public static ExactInput? From(ScreenTranslation.Item item, double width, double height)
         {
             if (item.Paint is not { } paint) return null;
-            return new ExactInput(item.Translation, paint.Cover.Left * width, paint.Cover.Top * height, paint.Cover.Right * width,
-                paint.Cover.Bottom * height, paint.Grow is { } g ? g.Left * width : null, paint.Grow is { } h ? h.Right * width : null,
-                Math.Max(1, item.LineHeight * height), Math.Max(1, paint.Pitch * height),
-                item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, item.Look?.Align ?? "left", paint.Group);
+            var free = paint.Mode != PaintMode.Cover ? paint.Spot : null;
+            var box = free ?? paint.Cover;
+            var room = free != null ? paint.SpotRoom : paint.Grow;
+            var scale = paint.Mode == PaintMode.Twin ? paint.Scale : 1;
+            var align = item.Look?.Align ?? "left";
+            if (paint.Mode == PaintMode.Beside)
+            {
+                if (box.Right <= paint.Cover.Left) align = "right";
+                else if (box.Left >= paint.Cover.Right) align = "left";
+            }
+            return new ExactInput(item.Translation, box.Left * width, box.Top * height, box.Right * width,
+                box.Bottom * height, room is { } g ? g.Left * width : null, room is { } h ? h.Right * width : null,
+                Math.Max(1, item.LineHeight * height * scale), Math.Max(1, paint.Pitch * height * scale),
+                item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, align, paint.Mode == PaintMode.Cover ? paint.Group : null);
         }
     }
 

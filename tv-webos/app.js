@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.107';
+  var APP_VERSION = '0.9.108';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1492,7 +1492,9 @@
       // Bilgisayar özgün görünüşü ölçüp gönderdiyse yerinde birebir çizim (placeExact); telefon ve balon eski yolda.
       // Ekran yazısı olarak okunan konuşma satırı birebir yolda küçülebiliyordu (tek sözcük kutuya sığana kadar); o
       // fitStyled'da çizilir: sıkışmaz, alt sınırın altına inmez (#1255).
-      if (!phone && setApart && item.bubble !== true && isExact(item) && !isSpoken(item.text, item.rows)) {
+      // İkiz balonun yazısı (bildirim mesajı kısa replik gibi bitse de) balonda kalır; boyu göndericide alt sınırda.
+      if (!phone && setApart && item.bubble !== true && isExact(item) &&
+          (exactMode(item) === 'twin' || !isSpoken(item.text, item.rows))) {
         exact.push(item);
         continue;
       }
@@ -1909,6 +1911,118 @@
     return condensedLook(item) ? CONDENSED_FONT : '';
   }
 
+  // --- Çizim kipleri (TV uygulaması 0.9.108) ---
+  // Bilgisayar her yazı için kip seçer (TextPaint.mode): "cover" özgünü örter (yukarıdaki çizim); "beside" kutu çizmez,
+  // Türkçe özgünün yanındaki boş alana (spot, spotRoom içinde uzar) özgün stilde, okunurluk için yumuşak konturla yazılır
+  // (Sinan Bey: "SELAMLA  GREET"); "twin" özgün paneli örtmez, aynı zemin, köşe (radius), kuyruk (tail) ve kişi resmiyle
+  // (icon {src, box}) küçük bir ikiz panel (twinBox, scale katında yazı) çizer, genişliği içeriğe göre (#1296). Eski
+  // bilgisayar bu alanları göndermez: örtme sürer. Mac/iPhone ExactScreenText, Windows ScreenTextCanvas, Android
+  // PhoneSubtitleActivity aynı kuralla çizer.
+  function exactMode(item) {
+    if (!item || (item.mode !== 'beside' && item.mode !== 'twin') || !validBox(item.spot) || !validBox(item.spotRoom)) {
+      return 'cover';
+    }
+    if (item.mode === 'twin' && !validBox(item.twinBox)) return 'cover';
+    return item.mode;
+  }
+
+  // Yerleşim girdisi (ScreenFit.ExactInput ile aynı): örtmeyen kipte yazı spot'ta, spotRoom içinde; ikizde yazı scale
+  // katında; yanına yazılan Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola); grup yalnız örtmede.
+  function exactInput(item, width, height) {
+    var mode = exactMode(item), cover = item.cover;
+    var box = mode === 'cover' ? cover : item.spot;
+    var grow = mode === 'cover' ? validBox(item.grow) : item.spotRoom;
+    var scale = mode === 'twin' && typeof item.scale === 'number' && item.scale > 0 ? item.scale : 1;
+    var line = (typeof item.line === 'number' && item.line > 0 ? item.line * height : (cover.bottom - cover.top) * height) * scale;
+    var pitch = typeof item.lineH === 'number' && item.lineH > 0 ? item.lineH * height * scale : line;
+    var align = item.align === 'right' || item.align === 'center' ? item.align : 'left';
+    if (mode === 'beside') {
+      if (box.right <= cover.left) align = 'right';
+      else if (box.left >= cover.right) align = 'left';
+    }
+    return { text: item.text, left: box.left * width, top: box.top * height, right: box.right * width,
+      bottom: box.bottom * height, growLeft: Math.min(box.left, grow ? grow.left : box.left) * width,
+      growRight: Math.max(box.right, grow ? grow.right : box.right) * width, line: line, pitch: pitch,
+      rows: item.rows > 1 || item.text.indexOf('\n') >= 0 ? Math.max(2, item.rows || 2) : 1,
+      align: align, group: mode === 'cover' && typeof item.group === 'number' ? item.group : null };
+  }
+
+  // Okunurluk konturu: açık yazıda koyu, koyu yazıda açık.
+  function exactHalo(fg, size) {
+    var r = parseInt(fg.slice(1, 3), 16), g = parseInt(fg.slice(3, 5), 16), b = parseInt(fg.slice(5, 7), 16);
+    var halo = 0.299 * r + 0.587 * g + 0.114 * b > 127.5 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
+    var blur = Math.max(1, Math.round(size * 0.08));
+    return '0 0 ' + blur + 'px ' + halo + ', 0 1px 0 ' + halo;
+  }
+
+  // İkiz paneller (aynı twinBox'ı paylaşan öğeler tek panel), yazılardan önce host'a eklenir. Genişlik içeriğe göre: en
+  // sağdaki yazı ya da resim + sol iç boşluk. Dönen: eklenen öğeler.
+  function exactTwins(host, items, placed, width, height) {
+    var drawn = [], seen = {};
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (exactMode(item) !== 'twin') continue;
+      var t = item.twinBox, key = [t.left, t.top, t.right, t.bottom].join(',');
+      if (seen[key]) continue;
+      seen[key] = true;
+      var left = t.left * width, least = Infinity, right = 0, j;
+      for (j = 0; j < items.length; j++) {
+        var other = items[j].twinBox;
+        if (exactMode(items[j]) !== 'twin' || [other.left, other.top, other.right, other.bottom].join(',') !== key) continue;
+        least = Math.min(least, placed[j].left);
+        right = Math.max(right, placed[j].left + placed[j].width);
+      }
+      var pad = Math.max(0, (least === Infinity ? left : least) - left);
+      var icon = item.icon && typeof item.icon.src === 'string' && item.icon.src.indexOf('data:image/') === 0 &&
+        validBox(item.icon.box) ? item.icon : null;
+      if (icon) right = Math.max(right, icon.box.right * width);
+      var top = t.top * height, h = (t.bottom - t.top) * height;
+      var radius = typeof item.radius === 'number' && item.radius > 0 ? item.radius * height : 0;
+      var panel = document.createElement('div');
+      panel.className = 'item exact twin';
+      panel.style.left = left + 'px';
+      panel.style.top = top + 'px';
+      panel.style.width = Math.max(1, right + pad - left) + 'px';
+      panel.style.height = h + 'px';
+      panel.style.backgroundColor = item.bg;
+      panel.style.borderRadius = radius + 'px';
+      if (item.tail === 'left' || item.tail === 'right') {
+        panel.style[item.tail === 'left' ? 'borderBottomLeftRadius' : 'borderBottomRightRadius'] = '0';
+        // Balonun kuyruğu: alt köşeden aşağı küçük üçgen (kenarlık hilesi; ES5, svg yok).
+        var tail = document.createElement('div');
+        tail.className = 'exact-tail';
+        tail.style.position = 'absolute';
+        tail.style.top = h + 'px';
+        tail.style.width = '0';
+        tail.style.height = '0';
+        tail.style.borderTop = Math.max(1, radius * 0.6) + 'px solid ' + item.bg;
+        if (item.tail === 'left') {
+          tail.style.left = '0';
+          tail.style.borderRight = Math.max(1, radius) + 'px solid transparent';
+        } else {
+          tail.style.right = '0';
+          tail.style.borderLeft = Math.max(1, radius) + 'px solid transparent';
+        }
+        panel.appendChild(tail);
+      }
+      if (icon) {
+        var img = document.createElement('img');
+        img.className = 'exact-portrait';
+        img.src = icon.src;
+        img.style.position = 'absolute';
+        img.style.left = (icon.box.left * width - left) + 'px';
+        img.style.top = (icon.box.top * height - top) + 'px';
+        img.style.width = ((icon.box.right - icon.box.left) * width) + 'px';
+        img.style.height = ((icon.box.bottom - icon.box.top) * height) + 'px';
+        img.style.borderRadius = '50%';
+        panel.appendChild(img);
+      }
+      host.appendChild(panel);
+      drawn.push(panel);
+    }
+    return drawn;
+  }
+
   // Birebir öğeleri çizer: host'a eklenen kutular (sırayla).
   function placeExact(host, items, width, height) {
     var probe = document.createElement('span');
@@ -1919,17 +2033,7 @@
     probe.style.top = '0';
     host.appendChild(probe);
     var inputs = [];
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i], cover = item.cover, grow = validBox(item.grow);
-      var line = typeof item.line === 'number' && item.line > 0 ? item.line * height : (cover.bottom - cover.top) * height;
-      var pitch = typeof item.lineH === 'number' && item.lineH > 0 ? item.lineH * height : line;
-      inputs.push({ text: item.text, left: cover.left * width, top: cover.top * height, right: cover.right * width,
-        bottom: cover.bottom * height, growLeft: Math.min(cover.left, grow ? grow.left : cover.left) * width,
-        growRight: Math.max(cover.right, grow ? grow.right : cover.right) * width, line: line, pitch: pitch,
-        rows: item.rows > 1 || item.text.indexOf('\n') >= 0 ? Math.max(2, item.rows || 2) : 1,
-        align: item.align === 'right' || item.align === 'center' ? item.align : 'left',
-        group: typeof item.group === 'number' ? item.group : null });
-    }
+    for (var i = 0; i < items.length; i++) inputs.push(exactInput(items[i], width, height));
     function measure(text, size, index) {
       probe.style.fontFamily = exactFamily(items[index]);
       probe.style.fontWeight = items[index].weight === 700 ? '700' : '400';
@@ -1940,18 +2044,19 @@
     }
     var placed = exactLayout(inputs, measure);
     host.removeChild(probe);
-    var drawn = [];
+    var drawn = exactTwins(host, items, placed, width, height);
     for (var n = 0; n < items.length; n++) {
-      var source = items[n], place = placed[n];
+      var source = items[n], place = placed[n], mode = exactMode(source);
       var el = document.createElement('div');
-      el.className = 'item exact';
+      el.className = mode === 'cover' ? 'item exact' : 'item exact ' + mode;
       el.couchsubsBox = validBox(source.box);
       el.style.left = place.left + 'px';
       el.style.top = place.top + 'px';
       el.style.width = place.width + 'px';
       el.style.height = place.height + 'px';
-      el.style.backgroundColor = source.bg;
-      if (phoneColor(source.bg2) && (source.bgDir === 'h' || source.bgDir === 'v')) {
+      el.style.backgroundColor = mode === 'cover' ? source.bg : 'transparent';
+      if (mode === 'beside') el.style.textShadow = exactHalo(source.fg, place.fontSize);
+      if (mode === 'cover' && phoneColor(source.bg2) && (source.bgDir === 'h' || source.bgDir === 'v')) {
         var webkit = '-webkit-linear-gradient(' + (source.bgDir === 'h' ? 'left' : 'top') + ', ' + source.bg + ', ' + source.bg2 + ')';
         var standard = 'linear-gradient(' + (source.bgDir === 'h' ? 'to right' : 'to bottom') + ', ' + source.bg + ', ' + source.bg2 + ')';
         el.style.backgroundImage = webkit;

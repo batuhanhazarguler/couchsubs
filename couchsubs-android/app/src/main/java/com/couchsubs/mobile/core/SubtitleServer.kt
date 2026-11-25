@@ -349,6 +349,25 @@ class SubtitleServer(
                 json["cover"] = boxJson(paint.cover)
                 paint.grow?.let { json["grow"] = boxJson(it) }
                 paint.group?.let { json["group"] = it }
+                // Çizim kipi ([TextPaint.mode]; TV uygulaması 0.9.108): yanına yazma ya da ikiz panel. Eski TV alanları yok
+                // sayıp yukarıdaki örtüyle çizer.
+                val spot = paint.spot
+                val room = paint.spotRoom
+                if (paint.mode != TextPaint.MODE_COVER && spot != null && room != null) {
+                    json["mode"] = paint.mode
+                    json["spot"] = boxJson(spot)
+                    json["spotRoom"] = boxJson(room)
+                    val twin = paint.twin
+                    if (paint.mode == TextPaint.MODE_TWIN && twin != null) {
+                        json["twinBox"] = boxJson(twin)
+                        json["radius"] = Json.Decimal(Math.round(paint.radius.coerceIn(0.0, 1.0) * 10000) / 10000.0)
+                        json["scale"] = Json.Decimal(Math.round(paint.scale.coerceIn(0.0, 1.0) * 10000) / 10000.0)
+                        paint.tail?.let { json["tail"] = it }
+                        val image = paint.portraitImage
+                        val at = paint.portraitTwin
+                        if (image != null && at != null) json["icon"] = mapOf("src" to image, "box" to boxJson(at))
+                    }
+                }
             }
             // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
             if (item.bubble) json["bubble"] = true

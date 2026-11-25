@@ -360,13 +360,25 @@ object ScreenFit {
         val pitch: Double = pitch ?: line
 
         companion object {
-            /** Ekrana oranlı öğeden (`Item.paint` olmalı) [width] x [height] piksellik çizim alanına. */
+            /**
+             * Ekrana oranlı öğeden (`Item.paint` olmalı) [width] x [height] piksellik çizim alanına. Örtmeyen kipte
+             * ([TextPaint.mode]) yazı `spot`'a, `spotRoom` içinde dizilir; ikizde yazı boyu `scale` katında. Yanına yazılan
+             * Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola). Mac/iPhone ve Windows ile aynı.
+             */
             fun of(item: ScreenTranslation.Item, width: Double, height: Double): ExactInput? {
                 val paint = item.paint ?: return null
-                return ExactInput(item.translation, paint.cover.left * width, paint.cover.top * height,
-                    paint.cover.right * width, paint.cover.bottom * height, paint.grow?.let { it.left * width },
-                    paint.grow?.let { it.right * width }, max(1.0, item.lineHeight * height), max(1.0, paint.pitch * height),
-                    if (item.paragraphs) max(2, item.rows) else item.rows, item.look?.align ?: "left", paint.group)
+                val free = if (paint.mode != TextPaint.MODE_COVER) paint.spot else null
+                val box = free ?: paint.cover
+                val room = if (free != null) paint.spotRoom else paint.grow
+                val scale = if (paint.mode == TextPaint.MODE_TWIN) paint.scale else 1.0
+                var align = item.look?.align ?: "left"
+                if (paint.mode == TextPaint.MODE_BESIDE) {
+                    if (box.right <= paint.cover.left) align = "right" else if (box.left >= paint.cover.right) align = "left"
+                }
+                return ExactInput(item.translation, box.left * width, box.top * height, box.right * width, box.bottom * height,
+                    room?.let { it.left * width }, room?.let { it.right * width }, max(1.0, item.lineHeight * height * scale),
+                    max(1.0, paint.pitch * height * scale), if (item.paragraphs) max(2, item.rows) else item.rows, align,
+                    if (paint.mode == TextPaint.MODE_COVER) paint.group else null)
             }
         }
     }

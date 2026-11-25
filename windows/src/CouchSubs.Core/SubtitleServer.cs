@@ -779,7 +779,7 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
     }
 
     /// <summary>Yeriyle bir çeviri ("Ekranı çevir" öğesi ya da ek alan bloğu).</summary>
-    private static SortedDictionary<string, object> ItemJson(ScreenTranslation.Item item, bool phone)
+    internal static SortedDictionary<string, object> ItemJson(ScreenTranslation.Item item, bool phone)
     {
         var json = new SortedDictionary<string, object>
         {
@@ -824,6 +824,23 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
             json["cover"] = BoxJson(paint.Cover);
             if (paint.Grow is { } grow) json["grow"] = BoxJson(grow);
             if (paint.Group is { } group) json["group"] = group;
+            // Çizim kipi (TextPaint.Mode; TV uygulaması 0.9.108): yanına yazma ya da ikiz panel. Eski TV alanları yok sayıp
+            // yukarıdaki örtüyle çizer.
+            if (paint.Mode != PaintMode.Cover && paint.Spot is { } spot && paint.SpotRoom is { } spotRoom)
+            {
+                json["mode"] = paint.Mode;
+                json["spot"] = BoxJson(spot);
+                json["spotRoom"] = BoxJson(spotRoom);
+                if (paint.Mode == PaintMode.Twin && paint.Twin is { } twin)
+                {
+                    json["twinBox"] = BoxJson(twin);
+                    json["radius"] = Round(paint.Radius);
+                    json["scale"] = Round(paint.Scale);
+                    if (paint.Tail is { } tail) json["tail"] = tail;
+                    if (paint.PortraitImage is { } image && paint.PortraitTwin is { } at)
+                        json["icon"] = new SortedDictionary<string, object> { ["src"] = image, ["box"] = BoxJson(at) };
+                }
+            }
         }
         // Telefon mesajı kendi balonunda: TV çeviriyi balona sığdırır (eski TV yok sayar, özgün stilde çizer).
         if (item.Bubble) json["bubble"] = true;

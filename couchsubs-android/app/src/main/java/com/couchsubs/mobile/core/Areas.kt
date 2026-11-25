@@ -528,8 +528,18 @@ class RegionWatcher(
                 paragraphs = groups.flatMap { it.paragraphs }
                 icons = groups.flatMap { group -> group.icons ?: group.paragraphs.map { emptyList<IconSlot>() } }
                 var start = 0
+                // Haritanın görev kartının parçası olan grup: çizim kipi seçiminde görev/hedef ([paintKind]).
+                fun onCard(group: ScreenTranslation.Group) = cards.any { card ->
+                    card.all.any { i ->
+                        val b = lines[i].box!!
+                        val x = (b.left + b.right) / 2
+                        val y = (b.top + b.bottom) / 2
+                        x >= group.box.left - 1e-6 && x <= group.box.right + 1e-6 && y >= group.box.top - 1e-6 && y <= group.box.bottom + 1e-6
+                    }
+                }
                 val list = groups.map { group ->
-                    Block(start, group.paragraphs.size, group.box.placedIn(region.box), group.lineHeight * height, group.rows)
+                    Block(start, group.paragraphs.size, group.box.placedIn(region.box), group.lineHeight * height, group.rows,
+                        card = onCard(group))
                         .also { start += group.paragraphs.size }
                 }
                 blocks = list
@@ -594,6 +604,7 @@ class RegionWatcher(
          */
         internal fun styled(
             candidate: Candidate, reading: Reading, region: CropRegion, frame: GrayFrame?, color: ((Int, Int) -> Int)? = null,
+            modes: Boolean = false, kind: ScreenTextKind? = null,
         ): Candidate {
             if (frame == null) return candidate
             val groups = candidate.blocks ?: run {
@@ -623,7 +634,7 @@ class RegionWatcher(
                     parts.forEachIndexed { i, boxes ->
                         val box = boxes.reduce { a, b -> a.union(b) }
                         val heights = boxes.map { it.bottom - it.top }.sorted()
-                        blocks.add(Block(group.start + i, 1, box, heights[heights.size / 2], boxes.size))
+                        blocks.add(Block(group.start + i, 1, box, heights[heights.size / 2], boxes.size, card = group.card))
                         aligns.add(align)
                     }
                 } else {
@@ -656,9 +667,18 @@ class RegionWatcher(
                         (box.right - region.left) / width, (box.bottom - region.top) / height),
                     block.lineHeight / height, if (block.count > 1) maxOf(2, block.rows) else block.rows,
                     style.surface.background, style.surface.foreground, style.look.upper, style.look.align,
-                    TextPainter.words((block.start until block.start + block.count).joinToString(" ") { candidate.paragraphs[it] }))
+                    TextPainter.words((block.start until block.start + block.count).joinToString(" ") { candidate.paragraphs[it] }),
+                    if (modes) paintKind(candidate.paragraphs.subList(block.start, block.start + block.count), block.card, kind) else null,
+                    (block.start until block.start + block.count).joinToString(" ") { candidate.paragraphs[it] }.let {
+                        it.contains(ButtonIcons.MARKER) || ButtonPrompts.isPrompt(IconText.plain(it))
+                    })
             }
-            val paints = if (targets.isEmpty()) emptyList() else TextPainter.paints(targets, frame, color)
+            val paints = (if (targets.isEmpty()) emptyList() else TextPainter.paints(targets, frame, color)).map { paint ->
+                // Kişi resmi (ikiz panelde gösterilir) okunan alanın karesinden, karedeki yere taşınmadan önce kesilir.
+                val face = paint.portrait ?: return@map paint
+                paint.copy(portraitImage = TextPainter.portraitImage(face, frame.width, frame.height,
+                    color ?: { x, y -> frame.at(x, y).let { (it shl 16) or (it shl 8) or it } }))
+            }
             val aligned = styles.toMutableList()
             for ((k, i) in painted.withIndex()) {
                 if (k >= paints.size) continue
@@ -670,6 +690,14 @@ class RegionWatcher(
             }
             return candidate.copy(blocks = blocks, styles = aligned)
         }
+
+        /**
+         * Otomatik alandaki grubun çizim kipini seçen türü ([TextPainter.Target.kind]): alanın yerinden belli türü (menü,
+         * telefon, yardım köşesi, görev satırı), haritanın görev kartının parçası görev/hedef, kalanı okunan yazıdan
+         * ([ScreenTextKind.ofParagraphs]). Mac/iPhone (RegionWatcher.paintKind) ve Windows aynı.
+         */
+        internal fun paintKind(paragraphs: List<String>, card: Boolean, area: ScreenTextKind?): ScreenTextKind =
+            area ?: if (card) ScreenTextKind.MISSION else ScreenTextKind.ofParagraphs(paragraphs)
 
         /**
          * Parçaların satırları: satırlar yukarıdan aşağı sözcük sayısıyla parçalara dağıtılır (ScreenText.paragraphs
@@ -740,7 +768,8 @@ class RegionWatcher(
             candidate: Candidate, layout: List<Block>, text: List<String>, similar: List<Boolean>, slots: List<IconSlot>,
         ): List<Pair<Int, ScreenTranslation.Item>> = layout.mapIndexedNotNull { index, block ->
             val range = block.start until block.start + block.count
-            if (range.all { similar[it] }) return@mapIndexedNotNull null
+            // İkiz panelde çevrilmeyen yazı (kişi adı) da özgün hâliyle yazılır: ikiz özgünün eksiksiz kopyası olsun.
+            if (range.all { similar[it] } && block.paint?.mode != TextPaint.MODE_TWIN) return@mapIndexedNotNull null
             val rendered = IconText.render(range.joinToString("\n") { text[it] }, slots)
             val source = range.joinToString("\n") { IconText.plain(candidate.paragraphs[it]) }
             val style = candidate.styles?.getOrNull(index)
@@ -768,6 +797,8 @@ class RegionWatcher(
         val rows: Int = 1,
         /** Yerinde birebir çizim ölçüleri ([TextPainter]), karedeki yeriyle; otomatik ekran yazısında. */
         val paint: TextPaint? = null,
+        /** Haritanın görev kartının parçası ([MissionCard]): çizim kipi hep örtme. */
+        val card: Boolean = false,
     )
 
     /**
@@ -1120,7 +1151,8 @@ class RegionWatcher(
                 onAutoRejected?.invoke(area.id)
                 return
             }
-            candidate = styled(candidate, text, area.region, crop.frame, crop.color).copy(auto = true)
+            candidate = styled(candidate, text, area.region, crop.frame, crop.color, modes = true,
+                kind = ScreenTextKind.of(area)).copy(auto = true)
         } else if (preset) {
             // Oyunun hazır alanı otomatik alan gibi özgün stilinde, her grup kendi bloğunda çizilir (siyah kutu değil, #856).
             candidate = styled(candidate, text, area.region, crop.frame, crop.color)

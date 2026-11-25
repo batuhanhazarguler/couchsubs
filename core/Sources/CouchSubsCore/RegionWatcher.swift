@@ -398,7 +398,7 @@ public final class RegionWatcher {
             && !ScreenNotices.isNotice(id: area.id)
         let own = subtitleEcho?.filter(reading, place: place, geometry: geometry) ?? reading
         let candidate = Self.candidate(own, in: region, frame: crop, auto: area.auto, menu: area.menu,
-                                       styled: GameAreaPresets.isPreset(area.id))
+                                       styled: GameAreaPresets.isPreset(area.id), kind: ScreenTextKind.of(area))
         // Çevirisi gösterilen alanda art arda boş okuma (görüntü değişirken) yazının gittiğini tek başına kanıtlamaz: kaldırma
         // kararı `clearIfUnsteady`'de (özgün yazının izi ya da süre).
         let emptyWhileShown = candidate.key.isEmpty && !(state.renderedText ?? "").isEmpty
@@ -589,8 +589,9 @@ public final class RegionWatcher {
     /// `menu`: otomatik alan menüde; satır yükseklikleri farklı olabilir (başlık, etiket).
     /// `styled`: oyunun hazır alanı (`GameAreaPresets`): otomatik alan gibi her grup kendi bloğu, özgün stilinde; saat ve
     /// sayaç ("12:00 pm") çevrilmez. Önceden hazır alanın çevirisi tek siyah kutuda görev resminin de üstünü örtüyordu (#856).
+    /// `kind`: alanın yerinden belli türü (`ScreenTextKind.of(area)`); otomatik alanda grupların çizim kipini seçer.
     static func candidate(_ reading: Reading, in region: CropRegion, frame: CGImage? = nil, auto: Bool = false,
-                          menu: Bool = false, styled: Bool = false) -> Candidate {
+                          menu: Bool = false, styled: Bool = false, kind: ScreenTextKind? = nil) -> Candidate {
         let styled = auto || styled
         // Otomatik alanda (menü, kontrol şeması) tuşlu etiketler ("HOLSTER (L1)", "SELECT (✕)") yazının kendisidir, atılmaz.
         let marked = reading.withButtonIcons(frame: frame, monochrome: auto)
@@ -663,12 +664,18 @@ public final class RegionWatcher {
                 let targets = painted.map { i -> TextPainter.Target in
                     let group = groups[i], block = list[i]
                     let rows = group.paragraphs.count > 1 ? max(2, group.rows) : group.rows
+                    let joined = group.paragraphs.joined(separator: " ")
                     return TextPainter.Target(box: group.box, lineHeight: group.lineHeight, rows: rows,
                                               background: block.style!.background, foreground: block.style!.foreground,
                                               upper: block.look!.upper, align: block.look!.align,
-                                              words: TextPainter.words(group.paragraphs.joined(separator: " ")))
+                                              words: TextPainter.words(joined),
+                                              kind: auto ? Self.paintKind(group, lines: lines, cards: cards, area: kind) : nil,
+                                              prompt: joined.contains(ButtonIcons.marker) || ButtonPrompts.isPrompt(IconText.plain(joined)))
                 }
-                let paints = TextPainter.paints(targets, frame: frame)
+                var paints = TextPainter.paints(targets, frame: frame)
+                for k in paints.indices {
+                    if let face = paints[k].portrait { paints[k].portraitImage = TextPainter.portraitImage(face, frame: frame) }
+                }
                 for (k, i) in painted.enumerated() where k < paints.count {
                     list[i].paint = paints[k].placed(in: place)
                     // Kutunun ucunda simge varsa yazı simgeye yaslanır (#1266: "SEÇ" tuş simgesinin yanında).
@@ -688,6 +695,16 @@ public final class RegionWatcher {
         }
         return Candidate(paragraphs: paragraphs, box: box, lineHeight: lineHeight, key: key, icons: cut, blocks: blocks,
                          text: textKey(paragraphs), missionCard: missionCard)
+    }
+
+    /// Otomatik alandaki grubun çizim kipini seçen türü (`TextPainter.Target.kind`): alanın yerinden belli türü (menü,
+    /// telefon, yardım köşesi, görev satırı), haritanın görev kartının parçası görev/hedef, kalanı okunan yazıdan
+    /// (`ScreenTextKind.of(paragraphs:)`). Windows (RegionWatcher.PaintKind) ve Android (paintKind) aynı.
+    static func paintKind(_ group: ScreenTranslation.Group, lines: [TextLine], cards: [MissionCard.Card],
+                          area: ScreenTextKind?) -> ScreenTextKind {
+        if let area { return area }
+        let card = cards.contains { card in card.all.contains { lines[$0].box.map { inside($0, group.box) } ?? false } }
+        return card ? .mission : ScreenTextKind.of(paragraphs: group.paragraphs)
     }
 
     /// Seçim kaydı (#1267): gösterilen bir kutunun yerindeki (satırının en az yarısı örtüşen) yeni bloğun zemini öbür
@@ -979,7 +996,8 @@ public final class RegionWatcher {
         var result: [(group: Int, item: ScreenTranslation.Item)] = []
         for (index, block) in layout.enumerated() {
             let range = block.start..<(block.start + block.count)
-            if range.allSatisfy({ similar[$0] }) { continue }
+            // İkiz panelde çevrilmeyen yazı (kişi adı) da özgün hâliyle yazılır: ikiz özgünün eksiksiz kopyası olsun.
+            if range.allSatisfy({ similar[$0] }), block.paint?.mode != .twin { continue }
             var joined = range.map { text[$0] }.joined(separator: "\n")
             // Özgün yazı BÜYÜK HARF: çeviri de Türkçe kurallarıyla büyük harf (simge imleri harf değildir, korunur).
             if block.look?.upper == true { joined = TextStyleSampler.turkishUpper(joined) }

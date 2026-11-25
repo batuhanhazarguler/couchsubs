@@ -4,6 +4,9 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using CouchSubs.Core;
 
 namespace CouchSubs.App.Views;
@@ -20,6 +23,11 @@ namespace CouchSubs.App.Views;
 /// TV fitExact ve Mac ScreenTextBlocks ile aynı yerleşim): opak, köşesiz, gölgesiz kutu tam örtü sınırında, ölçülen zeminle
 /// (düz ya da yatay/dikey degrade), yazı özgün renk, kalınlık ve hizayla; her satır özgün satır aralığında. Ölçüsü olmayan
 /// öğe eski yoldan çizilir.
+/// </para>
+/// <para>
+/// Çizim kipi (<see cref="TextPaint.Mode"/>; TV placeExact ve Mac ExactScreenText ile aynı): örtmede kutu; yanına yazmada
+/// kutu yok, Türkçe özgün yazının yanında özgün stille, okunurluk için yumuşak gölgeyle; ikizde özgün panelin küçük kopyası
+/// (aynı zemin, köşe, kuyruk ve kişi resmi; genişliği içeriğe göre) özgünün hemen üstünde ya da altında, yazı kutusuz.
 /// </para>
 /// </summary>
 internal sealed class ScreenTextCanvas : Canvas
@@ -149,24 +157,36 @@ internal sealed class ScreenTextCanvas : Canvas
             var laid = ScreenFit.Exact(inputs, Measure);
             foreach (var i in kind) placements[i] = laid[i];
         }
+        // İkiz paneller önce (yazılar üstlerinde): aynı paneli paylaşan öğeler (başlık ve gövde) tek panel çizer.
+        var twins = Enumerable.Range(0, painted.Count)
+            .Where(i => painted[i].Paint is { Mode: PaintMode.Twin, Twin: not null })
+            .GroupBy(i => painted[i].Paint!.Twin!.Value);
+        foreach (var twin in twins) DrawTwin([.. twin], painted, placements, width, height);
         for (var i = 0; i < painted.Count; i++)
         {
             var item = painted[i];
             var paint = item.Paint!;
             var place = placements[i];
-            var look = item.Look!;
             var foreground = new SolidColorBrush(Parse(item.Style?.Foreground, Colors.White));
-            var box = new Border
+            if (paint.Mode == PaintMode.Cover)
             {
-                Width = Math.Max(1, place.Width),
-                Height = Math.Max(1, place.Height),
-                Background = Ground(paint),
-                CornerRadius = new CornerRadius(0),
-            };
-            SetLeft(box, place.Left);
-            SetTop(box, place.Top);
-            Children.Add(box);
-            var alignment = look.Align switch { "center" => HorizontalAlignment.Center, "right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Left };
+                var box = new Border
+                {
+                    Width = Math.Max(1, place.Width),
+                    Height = Math.Max(1, place.Height),
+                    Background = Ground(paint),
+                    CornerRadius = new CornerRadius(0),
+                };
+                SetLeft(box, place.Left);
+                SetTop(box, place.Top);
+                Children.Add(box);
+            }
+            // Yanına yazma: oyun dünyasının üstünde kutusuz; yazı rengine zıt yumuşak gölge okunurluğu sağlar.
+            var glow = paint.Mode == PaintMode.Beside
+                ? new DropShadowEffect { ShadowDepth = 0, BlurRadius = Math.Max(3, place.FontSize * 0.25), Opacity = 0.9,
+                                         Color = Light(Parse(item.Style?.Foreground, Colors.White)) ? Colors.Black : Colors.White }
+                : null;
+            var alignment = inputs[i].Align switch { "center" => HorizontalAlignment.Center, "right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Left };
             for (var k = 0; k < place.Lines.Count; k++)
             {
                 // Satır, özgün satırın yerinde: RowHeight yüksekliğin dikey ortasında, k. satır Top + k * LineHeight'ta.
@@ -184,6 +204,7 @@ internal sealed class ScreenTextCanvas : Canvas
                         TextWrapping = TextWrapping.NoWrap,
                         HorizontalAlignment = alignment,
                         VerticalAlignment = VerticalAlignment.Center,
+                        Effect = glow,
                     },
                 };
                 SetLeft(row, place.Left);
@@ -192,6 +213,83 @@ internal sealed class ScreenTextCanvas : Canvas
             }
         }
     }
+
+    /// <summary>
+    /// İkiz panel: özgün panelin küçük kopyası (zemin rengi, köşe yarıçapı, konuşma balonunun kuyruğu, kişi resmi); sol kenarı
+    /// ve üstü bilgisayarın verdiği yerde, genişliği içeriğe göre (sağ iç boşluk soldakine eşit), Türkçe uzunsa aşağı uzar.
+    /// </summary>
+    private void DrawTwin(IReadOnlyList<int> members, IReadOnlyList<ScreenTranslation.Item> painted,
+                          IReadOnlyList<ScreenFit.ExactPlacement> placements, double width, double height)
+    {
+        var paint = painted[members[0]].Paint!;
+        var twin = paint.Twin!.Value;
+        double left = twin.Left * width, top = twin.Top * height, bottom = twin.Bottom * height;
+        var pad = Math.Max(0, members.Min(i => placements[i].Left) - left);
+        var face = members.Select(i => painted[i].Paint!).FirstOrDefault(p => p.PortraitTwin is not null && p.PortraitImage is not null);
+        var right = members.Max(i => placements[i].Left + placements[i].Width);
+        if (face?.PortraitTwin is { } at) right = Math.Max(right, at.Right * width);
+        var spotBottom = members.Max(i => painted[i].Paint!.Spot is { } spot ? spot.Bottom * height : bottom);
+        bottom = Math.Max(bottom, members.Max(i => placements[i].Top + placements[i].Height) + Math.Max(0, bottom - spotBottom));
+        var radius = Math.Max(0, paint.Radius * height);
+        var panelWidth = Math.Max(2 * radius, right + pad - left);
+        var fill = new SolidColorBrush(Parse(paint.Background, Colors.LightGray));
+        var panel = new Border
+        {
+            Width = panelWidth,
+            Height = Math.Max(1, bottom - top),
+            Background = fill,
+            CornerRadius = new CornerRadius(radius, radius, paint.Tail == "right" ? 0 : radius, paint.Tail == "left" ? 0 : radius),
+        };
+        SetLeft(panel, left);
+        SetTop(panel, top);
+        Children.Add(panel);
+        if (paint.Tail is "left" or "right")
+        {
+            // Kuyruk: köşeli köşeden aşağı doğru küçük üçgen.
+            var x = paint.Tail == "left" ? left : left + panelWidth;
+            var dx = paint.Tail == "left" ? radius : -radius;
+            Children.Add(new Polygon
+            {
+                Fill = fill,
+                Points = [new Point(x, bottom - 1), new Point(x + dx, bottom - 1), new Point(x, bottom + (0.6 * radius))],
+            });
+        }
+        if (face?.PortraitTwin is { } box && Picture(face.PortraitImage!) is { } image)
+        {
+            double w = (box.Right - box.Left) * width, h = (box.Bottom - box.Top) * height;
+            var picture = new Image
+            {
+                Source = image, Width = w, Height = h, Stretch = Stretch.Fill,
+                Clip = new EllipseGeometry(new Point(w / 2, h / 2), w / 2, h / 2),
+            };
+            SetLeft(picture, box.Left * width);
+            SetTop(picture, box.Top * height);
+            Children.Add(picture);
+        }
+    }
+
+    /// <summary>Kişi resmi (PNG data: adresi); çözülemezse null.</summary>
+    private static BitmapImage? Picture(string source)
+    {
+        const string prefix = "data:image/png;base64,";
+        if (!source.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        try
+        {
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.StreamSource = new System.IO.MemoryStream(Convert.FromBase64String(source[prefix.Length..]));
+            image.EndInit();
+            image.Freeze();
+            return image;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool Light(Color color) => (0.299 * color.R) + (0.587 * color.G) + (0.114 * color.B) > 140;
 
     /// <summary>Ölçülen zemin: düz renk ya da iki uçlu doğrusal degrade (yatay: soldan sağa, dikey: üstten alta).</summary>
     private static Brush Ground(TextPaint paint)

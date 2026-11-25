@@ -1,0 +1,1 @@
+0.9.108: Screen text translation no longer draws boxes over the game world; prompts are translated beside the original, notifications in a small twin bubble.

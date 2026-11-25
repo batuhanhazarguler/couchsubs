@@ -22,10 +22,7 @@ public class TextPaintTests
     private static (int R, int G, int B) Pixel(JsonElement frame, int x, int y)
     {
         foreach (var rect in frame.GetProperty("rects").EnumerateArray().Reverse())
-        {
-            var box = Numbers(rect.GetProperty("box"));
-            if (x >= box[0] && x < box[2] && y >= box[1] && y < box[3]) return TextPainter.Rgb(rect.GetProperty("color").GetString()!);
-        }
+            if (Inside(rect, x, y)) return TextPainter.Rgb(rect.GetProperty("color").GetString()!);
         var background = frame.GetProperty("background");
         var from = TextPainter.Rgb(background.GetProperty("from").GetString()!);
         var to = background.TryGetProperty("to", out var end) && end.ValueKind == JsonValueKind.String ? TextPainter.Rgb(end.GetString()!) : from;
@@ -41,6 +38,158 @@ public class TextPaintTests
                 return ((x / cell) + (y / cell)) % 2 == 0 ? from : to;
             default: return from;
         }
+    }
+
+    /// <summary>
+    /// Yuvarlak köşeli dikdörtgen (Mac TextPaintTests.inside ile aynı): köşe karesindeki nokta, merkezi köşe dairesinin
+    /// içindeyse boyanır; <c>tail</c> köşesi köşeli kalır.
+    /// </summary>
+    private static bool Inside(JsonElement rect, int x, int y)
+    {
+        var b = Numbers(rect.GetProperty("box"));
+        if (!(x >= b[0] && x < b[2] && y >= b[1] && y < b[3])) return false;
+        if (!rect.TryGetProperty("radius", out var radius) || radius.ValueKind != JsonValueKind.Number || radius.GetInt32() <= 0) return true;
+        var tail = rect.TryGetProperty("tail", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+        double px = x + 0.5, py = y + 0.5, rr = radius.GetInt32();
+        bool left = px < b[0] + rr, right = px > b[2] - rr, top = py < b[1] + rr, bottom = py > b[3] - rr;
+        if (!((left || right) && (top || bottom))) return true;
+        if (bottom && ((left && tail == "left") || (right && tail == "right"))) return true;
+        double cx = left ? b[0] + rr : b[2] - rr, cy = top ? b[1] + rr : b[3] - rr;
+        return ((px - cx) * (px - cx)) + ((py - cy) * (py - cy)) <= rr * rr;
+    }
+
+    /// <summary>
+    /// Çizim kipi (<see cref="TextPaint.Mode"/>): desenli zeminde yanına yazma (önce sol, yer yoksa sağ), simge örtülmez,
+    /// köşeli düz kutu örtülür, yuvarlak panel küçük ikizle (resim, kuyruk) üstte ya da altta, yer yoksa örtme; menü ve
+    /// türsüz yazı hep örtülür. Ortak vakalar Fixtures/text-paint.json → modes (Mac, Android aynı).
+    /// </summary>
+    [Fact]
+    public void SharedModeVectors()
+    {
+        using var fixture = Fixture();
+        var frames = fixture.RootElement.GetProperty("modes").EnumerateArray().ToList();
+        Assert.NotEmpty(frames);
+        foreach (var frame in frames)
+        {
+            var id = frame.GetProperty("id").GetString()!;
+            int width = frame.GetProperty("width").GetInt32(), height = frame.GetProperty("height").GetInt32();
+            double w = width, h = height;
+            var targets = frame.GetProperty("targets").EnumerateArray().Select(t =>
+            {
+                var box = Numbers(t.GetProperty("box"));
+                ScreenTextKind? kind = t.TryGetProperty("kind", out var k) ? Enum.Parse<ScreenTextKind>(k.GetString()!, ignoreCase: true) : null;
+                return new TextPainter.Target(new TextBox(box[0] / w, box[1] / h, box[2] / w, box[3] / h),
+                    t.GetProperty("line").GetDouble() / h, t.GetProperty("rows").GetInt32(), t.GetProperty("bg").GetString()!,
+                    t.GetProperty("fg").GetString()!, t.GetProperty("upper").GetBoolean(), t.GetProperty("align").GetString()!,
+                    t.TryGetProperty("words", out var words) ? words.GetInt32() : 0, kind,
+                    t.TryGetProperty("prompt", out var prompt) && prompt.GetBoolean());
+            }).ToList();
+            var boxes = frame.GetProperty("targets").EnumerateArray().Select(t => Numbers(t.GetProperty("box"))).ToList();
+            var paints = TextPainter.Paints(targets, width, height, (x, y) => Pixel(frame, x, y));
+            var expects = frame.GetProperty("expect").EnumerateArray().ToList();
+            Assert.True(paints.Count == expects.Count, id);
+            double[]? Px(TextBox? b) => b is { } v ? [v.Left * w, v.Top * h, v.Right * w, v.Bottom * h] : null;
+            for (var k = 0; k < expects.Count; k++)
+            {
+                var e = expects[k];
+                var paint = paints[k];
+                var name = $"{id}#{k}";
+                Assert.True(paint.Mode == e.GetProperty("mode").GetString(), $"{name} kip {paint.Mode}");
+                void Near(double[]? got, string key, double tolerance = 1.01)
+                {
+                    if (!e.TryGetProperty(key, out var want) || want.ValueKind != JsonValueKind.Array) return;
+                    Assert.True(got is not null, $"{name} {key} yok");
+                    var values = Numbers(want);
+                    for (var i = 0; i < values.Length; i++) Close(values[i], got![i], tolerance, $"{name} {key} [{string.Join(", ", got)}]");
+                }
+                Near(Px(paint.Spot), "spot");
+                Near(Px(paint.SpotRoom) is { } room ? [room[0], room[2]] : null, "room");
+                Near(Px(paint.Twin), "twin");
+                Near(Px(paint.PortraitTwin), "portraitTwin");
+                if (e.TryGetProperty("radius", out var radius)) Close(radius.GetDouble(), paint.Radius * h, 1.5, $"{name} radius");
+                if (e.TryGetProperty("scale", out var scale)) Close(scale.GetDouble(), paint.Scale, 0.001, $"{name} scale");
+                if (e.TryGetProperty("twin", out _))
+                {
+                    var tail = e.TryGetProperty("tail", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null;
+                    Assert.True(paint.Tail == tail, $"{name} kuyruk {paint.Tail}");
+                }
+                if (e.TryGetProperty("portrait", out var face))
+                {
+                    if (face.ValueKind == JsonValueKind.Null) Assert.True(paint.Portrait is null, $"{name} resim olmamalı");
+                    else Near(Px(paint.Portrait), "portrait");
+                }
+                // Örtmeyen kipte Türkçe özgün yazıya (ve kutunun ucundaki simgeye) binmez; ikiz özgün paneli örtmez.
+                if (paint.Mode != PaintMode.Cover && paint.SpotRoom is { } spotRoom)
+                {
+                    var target = boxes[k];
+                    Assert.False(spotRoom.Right * w > target[0] + 0.5 && spotRoom.Left * w < target[2] - 0.5
+                                 && spotRoom.Bottom * h > target[1] + 0.5 && spotRoom.Top * h < target[3] - 0.5, $"{name} özgüne biner");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Kip örtmeyen öğede yerleşim girdisi Türkçenin yerinden (spot) gelir; ikizde yazı boyu ölçekli, yanına yazmada yazı
+    /// özgüne yaslanır; grup yalnız örtmede (Mac ScreenFit.ExactInput ile aynı).
+    /// </summary>
+    [Fact]
+    public void ExactInputFollowsMode()
+    {
+        var cover = new TextBox(0.5, 0.5, 0.6, 0.55);
+        var item = new ScreenTranslation.Item("Hold", "BASILI TUT", cover, 0.05)
+        {
+            Look = new TextLook(true, false, "center", true, false),
+            Paint = new TextPaint("#000000", 0.05, cover)
+            {
+                Group = 3, Mode = PaintMode.Beside, Spot = new TextBox(0.38, 0.5, 0.48, 0.55), SpotRoom = new TextBox(0.3, 0.5, 0.48, 0.55),
+            },
+        };
+        var beside = ScreenFit.ExactInput.From(item, 1000, 1000)!;
+        Close(380, beside.Left, 1e-6, "sol");
+        Close(300, beside.GrowLeft, 1e-6, "uzama solu");
+        Assert.Equal("right", beside.Align);
+        Assert.Null(beside.Group);
+        Close(50, beside.Line, 1e-6, "satır");
+        var twin = ScreenFit.ExactInput.From(item with { Paint = item.Paint! with { Mode = PaintMode.Twin, Scale = 0.5 } }, 1000, 1000)!;
+        Close(25, twin.Line, 1e-6, "ikiz satır");
+        Assert.Equal("center", twin.Align);
+        var covered = ScreenFit.ExactInput.From(item with { Paint = item.Paint! with { Mode = PaintMode.Cover } }, 1000, 1000)!;
+        Close(500, covered.Left, 1e-6, "örtü solu");
+        Assert.Equal(3, covered.Group);
+    }
+
+    /// <summary>
+    /// TV'ye giden öğe: örtmeyen kipte mode, spot, spotRoom; ikizde twinBox, radius, scale, tail, icon {src, box}. Örtmede
+    /// bu alanlar yok (eski TV ve yeni TV aynı çizer).
+    /// </summary>
+    [Fact]
+    public void ModeFieldsGoToTv()
+    {
+        var cover = new TextBox(0.5, 0.5, 0.6, 0.55);
+        var item = new ScreenTranslation.Item("Hi", "Selam", cover, 0.05)
+        {
+            Look = new TextLook(false, false, "left", false, true),
+            Style = new PhoneTextStyle("#D0D0D0", "#202020"),
+            Paint = new TextPaint("#D0D0D0", 0.05, cover),
+        };
+        var plain = SubtitleServer.ItemJson(item, phone: false);
+        Assert.True(plain.ContainsKey("cover"));
+        foreach (var key in new[] { "mode", "spot", "spotRoom", "twinBox", "radius", "scale", "tail", "icon" }) Assert.False(plain.ContainsKey(key), key);
+        var twin = SubtitleServer.ItemJson(item with
+        {
+            Paint = item.Paint! with
+            {
+                Mode = PaintMode.Twin, Spot = new TextBox(0.5, 0.3, 0.56, 0.33), SpotRoom = new TextBox(0.5, 0.3, 0.6, 0.33),
+                Twin = new TextBox(0.48, 0.28, 0.6, 0.36), Radius = 0.006, Scale = 0.58, Tail = "left",
+                PortraitImage = "data:image/png;base64,AA==", PortraitTwin = new TextBox(0.485, 0.29, 0.495, 0.31),
+            },
+        }, phone: false);
+        Assert.Equal("twin", twin["mode"]);
+        foreach (var key in new[] { "spot", "spotRoom", "twinBox", "radius", "scale", "tail", "icon", "cover" }) Assert.True(twin.ContainsKey(key), key);
+        Assert.Equal(0.58m, twin["scale"]);
+        var icon = Assert.IsType<SortedDictionary<string, object>>(twin["icon"]);
+        Assert.Equal("data:image/png;base64,AA==", icon["src"]);
     }
 
     /// <summary>Renkler kanal başına en çok 4 farklı.</summary>

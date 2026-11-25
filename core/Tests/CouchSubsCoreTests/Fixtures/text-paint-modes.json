@@ -1,0 +1,59 @@
+{
+  "_": "Çizim kipinin (TextPaint.mode: cover/beside/twin) gerçek karelerde seçimi (Mac/iPhone: TextPaintModeFrameTests.swift, Windows: TextPaintModeFrameTests.cs, Android: TextPaintModeFrameTest.kt). Kareler testdata/frames altında; kutular karede, kenarlara oranla (elle ölçüldü, yazı tanıma yok). text yalnız sözcük sayısı ve büyük harf için (yer tutucu). kind: ScreenTextKind (yoksa hep cover); prompt: tuş istemi. Beklenen: mode; portrait: ikiz panelde kişi resmi; twinAbove: ikiz özgün panelin üstünde.",
+  "frames": [
+    {
+      "id": "bildirim-ikiz",
+      "file": "gta6-n4-bildirim.jpg",
+      "targets": [
+        { "text": "Name", "box": [0.8255, 0.8241, 0.8427, 0.8407], "kind": "help" },
+        { "text": "Message body text in the box", "box": [0.8005, 0.8593, 0.9505, 0.8769], "kind": "help" }
+      ],
+      "expect": [
+        { "mode": "twin", "portrait": true, "twinAbove": true },
+        { "mode": "twin", "twinAbove": true }
+      ]
+    },
+    {
+      "id": "istem-yanina",
+      "file": "gta6-n3-ipucu.jpg",
+      "targets": [
+        { "text": "Hold L2 to aim", "box": [0.4496, 0.9447, 0.5493, 0.9691], "kind": "help", "prompt": true }
+      ],
+      "expect": [
+        { "mode": "beside" }
+      ]
+    },
+    {
+      "id": "istem-turu-yok-ortme",
+      "file": "gta6-n3-ipucu.jpg",
+      "targets": [
+        { "text": "Hold L2 to aim", "box": [0.4496, 0.9447, 0.5493, 0.9691] }
+      ],
+      "expect": [
+        { "mode": "cover" }
+      ]
+    },
+    {
+      "id": "harita-menu-kart-ortme",
+      "file": "gta6-menu-harita.jpg",
+      "targets": [
+        { "text": "Body line of the card text", "box": [0.1468, 0.2765, 0.4288, 0.3102], "kind": "other" },
+        { "text": "RECENTER", "box": [0.8689, 0.7194, 0.9595, 0.7544], "kind": "menu" }
+      ],
+      "expect": [
+        { "mode": "cover" },
+        { "mode": "cover" }
+      ]
+    },
+    {
+      "id": "harita-kart-gorev-ortme",
+      "file": "gta6-harita-kart.jpg",
+      "targets": [
+        { "text": "Body line of card", "box": [0.5465, 0.447, 0.7616, 0.4754], "kind": "mission" }
+      ],
+      "expect": [
+        { "mode": "cover" }
+      ]
+    }
+  ]
+}

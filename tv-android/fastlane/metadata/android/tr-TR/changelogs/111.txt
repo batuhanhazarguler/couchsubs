@@ -1,0 +1,1 @@
+0.9.108: Ekran yazısı çevirisi oyun dünyasının üstünde kutu çizmiyor; istemlerin Türkçesi yanına, bildirimlerinki küçük bir ikiz balona yazılıyor.
