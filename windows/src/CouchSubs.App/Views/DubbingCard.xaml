@@ -16,8 +16,8 @@
                     <StackPanel>
                         <Border Style="{StaticResource SegmentGroup}">
                             <UniformGrid Rows="1">
-                                <RadioButton x:Name="NaturalEngine" Content="{t:T 'Natural'}" GroupName="engine" Style="{StaticResource SegmentButton}" Checked="OnEngine" Tag="Natural" />
-                                <RadioButton x:Name="FastEngine" Content="{t:T 'Fast'}" GroupName="engine" Style="{StaticResource SegmentButton}" Checked="OnEngine" Tag="Fast" />
+                                <RadioButton x:Name="NaturalEngine" Content="{t:T 'Natural'}" Style="{StaticResource SegmentButton}" Checked="OnEngine" Tag="Natural" />
+                                <RadioButton x:Name="FastEngine" Content="{t:T 'Fast'}" Style="{StaticResource SegmentButton}" Checked="OnEngine" Tag="Fast" />
                             </UniformGrid>
                         </Border>
                         <TextBlock x:Name="EngineHint" Style="{StaticResource HintText}" Margin="{t:Sp '0,unitHint,0,0'}" />

@@ -44,7 +44,10 @@ public partial class DubbingCard : UserControl
     {
         controller = attached;
         Visibility = attached.DubbingAvailable ? Visibility.Visible : Visibility.Collapsed;
-        Subscribe();
+        // Abonelik yalnız Loaded'da: Dublaj sekmesi hiç açılmazsa Unloaded gelmez, burada abone olunursa kapanan Ayarlar
+        // sayfasının kartı yaşamaya ve düğmelerini yeniden işaretlemeye devam ediyordu (#1298).
+        if (IsLoaded) Subscribe();
+        else Refresh();
     }
 
     private static string Label(DubbingVoice voice) => Localizer.Current[voice switch
