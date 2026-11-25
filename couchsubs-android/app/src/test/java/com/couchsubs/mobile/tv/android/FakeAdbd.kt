@@ -121,6 +121,8 @@ internal class FakeAdbd(
     private val services: (String, ByteArray) -> String = { _, _ -> "" },
     /** `exec:` hizmetine gelecek veri uzunluğu; bu kadar bayt gelince yanıt yazılır. */
     private val expectedInput: (String) -> Int = { service -> Regex("""-S (\d+)""").find(service)?.groupValues?.get(1)?.toInt() ?: 0 },
+    /** İstemci bağlantıyı kapatınca (takılan kurulumu bekçi kesti) bir sonraki bağlantı beklenir. */
+    private val toleratesDrop: Boolean = false,
 ) {
     private val server = ServerSocket(0)
     val port get() = server.localPort
@@ -134,7 +136,15 @@ internal class FakeAdbd(
     fun start(connections: Int = 1): FakeAdbd {
         worker = thread(isDaemon = true) {
             try {
-                repeat(connections) { server.accept().use { serve(it.getInputStream(), it.getOutputStream()) } }
+                repeat(connections) {
+                    server.accept().use {
+                        try {
+                            serve(it.getInputStream(), it.getOutputStream())
+                        } catch (error: java.io.IOException) {
+                            if (!toleratesDrop) throw error
+                        }
+                    }
+                }
             } catch (error: Throwable) {
                 failure = error
             } finally {

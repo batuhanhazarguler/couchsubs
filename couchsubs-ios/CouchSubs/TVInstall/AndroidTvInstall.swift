@@ -265,8 +265,16 @@ final class AndroidTvInstaller {
     private let playListed: () -> Bool
     private let playWait: TimeInterval
     private let playPoll: TimeInterval
-    private let progress: (InstallStep) -> Void
+    private let report: (InstallStep) -> Void
     private let log: InstallLog
+    /// Adımların süreleri (testlerde kısaltılır); verilmezse `TVStall.limit(for:)`.
+    var stallLimits: (String) -> TimeInterval? = TVStall.limit(for:)
+    /// Sürmekte olan denemenin bekçisi.
+    private var stall: TVStall?
+    /// Bu çağrıda eşleme yapıldı (eşleme kodu tek kullanımlık: ikinci denemede yeniden eşlenmez).
+    private var paired = false
+    /// Bu çağrıda APK kuruldu (ikinci deneme güncel bulsa da "kuruldu" sayılır).
+    private var installCompleted = false
 
     init(host: String, port: UInt16, adbKey: @escaping () throws -> AdbKey = { try AdbKey.loadOrCreate(TVPaths.directory("adb").appendingPathComponent("adbkey")) },
          pairing: Pairing? = nil, progress: @escaping (InstallStep) -> Void = { _ in }, log: InstallLog = .shared,
@@ -278,9 +286,24 @@ final class AndroidTvInstaller {
         self.port = port
         self.adbKey = adbKey
         self.pairing = pairing
-        self.progress = progress
+        self.report = progress
         self.log = log
     }
+
+    /// Yeni adım: bekçinin süresi baştan başlar, arayüz adımı yazar.
+    private func progress(_ step: InstallStep) {
+        stall?.enter(step)
+        report(step)
+    }
+
+    /// Takılma ya da bağlantı kopması: yeni bağlantıyla bir kez daha denenir.
+    static func isRetryable(_ error: Error) -> Bool {
+        if error is TVStepTimeout || error is StreamClosed || error is ConnectFailed { return true }
+        return (error as? AndroidInstallFailure)?.error == .connectionLost
+    }
+
+    /// Çalışan uygulamayı kapatan komut (Windows/Mac ForceStopCommand, Android telefondaki FORCE_STOP ile aynı).
+    static let forceStopCommand = "shell:am force-stop \(packageName)"
 
     static func versionFromDumpsys(_ output: String) -> String? { match(#"versionName=(\S+)"#, output) }
     /// dumpsys'teki kullanıcı satırları ("User 0: ceDataInode=… installed=true …"): kullanıcı numarası → kurulu mu.
@@ -379,10 +402,22 @@ final class AndroidTvInstaller {
     func ensureInstalled(apk: () throws -> [UInt8], version: String?, allowReplace: Bool = false, replaceForeign: Bool = false) throws -> Result {
         log.write("--- Android TV kurulumu (iPhone) başlıyor: TV \(host):\(port), paket \(version ?? "?")"
             + (pairing.map { ", eşleme portu \($0.port)" } ?? ""))
+        paired = false
+        installCompleted = false
         do {
-            let result = try installCore(apk: apk, version: version, allowReplace: allowReplace, replaceForeign: replaceForeign)
+            // Her adımın süre sınırı var (TVStall); takılırsa ya da bağlantı koparsa yeni bağlantıyla bir kez daha denenir.
+            let found = try TVStall.retryOnce(log: log, retryable: Self.isRetryable) { _ in
+                let watch = TVStall(limits: stallLimits)
+                stall = watch
+                defer { stall = nil }
+                return try watch.run { try installCore(apk: apk, version: version, allowReplace: allowReplace, replaceForeign: replaceForeign) }
+            }
+            let result = Result(version: found.version, installed: found.installed || installCompleted)
             log.write(result.installed ? "Kurulum tamam." : "TV'de \(result.version) sürümü var; kurulum gerekmedi.")
             return result
+        } catch let timeout as TVStepTimeout {
+            log.write("HATA connectionLost: \(timeout.gaveUp)")
+            throw AndroidInstallFailure(error: .connectionLost, detail: timeout.gaveUp)
         } catch let failure as AndroidInstallFailure {
             log.write("HATA \(failure.error): \(failure.detail ?? "")")
             throw failure
@@ -394,17 +429,20 @@ final class AndroidTvInstaller {
 
     private func installCore(apk: () throws -> [UInt8], version: String?, allowReplace: Bool, replaceForeign: Bool) throws -> Result {
         let key = try adbKey()
-        if let pairing {
+        if let pairing, !paired {
             progress(.pairing)
             try AdbPairing.pair(host: host, port: pairing.port, code: pairing.code, key: key)
+            paired = true
             log.write("Eşleme tamam (port \(pairing.port)).")
         }
         progress(.connecting)
-        let adb = try AdbConnection.connect(host: host, port: port, key: key, onApprovalNeeded: { [log, progress] in
+        let adb = try AdbConnection.connect(host: host, port: port, key: key, onApprovalNeeded: { [self] in
             log.write("TV bu telefonu ilk kez görüyor; onay bekleniyor.")
             progress(.approveOnTV)
         })
         defer { adb.close() }
+        // Takılınca bağlantı kapatılır: bekleyen okuma hatayla döner.
+        stall?.onStall { adb.close() }
         log.write("ADB bağlantısı kuruldu (\(adb.secure ? "TLS" : "düz"), en çok \(adb.maxData) bayt).")
         progress(.reading)
         var dumpsys = try adb.run("shell:dumpsys package \(Self.packageName)")
@@ -436,6 +474,11 @@ final class AndroidTvInstaller {
         // CouchSubs TV Play'de ve TV'de Play Store varsa Play'den kurulur/güncellenir (Play kopyası kendiliğinden güncel
         // kalır). Kullanıcı Play sayfasında Yükle'ye basmazsa APK ile kurulur.
         if let result = try installFromPlay(adb, before: installed, fromPlay: fromPlay) { return result }
+        // Güncellemede TV'de çalışan eski uygulama önce kapatılır; kurulumdan sonra temiz açılır.
+        if installed != nil {
+            stall?.enter("closing")
+            log.write("Güncellemeden önce eski uygulama kapatılıyor: \(((try? adb.run(Self.forceStopCommand)) ?? "?").trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
         progress(.installing)
         let bytes = try apk()
         var output = try install(adb, bytes)
@@ -462,6 +505,7 @@ final class AndroidTvInstaller {
             let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
             throw AndroidInstallFailure(error: Self.isStorageProblem(output) ? .notEnoughSpace : .installFailed, detail: trimmed.isEmpty ? "TV yanıt vermedi" : trimmed)
         }
+        installCompleted = true
         grantOverlay(adb)
         let after = Self.installedVersionFromDumpsys((try? adb.run("shell:dumpsys package \(Self.packageName)")) ?? "")
         launch(adb)

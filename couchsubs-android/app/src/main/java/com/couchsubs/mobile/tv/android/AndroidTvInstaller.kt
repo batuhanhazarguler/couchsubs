@@ -3,6 +3,8 @@
 // kopya başka imzalıysa (Google Play'den kurulmuş) kendiliğinden kaldırılmaz; kullanıcı onaylarsa kaldırılır.
 package com.couchsubs.mobile.tv.android
 
+import com.couchsubs.mobile.tv.TvStall
+import com.couchsubs.mobile.tv.TvStepTimeoutException
 import com.couchsubs.mobile.tv.samsung.AdbKey
 import com.couchsubs.mobile.tv.samsung.InstallLog
 import com.couchsubs.mobile.tv.samsung.InstallStep
@@ -23,7 +25,7 @@ class AndroidTvInstaller(
     private val port: Int,
     private val adbKey: () -> AdbKey,
     private val pairing: Pairing? = null,
-    private val progress: (InstallStep) -> Unit = {},
+    progress: (InstallStep) -> Unit = {},
     private val log: InstallLog = InstallLog(null),
     private val connector: (AdbKey, () -> Unit) -> AdbConnection = { key, approve -> AdbConnection.connect(host, port, key, approve) },
     private val pairer: (AdbKey, Pairing) -> Unit = { key, pair -> AdbPairing.pair(host, pair.port, pair.code, key) },
@@ -37,8 +39,39 @@ class AndroidTvInstaller(
     data class Pairing(val port: Int, val code: String)
     data class Result(val version: String, val installed: Boolean)
 
+    private val report = progress
+
+    /** Adımların süreleri (ms; testlerde kısaltılır); verilmezse [TvStall.limitFor]. */
+    var stallLimits: (String) -> Long? = { TvStall.limitFor(it) }
+
+    /** Sürmekte olan denemenin bekçisi. */
+    private var stall: TvStall? = null
+
+    /** Bu çağrıda eşleme yapıldı (eşleme kodu tek kullanımlık: ikinci denemede yeniden eşlenmez). */
+    private var paired = false
+
+    /** Bu çağrıda APK kuruldu (ikinci deneme güncel bulsa da "kuruldu" sayılır). */
+    private var installCompleted = false
+
+    /** Yeni adım: bekçinin süresi baştan başlar, arayüz adımı yazar. */
+    private fun step(step: InstallStep) {
+        stall?.enter(step)
+        report(step)
+    }
+
     companion object {
         const val PACKAGE_NAME = "com.couchsubs.tv"
+
+        /** Çalışan uygulamayı kapatan komut (Windows/Mac ForceStopCommand, iPhone forceStopCommand ile aynı). */
+        const val FORCE_STOP_COMMAND = "shell:am force-stop $PACKAGE_NAME"
+
+        /** Takılma ya da bağlantı kopması: yeni bağlantıyla bir kez daha denenir. */
+        fun isRetryable(error: Exception): Boolean = when (error) {
+            is TvStepTimeoutException -> true
+            is AndroidInstallException -> error.error == AndroidInstallError.CONNECTION_LOST
+            is IOException -> true
+            else -> false
+        }
         private const val PLAY_STORE = "com.android.vending"
         private const val TEMP_APK = "/data/local/tmp/couchsubs-tv.apk"
 
@@ -227,10 +260,21 @@ class AndroidTvInstaller(
      */
     fun ensureInstalled(apk: () -> ByteArray, version: String?, allowReplace: Boolean = false): Result {
         log.write("--- Android TV kurulumu (telefon) başlıyor: TV $host:$port, paket $version${if (pairing != null) ", eşleme portu ${pairing.port}" else ""}")
+        paired = false
+        installCompleted = false
         try {
-            return installCore(apk, version, allowReplace).also {
+            // Her adımın süre sınırı var (TvStall); takılırsa ya da bağlantı koparsa yeni bağlantıyla bir kez daha denenir.
+            val found = TvStall.retryOnce(log::write, { isRetryable(it) }) {
+                val watch = TvStall(stallLimits)
+                stall = watch
+                try { watch.run { installCore(apk, version, allowReplace) } } finally { stall = null }
+            }
+            return Result(found.version, found.installed || installCompleted).also {
                 log.write(if (it.installed) "Kurulum tamam." else "TV'de ${it.version} sürümü var; kurulum gerekmedi.")
             }
+        } catch (error: TvStepTimeoutException) {
+            log.write("HATA ${AndroidInstallError.CONNECTION_LOST}: ${error.gaveUp}")
+            throw AndroidInstallException(AndroidInstallError.CONNECTION_LOST, error.gaveUp)
         } catch (error: AndroidInstallException) {
             log.write("HATA ${error.error}: ${error.detail}")
             throw error
@@ -274,24 +318,27 @@ class AndroidTvInstaller(
 
     private fun installCore(apk: () -> ByteArray, version: String?, allowReplace: Boolean): Result {
         val key = adbKey()
-        pairing?.let {
-            progress(InstallStep.PAIRING)
+        pairing?.takeUnless { paired }?.let {
+            step(InstallStep.PAIRING)
             pairer(key, it)
+            paired = true
             log.write("Eşleme tamam (port ${it.port}).")
         }
-        progress(InstallStep.CONNECTING)
+        step(InstallStep.CONNECTING)
         connector(key) {
             log.write("TV bu telefonu ilk kez görüyor; onay bekleniyor.")
-            progress(InstallStep.APPROVE_ON_TV)
+            step(InstallStep.APPROVE_ON_TV)
         }.use { adb ->
+            // Takılınca bağlantı kapatılır: bekleyen okuma hatayla döner.
+            stall?.onStall { adb.close() }
             log.write("ADB bağlantısı kuruldu (${if (adb.secure) "TLS" else "düz"}, en çok ${adb.maxData} bayt).")
-            progress(InstallStep.READING)
+            step(InstallStep.READING)
             var dumpsys = adb.run("shell:dumpsys package $PACKAGE_NAME")
             // Bu kimlikle başka imzalı bir uygulama: sürüme bakılmadan, Play'e ve kalıntı temizliğine geçilmeden önce sorulur.
             if (isForeign(dumpsys)) {
                 log.write("TV'de CouchSubs kimliğiyle başka bir uygulama kurulu (sürüm ${versionFromDumpsys(dumpsys)}, imza ${signatureHashes(dumpsys).joinToString()}).")
                 if (!allowReplace) throw AndroidInstallException(AndroidInstallError.FOREIGN_APP, "imza ${signatureHashes(dumpsys).joinToString()}")
-                progress(InstallStep.UNINSTALLING)
+                step(InstallStep.UNINSTALLING)
                 log.write("Diğer uygulama kaldırılıyor (kullanıcı onayladı): ${adb.run("shell:pm uninstall $PACKAGE_NAME").trim()}")
                 dumpsys = adb.run("shell:dumpsys package $PACKAGE_NAME")
             }
@@ -317,7 +364,12 @@ class AndroidTvInstaller(
             // kendiliğinden güncel kalır). Kullanıcı Play sayfasında Yükle'ye basmazsa APK ile kurulur.
             installFromPlay(adb, installed, fromPlay)?.let { return it }
 
-            progress(InstallStep.INSTALLING)
+            // Güncellemede TV'de çalışan eski uygulama önce kapatılır; kurulumdan sonra temiz açılır.
+            if (installed != null) {
+                stall?.enter("closing")
+                log.write("Güncellemeden önce eski uygulama kapatılıyor: ${runCatching { adb.run(FORCE_STOP_COMMAND).trim() }.getOrElse { it.message ?: "?" }}")
+            }
+            step(InstallStep.INSTALLING)
             val bytes = apk()
             var output = install(adb, bytes)
             if (needsReplace(output)) {
@@ -328,15 +380,16 @@ class AndroidTvInstaller(
                     else AndroidInstallError.FOREIGN_APP
                     throw AndroidInstallException(error, output.trim(), fromPlay)
                 }
-                progress(InstallStep.UNINSTALLING)
+                step(InstallStep.UNINSTALLING)
                 log.write("Eski kopya kaldırılıyor (kullanıcı onayladı): ${adb.run("shell:pm uninstall $PACKAGE_NAME").trim()}")
-                progress(InstallStep.INSTALLING)
+                step(InstallStep.INSTALLING)
                 output = install(adb, bytes)
             }
             if (!output.contains("Success")) {
                 val error = if (isStorageProblem(output)) AndroidInstallError.NOT_ENOUGH_SPACE else AndroidInstallError.INSTALL_FAILED
                 throw AndroidInstallException(error, output.trim().ifEmpty { "TV yanıt vermedi" })
             }
+            installCompleted = true
             grantOverlay(adb, log)
             val after = installedVersionFromDumpsys(adb.run("shell:dumpsys package $PACKAGE_NAME"))
             launch(adb)
@@ -357,7 +410,7 @@ class AndroidTvInstaller(
         val opened = adb.run(OPEN_PLAY_COMMAND)
         log.write("Play sayfası açılıyor: ${opened.trim()}")
         if (opened.contains("Error", ignoreCase = true)) return null
-        progress(InstallStep.OPEN_PLAY)
+        step(InstallStep.OPEN_PLAY)
         val deadline = System.currentTimeMillis() + playWaitMs
         while (System.currentTimeMillis() < deadline) {
             Thread.sleep(playPollMs)
@@ -392,7 +445,7 @@ class AndroidTvInstaller(
 
     /** Uygulamayı açar; açılmasa da kurulum başarılıdır. */
     private fun launch(adb: AdbConnection) {
-        progress(InstallStep.LAUNCHING)
+        step(InstallStep.LAUNCHING)
         try {
             log.write("Uygulama açılıyor: ${adb.run(startCommand(launchParams)).trim()}")
         } catch (error: IOException) {

@@ -3,6 +3,8 @@
 // sdb ve imza TizenSdb.Core yerine bu klasördeki Kotlin kodudur.
 package com.couchsubs.mobile.tv.samsung
 
+import com.couchsubs.mobile.tv.TvStall
+import com.couchsubs.mobile.tv.TvStepTimeoutException
 import java.io.File
 import java.io.IOException
 import java.security.SecureRandom
@@ -54,9 +56,26 @@ class SamsungInstaller(
     private val adbKey: () -> AdbKey,
     private val certificates: SamsungCertificates,
     private val signIn: (() -> SamsungAccount)?,
-    private val progress: (InstallStep) -> Unit = {},
+    progress: (InstallStep) -> Unit = {},
     private val log: InstallLog = InstallLog(null),
 ) {
+    private val report = progress
+
+    /** Adımların süreleri (ms; testlerde kısaltılır); verilmezse [TvStall.limitFor]. */
+    var stallLimits: (String) -> Long? = { TvStall.limitFor(it) }
+
+    /** Sürmekte olan denemenin bekçisi. */
+    private var stall: TvStall? = null
+
+    /** Bu çağrıda paket kuruldu mu (ikinci deneme güncel bulsa da "kuruldu" sayılır). */
+    private var installCompleted = false
+
+    /** Yeni adım: bekçinin süresi baştan başlar, arayüz adımı yazar. */
+    private fun step(step: InstallStep) {
+        stall?.enter(step)
+        report(step)
+    }
+
     /** Sessiz sürüm denetiminin sonucu (iPhone'daki TVAppVersionCheck.Outcome). */
     sealed interface InstalledPresence {
         data class Version(val version: String) : InstalledPresence
@@ -155,6 +174,27 @@ class SamsungInstaller(
          * liste okunamadıysa. 2016 TV'de Tizen Studio ile elle kurulmuş, çalışan kopya kurtarma adımında silinmesin
          * (docs/tv-samsung.md, #638). Sebepsiz `[118]`'de [alternative] yine bir kez denenir.
          */
+        /** Takılma ya da bağlantı kopması: yeni bağlantıyla bir kez daha denenir. */
+        fun isRetryable(error: Exception): Boolean = when (error) {
+            is TvStepTimeoutException -> true
+            is SamsungInstallException -> error.error == SamsungInstallError.CONNECTION_LOST
+            is IOException -> true
+            else -> false
+        }
+
+        /**
+         * Güncellemeden önce TV'de çalışan CouchSubs kapatılır (`was_kill`, uygulama ve paket kimliğiyle; bekçinin kapat-aç'ıyla
+         * aynı komutlar): kurulum açık sayfanın altından paketi değiştirmesin, sonra açılan uygulama yeni sürümü temiz yüklesin.
+         * Kapatılamazsa (uygulama zaten kapalı, eski TV komutu tanımıyor) kurulum yine sürer. Windows/Mac ve iPhone ile aynı.
+         */
+        fun closeOverSdb(shell: (String) -> String, pause: () -> Unit, log: (String) -> Unit) {
+            for (kill in KILL_COMMANDS) {
+                val reply = try { shell(kill) } catch (error: IOException) { error.message ?: "" }
+                log("Güncellemeden önce eski uygulama kapatılıyor ($kill): ${reply.trim()}")
+            }
+            pause()
+        }
+
         fun installWithRecovery(tv: SamsungTvShell, progress: (InstallStep) -> Unit, log: InstallLog, alternative: (() -> String?)? = null,
                                 keepExisting: Boolean = false) {
             val output = tv.install()
@@ -219,10 +259,20 @@ class SamsungInstaller(
      */
     fun ensureInstalled(wgt: () -> ByteArray, version: String?, replaceForeign: Boolean = false): Result {
         log.write("--- Samsung kurulumu (telefon) başlıyor: TV $host, paket $version")
+        installCompleted = false
         try {
-            val result = installCore(wgt, version, replaceForeign)
+            // Her adımın süre sınırı var (TvStall); takılırsa ya da bağlantı koparsa yeni bağlantıyla bir kez daha denenir.
+            val found = TvStall.retryOnce(log::write, { isRetryable(it) }) {
+                val watch = TvStall(stallLimits)
+                stall = watch
+                try { watch.run { installCore(wgt, version, replaceForeign) } } finally { stall = null }
+            }
+            val result = Result(found.version, found.installed || installCompleted)
             log.write(if (result.installed) "Kurulum tamam." else "TV'de ${result.version} sürümü var; kurulum gerekmedi.")
             return result
+        } catch (error: TvStepTimeoutException) {
+            log.write("HATA ${SamsungInstallError.CONNECTION_LOST}: ${error.gaveUp}")
+            throw SamsungInstallException(SamsungInstallError.CONNECTION_LOST, error.gaveUp)
         } catch (error: SamsungInstallException) {
             log.write("HATA ${error.error}: ${error.detail}")
             throw error
@@ -269,9 +319,11 @@ class SamsungInstaller(
     }
 
     private fun installCore(wgt: () -> ByteArray, version: String?, replaceForeign: Boolean): Result {
-        progress(InstallStep.CONNECTING)
+        step(InstallStep.CONNECTING)
         connect().use { device ->
-            progress(InstallStep.READING)
+            // Takılınca bağlantı kapatılır: bekleyen okuma hatayla döner (soketin 120 sn'lik süresi beklenmez).
+            stall?.onStall { device.close() }
+            step(InstallStep.READING)
             val capabilities = device.capability()
             val platform = capabilities["platform_version"]?.trim() ?: ""
             val toolPath = capabilities["sdk_toolpath"]?.trim()?.takeIf { it.isNotEmpty() } ?: "/opt/usr/apps/tmp"
@@ -285,7 +337,7 @@ class SamsungInstaller(
             if (lastForeign) {
                 // Bizim kimliğimizle başka bir uygulama: yalnız kullanıcı onaylarsa kaldırılır.
                 if (!replaceForeign) throw SamsungInstallException(SamsungInstallError.FOREIGN_APP, "TV'deki uygulamanın adı CouchSubs değil")
-                progress(InstallStep.UNINSTALLING)
+                step(InstallStep.UNINSTALLING)
                 for (id in listOf(PACKAGE_ID, APP_ID)) {
                     val reply = try { device.shell("0 vd_appuninstall $id").trim() } catch (error: IOException) { error.message ?: "" }
                     log.write("Diğer uygulama kaldırılıyor (kullanıcı onayladı) $id: $reply")
@@ -304,18 +356,18 @@ class SamsungInstaller(
             log.write("Kayıtlı sertifika: ${profile.describe(Date(), duid)}")
             if (!profile.isValid() || !profile.isFor(duid)) {
                 val login = signIn ?: throw SamsungInstallException(SamsungInstallError.LOGIN_FAILED, "giriş gerekiyor")
-                progress(InstallStep.SIGN_IN)
+                step(InstallStep.SIGN_IN)
                 log.write("Samsung hesabıyla giriş bekleniyor.")
                 val account = login()
                 log.write("Samsung girişi tamam; sertifika isteniyor.")
-                progress(InstallStep.CERTIFICATE)
+                step(InstallStep.CERTIFICATE)
                 profile = certificates.create(duid, account, profile)
                 log.write("Yeni sertifika: ${profile.describe(Date(), duid)}")
             }
 
             if (needsDeviceProfile(platform)) pushDeviceProfile(device, profile, platform, toolPath)
 
-            progress(InstallStep.SIGNING)
+            step(InstallStep.SIGNING)
             val key = profile.privateKey()
             // Tizen 2.x (2016): #71'de çalışan paket: o config.xml ve SHA-512 imza (Apps2Samsung'un TizenSdb'si, #890);
             // TV yine yalın [118] derse SHA-256 imzalı yalın paket (#638).
@@ -338,7 +390,11 @@ class SamsungInstaller(
                 sign(if (wide) WideScreenPackage.adapt(original) else original)
             }
             log.write("Paket imzalandı (${signed.size} bayt).")
-            progress(InstallStep.INSTALLING)
+            if (onTv != null) {
+                stall?.enter("closing")
+                closeOverSdb(shell = { device.shell(it) }, pause = { Thread.sleep(KILL_SETTLE_MS) }, log = log::write)
+            }
+            step(InstallStep.INSTALLING)
             try {
                 val shell = SdbShell(device, signed, toolPath)
                 var lean = false
@@ -350,7 +406,8 @@ class SamsungInstaller(
                         "yalın paket"
                     }
                 }
-                installWithRecovery(shell, progress, log, alternative, keepExisting = legacy && (onTv != null || !listRead))
+                installWithRecovery(shell, ::step, log, alternative, keepExisting = legacy && (onTv != null || !listRead))
+                installCompleted = true
                 if (legacy) log.write("Tizen $platform: ${if (lean) "yalın paket SHA-256" else "tam paket SHA-512"} imzayla kuruldu.")
             } catch (error: SamsungInstallException) {
                 if (error.error == SamsungInstallError.CERTIFICATE_REJECTED) {
@@ -399,7 +456,7 @@ class SamsungInstaller(
      * yüklenmedi, akışa bağlanmıyor; #1248): uygulama kapatılıp yeniden açılır (Windows, Mac ve iPhone ile aynı).
      */
     private fun launch(device: SdbConnection) {
-        progress(InstallStep.LAUNCHING)
+        step(InstallStep.LAUNCHING)
         try {
             val shell: (String) -> String = { device.shell(it) }
             val pause = { Thread.sleep(KILL_SETTLE_MS) }

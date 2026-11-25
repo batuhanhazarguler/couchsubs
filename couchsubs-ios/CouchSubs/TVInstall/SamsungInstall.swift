@@ -613,8 +613,14 @@ final class SamsungInstaller {
     private let profiles: URL
     private let adbKey: () throws -> AdbKey
     private let signIn: (() throws -> SamsungAccount)?
-    private let progress: (InstallStep) -> Void
+    private let report: (InstallStep) -> Void
     private let log: InstallLog
+    /// Adımların süreleri (testlerde kısaltılır); verilmezse `TVStall.limit(for:)`.
+    var stallLimits: (String) -> TimeInterval? = TVStall.limit(for:)
+    /// Sürmekte olan denemenin bekçisi.
+    private var stall: TVStall?
+    /// Bu çağrıda paket kuruldu mu (ikinci deneme güncel bulsa da "kuruldu" sayılır).
+    private var installCompleted = false
     /// Son `vd_applist` okunabildi mi ("CouchSubs yok" ile "bilinmiyor" ayrılsın).
     private var lastListRead = false
     /// Son okunan `vd_applist` çıktısı (TV'deki uygulamanın bizim olup olmadığına bakmak için).
@@ -626,8 +632,32 @@ final class SamsungInstaller {
         self.profiles = profiles
         self.adbKey = adbKey
         self.signIn = signIn
-        self.progress = progress
+        self.report = progress
         self.log = log
+    }
+
+    /// Yeni adım: bekçinin süresi baştan başlar, arayüz adımı yazar.
+    private func progress(_ step: InstallStep) {
+        stall?.enter(step)
+        report(step)
+    }
+
+    /// Takılma ya da bağlantı kopması: yeni bağlantıyla bir kez daha denenir.
+    static func isRetryable(_ error: Error) -> Bool {
+        if error is TVStepTimeout || error is StreamClosed || error is ConnectFailed { return true }
+        return (error as? SamsungInstallFailure)?.error == .connectionLost
+    }
+
+    /// Güncellemeden önce TV'de çalışan CouchSubs kapatılır (`was_kill`, uygulama ve paket kimliğiyle; bekçinin kapat-aç'ıyla
+    /// aynı komutlar): kurulum açık sayfanın altından paketi değiştirmesin, sonra açılan uygulama yeni sürümü temiz yüklesin.
+    /// Kapatılamazsa (uygulama zaten kapalı, eski TV komutu tanımıyor) kurulum yine sürer. Windows/Mac ve Android ile aynı.
+    static func closeOverSdb(shell: (String) throws -> String, pause: () -> Void, log: (String) -> Void) {
+        for id in [appId, packageId] {
+            let reply: String
+            do { reply = try shell("0 was_kill \(id)") } catch { reply = "\(error)" }
+            log("Güncellemeden önce eski uygulama kapatılıyor (0 was_kill \(id)): \(reply.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
+        pause()
     }
 
     static func isTooOld(_ platform: String) -> Bool { !platform.isEmpty && Versions.isNewer(minimumTizen, than: platform) }
@@ -701,10 +731,21 @@ final class SamsungInstaller {
     /// `replaceForeign`: TV'de CouchSubs kimliğiyle başka bir uygulama varsa kullanıcı onayladı; o kaldırılıp CouchSubs kurulur.
     func ensureInstalled(wgt: () throws -> [UInt8], version: String?, replaceForeign: Bool = false) throws -> Result {
         log.write("--- Samsung kurulumu (iPhone) başlıyor: TV \(host), paket \(version ?? "?")")
+        installCompleted = false
         do {
-            let result = try installCore(wgt: wgt, version: version, replaceForeign: replaceForeign)
+            // Her adımın süre sınırı var (TVStall); takılırsa ya da bağlantı koparsa yeni bağlantıyla bir kez daha denenir.
+            let found = try TVStall.retryOnce(log: log, retryable: Self.isRetryable) { _ in
+                let watch = TVStall(limits: stallLimits)
+                stall = watch
+                defer { stall = nil }
+                return try watch.run { try installCore(wgt: wgt, version: version, replaceForeign: replaceForeign) }
+            }
+            let result = Result(version: found.version, installed: found.installed || installCompleted)
             log.write(result.installed ? "Kurulum tamam." : "TV'de \(result.version) sürümü var; kurulum gerekmedi.")
             return result
+        } catch let timeout as TVStepTimeout {
+            log.write("HATA connectionLost: \(timeout.gaveUp)")
+            throw SamsungInstallFailure(error: .connectionLost, detail: timeout.gaveUp)
         } catch let failure as SamsungInstallFailure {
             log.write("HATA \(failure.error): \(failure.detail ?? "")")
             throw failure
@@ -721,6 +762,8 @@ final class SamsungInstaller {
         progress(.connecting)
         let device = try connect()
         defer { device.close() }
+        // Takılınca bağlantı kapatılır: bekleyen okuma hatayla döner (soketin 120 sn'lik süresi beklenmez).
+        stall?.onStall { device.close() }
         progress(.reading)
         let capabilities = try device.capability()
         let platform = capabilities["platform_version"]?.trimmingCharacters(in: .whitespaces) ?? ""
@@ -792,6 +835,10 @@ final class SamsungInstaller {
             log.write("Tizen \(platform): imza SHA-512 ile üretildi (#71'de çalışan paketle aynı).")
         }
         log.write("Paket imzalandı (\(signed.count) bayt).")
+        if onTv != nil {
+            stall?.enter("closing")
+            Self.closeOverSdb(shell: { try device.shell($0) }, pause: { Thread.sleep(forTimeInterval: 1.5) }, log: { log.write($0) })
+        }
         progress(.installing)
         do {
             var lean = false
@@ -801,6 +848,7 @@ final class SamsungInstaller {
                 self.log.write("Tizen \(platform): yalın paket hazırlandı (\(LegacyTizenPackage.leanRemovedNames) de çıkarıldı), imza SHA-256.")
                 return ("yalın paket", package)
             }, keepExisting: legacy && (onTv != nil || !listRead))
+            installCompleted = true
             if legacy { log.write("Tizen \(platform): \(lean ? "yalın paket SHA-256" : "tam paket SHA-512") imzayla kuruldu.") }
         } catch let failure as SamsungInstallFailure {
             if failure.error == .certificateRejected {

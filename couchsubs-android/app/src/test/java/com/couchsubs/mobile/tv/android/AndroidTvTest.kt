@@ -135,6 +135,77 @@ class AndroidTvTest {
         assertFalse(AndroidTvInstaller.installExistingSucceeded("Failure [NameNotFoundException]"))
     }
 
+    /** Güncellemede TV'de çalışan eski uygulama önce kapatılır (am force-stop), sonra kurulur ve temiz açılır. */
+    @Test
+    fun updateStopsTheRunningAppBeforeInstalling() {
+        val key = tempKey()
+        var installed = false
+        val adbd = FakeAdbd(services = { service, _ ->
+            when {
+                service.startsWith("shell:dumpsys") -> dumpsys(if (installed) "0.9.104" else "0.9.90")
+                service.startsWith("exec:cmd package install") -> { installed = true; "Success\n" }
+                else -> ""
+            }
+        }).start()
+        val result = installer(adbd, key).ensureInstalled({ apk }, "0.9.104")
+        assertEquals(AndroidTvInstaller.Result("0.9.104", true), result)
+        val stop = adbd.opened.indexOf(AndroidTvInstaller.FORCE_STOP_COMMAND)
+        val install = adbd.opened.indexOfFirst { it.startsWith("exec:cmd package install") }
+        val open = adbd.opened.indexOfFirst { it.startsWith("shell:am start -n") }
+        assertTrue(adbd.opened.joinToString(" | "), stop >= 0 && install > stop && open > install)
+        adbd.join()
+    }
+
+    /**
+     * TV kurulum akışına yanıt vermiyor: önceden 120 sn'lik okuma süresinden sonra "bağlantı koptu" deniyordu, yeniden
+     * deneme yoktu. Bekçi adımın süresi dolunca bağlantıyı kapatır, yeni bağlantıyla bir kez daha dener.
+     */
+    @Test
+    fun stalledInstallIsRetriedOnceOnAFreshConnection() {
+        val key = tempKey()
+        var installs = 0
+        var installed = false
+        val adbd = FakeAdbd(toleratesDrop = true, services = { service, _ ->
+            when {
+                service.startsWith("shell:dumpsys") -> dumpsys(if (installed) "0.9.104" else "0.9.90")
+                service.startsWith("exec:cmd package install") -> {
+                    installs++
+                    // İlk kurulumda TV takılıyor (kurmuyor, yanıt vermiyor); ikinci bağlantıda kuruyor.
+                    if (installs == 1) Thread.sleep(1_500) else installed = true
+                    "Success\n"
+                }
+                else -> ""
+            }
+        }).start(connections = 2)
+        val logFile = java.io.File.createTempFile("tvinstall", ".log").apply { deleteOnExit() }
+        val installer = AndroidTvInstaller("127.0.0.1", adbd.port, { key }, log = com.couchsubs.mobile.tv.samsung.InstallLog(logFile))
+        installer.stallLimits = { if (it == "installing") 300L else 10_000L }
+        val result = installer.ensureInstalled({ apk }, "0.9.104")
+        assertTrue(result.installed)
+        assertEquals("0.9.104", result.version)
+        assertTrue(logFile.readText().contains("bir kez daha deneniyor"))
+        adbd.join()
+    }
+
+    /** İkinci denemede de takılırsa kullanıcıya "bağlantı koptu, tekrar dene" (CONNECTION_LOST) ve sebebi gösterilir. */
+    @Test
+    fun secondStallEndsWithConnectionLost() {
+        val key = tempKey()
+        val adbd = FakeAdbd(toleratesDrop = true, services = { service, _ ->
+            when {
+                service.startsWith("shell:dumpsys") -> dumpsys("0.9.90")
+                service.startsWith("exec:cmd package install") -> { Thread.sleep(1_000); "Success\n" }
+                else -> ""
+            }
+        }).start(connections = 2)
+        val installer = installer(adbd, key)
+        installer.stallLimits = { if (it == "installing") 300L else 10_000L }
+        val error = expect<AndroidInstallException> { installer.ensureInstalled({ apk }, "0.9.104") }
+        assertEquals(AndroidInstallError.CONNECTION_LOST, error.error)
+        assertTrue(error.detail!!.contains("bir kez daha denendi"))
+        adbd.join()
+    }
+
     @Test
     fun appRemovedOnlyFromMainUserIsBroughtBackWithoutApk() {
         val key = tempKey()
