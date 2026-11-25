@@ -859,7 +859,8 @@ final class AppModel: ObservableObject {
     /// Yazı tanıma (Vision) takıldı ve yedek okuyucu da okuyamıyor (#507, #679); altyazı gelmez. Takılan okuma bitince
     /// kendiliğinden düzelir (macOS modeli hazırlıyorsa bir iki dakika); düzelmezse uygulama yeniden başlatılır.
     @Published var readingStuck = false
-    /// Yazı tanıma takıldı, altyazılar yedek okuyucudan (ayrı süreç) geliyor.
+    /// Yazı tanıma takıldı, altyazılar yedek okuyucudan (ayrı süreç) geliyor. Asıl okuyucu kilitli kaldıysa ve yedek
+    /// isabetli düzeyde okuyorsa yedek kalıcı okuyucudur; uyarı gösterilmez (`ReadQueue.showsRescueNotice`, #1307).
     @Published var readingRescued = false
     private var readFailures = 0
     /// Son PS5 karesi (Ayarlar'daki bölge önizlemesi). Her karede değiştiği için modelin kendi yayınına girmez; yalnız
@@ -3665,13 +3666,15 @@ final class AppModel: ObservableObject {
                 SubtitleLog.write("takılan okuma bırakıldı, okuyucu yeniden kuruldu: okuma \(ms) ms'dir dönmüyordu; \(rescued ? "yeni okuyucu sınanıyor, altyazı yedek okuyucudan sürüyor" : "okuma yeni okuyucuda sürüyor")")
             case .recoveredAfterRebuild(let reads):
                 SubtitleLog.write("okuma düzeldi (yeniden kurulumdan sonra): yeni okuyucu art arda \(reads) okumayı süresinde bitirdi; asıl okuyucuya dönüldü, yedek kapatıldı")
+            case .parked(let still, let rescued):
+                SubtitleLog.write("yeni okuyucu da tek okuma bitiremeden takıldı: macOS yazı tanıma kilidi bırakılan okumada (bitmeyen: \(still)); yeniden kurma durdu, \(rescued ? "okumalar yedek okuyucuda (ayrı süreç) sürüyor" : "yedek okuyucu yok"); kilit serbest kalınca asıl okuyucuya dönülecek")
             }
             Task { @MainActor in self?.readQueueChanged() }
         }
     }
 
     private func readQueueChanged() {
-        let rescued = ReadQueue.shared.isRescuing
+        let rescued = ReadQueue.shared.showsRescueNotice
         if readingRescued != rescued { readingRescued = rescued }
         if ReadQueue.shared.stalledMs == nil, readingStuck { readingStuck = false }
     }
@@ -3686,7 +3689,7 @@ final class AppModel: ObservableObject {
     }
 
     private func noteRead(_ error: Error?) {
-        let rescued = ReadQueue.shared.isRescuing
+        let rescued = ReadQueue.shared.showsRescueNotice
         if readingRescued != rescued { readingRescued = rescued }
         // Yedek okuyucunun kapanması da takılmadır; disk uyarısına sayılmaz.
         if case ReadQueueError.stuck? = error { if !readingStuck { readingStuck = true }; return }

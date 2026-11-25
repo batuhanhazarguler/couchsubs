@@ -35,12 +35,36 @@ private final class FirstHangsReader: TextReader, @unchecked Sendable {
 /// Bağımsız bağlam yerine geçen sahte yedek: kaç kez bırakıldığını ve kapatıldığını sayar.
 private final class FakeRescuer: ReadRescuer, @unchecked Sendable {
     let abandons = Counter(), standDowns = Counter(), reads = Counter()
+    private let lock = NSLock()
+    private var fullQuality = true
     func recognize(_ image: CGImage, language: String) throws -> Reading {
         reads.add()
         return Reading(text: "yedekten")
     }
     func abandon() { abandons.add() }
     func standDown() { standDowns.add() }
+    var isFullQuality: Bool {
+        get { lock.withLock { fullQuality } }
+        set { lock.withLock { fullQuality = newValue } }
+    }
+}
+
+/// Süreç genelindeki Vision kilidinin yerine (#1307): kilit tutulurken asıl okuyucudaki her okuma (yeniden kurulan
+/// kuyruktaki de) bekler; `free` ile hepsi biter.
+private final class VisionLock: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var held = true
+    func pass() {
+        condition.lock()
+        while held { condition.wait() }
+        condition.unlock()
+    }
+    func free() {
+        condition.lock()
+        held = false
+        condition.broadcast()
+        condition.unlock()
+    }
 }
 
 private final class NullSender: SubtitleSending {
@@ -709,35 +733,202 @@ final class ReadQueueTests: XCTestCase {
         XCTAssertEqual(primary.text, "asıl")
     }
 
-    /// Yeniden kurulan okuyucu da takılırsa sınama biter: okumalar yedekte sürer, uyarı kalmaz sanılmaz; takılma yine
-    /// süre dolunca bırakılır.
-    func testRebuiltReaderThatStallsAgainStaysRescued() async throws {
+    private static func isParked(_ event: ReadQueue.Event) -> Bool { if case .parked = event { true } else { false } }
+    private static func isRecovered(_ event: ReadQueue.Event) -> Bool { if case .recovered = event { true } else { false } }
+
+    /// #1307 (Mac, beta.99): ekran yazıyla dolunca Vision takıldı; okuyucu 3 kez yeniden kuruldu, her yeni okuyucu 3 sn
+    /// içinde yine takıldı (kilit bırakılan okumada, süreç geneli); sınır dolunca 5 sn'de bir boşuna denendi, bir saatten
+    /// uzun ana okuyucuya dönülmedi, uyarı ekranda kaldı. Artık yeniden kurulan okuyucu tek okuma bitiremeden takılınca
+    /// asıl okuyucu kilitli sayılır: yeniden kurma durur, okumalar yedekte sürer; yedek isabetliyse uyarı gösterilmez;
+    /// kilit serbest kalınca asıl okuyucuya dönülür.
+    func testLockWideHangParksOnRescueAndReturnsWhenLockFrees() async throws {
         defer { VisionReader.useFastLevel = false }
-        let hang = Hang()
-        defer { hang.release() }
-        let queue = ReadQueue(label: "test.rebuild.again", timeoutMs: 5000, subtitleTimeoutMs: 80,
+        let vision = VisionLock()
+        defer { vision.free() }
+        let queue = ReadQueue(label: "test.parked", timeoutMs: 5000, subtitleTimeoutMs: 80,
                               abandonStallAfterMs: 200, recoverAfterReads: 3)
         let rescuer = FakeRescuer()
+        rescuer.isFullQuality = false
         queue.rescuer = rescuer
         let events = Events()
         queue.onEvent = { events.add($0) }
+        let read: @Sendable () throws -> Reading = {
+            if ReadQueue.activeRescuer == nil { vision.pass() }
+            return try Self.rescuedOrPrimary()
+        }
 
-        _ = try? await queue.run(priority: .subtitle) { hang.wait() }
+        _ = try? await queue.run(priority: .subtitle, read)
+        XCTAssertTrue(queue.showsRescueNotice)
         for _ in 0..<200 where Self.count(events, Self.isAbandoned) == 0 { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(Self.count(events, Self.isAbandoned), 1)
 
-        // Yeni okuyucu da dönmüyor: okuma yedekten teslim edilir, sınamadaki kopya takılır.
-        let reading = try await queue.run(priority: .subtitle) { () throws -> Reading in
-            if ReadQueue.activeRescuer == nil { hang.wait() }
-            return try Self.rescuedOrPrimary()
+        // Yeni okuyucu da kilidi bekler: okuma yedekten teslim edilir, sınamadaki kopya takılır, asıl okuyucu kilitli.
+        for _ in 0..<200 where !queue.isPrimaryParked {
+            let reading = try await queue.run(priority: .subtitle, read)
+            XCTAssertEqual(reading.text, "yedekten")
+            try await Task.sleep(for: .milliseconds(10))
         }
-        XCTAssertEqual(reading.text, "yedekten")
-        for _ in 0..<100 where queue.stalledMs == nil { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertNotNil(queue.stalledMs)
+        XCTAssertTrue(queue.isPrimaryParked)
+        for _ in 0..<100 where Self.count(events, Self.isParked) == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(events.all.first(where: Self.isParked), .parked(stillStuck: 1, rescued: true))
+
+        // Boşuna yeniden kurma yok: bırakma süresinin kat kat fazlası boyunca okumalar yedekte sürer, bırakma denenmez.
+        let checks = queue.abandonCheckCount
+        for _ in 0..<20 {
+            let reading = try await queue.run(priority: .subtitle, read)
+            XCTAssertEqual(reading.text, "yedekten")
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), 1, "kilitliyken okuyucu yeniden kurulmaz")
+        XCTAssertEqual(queue.abandonCheckCount, checks, "kilitliyken aralıklı bırakma denemesi yok")
+        XCTAssertEqual(Self.count(events, Self.isParked), 1)
+
+        // Uyarı gerçek duruma uyar: yedek hızlı düzeyde okurken uyarı var; isabetli okuyorsa kalıcı okuyucudur, uyarı yok.
+        XCTAssertTrue(queue.showsRescueNotice)
+        rescuer.isFullQuality = true
+        XCTAssertFalse(queue.showsRescueNotice)
         XCTAssertTrue(queue.isRescuing)
-        XCTAssertEqual(Self.count(events, Self.isRebuilt), 0)
-        for _ in 0..<200 where Self.count(events, Self.isAbandoned) < 2 { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertEqual(Self.count(events, Self.isAbandoned), 2, "yeniden takılma da süre dolunca bırakılır")
+
+        // Kilit serbest: bırakılan okuma ve takılı kopya biter; asıl okuyucuya dönülür, yedek kapatılır.
+        vision.free()
+        for _ in 0..<200 where queue.isRescuing { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertFalse(queue.isRescuing)
+        XCTAssertFalse(queue.isPrimaryParked)
+        XCTAssertNil(queue.stalledMs)
+        // Olaylar durum değiştikten sonra yazılır; iki okuma (bırakılan ve takılı kopya) aynı anda biter.
+        for _ in 0..<100 where !events.all.contains(.abandonedFinished(stillStuck: 0)) || Self.count(events, Self.isRecovered) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(events.all.contains(.abandonedFinished(stillStuck: 0)))
+        XCTAssertTrue(events.all.contains(where: Self.isRecovered))
+        XCTAssertGreaterThanOrEqual(rescuer.standDowns.value, 1)
+        let primary = try await queue.run(priority: .subtitle, read)
+        XCTAssertEqual(primary.text, "asıl")
+    }
+
+    /// #1307, iPhone (yedek yok): yeniden kurulan okuyucu da kilidi bekliyorsa yeniden kurma durur (her biri bir takılı iş
+    /// parçacığı bırakıyordu); elle "Durdur / Başlat" da boşuna bırakmaz. Kilit serbest kalınca okuma kendiliğinden sürer.
+    func testLockWideHangWithoutRescueStopsRebuildingAndRecovers() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let vision = VisionLock()
+        defer { vision.free() }
+        let queue = ReadQueue(label: "test.parked.norescue", timeoutMs: 50, abandonStallAfterMs: 100, abandonRetryMs: 30)
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+
+        _ = try? await queue.run { vision.pass() }
+        for _ in 0..<200 where Self.count(events, Self.isAbandoned) == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), 1)
+        _ = try? await queue.run { vision.pass() }
+        XCTAssertTrue(queue.isPrimaryParked)
+        XCTAssertEqual(events.all.first(where: Self.isParked), .parked(stillStuck: 1, rescued: false))
+        XCTAssertNil(queue.abandonStall(olderThanMs: 0), "kilitliyken elle de bırakılmaz")
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), 1)
+        do {
+            _ = try await queue.run { 1 }
+            XCTFail("kilitliyken okuma verilmemeliydi")
+        } catch {
+            XCTAssertEqual(error as? ReadQueueError, .stuck)
+        }
+
+        vision.free()
+        for _ in 0..<200 where queue.stalledMs != nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNil(queue.stalledMs)
+        XCTAssertFalse(queue.isPrimaryParked)
+        let value = try await queue.run { 5 }
+        XCTAssertEqual(value, 5)
+    }
+
+    /// #1307: art arda bırakma sınırı dolunca takılma 5 sn'de bir boşuna yeniden deneniyordu. Artık denenmez; bırakılan
+    /// okumalar bitince sınır sıfırlanır ve süren takılma kendiliğinden bırakılır (3 bırakmadan sonra dönüş).
+    func testAbandonLimitStopsRetryingAndRearmsWhenAbandonedReadsFinish() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let queue = ReadQueue(label: "test.abandon.cap", timeoutMs: 50, abandonStallAfterMs: 100, abandonRetryMs: 30)
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+        let hangs = (0..<4).map { _ in Hang() }
+        defer { hangs.forEach { $0.release() } }
+
+        // Her biri ayrı takılma: yeni okuyucu okuyabiliyor (kilit süreç geneli değil), sonra yeniden takılıyor.
+        for round in 0..<ReadQueue.defaultMaxAbandons {
+            let hang = hangs[round]
+            _ = try? await queue.run { hang.wait() }
+            for _ in 0..<200 where Self.count(events, Self.isAbandoned) <= round { try await Task.sleep(for: .milliseconds(10)) }
+            XCTAssertEqual(Self.count(events, Self.isAbandoned), round + 1, "tur \(round)")
+            let value = try await queue.run { round }
+            XCTAssertEqual(value, round)
+        }
+        let last = hangs[3]
+        _ = try? await queue.run { last.wait() }
+        // Sınır dolu: bırakılmaz ve aralıklı denenmez.
+        try await Task.sleep(for: .milliseconds(400))
+        let checks = queue.abandonCheckCount
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(queue.abandonCheckCount, checks, "sınır doluyken boşuna deneme yok")
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), ReadQueue.defaultMaxAbandons)
+        XCTAssertNotNil(queue.stalledMs)
+        XCTAssertFalse(queue.isPrimaryParked)
+
+        // Bırakılan okumalar biter: sınır sıfırlanır, süren takılma kendiliğinden bırakılır, okuma sürer.
+        hangs[0..<3].forEach { $0.release() }
+        for _ in 0..<200 where Self.count(events, Self.isAbandoned) <= ReadQueue.defaultMaxAbandons {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(Self.count(events, Self.isAbandoned), ReadQueue.defaultMaxAbandons + 1)
+        XCTAssertNil(queue.stalledMs)
+        let value = try await queue.run { 42 }
+        XCTAssertEqual(value, 42)
+    }
+
+    /// #1307: art arda bırakma sınırı sağlıklı okumalarla sıfırlanır. Yeniden kurulan okuyucu okumaları süresinde
+    /// bitirdiyse sonraki ayrı takılma da bırakılır (bırakılan okumalar hiç bitmese de).
+    func testHealthyReadsResetAbandonStreak() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let hang = Hang()
+        defer { hang.release() }
+        let queue = ReadQueue(label: "test.abandon.streak", timeoutMs: 50, recoverAfterReads: 2)
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+        for round in 1...4 {
+            _ = try? await queue.run { hang.wait() }
+            XCTAssertNotNil(queue.abandonStall(olderThanMs: 0, maxAbandons: 2), "tur \(round): sağlıklı okumadan sonra bırakılır")
+            for n in 0..<2 {
+                let value = try await queue.run { n }
+                XCTAssertEqual(value, n)
+            }
+        }
+        // Olay, okuma çağırana teslim edildikten sonra yazılır.
+        for _ in 0..<100 where Self.count(events, Self.isRebuilt) < 4 { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertEqual(Self.count(events, Self.isRebuilt), 4)
+        // Aralarda sınamayı geçecek kadar okuma yoksa art arda bırakma sınırda durur.
+        for _ in 0..<2 {
+            _ = try? await queue.run { hang.wait() }
+            XCTAssertNotNil(queue.abandonStall(olderThanMs: 0, maxAbandons: 2))
+            _ = try await queue.run { 0 }
+        }
+        _ = try? await queue.run { hang.wait() }
+        XCTAssertFalse(queue.isPrimaryParked)
+        XCTAssertNil(queue.abandonStall(olderThanMs: 0, maxAbandons: 2))
+    }
+
+    /// #1307: bırakılan okuma hiç bitmese de yeniden kurulan okuyucu okumaları süresinde bitirdiyse hızlı düzeyin süresi
+    /// dolunca isabetli düzeye dönülür (eskiden oturum boyunca hızlı düzeyde kalınıyordu).
+    func testFastLevelRestoredWhenRebuiltReaderIsHealthy() async throws {
+        defer { VisionReader.useFastLevel = false }
+        let hang = Hang()
+        defer { hang.release() }
+        let queue = ReadQueue(label: "test.restore.healthy", timeoutMs: 50, fastLevelHoldMs: 100, recoverAfterReads: 3)
+        let events = Events()
+        queue.onEvent = { events.add($0) }
+        _ = try? await queue.run { hang.wait() }
+        XCTAssertNotNil(queue.abandonStall(olderThanMs: 0))
+        XCTAssertTrue(VisionReader.useFastLevel)
+        for n in 0..<3 { _ = try await queue.run { n } }
+        try await Task.sleep(for: .milliseconds(150))
+        _ = try await queue.run { 3 }
+        XCTAssertFalse(VisionReader.useFastLevel)
+        XCTAssertTrue(events.all.contains { if case .restored = $0 { return true } else { return false } })
     }
 
     /// iPhone: asla dönmeyen okuma altyazıyı uygulama kapatılana dek durduruyordu (TestFlight, X). Takılma yeterince

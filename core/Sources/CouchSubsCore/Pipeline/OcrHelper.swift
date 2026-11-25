@@ -232,6 +232,10 @@ public final class OcrHelperRescuer: ReadRescuer, @unchecked Sendable {
     private var busy = false
     private var closeWhenIdle = false
     private var launchFailures = 0
+    /// İsabetli yardımcının bu yedek oturumunda kaç kez takılıp öldürüldüğü.
+    private var accurateLosses = 0
+    /// İsabetli yardımcı bu kadar kez takılırsa yedek oturumu boyunca hızlı düzeyde kalınır (her deneme modeli yükler).
+    public static let maxAccurateLosses = 3
     /// Günlük için: yardımcı açıldı, isabetli düzeye geçildi, kapandı.
     public var onLog: (@Sendable (String) -> Void)?
 
@@ -243,6 +247,23 @@ public final class OcrHelperRescuer: ReadRescuer, @unchecked Sendable {
 
     /// Okumalar isabetli düzeydeki yardımcıdan mı geliyor.
     public var isAccurate: Bool { lock.withLock { accurate != nil } }
+
+    /// Asıl okuyucu kilitli kalınca yedek kalıcı okuyucudur; isabetli düzeydeyse uyarı gerekmez (#1307).
+    public var isFullQuality: Bool { isAccurate }
+
+    /// İsabetli yardımcı takılıp öldürülünce isabetli düzey bu kadar sonra yeniden denenir (model artık derlenmiş;
+    /// yeniden deneme hızlı döner). Eskiden oturum boyunca hızlı düzeyde kalınıyordu (#1307, 19:45).
+    public static let accurateRetryMs = 30_000
+
+    /// Kilit altında çağrılır: isabetli yardımcı kaybedildi; hızlıya düşülür, isabetli düzey `accurateRetryMs` sonra
+    /// yeniden denenir.
+    private func lostAccurate() {
+        accurate = nil
+        accurateLosses += 1
+        guard accurateLosses < Self.maxAccurateLosses else { return }
+        probed = false
+        since = ReadQueue.uptimeMs() - max(0, accurateAfterMs - Self.accurateRetryMs)
+    }
 
     public func recognize(_ image: CGImage, language: String) throws -> Reading {
         let (helper, isFast) = try lock.withLock { () throws -> (OcrHelperProcess, Bool) in
@@ -286,7 +307,7 @@ public final class OcrHelperRescuer: ReadRescuer, @unchecked Sendable {
             lock.withLock {
                 launchFailures += 1
                 if fast === helper { fast = nil }
-                if accurate === helper { accurate = nil }
+                if accurate === helper { lostAccurate() }
             }
             helper.kill()
             throw OcrHelper.Failure.closed
@@ -297,7 +318,7 @@ public final class OcrHelperRescuer: ReadRescuer, @unchecked Sendable {
         let helper: OcrHelperProcess? = lock.withLock {
             let helper = serving
             if fast === helper { fast = nil }
-            if accurate === helper { accurate = nil }
+            if accurate === helper { lostAccurate() }
             return helper
         }
         helper?.kill()
@@ -322,6 +343,7 @@ public final class OcrHelperRescuer: ReadRescuer, @unchecked Sendable {
         since = nil
         closeWhenIdle = false
         launchFailures = 0
+        accurateLosses = 0
         if had { onLog?("yedek okuyucu kapatıldı") }
     }
 

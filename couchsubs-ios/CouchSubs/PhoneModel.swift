@@ -1451,6 +1451,8 @@ final class PhoneModel: ObservableObject {
                 SubtitleLog.write("takılan okuma bırakıldı, okuyucu yeniden kuruldu: okuma \(ms) ms'dir dönmüyordu; okuma yeni okuyucuda hızlı düzeyde sürüyor")
             case .recoveredAfterRebuild(let reads):
                 SubtitleLog.write("okuma düzeldi (yeniden kurulumdan sonra): yeni okuyucu art arda \(reads) okumayı süresinde bitirdi")
+            case .parked(let still, _):
+                SubtitleLog.write("yeni okuyucu da tek okuma bitiremeden takıldı: yazı tanıma kilidi bırakılan okumada (bitmeyen: \(still)); yeniden kurma durdu, kilit serbest kalınca okuma sürecek")
             case .degraded(let stalls):
                 SubtitleLog.write("okuma \(stalls) kez takıldı; \(ReadQueue.shared.fastLevelHoldMs / 1000) sn hızlı düzeyde okunacak (Neural Engine yolu bırakıldı), sonra isabetli düzey yeniden denenecek")
             case .restored(let ms):
