@@ -23,6 +23,8 @@ internal class PhoneRegionSession(
     private val sender: RegionSender,
     /** "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde" ve panelin yazı boyu; her gönderide okunur. */
     private val panel: () -> PhonePanelOptions = { PhonePanelOptions() },
+    /** Telefonun açılışları arasında kalan çeviriler ve panelin yazı boyu ([PhoneMemory]); izleyici verir. */
+    private val memory: PhoneMemory = PhoneMemory(),
 ) {
     companion object {
         const val ID = SubtitleServer.GAME_PHONE_ID
@@ -118,8 +120,6 @@ internal class PhoneRegionSession(
     private var lastPass: Long? = null
     private var page: Page? = null
     private var rendered: List<ScreenTranslation.Item> = emptyList()
-    private val translations = HashMap<String, String>()
-    private val keys = ArrayList<String>()
     private var nextBubble = 0
     private var anchors: List<Anchor> = emptyList()
     private var needsWork = false
@@ -156,8 +156,8 @@ internal class PhoneRegionSession(
     private var sentOptions: PhonePanelOptions? = null
     /** Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri ([PhoneSteady.steadyPose], [PhoneSteady.samePicture]). */
     private var sentShown: List<ScreenTranslation.Item> = emptyList()
-    /** Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez. */
-    private val panelSteady = PhonePanelSteady()
+    /** Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez; hafızada kalır. */
+    private val panelSteady get() = memory.steady
     /** Boş okumanın art arda kaç turdur sürdüğü: [PhoneSteady.MISS_TURNS] tur (~1,35 sn) sürmeden ekran silinmez. */
     private var empties = 0
 
@@ -395,7 +395,7 @@ internal class PhoneRegionSession(
             val block = now[i].group
             var prior = before[if (missing) i + 1 else i].group
             if (prior.paragraphs != block.paragraphs) {
-                if (missing || i == 0 || before[i].group.paragraphs.any { translations[it] == null }) return false
+                if (missing || i == 0 || before[i].group.paragraphs.any { !memory.knows(it) }) return false
                 missing = true
                 prior = before[i + 1].group
                 if (prior.paragraphs != block.paragraphs) return false
@@ -404,7 +404,7 @@ internal class PhoneRegionSession(
                 abs(block.box.top - prior.box.top) > 0.012 || abs(block.box.bottom - prior.box.bottom) > 0.012) return false
         }
         // Kalanlar yerinde, yalnız en alttaki balon düştü: yeni mesaj eklenir, silinmez; bu da bir OCR atlamasıdır.
-        return missing || before.last().group.paragraphs.none { translations[it] == null }
+        return missing || before.last().group.paragraphs.none { !memory.knows(it) }
     }
 
     /** Aynı yerleşim: balon sayısı ve sınırları aynı, kutular iki pikselden az oynamış, zemin/yazı rengi yakın. */
@@ -472,13 +472,7 @@ internal class PhoneRegionSession(
         publish(emptyList())
     }
 
-    private fun remember(source: String, translation: String) {
-        if (translations[source] == null) {
-            if (keys.size >= 2 * ScreenTranslation.MAX_GROUPS) translations.remove(keys.removeAt(0))
-            keys.add(source)
-        }
-        translations[source] = translation
-    }
+    private fun remember(source: String, translation: String) = memory.remember(source, translation)
 
     /**
      * Paketten, hafızadan ya da zaten Türkçe olduğu için hazır çeviriler. Kişinin adı (sohbet başlığı) çevrilmez: "Rose"
@@ -493,7 +487,9 @@ internal class PhoneRegionSession(
                 result[text] = text
                 continue
             }
-            val known = packLookup?.invoke(IconText.plain(text))?.text ?: PhoneSteady.translation(text, translations)
+            // Ekranda aynı yerde duran balonun daha bozuk okunuşu da yeniden çevrilmez ([PhoneSteady.shownTranslation]).
+            val known = packLookup?.invoke(IconText.plain(text))?.text ?: memory.translation(text)
+                ?: (if (group.paragraphs.size == 1) PhoneSteady.shownTranslation(IconText.plain(text), group.phone?.spot, rendered) else null)
                 ?: if (skipsTurkish && TurkishText.isSure(text)) text else null
             if (known != null) result[text] = known else result.remove(text)
         }
@@ -508,7 +504,10 @@ internal class PhoneRegionSession(
         val keepUnchanged = panel().enabled
         return page.bubbles.mapNotNull { bubble ->
             val group = bubble.group
-            val result = group.paragraphs.mapNotNull { GamePhoneText.keepIdentifiers(it, translations[it]) }
+            // Motorun aynı cümleyi art arda iki kez yazdığı çeviri tek kez gösterilir ([GamePhoneText.withoutRepeat]).
+            val result = group.paragraphs.mapNotNull {
+                GamePhoneText.keepIdentifiers(it, translations[it]?.let(GamePhoneText::withoutRepeat))
+            }
             if (result.size != group.paragraphs.size) return@mapNotNull null
             ScreenTranslation.item(group, group.paragraphs.map(IconText::protect), result, keepUnchanged)?.copy(surface = bubble.style)
         }
@@ -532,22 +531,29 @@ internal class PhoneRegionSession(
         if (fresh.isEmpty()) panelSteady.reset()
         val placed = if (fresh.isEmpty()) null else capture?.pose?.let { panelSteady.steadyPose(it, now) }
         val aspect = capture?.let { it.image.width.toDouble() / maxOf(1, it.image.height) } ?: (16.0 / 9)
+        // Aynı mesaj bir kez ([PhoneSteady.withoutRepeats]); ekrandaki mesajın Türkçesi okuma okuma değişmez
+        // ([PhoneSteady.keptTranslations]; Mac ile aynı).
+        val unique = PhoneSteady.withoutRepeats(fresh).let { if (rendered.isEmpty()) it else PhoneSteady.keptTranslations(it, rendered) }
         // Kaydırmada balonlar yeni yerlerine hemen geçer (konum sabitleme atlanır); boy, satır yüksekliği ve renk
         // kararlılığı ([steady]) sürer.
-        val items = when {
-            sent.isEmpty() -> fresh
-            scrolling -> steady(fresh, sent)
-            else -> PhoneSteady.steadyPositions(steady(fresh, sent), sent, aspect)
+        var items = when {
+            sent.isEmpty() -> unique
+            scrolling -> steady(unique, sent)
+            else -> PhoneSteady.steadyPositions(steady(unique, sent), sent, aspect)
         }
-        sent = items
         val options = panel()
+        // Yazı boyu grup için bir kez ölçülür, kilitlidir ([PhonePanelSteady.steadyLine]); Balonların Üstünde'de de bütün
+        // mesaj balonları bu tek boyda ([PhoneSteady.uniformLine]).
+        val line = if (fresh.isEmpty()) null else panelSteady.steadyLine(ScreenPhoneCard.measuredLine(items), now)
+        if (!options.enabled) items = PhoneSteady.uniformLine(items, line)
+        sent = items
         if (rendered == items && (sentOptions == options || items.isEmpty())) return
         val sameOptions = sentOptions == options
         rendered = items
         sentOptions = options
         // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez ([PhonePanelSteady]); aynı görünen gönderi yinelenmez.
-        val line = panelSteady.steadyLine(ScreenPhoneCard.measuredLine(items), now)
-        val shown = arranged(items, placed?.pose, aspect, options, line)
+        var shown = arranged(items, placed?.pose, aspect, options, line)
+        if (sameOptions) shown = PhoneSteady.steadyCard(shown, sentShown)
         if (sameOptions && PhoneSteady.samePicture(shown, sentShown)) {
             // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe; Mac ile aynı).
             val sources = shown.map { it.source }

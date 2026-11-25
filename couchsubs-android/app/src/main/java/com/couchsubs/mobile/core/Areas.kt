@@ -886,6 +886,8 @@ class RegionWatcher(
 
     /** Açık oyun telefonunun oturumu ("GTA 6'daki telefonu otomatik çevir"); telefon kapalıyken null. */
     private var phoneSession: PhoneRegionSession? = null
+    /** Telefonun açılışları arasında kalan çeviriler ve panelin yazı boyu ([PhoneMemory]); [reset] unutturur. */
+    private val phoneMemory = PhoneMemory()
     /** Telefon mesajları İngilizce: kısaltmalar çevirmene açık yazılır ([GamePhoneText.englishModelInput]). */
     @Volatile var englishPhoneMessages = true
     /** "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde" ve panelin yazı boyu; her gönderide okunur (Mac ile aynı). */
@@ -895,7 +897,7 @@ class RegionWatcher(
     fun observePhone(capture: PhoneCapture) {
         val read = readPhone ?: return
         synchronized(lock) {
-            (phoneSession ?: PhoneRegionSession(read, translator, sender, { phonePanel() })
+            (phoneSession ?: PhoneRegionSession(read, translator, sender, { phonePanel() }, phoneMemory)
                 .also { it.onLog = { line -> onLog?.invoke(line) }; it.trace = phoneTrace; phoneSession = it }).observe(capture)
         }
     }
@@ -1516,6 +1518,7 @@ class RegionWatcher(
     fun reset(): Unit = synchronized(lock) {
         phoneSession?.close()
         phoneSession = null
+        phoneMemory.clear()
         session++
         busy = false
         lastPass = null

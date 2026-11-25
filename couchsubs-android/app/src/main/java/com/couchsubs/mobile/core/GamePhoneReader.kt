@@ -153,6 +153,10 @@ class TailRescue(private val clock: () -> Long = { System.nanoTime() / 1_000_000
         val recoveredBox = map(line.box!!)
         // İlk okuma aynı satırın yalnız son sözcüklerini bulmuş olabilir: üstüne ikinci bir kutu konmaz.
         if (reading.lines.any { it !== tail && it.box?.let { existing -> sameRow(existing, recoveredBox) } == true }) return reading
+        // Kurtarılan satır okumada zaten varsa (başka yerde okunmuş aynı yazı) ikinci kez eklenmez: balonda aynı cümle iki
+        // kez görünüyordu (X, 22 Kas; Mac ile aynı).
+        val recoveredText = TextMatch.normalize(line.text)
+        if (reading.lines.any { PhoneSteady.sameReading(it.text, line.text) || TextMatch.normalize(it.text).contains(recoveredText) }) return reading
         failedTail = null
         val recovered = line.copy(
             box = recoveredBox,

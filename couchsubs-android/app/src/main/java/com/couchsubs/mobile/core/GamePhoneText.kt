@@ -256,15 +256,15 @@ object GamePhoneText {
                     groups += ScreenTranslation.groups(Reading(run.toList()), keepIdentifiers = true)
                     return
                 }
-                val clean = Reading(run.toList()).withButtonIcons().withoutButtonPrompts().withoutOcrNoise(keepIdentifiers = true)
-                    .lines.filter { it.box != null && ScreenText.isWords(it.text) }
+                val clean = withoutRepeatedLines(Reading(run.toList()).withButtonIcons().withoutButtonPrompts()
+                    .withoutOcrNoise(keepIdentifiers = true).lines.filter { it.box != null && ScreenText.isWords(it.text) })
                 val first = clean.firstOrNull()?.box ?: return
                 val place = clean.drop(1).fold(first) { total, line -> total.union(line.box!!) }
                 val heights = run.map { box(it).bottom - box(it).top }.sorted()
                 val icons = clean.flatMap { it.icons ?: emptyList() }
                 // Düz ekrandaki yeri: sohbet panelinde tarafı (sol/sağ) ve sırası bundan çıkar ([roles]).
                 val spot = run.drop(1).fold(box(run[0])) { total, line -> total.union(box(line)) }
-                groups += ScreenTranslation.Group(listOf(clean.joinToString(" ") { it.text }), place, heights[heights.size / 2],
+                groups += ScreenTranslation.Group(listOf(withoutRepeat(clean.joinToString(" ") { it.text })), place, heights[heights.size / 2],
                     if (icons.isEmpty()) null else listOf(icons),
                     ScreenPhoneCard.Placement(if (listed) run[0].listRole ?: ScreenPhoneCard.Role.PREVIEW else ScreenPhoneCard.Role.MESSAGE, spot))
             } finally {
@@ -305,6 +305,40 @@ object GamePhoneText {
     }
 
     private fun endsSentence(text: String): Boolean = text.trimEnd().lastOrNull()?.let { it in ".!?" } ?: false
+
+    /**
+     * Art arda iki kez yazılmış metin ("A. B. A. B.") bir kez: OCR aynı satırı iki kutuda okuyunca ya da motor çeviriyi iki
+     * kez yazınca balonda aynı paragraf art arda iki kez görünüyordu (X, 22 Kas). Metin sözcük sözcük ikiye bölünür (en az
+     * dört sözcük); iki yarı aynı mesajsa ([PhoneSteady.sameReading]) ilk yarı kalır (Mac ile aynı).
+     */
+    fun withoutRepeat(text: String): String {
+        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.size < 4 || words.size % 2 != 0) return text
+        val half = words.size / 2
+        val first = words.take(half).joinToString(" ")
+        val second = words.drop(half).joinToString(" ")
+        if (TextMatch.normalize(first).none { it.isLetter() } || !PhoneSteady.sameReading(first, second)) return text
+        return first
+    }
+
+    /**
+     * Aynı balonda bir öncekiyle aynı ([PhoneSteady.sameReading]) ya da bir öncekinin içinde kalan satır atılır: soluk satır
+     * bazen hem tam hem parça olarak iki kutuda okunur (Mac ile aynı).
+     */
+    fun withoutRepeatedLines(lines: List<TextLine>): List<TextLine> {
+        val kept = ArrayList<TextLine>()
+        for (line in lines) {
+            val previous = kept.lastOrNull()
+            if (previous != null) {
+                val a = TextMatch.normalize(previous.text)
+                val b = TextMatch.normalize(line.text)
+                if (PhoneSteady.sameReading(previous.text, line.text) ||
+                    (b.length >= 6 && 2 * b.length >= a.length && b.count { it.isLetter() } >= 4 && a.contains(b))) continue
+            }
+            kept.add(line)
+        }
+        return kept
+    }
 
     /**
      * Düzeltilmiş telefon ekranında satır arası dar, aynı taraftaki ardışık balonların arası daha geniştir: cümle sonundan

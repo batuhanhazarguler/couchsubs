@@ -127,6 +127,12 @@ enum GamePhoneReader {
         guard missing.count == 1, let found = missing.first, let foundBox = found.box?.placed(in: strip) else { return reading }
         // İlk okuma aynı satırın yalnız son sözcüklerini bulmuş olabilir: üstüne ikinci bir kutu konmaz.
         guard !reading.lines.contains(where: { $0 != tail && $0.box.map { sameRow($0, foundBox) } == true }) else { return reading }
+        // Kurtarılan satır okumada zaten varsa (başka yerde okunmuş aynı yazı) ikinci kez eklenmez: balonda aynı cümle iki
+        // kez görünüyordu (X, 22 Kas).
+        let recoveredText = TextMatch.normalize(found.text)
+        guard !reading.lines.contains(where: { line in
+            PhoneSteady.sameReading(line.text, found.text) || TextMatch.normalize(line.text).contains(recoveredText)
+        }) else { return reading }
         retry.succeeded()
         var recovered = found
         recovered.box = foundBox

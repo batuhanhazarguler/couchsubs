@@ -51,8 +51,9 @@ enum PhoneSteady {
         if a == b { return true }
         let x = TextMatch.normalize(a), y = TextMatch.normalize(b)
         guard !x.isEmpty, !y.isEmpty, !TextMatch.addsMeaning(a, to: b), !TextMatch.addsMeaning(b, to: a) else { return false }
-        // "Ok?" / "Ok." aynı harfler, başka anlam: soru işareti ikisinde de olmalı.
-        if x == y { return a.contains("?") == b.contains("?") }
+        // "Ok?" / "Ok." aynı harfler, başka anlam: kısa satırda soru işareti ikisinde de olmalı. Uzun mesajda düşen soru
+        // işareti OCR'ın kaçırdığı noktalamadır: mesaj yeniden çevrilmiyor.
+        if x == y { return a.contains("?") == b.contains("?") || x.filter(\.isLetter).count >= minimumLetters }
         // "rn" / "m": OCR'ın en sık karıştırdığı çift; benzerlik ölçülürken birleştirilir.
         let folded = (x.replacingOccurrences(of: "rn", with: "m"), y.replacingOccurrences(of: "rn", with: "m"))
         return x.filter(\.isLetter).count >= minimumLetters && y.filter(\.isLetter).count >= minimumLetters
@@ -152,6 +153,110 @@ enum PhoneSteady {
         return still ? anchor : pose
     }
 
+    // MARK: Kararlı çıktı (X, 22 Kas: "sağ tarafta kutu çıkarıyorsun ama her saniye şekli de hareketi de değişiyor").
+    // Telefonun yazısı değişmedikçe çizilen Türkçe birebir aynı kalır: aynı mesaj aynı çeviriyle ve bir kez, gruptaki
+    // bütün balonlar tek boyda; panelin kutusu yalnız telefon gerçekten kıpırdayınca kayar. Windows (PhoneSteady.cs) ve
+    // Android (PhoneSteady.kt) aynı kuralı, aynı eşikleri kullanır.
+
+    /// Art arda gelmeyen iki öğe ancak bu kadar harften uzunsa aynı mesaj sayılıp sonraki atılır (kısa "Ok" sohbette iki
+    /// kez gerçekten yazılmış olabilir).
+    static let repeatLetters = 12
+
+    /// Aynı mesaj panelde bir kez: telefondaki öğelerden (`phone` bilgisi olanlar) bir öncekiyle aynı mesajı taşıyan
+    /// (`sameReading`) art arda öğe atılır; araları açık iki öğeden sonraki ancak uzun mesajsa (`repeatLetters`) atılır.
+    /// Bir mesajın OCR'da iki kez gelmesi panelde aynı paragrafı art arda iki kez yazdırıyordu (X, 22 Kas). Telefon
+    /// dışındaki öğelere dokunulmaz.
+    static func withoutRepeats(_ items: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
+        var kept: [ScreenTranslation.Item] = []
+        for item in items {
+            guard item.phone != nil else {
+                kept.append(item)
+                continue
+            }
+            let onPhone = kept.filter { $0.phone != nil }
+            let long = TextMatch.normalize(item.source).filter(\.isLetter).count >= repeatLetters
+            let repeated = onPhone.indices.contains { index in
+                sameReading(onPhone[index].source, item.source) && (index == onPhone.count - 1 || long)
+            }
+            if !repeated { kept.append(item) }
+        }
+        return kept
+    }
+
+    /// Önceki gönderide aynı mesaj (`sameReading`) varsa öğe onun kaynağını ve çevirisini aynen alır: aynı İngilizce
+    /// için Türkçe her okumada yeniden üretilmez; bir harfi oynayan okuma ya da paketin bir bulup bir bulamadığı satır
+    /// başka bir çeviri göstermez. Her önceki öğe en çok bir kez kullanılır; telefonun öğeleri yalnız telefonun öğeleriyle,
+    /// çevrilmemiş öğeler (`unchanged`) yalnız çevrilmemişlerle eşlenir.
+    static func keptTranslations(_ items: [ScreenTranslation.Item], previous: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
+        var used = Set<Int>()
+        return items.map { item in
+            guard let index = previous.indices.first(where: { index in
+                let old = previous[index]
+                return !used.contains(index) && (old.phone != nil) == (item.phone != nil) && old.unchanged == item.unchanged
+                    && sameBubble(old.source, at: old.phone?.spot, item.source, at: item.phone?.spot)
+            }) else { return item }
+            used.insert(index)
+            var kept = item
+            kept.source = previous[index].source
+            kept.translation = previous[index].translation
+            kept.icons = previous[index].icons
+            return kept
+        }
+    }
+
+    /// Telefonda aynı yerde duran balonun okunuşları bu benzerlikten (Levenshtein oranı) yüksekse aynı mesajdır: yerini
+    /// bildiğimiz balonda daha bozuk okuma da (atılan rakamlı sözcük "fo1ding", kaçan harf) yeni mesaj sayılmaz.
+    static let sameSpotMessage = 0.8
+    /// Aynı yer: düz ekrandaki sol üst köşeleri bu kadar içinde.
+    static let sameSpot = 0.05
+
+    /// İki okuma aynı balon mu: aynı mesaj (`sameReading`) ya da telefonun ekranında aynı yerde (`sameSpot`) ve en az
+    /// `minimumLetters` harfli iki uzun okuma `sameSpotMessage` kadar benzer; sayı ya da olumsuzluk ekleyen/düşüren okuma
+    /// aynı sayılmaz.
+    static func sameBubble(_ a: String, at spotA: TextBox?, _ b: String, at spotB: TextBox?) -> Bool {
+        if sameReading(a, b) { return true }
+        guard let spotA, let spotB, abs(spotA.top - spotB.top) <= sameSpot, abs(spotA.left - spotB.left) <= sameSpot,
+              !TextMatch.addsMeaning(a, to: b), !TextMatch.addsMeaning(b, to: a) else { return false }
+        let x = TextMatch.normalize(a), y = TextMatch.normalize(b)
+        return x.filter(\.isLetter).count >= minimumLetters && y.filter(\.isLetter).count >= minimumLetters
+            && TextMatch.isSimilar(x, y, threshold: sameSpotMessage)
+    }
+
+    /// Ekranda aynı yerde duran aynı balonun gösterilen çevirisi (`sameBubble`); yoksa nil. Simgeli çeviri (yeri simgeye
+    /// göre kurulmuş) kullanılmaz.
+    static func shownTranslation(of source: String, at spot: TextBox?, in shown: [ScreenTranslation.Item]) -> String? {
+        shown.first { $0.phone != nil && !$0.unchanged && $0.icons == nil && !$0.translation.contains("\n")
+            && sameBubble($0.source, at: $0.phone?.spot, source, at: spot) }?.translation
+    }
+
+    /// Gruptaki bütün mesaj balonları tek yazı boyunda (`line`: kilitli ölçüm, `PhonePanelSteady.steadyLine`): her balonun
+    /// OCR satır yüksekliği okumadan okumaya oynuyor, balonların üstündeki yazı bir küçük bir büyük çiziliyordu. Kişinin
+    /// adı ve telefon dışı öğeler kendi boyunda kalır.
+    static func uniformLine(_ items: [ScreenTranslation.Item], line: Double?) -> [ScreenTranslation.Item] {
+        guard let line, line > 0 else { return items }
+        return items.map { item in
+            guard let role = item.phone?.role, role.inCard, role != .header, role != .contact else { return item }
+            var same = item
+            same.lineHeight = line
+            return same
+        }
+    }
+
+    /// Panelin zemini (kart) kısalmaz: yeni düzenin kartı öncekiyle aynı yanda, aynı genişlikte ve onun içinde kalıyorsa
+    /// önceki kart kalır. Bir mesajın tek okumada düşmesi kartın boyunu her saniye değiştiriyordu; çiziciler mesajları
+    /// kartın içinde akışla dizdiği için uzun kalan kart hiçbir mesajı kaydırmaz. Telefon gerçekten kıpırdayınca (kartın
+    /// yanı ya da eni değişince) yeni kart geçer.
+    static func steadyCard(_ shown: [ScreenTranslation.Item], previous: [ScreenTranslation.Item]) -> [ScreenTranslation.Item] {
+        guard let index = shown.firstIndex(where: { $0.panel == .card }),
+              let old = previous.first(where: { $0.panel == .card })?.box else { return shown }
+        let box = shown[index].box, near = 1e-9
+        guard abs(box.left - old.left) < near, abs(box.right - old.right) < near,
+              box.top >= old.top - near, box.bottom <= old.bottom + near else { return shown }
+        var result = shown
+        result[index].box = old
+        return result
+    }
+
     /// İki gönderi TV'de ve masaüstünde aynı görünür mü. Panelin mesajları, kişi adı ve notları akışla çizilir: onların
     /// yalnız sırası, yazısı ve rengi önemlidir; kutuları (telefondaki yere göre biraz oynar) önemsizdir. Panelin zemini ve
     /// panel dışındaki her öğe yeriyle birlikte aynı olmalıdır.
@@ -187,6 +292,9 @@ struct PhonePanelSteady: Sendable {
     private(set) var line: Double?
     private var poseSince: Int?
     private var lineSince: Int?
+    /// Son kilitli yazı boyu ve o andaki telefon boyu: telefon kapanıp açılınca (ya da ekran bir an silinince) yazı boyu
+    /// baştan ölçülmez; telefon aynı boydaysa (`sizeShare` içinde) aynı boy kalır. `reset` bunu silmez, `forget` siler.
+    private(set) var remembered: (line: Double, height: Double)?
 
     init() {}
 
@@ -196,6 +304,12 @@ struct PhonePanelSteady: Sendable {
         guard let locked = pose else {
             pose = found
             poseSince = nil
+            // Aynı boydaki telefon yeniden açıldı: yazı boyu öncekiyle aynı kalır.
+            if line == nil, let remembered, remembered.height > 0,
+               abs(Self.height(found) / remembered.height - 1) <= Self.sizeShare {
+                line = remembered.line
+                return (found, false)
+            }
             return (found, true)
         }
         if Self.sameSpot(found, locked) {
@@ -206,18 +320,42 @@ struct PhonePanelSteady: Sendable {
             if poseSince == nil { poseSince = now }
             return (locked, false)
         }
-        let resized = Self.resized(found, locked)
-        pose = found
         poseSince = nil
-        if resized {
+        if Self.resized(found, locked) {
+            pose = found
             line = nil
             lineSince = nil
+            return (found, true)
         }
-        return (found, resized)
+        // Boyu aynı kalan telefon yalnız yer değiştirdi: panel telefona sabit uzaklıkla, aynı boyda izler (kartın eni ve
+        // boyu her yer değişiminde telefonun titreyen ölçüsünden yeniden kurulmaz).
+        let moved = Self.shifted(locked, toward: found)
+        pose = moved
+        return (moved, false)
+    }
+
+    /// Telefonun yüksekliği (kareye oranla).
+    static func height(_ pose: GamePhoneGeometry.Pose) -> Double { pose.bounds.bottom - pose.bounds.top }
+
+    /// `locked` telefonun, ortası `found`'unkine gelecek biçimde kaydırılmış hali (boyu ve eğikliği aynı).
+    static func shifted(_ locked: GamePhoneGeometry.Pose, toward found: GamePhoneGeometry.Pose) -> GamePhoneGeometry.Pose {
+        // Biçimi birebir aynı telefon: bulunan yer olduğu gibi.
+        if abs((found.bottomY - found.topY) - (locked.bottomY - locked.topY)) < 1e-9,
+           abs((found.bottomX - found.topX) - (locked.bottomX - locked.topX)) < 1e-9 { return found }
+        let a = locked.bounds, b = found.bounds
+        let dx = (b.left + b.right - a.left - a.right) / 2, dy = (b.top + b.bottom - a.top - a.bottom) / 2
+        return GamePhoneGeometry.Pose(topX: locked.topX + dx, topY: locked.topY + dy,
+                                      bottomX: locked.bottomX + dx, bottomY: locked.bottomY + dy)
     }
 
     /// Panelin satır yüksekliği (kare yüksekliğine oranla; `ScreenPhoneCard.measuredLine`). Ölçüm yoksa kilitli değer.
     mutating func steadyLine(_ measured: Double?, now: Int) -> Double? {
+        let result = lockedLine(measured, now: now)
+        if let result, let pose { remembered = (result, Self.height(pose)) }
+        return result
+    }
+
+    private mutating func lockedLine(_ measured: Double?, now: Int) -> Double? {
         guard let measured, measured > 0 else { return line }
         guard let locked = line else {
             line = measured
@@ -237,8 +375,15 @@ struct PhonePanelSteady: Sendable {
         return measured
     }
 
-    /// Telefon kayboldu: sonraki bulunuşta her şey yeniden ölçülür.
+    /// Telefon kayboldu: sonraki bulunuşta yeri yeniden ölçülür; aynı boydaki telefonun yazı boyu hatırlanır (`remembered`).
     mutating func reset() {
+        let remembered = self.remembered
+        self = PhonePanelSteady()
+        self.remembered = remembered
+    }
+
+    /// Çeviri durdu: her şey unutulur.
+    mutating func forget() {
         self = PhonePanelSteady()
     }
 

@@ -62,7 +62,8 @@ object PhoneSteady {
         val x = TextMatch.normalize(a)
         val y = TextMatch.normalize(b)
         if (x.isEmpty() || y.isEmpty() || TextMatch.addsMeaning(a, b) || TextMatch.addsMeaning(b, a)) return false
-        if (x == y) return a.contains('?') == b.contains('?')
+        // Kısa satırda soru işareti anlam taşır ("Ok?" / "Ok."); uzun mesajda düşen soru işareti OCR'ın kaçırdığı noktalamadır.
+        if (x == y) return a.contains('?') == b.contains('?') || x.count { it.isLetter() } >= MINIMUM_LETTERS
         return x.count { it.isLetter() } >= MINIMUM_LETTERS && y.count { it.isLetter() } >= MINIMUM_LETTERS &&
             TextMatch.isSimilar(x.replace("rn", "m"), y.replace("rn", "m"), SAME_MESSAGE)
     }
@@ -168,6 +169,103 @@ object PhoneSteady {
         return if (still) anchor else pose
     }
 
+    // Kararlı çıktı (X, 22 Kas: "sağ tarafta kutu çıkarıyorsun ama her saniye şekli de hareketi de değişiyor"). Telefonun
+    // yazısı değişmedikçe çizilen Türkçe birebir aynı kalır: aynı mesaj aynı çeviriyle ve bir kez, gruptaki bütün balonlar
+    // tek boyda; panelin kutusu yalnız telefon gerçekten kıpırdayınca kayar. Mac/iPhone ve Windows aynı kural, aynı eşikler.
+
+    /** Art arda gelmeyen iki öğe ancak bu kadar harften uzunsa aynı mesaj sayılıp sonraki atılır. */
+    const val REPEAT_LETTERS = 12
+    /** Telefonda aynı yerde duran balonun okunuşları bu benzerlikten yüksekse aynı mesajdır ([sameBubble]). */
+    const val SAME_SPOT_MESSAGE = 0.8
+    /** Aynı yer: düz ekrandaki sol üst köşeleri bu kadar içinde. */
+    const val SAME_SPOT = 0.05
+
+    /**
+     * Aynı mesaj panelde bir kez: telefondaki öğelerden bir öncekiyle aynı mesajı taşıyan ([sameReading]) art arda öğe
+     * atılır; araları açık iki öğeden sonraki ancak uzun mesajsa ([REPEAT_LETTERS]) atılır. Telefon dışındaki öğelere
+     * dokunulmaz (Mac ile aynı).
+     */
+    fun withoutRepeats(items: List<ScreenTranslation.Item>): List<ScreenTranslation.Item> {
+        val kept = ArrayList<ScreenTranslation.Item>()
+        for (item in items) {
+            if (item.phone == null) {
+                kept.add(item)
+                continue
+            }
+            val onPhone = kept.filter { it.phone != null }
+            val long = TextMatch.normalize(item.source).count { it.isLetter() } >= REPEAT_LETTERS
+            val repeated = onPhone.indices.any { index ->
+                sameReading(onPhone[index].source, item.source) && (index == onPhone.size - 1 || long)
+            }
+            if (!repeated) kept.add(item)
+        }
+        return kept
+    }
+
+    /**
+     * İki okuma aynı balon mu: aynı mesaj ([sameReading]) ya da telefonun ekranında aynı yerde ([SAME_SPOT]) ve en az
+     * [MINIMUM_LETTERS] harfli iki uzun okuma [SAME_SPOT_MESSAGE] kadar benzer; sayı ya da olumsuzluk ekleyen/düşüren okuma
+     * aynı sayılmaz (Mac ile aynı).
+     */
+    fun sameBubble(a: String, spotA: TextBox?, b: String, spotB: TextBox?): Boolean {
+        if (sameReading(a, b)) return true
+        if (spotA == null || spotB == null || abs(spotA.top - spotB.top) > SAME_SPOT || abs(spotA.left - spotB.left) > SAME_SPOT ||
+            TextMatch.addsMeaning(a, b) || TextMatch.addsMeaning(b, a)) return false
+        val x = TextMatch.normalize(a)
+        val y = TextMatch.normalize(b)
+        return x.count { it.isLetter() } >= MINIMUM_LETTERS && y.count { it.isLetter() } >= MINIMUM_LETTERS &&
+            TextMatch.isSimilar(x, y, SAME_SPOT_MESSAGE)
+    }
+
+    /** Ekranda aynı yerde duran aynı balonun gösterilen çevirisi ([sameBubble]); yoksa null. */
+    fun shownTranslation(source: String, spot: TextBox?, shown: List<ScreenTranslation.Item>): String? =
+        shown.firstOrNull {
+            it.phone != null && !it.unchanged && it.icons == null && !it.translation.contains('\n') &&
+                sameBubble(it.source, it.phone.spot, source, spot)
+        }?.translation
+
+    /**
+     * Önceki gönderide aynı balon ([sameBubble]) varsa öğe onun kaynağını ve çevirisini aynen alır: aynı İngilizce için
+     * Türkçe her okumada yeniden üretilmez. Her önceki öğe en çok bir kez kullanılır (Mac ile aynı).
+     */
+    fun keptTranslations(items: List<ScreenTranslation.Item>, previous: List<ScreenTranslation.Item>): List<ScreenTranslation.Item> {
+        val used = HashSet<Int>()
+        return items.map { item ->
+            val index = previous.indices.firstOrNull { i ->
+                val old = previous[i]
+                i !in used && (old.phone != null) == (item.phone != null) && old.unchanged == item.unchanged &&
+                    sameBubble(old.source, old.phone?.spot, item.source, item.phone?.spot)
+            } ?: return@map item
+            used.add(index)
+            item.copy(source = previous[index].source, translation = previous[index].translation, icons = previous[index].icons)
+        }
+    }
+
+    /** Gruptaki bütün mesaj balonları tek yazı boyunda ([line]: kilitli ölçüm); kişinin adı ve telefon dışı öğeler kendi boyunda. */
+    fun uniformLine(items: List<ScreenTranslation.Item>, line: Double?): List<ScreenTranslation.Item> {
+        if (line == null || line <= 0) return items
+        return items.map { item ->
+            val role = item.phone?.role
+            if (role != null && role.inCard && role != ScreenPhoneCard.Role.HEADER && role != ScreenPhoneCard.Role.CONTACT)
+                item.copy(lineHeight = line) else item
+        }
+    }
+
+    /**
+     * Panelin zemini (kart) kısalmaz: yeni kart öncekiyle aynı yanda, aynı genişlikte ve onun içinde kalıyorsa önceki kart
+     * kalır; telefon gerçekten kıpırdayınca yeni kart geçer (Mac ile aynı).
+     */
+    fun steadyCard(shown: List<ScreenTranslation.Item>, previous: List<ScreenTranslation.Item>): List<ScreenTranslation.Item> {
+        val index = shown.indexOfFirst { it.panel == ScreenPhoneCard.PanelPart.CARD }
+        val old = previous.firstOrNull { it.panel == ScreenPhoneCard.PanelPart.CARD }?.box
+        if (index < 0 || old == null) return shown
+        val box = shown[index].box
+        val near = 1e-9
+        if (abs(box.left - old.left) >= near || abs(box.right - old.right) >= near ||
+            box.top < old.top - near || box.bottom > old.bottom + near) return shown
+        return shown.toMutableList().also { it[index] = it[index].copy(box = old) }
+    }
+
     /**
      * İki gönderi TV'de ve ekranda aynı görünür mü. Panelin mesajları, kişi adı ve notları akışla çizilir: yalnız sırası,
      * yazısı ve rengi önemlidir; panelin zemini ve panel dışındaki her öğe yeriyle aynı olmalıdır.
@@ -227,12 +325,24 @@ class PhonePanelSteady {
         private set
     private var poseSince: Long? = null
     private var lineSince: Long? = null
+    /**
+     * Son kilitli yazı boyu ve o andaki telefon boyu: telefon kapanıp açılınca yazı boyu baştan ölçülmez; telefon aynı
+     * boydaysa ([SIZE_SHARE] içinde) aynı boy kalır. [reset] bunu silmez, [forget] siler.
+     */
+    var remembered: Pair<Double, Double>? = null
+        private set
 
     fun steadyPose(found: GamePhoneGeometry.Pose, now: Long): Placed {
         val locked = pose
         if (locked == null) {
             pose = found
             poseSince = null
+            // Aynı boydaki telefon yeniden açıldı: yazı boyu öncekiyle aynı kalır.
+            val memory = remembered
+            if (line == null && memory != null && memory.second > 0 && abs(height(found) / memory.second - 1) <= SIZE_SHARE) {
+                line = memory.first
+                return Placed(found, false)
+            }
             return Placed(found, true)
         }
         if (sameSpot(found, locked)) {
@@ -244,18 +354,42 @@ class PhonePanelSteady {
             if (since == null) poseSince = now
             return Placed(locked, false)
         }
-        val resized = resized(found, locked)
-        pose = found
         poseSince = null
-        if (resized) {
+        if (resized(found, locked)) {
+            pose = found
             line = null
             lineSince = null
+            return Placed(found, true)
         }
-        return Placed(found, resized)
+        // Boyu aynı kalan telefon yalnız yer değiştirdi: panel telefona sabit uzaklıkla, aynı boyda izler.
+        val moved = shifted(locked, found)
+        pose = moved
+        return Placed(moved, false)
+    }
+
+    /** Telefonun yüksekliği (kareye oranla). */
+    private fun height(pose: GamePhoneGeometry.Pose): Double = pose.bounds.bottom - pose.bounds.top
+
+    /** [locked] telefonun, ortası [found]'unkine gelecek biçimde kaydırılmış hali (boyu ve eğikliği aynı). */
+    internal fun shifted(locked: GamePhoneGeometry.Pose, found: GamePhoneGeometry.Pose): GamePhoneGeometry.Pose {
+        if (abs((found.bottomY - found.topY) - (locked.bottomY - locked.topY)) < 1e-9 &&
+            abs((found.bottomX - found.topX) - (locked.bottomX - locked.topX)) < 1e-9) return found
+        val a = locked.bounds
+        val b = found.bounds
+        val dx = (b.left + b.right - a.left - a.right) / 2
+        val dy = (b.top + b.bottom - a.top - a.bottom) / 2
+        return GamePhoneGeometry.Pose(locked.topX + dx, locked.topY + dy, locked.bottomX + dx, locked.bottomY + dy)
     }
 
     /** Panelin satır yüksekliği ([ScreenPhoneCard.measuredLine]); ölçüm yoksa kilitli değer. */
     fun steadyLine(measured: Double?, now: Long): Double? {
+        val result = lockedLine(measured, now)
+        val placed = pose
+        if (result != null && placed != null) remembered = result to height(placed)
+        return result
+    }
+
+    private fun lockedLine(measured: Double?, now: Long): Double? {
         if (measured == null || measured <= 0) return line
         val locked = line
         if (locked == null) {
@@ -277,11 +411,17 @@ class PhonePanelSteady {
         return measured
     }
 
-    /** Telefon kayboldu: sonraki bulunuşta her şey yeniden ölçülür. */
+    /** Telefon kayboldu: sonraki bulunuşta yeri yeniden ölçülür; aynı boydaki telefonun yazı boyu hatırlanır. */
     fun reset() {
         pose = null
         line = null
         poseSince = null
         lineSince = null
+    }
+
+    /** Çeviri durdu: her şey unutulur. */
+    fun forget() {
+        reset()
+        remembered = null
     }
 }

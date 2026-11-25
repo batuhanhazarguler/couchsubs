@@ -52,8 +52,13 @@ final class PhoneRegionSession {
     private var task: Task<Void, Never>?
     private var page: Page?
     private var rendered: [ScreenTranslation.Item] = []
-    private var translations: [String: String] = [:]
-    private var keys: [String] = []
+    /// Telefonun açılışları arasında kalan çeviriler ve panelin yazı boyu (`PhoneMemory`); izleyici verir.
+    var memory = PhoneMemory()
+    /// Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez; hafızada kalır.
+    private var steady: PhonePanelSteady {
+        get { memory.steady }
+        set { memory.steady = newValue }
+    }
     private var nextBubble = 0
     private var anchors: [(prefix: String, x: Double, y: Double)] = []
     private var needsWork = false
@@ -86,8 +91,6 @@ final class PhoneRegionSession {
     private var sentOptions: PhonePanelOptions?
     /// Son gönderilen düzen ve Yanda Panel'in dayandığı telefon yeri (`PhoneSteady.steadyPose`, `samePicture`).
     private var sentShown: [ScreenTranslation.Item] = []
-    /// Yanda Panel'in kilitli telefon yeri ve yazı boyu (#1152): el titremesiyle değişmez.
-    private var steady = PhonePanelSteady()
     /// Boş okumanın art arda kaç turdur sürdüğü: `PhoneSteady.missTurns` tur (~1,35 sn) sürmeden ekran silinmez.
     private var empties = 0
     /// "Telefonu Türkçe çiz" (deneysel, yalnız Mac; `PhoneAnchorSession`, `PhoneTwin`). Verilirse okuma çapayı kurar;
@@ -548,11 +551,7 @@ final class PhoneRegionSession {
     }
 
     private func remember(_ source: String, _ translation: String) {
-        if translations[source] == nil {
-            if keys.count >= 2 * ScreenTranslation.maxGroups { translations[keys.removeFirst()] = nil }
-            keys.append(source)
-        }
-        translations[source] = translation
+        memory.remember(source, translation)
     }
 
     /// Paketten, hafızadan ya da zaten Türkçe olduğu için hazır çeviriler. Kişinin adı (sohbet başlığı) çevrilmez: "Rose"
@@ -566,7 +565,10 @@ final class PhoneRegionSession {
                     result[text] = text
                     continue
                 }
-                let known = packLookup?(IconText.plain(text))?.text ?? PhoneSteady.translation(of: text, in: translations)
+                // Ekranda aynı yerde duran balonun daha bozuk okunuşu da yeniden çevrilmez (`PhoneSteady.shownTranslation`).
+                let known = packLookup?(IconText.plain(text))?.text ?? memory.translation(of: text)
+                    ?? (group.paragraphs.count == 1
+                        ? PhoneSteady.shownTranslation(of: IconText.plain(text), at: group.phone?.spot, in: rendered) : nil)
                 result[text] = known ?? ((skipsTurkish && TurkishText.isSure(text)) ? text : nil)
             }
         }
@@ -579,7 +581,10 @@ final class PhoneRegionSession {
         let keepUnchanged = options.enabled
         return page.bubbles.compactMap { bubble in
             let group = bubble.group
-            let result = group.paragraphs.compactMap { GamePhoneText.keepIdentifiers($0, translation: translations[$0]) }
+            // Motorun aynı cümleyi art arda iki kez yazdığı çeviri tek kez gösterilir (`GamePhoneText.withoutRepeat`).
+            let result = group.paragraphs.compactMap {
+                GamePhoneText.keepIdentifiers($0, translation: translations[$0].map(GamePhoneText.withoutRepeat))
+            }
             guard result.count == group.paragraphs.count,
                   var item = ScreenTranslation.item(group, group.paragraphs.map(IconText.protect), result,
                                                     keepUnchanged: keepUnchanged) else { return nil }
@@ -589,7 +594,10 @@ final class PhoneRegionSession {
     }
 
     private func publish(_ fresh: [ScreenTranslation.Item]) {
-        var items = fresh
+        // Aynı mesaj bir kez (`PhoneSteady.withoutRepeats`); ekrandaki mesajın Türkçesi okuma okuma değişmez
+        // (`PhoneSteady.keptTranslations`).
+        var items = PhoneSteady.withoutRepeats(fresh)
+        if !rendered.isEmpty { items = PhoneSteady.keptTranslations(items, previous: rendered) }
         let now = lastPass ?? 0
         if let region = latest?.region {
             let height = region.bottom - region.top
@@ -612,6 +620,10 @@ final class PhoneRegionSession {
         let placed = fresh.isEmpty ? nil : latest.map { steady.steadyPose($0.pose, now: now) }
         let options = self.options
         let sameOptions = sentOptions == options
+        // Yazı boyu grup için bir kez ölçülür, kilitlidir (`PhonePanelSteady.steadyLine`). Balonların Üstünde'de de bütün
+        // mesaj balonları bu tek boyda (`PhoneSteady.uniformLine`); yapışık çizimde boyu çapanın dönüşümü taşır.
+        let line = fresh.isEmpty ? nil : steady.steadyLine(ScreenPhoneCard.measuredLine(items), now: now)
+        if !options.enabled, anchor == nil { items = PhoneSteady.uniformLine(items, line: line) }
         guard rendered != items || (!sameOptions && !items.isEmpty) else { return }
         // Aynı yazı bir iki piksel oynadıysa (OCR kutusu, yüzey örneği) yeniden gönderilmez; gerçek hareket birikince gider.
         let dx = 2.0 / Double(frameSize.width), dy = 2.0 / Double(frameSize.height)
@@ -623,8 +635,8 @@ final class PhoneRegionSession {
         sentOptions = options
         // Panel telefonun el titremesiyle kaymaz, yazı boyu değişmez (`PhonePanelSteady`); TV'de aynı görünen gönderi
         // yinelenmez.
-        let line = steady.steadyLine(ScreenPhoneCard.measuredLine(items), now: now)
-        let shown = Self.arranged(items, pose: placed?.pose, frameSize: frameSize, options: options, line: line)
+        var shown = Self.arranged(items, pose: placed?.pose, frameSize: frameSize, options: options, line: line)
+        if sameOptions { shown = PhoneSteady.steadyCard(shown, previous: sentShown) }
         if sameOptions, PhoneSteady.samePicture(shown, sentShown) {
             // Çeviriler aynı ama özgün mesajlar değişti: yeni mesaj TV'ye gitmedi (yalnız bu durum günlüğe).
             let sources = shown.map(\.source)

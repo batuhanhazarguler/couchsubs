@@ -240,13 +240,13 @@ enum GamePhoneText {
                 groups += ScreenTranslation.groups(Reading(lines: run), keepIdentifiers: true)
                 return
             }
-            let clean = Reading(lines: run).withButtonIcons().withoutButtonPrompts().withoutOcrNoise(keepIdentifiers: true)
-                .lines.filter { $0.box != nil && ScreenTranslation.isWords($0.text) }
+            let clean = withoutRepeatedLines(Reading(lines: run).withButtonIcons().withoutButtonPrompts()
+                .withoutOcrNoise(keepIdentifiers: true).lines.filter { $0.box != nil && ScreenTranslation.isWords($0.text) })
             guard let first = clean.first?.box else { return }
             let place = clean.dropFirst().reduce(first) { $0.union($1.box!) }
             let heights = run.map { box($0).bottom - box($0).top }.sorted()
             let icons = clean.flatMap { $0.icons ?? [] }
-            var group = ScreenTranslation.Group(paragraphs: [clean.map(\.text).joined(separator: " ")], box: place,
+            var group = ScreenTranslation.Group(paragraphs: [withoutRepeat(clean.map(\.text).joined(separator: " "))], box: place,
                                                 lineHeight: heights[heights.count / 2], icons: icons.isEmpty ? nil : [icons])
             // Düz ekrandaki yeri: sohbet panelinde tarafı (sol/sağ) ve sırası bundan çıkar (`roles`).
             let spots = run.map(box)
@@ -286,6 +286,33 @@ enum GamePhoneText {
             group.phone = ScreenPhoneCard.Placement(role: role, spot: spot)
             return group
         }
+    }
+
+    /// Art arda iki kez yazılmış metin ("A. B. A. B.") bir kez: OCR aynı satırı iki kutuda okuyunca ya da motor çeviriyi
+    /// iki kez yazınca balonda aynı paragraf art arda iki kez görünüyordu (X, 22 Kas). Metin sözcük sözcük ikiye bölünür;
+    /// iki yarı aynı mesajsa (`PhoneSteady.sameReading`, kısa yarıda birebir aynı) ilk yarı kalır. Windows ve Android aynı.
+    static func withoutRepeat(_ text: String) -> String {
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard words.count >= 4, words.count % 2 == 0 else { return text }
+        let half = words.count / 2
+        let first = words[..<half].joined(separator: " "), second = words[half...].joined(separator: " ")
+        guard TextMatch.normalize(first).contains(where: \.isLetter), PhoneSteady.sameReading(first, second) else { return text }
+        return first
+    }
+
+    /// Aynı balonda bir öncekiyle aynı (`PhoneSteady.sameReading`) ya da bir öncekinin içinde kalan satır atılır: Vision
+    /// soluk satırı bazen hem tam hem parça olarak iki kutuda okur.
+    static func withoutRepeatedLines(_ lines: [TextLine]) -> [TextLine] {
+        var kept: [TextLine] = []
+        for line in lines {
+            if let previous = kept.last {
+                let a = TextMatch.normalize(previous.text), b = TextMatch.normalize(line.text)
+                if PhoneSteady.sameReading(previous.text, line.text)
+                    || (b.count >= 6 && 2 * b.count >= a.count && b.filter(\.isLetter).count >= 4 && a.contains(b)) { continue }
+            }
+            kept.append(line)
+        }
+        return kept
     }
 
     private static func endsSentence(_ text: String) -> Bool {

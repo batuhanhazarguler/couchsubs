@@ -191,6 +191,8 @@ public final class RegionWatcher {
     private var states: [String: State] = [:]
     private var lastPass: Int?
     private var phoneSession: PhoneRegionSession?
+    /// Telefonun açılışları arasında kalan çeviriler ve panelin yazı boyu (`PhoneMemory`); `reset` unutturur.
+    private let phoneMemory = PhoneMemory()
     public var englishPhoneMessages = false
     /// "GTA 6 Telefon Mesajları: Yanda Panel / Balonların Üstünde" ve panelin yazı boyu; her gönderide okunur.
     public var phonePanel: () -> PhonePanelOptions = { PhonePanelOptions() }
@@ -256,6 +258,7 @@ public final class RegionWatcher {
                 session.trace = phoneTrace
                 session.panel = { [weak self] in self?.phonePanel() ?? PhonePanelOptions() }
                 session.anchor = phoneAnchor
+                session.memory = phoneMemory
                 phoneSession = session
             }
             phoneSession?.observe(frame, pose: pose, at: capturedAt ?? now())
@@ -1182,6 +1185,7 @@ public final class RegionWatcher {
         running = nil
         lastPass = nil
         translations.removeAll()
+        phoneMemory.clear()
         steadiness.removeAll()
         terms.removeAll()
         worldText.removeAll()
