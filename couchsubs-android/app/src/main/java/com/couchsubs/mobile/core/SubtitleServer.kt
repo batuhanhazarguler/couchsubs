@@ -363,6 +363,13 @@ class SubtitleServer(
                         json["radius"] = Json.Decimal(Math.round(paint.radius.coerceIn(0.0, 1.0) * 10000) / 10000.0)
                         json["scale"] = Json.Decimal(Math.round(paint.scale.coerceIn(0.0, 1.0) * 10000) / 10000.0)
                         paint.tail?.let { json["tail"] = it }
+                        // Kenar çizgisi (TV uygulaması 0.9.109; eski TV yok sayar).
+                        val edge = paint.edge
+                        if (edge != null && isRgb(edge.color)) {
+                            fun unit(v: Double) = Json.Decimal(Math.round(v.coerceIn(0.0, 1.0) * 10000) / 10000.0)
+                            json["edge"] = mapOf("color" to edge.color, "top" to unit(edge.top), "right" to unit(edge.right),
+                                "bottom" to unit(edge.bottom), "left" to unit(edge.left))
+                        }
                         val image = paint.portraitImage
                         val at = paint.portraitTwin
                         if (image != null && at != null) json["icon"] = mapOf("src" to image, "box" to boxJson(at))

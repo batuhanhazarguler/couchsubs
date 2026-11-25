@@ -3,10 +3,10 @@ package com.couchsubs.mobile.core
 
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
-import kotlin.math.abs
 
 /**
  * Çizim kipinin gerçek karelerde seçimi ([TextPaint.mode]): yazı tanıma yok, yazıların yeri sabit (karede, kenarlara
@@ -29,6 +29,15 @@ class TextPaintModeFrameTest {
             Int::class.java, Int::class.java).invoke(buffered, 0, 0, width, height, null, 0, width) as IntArray
         for (i in rgb.indices) rgb[i] = rgb[i] and 0xFFFFFF
         return Picture(rgb, width, height)
+    }
+
+    /** [a] kutusu [b]'nin hangi yanında (left/right/below/above); kesişiyorsa null. */
+    private fun side(a: TextBox, b: TextBox): String? = when {
+        a.right <= b.left + 1e-9 -> "left"
+        a.left >= b.right - 1e-9 -> "right"
+        a.top >= b.bottom - 1e-9 -> "below"
+        a.bottom <= b.top + 1e-9 -> "above"
+        else -> null
     }
 
     @Test
@@ -59,7 +68,8 @@ class TextPaintModeFrameTest {
                 val x1 = kotlin.math.ceil(box.right * width).toInt()
                 val y1 = kotlin.math.ceil(box.bottom * height).toInt()
                 val style = TextStyleSampler.sample(gray, x0, y0, x1, y1, (y1 - y0).toDouble(), text, color = color)!!
-                TextPainter.Target(box, box.bottom - box.top, 1, style.surface.background, style.surface.foreground,
+                val rows = t.optInt("rows", 1)
+                TextPainter.Target(box, (box.bottom - box.top) / rows, rows, style.surface.background, style.surface.foreground,
                     style.look.upper, style.look.align, TextPainter.words(text),
                     if (t.has("kind")) ScreenTextKind.valueOf(t.getString("kind").uppercase()) else null, t.optBoolean("prompt", false))
             }
@@ -74,24 +84,35 @@ class TextPaintModeFrameTest {
                 assertEquals(name, expect.getString("mode"), paint.mode)
                 if (expect.has("portrait")) assertEquals("$name resim", expect.getBoolean("portrait"), paint.portrait != null)
                 val twin = paint.twin
-                if (expect.has("twinAbove") && twin != null) assertEquals("$name ikiz üstte", expect.getBoolean("twinAbove"), twin.bottom <= boxes[k].top)
-                // İkiz (Sinan Bey, #1296): özgünden belirgin küçük, sol kenarı hizalı, özgün paneli örtmez.
+                // İkiz (Sinan Bey, beta.100): özgün kutu örtülmez; ikiz aynı boyda (küçültme yok), yanında, altında ya da üstünde.
                 val spot = paint.spot
                 if (paint.mode == TextPaint.MODE_TWIN && twin != null && spot != null) {
-                    assertTrue(name, paint.scale >= TextPainter.TWIN_SCALE - 0.001 && paint.scale <= 1.0)
-                    assertTrue(name, paint.scale >= 1.0 || ScreenFit.EXACT_FONT * (boxes[k].bottom - boxes[k].top) * paint.scale >= TextPainter.TWIN_MIN_SHARE - 0.002)
-                    assertTrue(name, abs((spot.bottom - spot.top) / (paint.cover.bottom - paint.cover.top) - paint.scale) <= 0.05)
-                    assertTrue(name, twin.left < paint.cover.left)
-                    assertTrue(name, twin.bottom <= paint.cover.top || twin.top >= paint.cover.bottom)
-                    assertTrue(name, paint.radius > 0)
+                    assertEquals(name, 1.0, paint.scale, 1e-9)
+                    assertEquals(name, paint.cover.bottom - paint.cover.top, spot.bottom - spot.top, 1e-6)
+                    assertNotNull("$name ikiz özgünü örtüyor", side(twin, paint.cover))
+                    if (expect.has("twinSide")) assertEquals("$name ikiz yanı", expect.getString("twinSide"), side(twin, boxes[k]))
                     if (paint.portrait != null) assertTrue("$name resim kesilir", TextPainter.portraitImage(paint.portrait!!, width, height, color)
                         ?.startsWith("data:image/png;base64,") == true)
                 }
-                // Yanına yazma (Sinan Bey: "SELAMLA  GREET"): aynı satırda, aynı yükseklikte, özgünün solunda.
-                if (paint.mode == TextPaint.MODE_BESIDE && spot != null) {
-                    assertEquals(name, paint.cover.top, spot.top, 1e-9)
-                    assertEquals(name, paint.cover.bottom, spot.bottom, 1e-9)
-                    assertTrue(name, spot.right <= paint.cover.left)
+                // Yanına yazma: arka plansız, özgünün yanında; Türkçe özgün yazıya binmez.
+                val room = paint.spotRoom
+                if (paint.mode == TextPaint.MODE_BESIDE && spot != null && room != null) {
+                    if (expect.has("side")) assertEquals("$name yan", expect.getString("side"), side(spot, paint.cover))
+                    assertNotNull("$name özgüne biner", side(room, paint.cover))
+                }
+            }
+            // Liste birlikte: sütunda Türkçelerin ortak kenarı (solda sağ kenar, sağda sol kenar), satırda ortak üst çizgi.
+            val same = vector.optJSONArray("same")
+            if (same != null) for (s in 0 until same.length()) {
+                val list = same.getJSONArray(s).let { a -> (0 until a.length()).map { a.getInt(it) } }
+                val spots = list.mapNotNull { paints[it].spot }
+                assertEquals("$id liste", list.size, spots.size)
+                val first = spots.firstOrNull() ?: continue
+                val side = side(first, paints[list[0]].cover) ?: continue
+                for (spot in spots) when (side) {
+                    "left" -> assertEquals("$id sütun", first.right, spot.right, 1e-6)
+                    "right" -> assertEquals("$id sütun", first.left, spot.left, 1e-6)
+                    else -> assertEquals("$id satır", first.top, spot.top, 1e-6)
                 }
             }
         }

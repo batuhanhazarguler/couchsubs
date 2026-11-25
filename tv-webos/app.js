@@ -6,7 +6,7 @@
   'use strict';
 
   // TV uygulamasının sürümü: appinfo.json, tv-tizen/config.xml ve tv-android/app/build.gradle ile aynı tutulur.
-  var APP_VERSION = '0.9.108';
+  var APP_VERSION = '0.9.109';
   var t = window.t;
   var config = window.COUCHSUBS_CONFIG || {};
   var platform = window.COUCHSUBS_PLATFORM;
@@ -1130,7 +1130,10 @@
   // %25 küçülür; okunabilirlik sınırı 1080p'de 22 piksel (önceden %35 ve 18 pikseldi, yazı çok küçük kalıyordu). Yine sığmazsa balon aşağı doğru uzar (yazı kesilmez).
   var BUBBLE_MIN_SCALE = 0.75;
   var BUBBLE_MIN_FONT = 22;
-  var CONDENSED_FONT = '"Roboto Condensed", "Arial Narrow", "Helvetica Neue Condensed", "LG Smart UI Condensed", sans-serif';
+  // Gömülü dar yazı tipi önce (style.css @font-face, Barlow Condensed, OFL; TV uygulaması 0.9.109): oyunun dar-kalın BÜYÜK
+  // HARF yazısına en yakın açık lisanslı aile; menü ve kutu çiziminde. Yüklenemezse sistemin dar ailesi.
+  var EMBEDDED_CONDENSED = '"CouchSubs Condensed"';
+  var CONDENSED_FONT = EMBEDDED_CONDENSED + ', "Roboto Condensed", "Arial Narrow", "Helvetica Neue Condensed", "LG Smart UI Condensed", sans-serif';
 
   // Konuşma satırı dar yazı tipi almaz ve yatayda sıkışmaz (TV uygulaması 0.9.103; #1224, #1255, #1259). Oyunun altyazısı
   // ekran yazısı olarak da okunabiliyor (menü durumunda altyazı alanı dışlanmaz): "Ne?", "Yoldan çık." gibi kısa replik
@@ -1817,7 +1820,7 @@
     var natural = [], scale = [];
     for (i = 0; i < items.length; i++) {
       natural.push(isLabel(items[i]) ? measure(items[i].text, base[i], i) : 0);
-      scale.push(isLabel(items[i]) && natural[i] > 0
+      scale.push(isLabel(items[i]) && natural[i] > 0 && !items[i].keepSize
         ? Math.max(EXACT_GROUP_MIN, Math.min(1, (items[i].growRight - items[i].growLeft) / natural[i])) : 1);
     }
     for (key in members) {
@@ -1880,7 +1883,7 @@
     }
     function tall(laid) { return (laid.lines.length - 1) * laid.gap + row * factor; }
     var laid = layout();
-    while (tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
+    while (!item.keepSize && tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
       factor = Math.max(EXACT_PARAGRAPH_MIN, Math.round((factor - 0.05) * 100) / 100);
       laid = layout();
     }
@@ -1907,8 +1910,12 @@
     return starts;
   }
 
+  // Birebir çizimde dar aile: Android TV'de de gömülü aile kullanılır (ayrı aile adı, sistemin değişken Roboto'su dar
+  // genişliğe geçmez; konuşma satırına hiç verilmez, #1297).
   function exactFamily(item) {
-    return condensedLook(item) ? CONDENSED_FONT : '';
+    if (condensedLook(item)) return CONDENSED_FONT;
+    var dialogue = !item || isDialogue(item.text, item.paragraphs === true ? 2 : item.rows);
+    return window.AndroidTV && item && item.style && item.style.condensed === true && !dialogue ? EMBEDDED_CONDENSED + ', sans-serif' : '';
   }
 
   // --- Çizim kipleri (TV uygulaması 0.9.108) ---
@@ -1927,7 +1934,8 @@
   }
 
   // Yerleşim girdisi (ScreenFit.ExactInput ile aynı): örtmeyen kipte yazı spot'ta, spotRoom içinde; ikizde yazı scale
-  // katında; yanına yazılan Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola); grup yalnız örtmede.
+  // katında; yanına yazılan Türkçe özgüne yaslanır (solundaysa sağa, sağındaysa sola). Grup örtmede ve yanına yazmada
+  // (listede bütün Türkçeler aynı boyda); ikizde yazı küçülmez (keepSize: satır kırılır, kutu uzar; TV 0.9.109).
   function exactInput(item, width, height) {
     var mode = exactMode(item), cover = item.cover;
     var box = mode === 'cover' ? cover : item.spot;
@@ -1944,7 +1952,8 @@
       bottom: box.bottom * height, growLeft: Math.min(box.left, grow ? grow.left : box.left) * width,
       growRight: Math.max(box.right, grow ? grow.right : box.right) * width, line: line, pitch: pitch,
       rows: item.rows > 1 || item.text.indexOf('\n') >= 0 ? Math.max(2, item.rows || 2) : 1,
-      align: align, group: mode === 'cover' && typeof item.group === 'number' ? item.group : null };
+      align: align, group: mode !== 'twin' && typeof item.group === 'number' ? item.group : null,
+      keepSize: mode === 'twin' };
   }
 
   // Okunurluk konturu: açık yazıda koyu, koyu yazıda açık.
@@ -1953,6 +1962,26 @@
     var halo = 0.299 * r + 0.587 * g + 0.114 * b > 127.5 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.85)';
     var blur = Math.max(1, Math.round(size * 0.08));
     return '0 0 ' + blur + 'px ' + halo + ', 0 1px 0 ' + halo;
+  }
+
+  // İkizin kenar çizgisi (TV 0.9.109; özgün kutunun hemen dışındaki ince düz şerit, GTA 6 kartının üstündeki renkli
+  // çizgi): panelin dışına, her yanda kendi kalınlığında; kutunun yeri değişmez.
+  function exactEdge(panel, edge, height, left, top) {
+    if (!edge || !phoneColor(edge.color)) return;
+    var sides = ['top', 'right', 'bottom', 'left'], widths = {}, any = false;
+    for (var s = 0; s < sides.length; s++) {
+      var v = typeof edge[sides[s]] === 'number' && edge[sides[s]] > 0 ? Math.max(1, Math.round(edge[sides[s]] * height)) : 0;
+      widths[sides[s]] = v;
+      any = any || v > 0;
+    }
+    if (!any) return;
+    panel.style.borderStyle = 'solid';
+    panel.style.borderColor = edge.color;
+    panel.style.borderWidth = widths.top + 'px ' + widths.right + 'px ' + widths.bottom + 'px ' + widths.left + 'px';
+    panel.style.left = (left - widths.left) + 'px';
+    panel.style.top = (top - widths.top) + 'px';
+    panel.style.width = (parseFloat(panel.style.width) + widths.left + widths.right) + 'px';
+    panel.style.height = (parseFloat(panel.style.height) + widths.top + widths.bottom) + 'px';
   }
 
   // İkiz paneller (aynı twinBox'ı paylaşan öğeler tek panel), yazılardan önce host'a eklenir. Genişlik içeriğe göre: en
@@ -1965,27 +1994,32 @@
       var t = item.twinBox, key = [t.left, t.top, t.right, t.bottom].join(',');
       if (seen[key]) continue;
       seen[key] = true;
-      var left = t.left * width, least = Infinity, right = 0, j;
+      var left = t.left * width, least = Infinity, right = 0, bottom = 0, spotBottom = 0, j;
       for (j = 0; j < items.length; j++) {
         var other = items[j].twinBox;
         if (exactMode(items[j]) !== 'twin' || [other.left, other.top, other.right, other.bottom].join(',') !== key) continue;
         least = Math.min(least, placed[j].left);
         right = Math.max(right, placed[j].left + placed[j].width);
+        bottom = Math.max(bottom, placed[j].top + placed[j].height);
+        spotBottom = Math.max(spotBottom, items[j].spot.bottom * height);
       }
       var pad = Math.max(0, (least === Infinity ? left : least) - left);
       var icon = item.icon && typeof item.icon.src === 'string' && item.icon.src.indexOf('data:image/') === 0 &&
         validBox(item.icon.box) ? item.icon : null;
       if (icon) right = Math.max(right, icon.box.right * width);
-      var top = t.top * height, h = (t.bottom - t.top) * height;
+      // Yükseklik de içeriğe göre: Türkçe uzunsa (satır kırıldı) kutu aşağı uzar, alt iç boşluk özgündeki kadar kalır.
+      var top = t.top * height, h = Math.max((t.bottom - t.top) * height, bottom + (t.bottom * height - spotBottom) - top);
       var radius = typeof item.radius === 'number' && item.radius > 0 ? item.radius * height : 0;
       var panel = document.createElement('div');
       panel.className = 'item exact twin';
       panel.style.left = left + 'px';
       panel.style.top = top + 'px';
-      panel.style.width = Math.max(1, right + pad - left) + 'px';
+      // Genişlik içeriğe göre, özgün kutudan dar değil (ikiz özgünün aynısı).
+      panel.style.width = Math.max(1, right + pad - left, (t.right - t.left) * width) + 'px';
       panel.style.height = h + 'px';
       panel.style.backgroundColor = item.bg;
       panel.style.borderRadius = radius + 'px';
+      exactEdge(panel, item.edge, height, left, top);
       if (item.tail === 'left' || item.tail === 'right') {
         panel.style[item.tail === 'left' ? 'borderBottomLeftRadius' : 'borderBottomRightRadius'] = '0';
         // Balonun kuyruğu: alt köşeden aşağı küçük üçgen (kenarlık hilesi; ES5, svg yok).

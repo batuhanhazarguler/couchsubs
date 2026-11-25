@@ -837,6 +837,13 @@ public sealed class SubtitleServer(int port = 8787, TimeSpan? pingInterval = nul
                     json["radius"] = Round(paint.Radius);
                     json["scale"] = Round(paint.Scale);
                     if (paint.Tail is { } tail) json["tail"] = tail;
+                    // Kenar çizgisi (TV uygulaması 0.9.109; eski TV yok sayar).
+                    if (paint.Edge is { } edge && IsRgb(edge.Color))
+                        json["edge"] = new SortedDictionary<string, object>
+                        {
+                            ["color"] = edge.Color, ["top"] = Round(edge.Top), ["right"] = Round(edge.Right),
+                            ["bottom"] = Round(edge.Bottom), ["left"] = Round(edge.Left),
+                        };
                     if (paint.PortraitImage is { } image && paint.PortraitTwin is { } at)
                         json["icon"] = new SortedDictionary<string, object> { ["src"] = image, ["box"] = BoxJson(at) };
                 }

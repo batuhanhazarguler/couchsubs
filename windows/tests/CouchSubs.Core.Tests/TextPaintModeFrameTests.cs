@@ -19,6 +19,16 @@ public class TextPaintModeFrameTests
 
     private static double[] Numbers(JsonElement array) => [.. array.EnumerateArray().Select(value => value.GetDouble())];
 
+    /// <summary><paramref name="a"/> kutusu <paramref name="b"/>'nin hangi yanında (left/right/below/above); kesişiyorsa null.</summary>
+    private static string? Side(TextBox a, TextBox b)
+    {
+        if (a.Right <= b.Left + 1e-9) return "left";
+        if (a.Left >= b.Right - 1e-9) return "right";
+        if (a.Top >= b.Bottom - 1e-9) return "below";
+        if (a.Bottom <= b.Top + 1e-9) return "above";
+        return null;
+    }
+
     [Fact]
     public void RealFrameModes()
     {
@@ -35,10 +45,12 @@ public class TextPaintModeFrameTests
             {
                 var text = t.GetProperty("text").GetString()!;
                 var box = boxes[i];
+                var rows = t.TryGetProperty("rows", out var r) ? r.GetInt32() : 1;
                 var (style, look) = TextStyleSampler.Sample(image, box, [new TextLine(text, box)], text);
                 ScreenTextKind? kind = t.TryGetProperty("kind", out var k) ? Enum.Parse<ScreenTextKind>(k.GetString()!, ignoreCase: true) : null;
-                return new TextPainter.Target(box, box.Bottom - box.Top, 1, style.Background, style.Foreground, look.Upper, look.Align,
-                                              TextPainter.WordCount(text), kind, t.TryGetProperty("prompt", out var p) && p.GetBoolean());
+                return new TextPainter.Target(box, (box.Bottom - box.Top) / rows, rows, style.Background, style.Foreground, look.Upper,
+                                              look.Align, TextPainter.WordCount(text), kind,
+                                              t.TryGetProperty("prompt", out var p) && p.GetBoolean());
             }).ToList();
             var paints = TextPainter.Paints(targets, image);
             var expects = vector.GetProperty("expect").EnumerateArray().ToList();
@@ -51,26 +63,39 @@ public class TextPaintModeFrameTests
                 Assert.True(paint.Mode == expect.GetProperty("mode").GetString(), $"{name}: {paint.Mode}");
                 if (expect.TryGetProperty("portrait", out var face))
                     Assert.True((paint.Portrait is not null) == face.GetBoolean(), $"{name} resim");
-                if (expect.TryGetProperty("twinAbove", out var above) && paint.Twin is { } twin)
-                    Assert.True((twin.Bottom <= boxes[k].Top) == above.GetBoolean(), $"{name} ikiz üstte");
-                // İkiz (Sinan Bey, #1296): özgünden belirgin küçük, sol kenarı özgün panelle hizalı, özgün paneli örtmez.
-                if (paint.Mode == PaintMode.Twin && paint.Twin is { } box && paint.Spot is { } spot)
+                // İkiz (Sinan Bey, beta.100): özgün kutu örtülmez; ikiz aynı boyda (küçültme yok), yanında, altında ya da üstünde.
+                if (paint.Mode == PaintMode.Twin && paint.Twin is { } twin && paint.Spot is { } spot)
                 {
-                    Assert.True(paint.Scale >= TextPainter.TwinScale - 0.001 && paint.Scale <= 1, name);
-                    Assert.True(paint.Scale >= 1 || ScreenFit.ExactFont * (boxes[k].Bottom - boxes[k].Top) * paint.Scale >= TextPainter.TwinMinShare - 0.002, name);
-                    Assert.True(Math.Abs(((spot.Bottom - spot.Top) / (paint.Cover.Bottom - paint.Cover.Top)) - paint.Scale) <= 0.05, name);
-                    Assert.True(box.Left < paint.Cover.Left, name);
-                    Assert.True(box.Bottom <= paint.Cover.Top || box.Top >= paint.Cover.Bottom, name);
-                    Assert.True(paint.Radius > 0, name);
+                    Assert.True(Math.Abs(paint.Scale - 1) <= 1e-9, name);
+                    Assert.True(Math.Abs(spot.Bottom - spot.Top - (paint.Cover.Bottom - paint.Cover.Top)) <= 1e-6, name);
+                    Assert.True(Side(twin, paint.Cover) is not null, $"{name} ikiz özgünü örtüyor");
+                    if (expect.TryGetProperty("twinSide", out var want))
+                        Assert.True(Side(twin, boxes[k]) == want.GetString(), $"{name} ikiz yanı {Side(twin, boxes[k])}");
                 }
-                // Yanına yazma (Sinan Bey: "SELAMLA  GREET"): aynı satırda, aynı yükseklikte, özgünün solunda.
-                if (paint.Mode == PaintMode.Beside && paint.Spot is { } side && paint.SpotRoom is { } room)
+                // Yanına yazma: arka plansız, özgünün yanında; Türkçe özgün yazıya binmez.
+                if (paint.Mode == PaintMode.Beside && paint.Spot is { } beside && paint.SpotRoom is { } room)
                 {
-                    Assert.Equal(paint.Cover.Top, side.Top, 9);
-                    Assert.Equal(paint.Cover.Bottom, side.Bottom, 9);
-                    Assert.True(side.Right <= paint.Cover.Left, name);
-                    Assert.False(Math.Min(room.Right, paint.Cover.Right) > Math.Max(room.Left, paint.Cover.Left)
-                                 && Math.Min(room.Bottom, paint.Cover.Bottom) > Math.Max(room.Top, paint.Cover.Top), name);
+                    if (expect.TryGetProperty("side", out var want))
+                        Assert.True(Side(beside, paint.Cover) == want.GetString(), $"{name} yan {Side(beside, paint.Cover)}");
+                    Assert.True(Side(room, paint.Cover) is not null, $"{name} özgüne biner");
+                }
+            }
+            // Liste birlikte: sütunda Türkçelerin ortak kenarı (solda sağ kenar, sağda sol kenar), satırda ortak üst çizgi.
+            if (!vector.TryGetProperty("same", out var same)) continue;
+            foreach (var list in same.EnumerateArray().Select(l => l.EnumerateArray().Select(v => v.GetInt32()).ToList()))
+            {
+                var spots = list.Select(i => paints[i].Spot).OfType<TextBox>().ToList();
+                Assert.True(spots.Count == list.Count, $"{id} liste");
+                if (Side(spots[0], paints[list[0]].Cover) is not { } side) continue;
+                foreach (var spot in spots)
+                {
+                    var (got, want) = side switch
+                    {
+                        "left" => (spot.Right, spots[0].Right),
+                        "right" => (spot.Left, spots[0].Left),
+                        _ => (spot.Top, spots[0].Top),
+                    };
+                    Assert.True(Math.Abs(got - want) <= 1e-6, $"{id} {(side is "left" or "right" ? "sütun" : "satır")}");
                 }
             }
         }

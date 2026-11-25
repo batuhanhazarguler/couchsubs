@@ -74,7 +74,8 @@ enum UiCommands {
         "RESUME": "Sürdür", "QUIT": "Çık", "NEXT": "İleri", "PREVIOUS": "Önceki", "ALL": "Tümü",
         "NONE": "Hiçbiri", "DEFAULT": "Varsayılan", "APPLY": "Uygula", "RESET": "Sıfırla",
         "INVENTORY": "Envanter", "OUTFITS": "Kıyafetler", "OUTFIT": "Kıyafet", "WEAPONS": "Silahlar",
-        "STATS": "İstatistikler", "GAME": "Oyun",
+        "STATS": "İstatistikler", "GAME": "Oyun", "BRIEF": "Özet", "PROGRESS": "İlerleme", "VEHICLES": "Araçlar",
+        "ANIMALS": "Hayvanlar",
     ]
 
     /// Yazı tanımanın Kiril harfle okuduğu Latin harfler ("Мар" → "Map").
@@ -104,6 +105,7 @@ enum UiCommands {
             return done.joined(separator: " \(marker) ").split(separator: " ").joined(separator: " ")
         }
         if let direct = translateLabel(label) { return direct }
+        if let tabs = translateTabs(label) { return tabs }
         let words = label.split(separator: " ").map(String.init)
         guard words.count >= 2 else { return nil }
         // Baştaki kırıntı tuş adıysa ("R3 LOOK BEHIND") kalır; değilse ("1 Map", "pi Settings") atılır.
@@ -114,6 +116,27 @@ enum UiCommands {
             return head + " " + words[words.count - 1]
         }
         return nil
+    }
+
+    /// Tek satır okunan sekme çubuğu ("JASON & LUCIA MAP BRIEF"): "AD & AD" olduğu gibi kalır, kalan her sözcük sözlükte
+    /// olmalı. Motora gitmez, her karede aynı çeviri (beta.100: aynı çubuk "MAP ÖZET", "HARİTA ÖZET", "MAP ÖZETİ" oluyordu).
+    /// Yalnız BÜYÜK HARFLİ yazıda (Windows/Android ile aynı).
+    static func translateTabs(_ label: String) -> String? {
+        let words = label.split(separator: " ").map(String.init)
+        guard words.count >= 2, TextStyleSampler.isUpper(label) else { return nil }
+        var out: [String] = []
+        var i = 0
+        while i < words.count {
+            if i + 2 < words.count, words[i + 1] == "&" {
+                out += words[i...(i + 2)]
+                i += 3
+                continue
+            }
+            guard let word = translateLabel(words[i]) else { return nil }
+            out.append(word)
+            i += 1
+        }
+        return out.joined(separator: " ")
     }
 
     /// Menüdeki kısa etiketin Türkçesi ("OFF" → "KAPALI", "Off" → "Kapalı", "off" → "kapalı"): etiketin tamamı sözlükte

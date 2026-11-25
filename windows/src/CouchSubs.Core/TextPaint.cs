@@ -6,8 +6,9 @@ namespace CouchSubs.Core;
 /// Bir ekran yazısının yerinde, arayüz Türkçe yapılmış gibi çizilmesi için göndericinin kareden ölçtükleri (TV pikselleri
 /// okuyamaz). Yalnız yazı değişince ölçülür (Mac: CouchSubsCore/TextPaint.swift, Android: TextPaint.kt; aynı kurallar ve
 /// eşikler). TV'ye öğenin <c>bg</c>, <c>bg2</c>, <c>bgDir</c>, <c>bgPat</c>, <c>fg</c>, <c>weight</c>, <c>upper</c>,
-/// <c>align</c>, <c>lineH</c>, <c>cover</c>, <c>grow</c>, <c>group</c> alanlarıyla gider; eski TV bunları yok sayıp eski
-/// çizimi sürdürür.
+/// <c>align</c>, <c>lineH</c>, <c>cover</c>, <c>grow</c>, <c>group</c> alanlarıyla (çizim kipi: <c>mode</c>, <c>spot</c>,
+/// <c>spotRoom</c>, <c>twinBox</c>, <c>radius</c>, <c>scale</c>, <c>tail</c>, <c>icon</c>, <c>edge</c>) gider; eski TV
+/// bunları yok sayıp eski çizimi sürdürür.
 /// </summary>
 /// <param name="Background">Kutunun zemini (degradede başlangıç ucu: sol ya da üst). Opak çizilir.</param>
 /// <param name="Pitch">Satır aralığı (bir satırın üstünden ötekinin üstüne), kareye oranla; tek satırda satır yüksekliği.</param>
@@ -58,7 +59,10 @@ public sealed record TextPaint(string Background, double Pitch, TextBox Cover)
     public TextBox? Spot { get; init; }
     /// <summary><see cref="Spot"/>'un yana uzayabileceği alan (yalnız sol ve sağ kenarı anlamlı). TV'ye <c>spotRoom</c>.</summary>
     public TextBox? SpotRoom { get; init; }
-    /// <summary>twin: ikiz panelin kutusu (özgün panelin <see cref="Scale"/> katı, sol kenarı hizalı). TV'ye <c>twinBox</c>.</summary>
+    /// <summary>
+    /// twin: ikiz panelin kutusu (özgün panelin yanında, altında ya da üstünde, aynı boyda; çizici içeriğe göre uzatır).
+    /// TV'ye <c>twinBox</c>.
+    /// </summary>
     public TextBox? Twin { get; init; }
     /// <summary>twin: panelin köşe yarıçapı (ikizde), kare yüksekliğine oranla. TV'ye <c>radius</c>.</summary>
     public double Radius { get; init; }
@@ -75,6 +79,14 @@ public sealed record TextPaint(string Background, double Pitch, TextBox Cover)
     /// (<see cref="TextPainter.PortraitImage(TextBox, Frame)"/>). TV'ye <c>icon</c> ({src, box}).
     /// </summary>
     public string? PortraitImage { get; init; }
+    /// <summary>
+    /// twin: özgün panelin kenar çizgisi (panelin hemen dışındaki düz renkli ince şerit; GTA 6 kartının üstündeki renkli
+    /// çizgi): ikiz de aynı çizgiyle çizilir. null: çizgi yok. TV'ye <c>edge</c> ({color, top, right, bottom, left}).
+    /// </summary>
+    public EdgeLine? Edge { get; init; }
+
+    /// <summary>Kenar çizgisi: rengi ve her yandaki kalınlığı (kare yüksekliğine oranla; 0: o yanda çizgi yok).</summary>
+    public sealed record EdgeLine(string Color, double Top, double Right, double Bottom, double Left);
 
     /// <summary>Bu ölçüler <paramref name="area"/> içindeki oranlarsa, aynı yerin <paramref name="area"/>'yı içeren çerçevedeki oranları.</summary>
     public TextPaint PlacedIn(TextBox area) => this with
@@ -88,22 +100,38 @@ public sealed record TextPaint(string Background, double Pitch, TextBox Cover)
         Radius = Radius * (area.Bottom - area.Top),
         Portrait = Portrait?.PlacedIn(area),
         PortraitTwin = PortraitTwin?.PlacedIn(area),
+        Edge = Edge is { } edge
+            ? edge with
+            {
+                Top = edge.Top * (area.Bottom - area.Top), Right = edge.Right * (area.Bottom - area.Top),
+                Bottom = edge.Bottom * (area.Bottom - area.Top), Left = edge.Left * (area.Bottom - area.Top),
+            }
+            : null,
     };
 }
 
-/// <summary>Çizim kipleri (<see cref="TextPaint.Mode"/>; Mac TextPaint.Mode, Android aynı adlar).</summary>
+/// <summary>
+/// Çizim kipleri (<see cref="TextPaint.Mode"/>; Mac TextPaint.Mode, Android aynı adlar). Sinan Bey, beta.100: oyun
+/// arayüzünün hiçbir öğesi örtülmez; örtme yalnız son çare.
+/// </summary>
 public static class PaintMode
 {
-    /// <summary>Örtme: düz/opak panel zemininde (menü, görev kartı, ayar listesi) özgün yazıyı örten kutu (eski davranış).</summary>
+    /// <summary>
+    /// Örtme: türü belli olmayan yazı ("Ekranı çevir"), telefon ve hiç boş yer bulunamayan yazı: özgün yazıyı örten kutu
+    /// (eski davranış).
+    /// </summary>
     public const string Cover = "cover";
     /// <summary>
-    /// Yanına yazma: desenli zeminde ya da oyun dünyası üstündeki tek satırlık istemde örtü yok; özgün yazı yerinde kalır,
-    /// Türkçe yanındaki boş alana özgün stille, okunurluk için konturla yazılır.
+    /// Yanına yazma: zeminsiz satır (soldaki dikey menü, sekme çubuğu, tuş/ipucu listesi, kart başlığı, oyun dünyasındaki
+    /// istem): özgün yazı yerinde kalır, Türkçe arka plansız, özgün stille (renk, kalınlık, dar aile, büyük harf, kontur)
+    /// yanındaki boş alana yazılır. Listede bütün Türkçeler aynı tarafta, aynı boyda ve hizada (sağa yaslı listede solda
+    /// sağa yaslı tek sütun, sola yaslı listede sağda, sekme çubuğunda altta).
     /// </summary>
     public const string Beside = "beside";
     /// <summary>
-    /// İkiz: yuvarlak köşeli düz panel (bildirim, ipucu kutusu) örtülmez; Türkçesi aynı zemin, köşe ve yazı rengiyle,
-    /// <see cref="TextPainter.TwinScale"/> katı boyda hemen üstüne (yer yoksa altına) ayrı panel olarak çizilir.
+    /// İkiz: kutu (görev paneli, harita mekân kartı, bildirim, ipucu kutusu, widget) örtülmez; en uygun boş yere (yan › alt
+    /// › üst) özgün kutunun aynısı (zemin, kenar çizgisi, köşe, kuyruk, kişi resmi, iç boşluk, aynı yazı boyu) çizilir,
+    /// Türkçenin tamamı oraya yazılır; kutu içeriğe göre uzar.
     /// </summary>
     public const string Twin = "twin";
 }
@@ -245,10 +273,17 @@ public static class TextPainter
     public const double BesideGapLines = 0.5;
     /// <summary>Yanına yazma alanı en çok özgün yazının bu katı (+ bir satır yüksekliği) genişlikte taranır.</summary>
     public const double BesideMax = 1.6;
-    /// <summary>İkiz panel özgün panelin bu katı boyda (yazı, resim, köşe ve iç boşluk aynı oranda; Sinan Bey, #1296).</summary>
-    public const double TwinScale = 0.58;
-    /// <summary>İkizin yazısı en az karenin bu kadarı (TV app.js DIALOGUE_MIN_SHARE ile aynı).</summary>
-    public const double TwinMinShare = 0.022;
+    /// <summary>
+    /// Listede (grup) Türkçe sütunu özgün yazıdan en çok bu kadar satır yüksekliği uzakta olabilir (kısa satırla sütun
+    /// arasındaki boşluk da boş olmalı).
+    /// </summary>
+    public const double BesideReachLines = 12.0;
+    /// <summary>İkiz panel özgün panelle aynı boyda (Sinan Bey, beta.100: "AYNI punto, küçültme yok"; #1296'daki 0,58 kalktı).</summary>
+    public const double TwinScale = 1.0;
+    /// <summary>İkizdeki yazı özgün panelin genişliğini en çok bu katı kadar aşabilir (boş yer varsa; kutu içeriğe göre uzar).</summary>
+    public const double TwinWiden = 0.5;
+    /// <summary>Kenar çizgisi en çok bu kadar piksel kalın aranır.</summary>
+    public const int EdgeMax = 8;
     /// <summary>Kişi resmi (ikiz panelde gösterilir) en çok bu kadar piksel kenarlı kesilir.</summary>
     public const int PortraitMax = 40;
 
@@ -382,22 +417,49 @@ public static class TextPainter
         });
     }
 
+    /// <summary>Yanına yazma için bir hedefin çevresindeki boş alan (piksel; döngüde ölçülür, kip kararı döngüden sonra verilir).</summary>
+    internal sealed class Room
+    {
+        /// <summary>Örtü kutusu ve satır yüksekliği.</summary>
+        public int L, T, R, B;
+        public double Line;
+        /// <summary>
+        /// Türkçenin özgünden uzaklığı (<see cref="BesideGapLines"/>), öbür uçta engelden uzaklığı (<see cref="ScreenFit.GapLines"/>)
+        /// ve en çok genişliği (<see cref="BesideMax"/>).
+        /// </summary>
+        public int Near, Far, Most;
+        public bool IconLeft, IconRight;
+        /// <summary>Örtünün solundan/sağından art arda boş sütun sayısı (en çok <c>Cap</c>; azsa alan bir engelle bitti).</summary>
+        public int Left, Right, Cap;
+        /// <summary>Altından/üstünden art arda boş satır sayısı.</summary>
+        public int Down, Up;
+        /// <summary>
+        /// Altındaki/üstündeki yazı şeridinde (yakın boşluktan sonra örtü yüksekliği) solda/sağda art arda boş sütun (en çok
+        /// <c>Half</c> + <c>Far</c>; Mac <c>side</c>).
+        /// </summary>
+        public int DownLeft, DownRight, UpLeft, UpRight, Half;
+    }
+
+    internal enum Side { Left, Right, Below, Above }
+
+    /// <summary>Yanına yazma yeri (piksel): Türkçenin kutusu ve uzayabileceği sol/sağ sınır.</summary>
+    internal record struct Spot(int L, int T, int R, int B, int RoomL, int RoomR);
+
     /// <summary>
-    /// Yanına yazma alanı (Sinan Bey: "SELAMLA  GREET"): önce sol, sonra sağ, sonra üst (simgenin olduğu yana değil).
-    /// <paramref name="free"/>: null başka hedef ya da simge (alan orada biter), true yazı rengine yakın nokta, false boş zemin.
-    /// Bir sütun/satır, yazı rengindeki noktaları <see cref="BesideShare"/>'den azsa boştur. Türkçe özgün yazıdan
-    /// <see cref="BesideGapLines"/>, öbür uçta <see cref="ScreenFit.GapLines"/> uzak; alan en az örtü kutusu genişliğinde
-    /// olmalı (sol/sağ), üstte örtü kutusu kadar yükseklik boş olmalı. Dönen: örtü boyundaki yazı kutusu (piksel) ve
-    /// uzayabileceği sol/sağ sınır.
+    /// Boş alan ölçümü. <paramref name="free"/>: null başka hedef ya da simge (alan orada biter), true yazı rengine yakın
+    /// nokta, false boş zemin. Bir sütun/satır, yazı rengindeki noktaları <see cref="BesideShare"/>'den azsa boştur.
     /// </summary>
-    internal static (int L, int T, int R, int B, int RoomL, int RoomR)? BesideSpot(int l, int t, int r, int b, double line,
-        int width, int height, bool iconLeft, bool iconRight, Func<int, int, bool?> free)
+    internal static Room MeasureRoom(int l, int t, int r, int b, double line, int width, int height, bool iconLeft,
+                                     bool iconRight, Func<int, int, bool?> free)
     {
         int w = r - l, h = b - t;
-        if (w <= 0 || h <= 0 || t < 0 || b > height) return null;
-        var near = Math.Max(2, RoundHalfUp(BesideGapLines * line));
-        var far = Math.Max(1, (int)Math.Ceiling(ScreenFit.GapLines * line));
-        var most = RoundHalfUp((BesideMax * w) + line);
+        var room = new Room
+        {
+            L = l, T = t, R = r, B = b, Line = line, Near = Math.Max(2, RoundHalfUp(BesideGapLines * line)),
+            Far = Math.Max(1, (int)Math.Ceiling(ScreenFit.GapLines * line)),
+            Most = RoundHalfUp((BesideMax * Math.Max(0, w)) + line), IconLeft = iconLeft, IconRight = iconRight,
+        };
+        if (w <= 0 || h <= 0 || t < 0 || b > height) return room;
         bool Open(IEnumerable<bool?> cells)
         {
             int n = 0, ink = 0;
@@ -415,42 +477,145 @@ public static class TextPainter
             x >= 0 && x < width && y0 >= 0 && y1 <= height && y1 > y0 && Open(ColumnCells(x, y0, y1));
         bool Row(int y, int x0, int x1) =>
             y >= 0 && y < height && x0 >= 0 && x1 <= width && x1 > x0 && Open(RowCells(y, x0, x1));
-        // x'ten step yönünde art arda boş sütun sayısı (en çok cap).
         int Run(int x, int step, int y0, int y1, int cap)
         {
             var n = 0;
             while (n < cap && Column(x + (step * n), y0, y1)) n++;
             return n;
         }
-        var cap = near + most + far;
-        // n boş sütundan yazıya kalan: yakın boşluk ve (alan engelle bittiyse) uzak boşluk çıkar.
-        int Usable(int n) => Math.Min(most, n - near - (n < cap ? far : 0));
-        if (!iconLeft)
+        int Rows(int y, int step, int cap)
         {
-            var room = Usable(Run(l - 1, -1, t, b, cap));
-            if (room >= w) return (l - near - w, t, l - near, b, l - near - room, l - near);
+            var n = 0;
+            while (n < cap && Row(y + (step * n), l, r)) n++;
+            return n;
         }
-        if (!iconRight)
+        room.Cap = Math.Min(width, room.Near + room.Most + room.Far + RoundHalfUp(BesideReachLines * line));
+        room.Left = iconLeft ? 0 : Run(l - 1, -1, t, b, room.Cap);
+        room.Right = iconRight ? 0 : Run(r, 1, t, b, room.Cap);
+        var vertical = room.Near + (2 * h);
+        room.Down = Rows(b + room.Near, 1, vertical);
+        room.Up = Rows(t - room.Near - 1, -1, vertical);
+        room.Half = w / 2;
+        int low = b + room.Near, high = t - room.Near - h;
+        if (low + h <= height)
         {
-            var room = Usable(Run(r, 1, t, b, cap));
-            if (room >= w) return (r + near, t, r + near + w, b, r + near, r + near + room);
+            room.DownLeft = Run(l - 1, -1, low, low + h, room.Half + room.Far);
+            room.DownRight = Run(r, 1, low, low + h, room.Half + room.Far);
         }
-        var top = t - near - h;
-        if (top >= 0)
+        if (high >= 0)
         {
-            var clear = true;
-            for (var y = top; y < t - near && clear; y++) clear = Row(y, l, r);
-            if (clear)
+            room.UpLeft = Run(l - 1, -1, high, high + h, room.Half + room.Far);
+            room.UpRight = Run(r, 1, high, high + h, room.Half + room.Far);
+        }
+        return room;
+    }
+
+    /// <summary>
+    /// Yanına yazma yeri (Sinan Bey: "SELAMLA  GREET"; beta.100: menülerde de). <paramref name="edge"/>: listede ortak kenar
+    /// (solda Türkçenin sağ kenarı, sağda sol kenarı, altta üstü, üstte altı); null: hedefin kendi kenarından yakın boşluk
+    /// kadar. Solda/sağda alan en az örtü genişliğinde olmalı (Türkçe <c>Most</c>'a kadar uzar); altta/üstte örtü yüksekliği
+    /// kadar satır boş olmalı (Türkçe iki yana yarım genişliğe kadar uzar). Simgenin olduğu yana yazılmaz.
+    /// </summary>
+    internal static Spot? PlaceSpot(Room m, Side side, int? edge)
+    {
+        int w = m.R - m.L, h = m.B - m.T;
+        if (w <= 0 || h <= 0) return null;
+        int Usable(int n, int cap) => n - (n < cap ? m.Far : 0);
+        (int L, int R) Spread(int left, int right)
+        {
+            var cap = m.Half + m.Far;
+            return (m.L - Math.Max(0, Math.Min(m.Half, Usable(left, cap))), m.R + Math.Max(0, Math.Min(m.Half, Usable(right, cap))));
+        }
+        switch (side)
+        {
+            case Side.Left:
             {
-                var side = w / 2;
-                var nl = Run(l - 1, -1, top, t - near, side + far);
-                var nr = Run(r, 1, top, t - near, side + far);
-                var roomL = l - Math.Max(0, Math.Min(side, nl - (nl < side + far ? far : 0)));
-                var roomR = r + Math.Max(0, Math.Min(side, nr - (nr < side + far ? far : 0)));
-                return (l, top, r, t - near, roomL, roomR);
+                if (m.IconLeft) return null;
+                var e = edge ?? (m.L - m.Near);
+                var gap = m.L - e;
+                if (gap < m.Near) return null;
+                var room = Math.Min(m.Most, Usable(m.Left, m.Cap) - gap);
+                if (room < w) return null;
+                return new Spot(e - w, m.T, e, m.B, e - room, e);
+            }
+            case Side.Right:
+            {
+                if (m.IconRight) return null;
+                var e = edge ?? (m.R + m.Near);
+                var gap = e - m.R;
+                if (gap < m.Near) return null;
+                var room = Math.Min(m.Most, Usable(m.Right, m.Cap) - gap);
+                if (room < w) return null;
+                return new Spot(e, m.T, e + w, m.B, e, e + room);
+            }
+            case Side.Below:
+            {
+                var top = edge ?? (m.B + m.Near);
+                if (top - m.B < m.Near || m.Down < top + h - (m.B + m.Near)) return null;
+                var (roomL, roomR) = Spread(m.DownLeft, m.DownRight);
+                return new Spot(m.L, top, m.R, top + h, roomL, roomR);
+            }
+            default:
+            {
+                var bottom = edge ?? (m.T - m.Near);
+                if (m.T - bottom < m.Near || bottom - h < 0 || m.Up < m.T - m.Near - (bottom - h)) return null;
+                var (roomL, roomR) = Spread(m.UpLeft, m.UpRight);
+                return new Spot(m.L, bottom - h, m.R, bottom, roomL, roomR);
             }
         }
-        return null;
+    }
+
+    /// <summary>
+    /// Panelin ([l, r) x [t, b)) kenar çizgisi: her yanda panelin hemen dışındaki 1…<see cref="EdgeMax"/> piksellik düz
+    /// renkli şerit (satır/sütun noktalarının en az %80'i ortalamasına <see cref="PanelTolerance"/> kadar yakın, zeminden
+    /// uzak) ve ötesinde o renk biter. Çizginin rengi ilk bulunan yanınki; öbür yanlar ancak aynı renkteyse. null: çizgi yok.
+    /// </summary>
+    internal static ((int R, int G, int B) Color, int Top, int Right, int Bottom, int Left)? Edges(
+        int l, int t, int r, int b, int width, int height, (int R, int G, int B) ground, Func<int, int, bool> blocked,
+        Func<int, int, (int R, int G, int B)> color)
+    {
+        bool InFrame((int X, int Y) p) => p.X >= 0 && p.X < width && p.Y >= 0 && p.Y < height;
+        // Yanın k. dış çizgisinin rengi (düzse).
+        (int R, int G, int B)? Strip(List<(int X, int Y)> points)
+        {
+            if (points.Count == 0 || !points.All(InFrame) || points.Any(p => blocked(p.X, p.Y))) return null;
+            var colors = points.Select(p => color(p.X, p.Y)).ToList();
+            var average = Mean(colors);
+            if (colors.Count(c => Distance(c, average) <= PanelTolerance) < 0.8 * colors.Count) return null;
+            return average;
+        }
+        List<(int X, int Y)> Horizontal(int y)
+        {
+            var step = Math.Max(1, (r - l) / 32);
+            var points = new List<(int X, int Y)>();
+            for (var x = l; x < r; x += step) points.Add((x, y));
+            return points;
+        }
+        List<(int X, int Y)> Vertical(int x)
+        {
+            var step = Math.Max(1, (b - t) / 32);
+            var points = new List<(int X, int Y)>();
+            for (var y = t; y < b; y += step) points.Add((x, y));
+            return points;
+        }
+        (int R, int G, int B)? reference = null;
+        // Kalınlık: line(k) (k = 1, 2, …) aynı renkte sürdükçe; EdgeMax'a varan ya da karenin kenarına değen şerit çizgi değildir.
+        int Thickness(Func<int, List<(int X, int Y)>> line)
+        {
+            if (Strip(line(1)) is not { } first || Distance(first, ground) <= PanelTolerance
+                || (reference is { } known && Distance(known, first) > PanelTolerance)) return 0;
+            var k = 1;
+            while (k < EdgeMax && Strip(line(k + 1)) is { } next && Distance(next, first) <= PanelTolerance) k++;
+            if (k >= EdgeMax || !line(k + 1).All(InFrame)) return 0;
+            reference ??= first;
+            return k;
+        }
+        var top = Thickness(k => Horizontal(t - k));
+        var bottom = Thickness(k => Horizontal(b - 1 + k));
+        var left = Thickness(k => Vertical(l - k));
+        var right = Thickness(k => Vertical(r - 1 + k));
+        if (reference is not { } found || top + bottom + left + right == 0) return null;
+        return (found, top, right, bottom, left);
     }
 
     /// <summary>Ölçümler (hedeflerle aynı sırada). <paramref name="width"/>/<paramref name="height"/>: karenin piksel boyu.</summary>
@@ -474,6 +639,8 @@ public static class TextPainter
         var lines = new List<double>();
         var grounds = new List<(int R, int G, int B)>();
         var panels = new SortedDictionary<int, (int L, int T, int R, int B)>();
+        // Yanına yazma için her hedefin çevresindeki boş alan (yalnız kipi seçilen yazıda).
+        var rooms = new List<Room?>();
         // Bir hedefin kutusu (except hariç) bu noktada mı.
         bool RectHit(int x, int y, int? except)
         {
@@ -695,53 +862,86 @@ public static class TextPainter
                 if (gl < cl || gr > cr) paint = paint with { Grow = new TextBox(gl / fw, cover.Top, gr / fw, cover.Bottom) };
             }
 
-            // 5) Kip (yalnız türü verilen yazıda): menü, görev/harita kartı ve telefon hep örtülür. Düz zemini sınırlı bir alansa
-            // (panel) karar döngüden sonra panel panel verilir (twin ya da örtme); açık zeminde (desenli zemin, karenin kenarına
-            // değen ya da çok büyük düz alan) desenli zeminde ya da tek satırlık istemde Türkçe yanındaki boş alana yazılır; yer
-            // bulunamazsa örtülür.
+            // 5) Kip (yalnız türü verilen yazıda; telefon hep örtülür): düz zemini sınırlı bir alansa (panel) karar döngüden
+            // sonra panel panel verilir (kutu: ikiz; listedeki satırın kendi şeridi/vurgusu: yanına yazma). Açık zeminde
+            // (desenli zemin, degrade, karenin kenarına değen ya da çok büyük düz alan) Türkçe yanındaki boş alana yazılır;
+            // listede bütün satırlar birlikte (aynı yan, aynı hiza). Yer bulunamazsa örtülür.
             covers.Add((cl, ct, cr, cb));
             lines.Add(line);
             grounds.Add(Rgb(paint.Background));
-            if (target.Kind is { } kind && kind != ScreenTextKind.Menu && kind != ScreenTextKind.Mission && kind != ScreenTextKind.Phone)
+            if (target.Kind is { } kind && kind != ScreenTextKind.Phone)
             {
                 var ground = Rgb(paint.Background);
                 var self = index;
                 var panel = paint.Patterned || paint.Background2 != null ? null
                     : FindPanel(cl, ct, cr, cb, width, height, (x, y) =>
                         RectHit(x, y, self) || (x >= cl && x < cr && y >= ct && y < cb) || Distance(color(x, y), ground) <= PanelTolerance);
-                if (panel is { } found)
-                {
-                    panels[index] = found;
-                }
-                else if ((paint.Patterned || (kind == ScreenTextKind.Help && target.Prompt && target.Rows <= 1))
-                         && BesideSpot(cl, ct, cr, cb, line, width, height, iconLeft, iconRight,
-                                       (x, y) => Others(x, y) ? null : Distance(color(x, y), fg) <= BesideInk) is { } spot)
-                {
-                    paint = paint with
-                    {
-                        Mode = PaintMode.Beside,
-                        Spot = new TextBox(spot.L / fw, spot.T / fh, spot.R / fw, spot.B / fh),
-                        SpotRoom = new TextBox(spot.RoomL / fw, spot.T / fh, spot.RoomR / fw, spot.B / fh),
-                    };
-                }
+                if (panel is { } found) panels[index] = found;
+                rooms.Add(MeasureRoom(cl, ct, cr, cb, line, width, height, iconLeft, iconRight,
+                                      (x, y) => Others(x, y) ? null : Distance(color(x, y), fg) <= BesideInk));
+            }
+            else
+            {
+                rooms.Add(null);
             }
             result.Add(paint);
         }
-        // İkiz paneller: kesişen paneller tek paneldir (bildirimin başlığı ve gövdesi; birinin taraması paneldeki resimde erken
-        // durabilir), kutusu hepsinin birleşimi. Her yazı panelin içinde her yanda PanelPadLines boşlukla durmalı; durmuyorsa ya
-        // da köşeler yuvarlak değilse (köşeli kutu) örtülür. İkiz özgünün TwinScale katı boyda, sol kenarı özgünle hizalı; önce
-        // hemen üstte, yer yoksa altta (arada GapLines); başka yazıya ve karenin dışına taşmaz. Her yazı ikizde kendi yerinde,
-        // özgün panelin genişliğine kadar uzayabilir; paneldeki kişi resmi ikizde de gösterilir.
+        static bool Overlaps((int L, int T, int R, int B) a, (int L, int T, int R, int B) b) =>
+            Math.Min(a.R, b.R) > Math.Max(a.L, b.L) && Math.Min(a.B, b.B) > Math.Max(a.T, b.T);
+        // Listeler (Groups): aynı sütunda ya da aynı satırda duran, aynı boydaki tek satırlık etiketler.
+        var lists = Groups(targets);
+        var listOf = new Dictionary<int, int>();
+        for (var k = 0; k < lists.Count; k++)
+            foreach (var m in lists[k].Members) listOf[m] = k;
+
+        // 6) Kutular (ikiz): kesişen paneller tek paneldir (bildirimin başlığı ve gövdesi, kartın başlığı, açıklaması ve
+        // ayrıntıları), kutusu hepsinin birleşimi. Her yazı panelin içinde her yanda PanelPadLines boşlukla durmalı; durmuyorsa
+        // panel yazının kendi şerididir (yanına yazılır). Tek satırlık tek yazılı panel listenin satırıysa (kart başlığının koyu
+        // şeridi, seçili satırın açık vurgusu) kutu değil satırdır. İkiz özgünle aynı boyda (yazı, resim, köşe, iç boşluk, kenar
+        // çizgisi), en uygun boş yere: yan (ekranın ortasına bakan yan önce) › alt › üst; başka yazıya, başka kutuya ve karenin
+        // dışına taşmaz. Yer yoksa örtülür (son çare).
+        // Zemini degrade ya da desenli ölçülen yazı (yarı saydam kartın altından harita görünüyor) başka yazının bulduğu panelin
+        // içindeyse o paneldedir: kartın başlığı ve açıklaması ayrıntı satırlarıyla tek kart olur (beta.100 3407–3409: kartın
+        // parçaları ayrı yamalarla örtülüyordu).
+        // Kesişen paneller önce birleşir (yarı saydam kartta her yazının taraması kartın bir parçasında durabilir); yazının
+        // örtüsünün en az %80'i birleşik panelin içindeyse yazı o paneldedir.
+        var merged = new List<(int L, int T, int R, int B)>();
+        foreach (var p in panels.Keys)
+        {
+            var box = panels[p];
+            var changed = true;
+            while (changed)
+            {
+                changed = false;
+                var k = merged.FindIndex(o => Overlaps(o, box));
+                if (k < 0) continue;
+                var o = merged[k];
+                merged.RemoveAt(k);
+                box = (Math.Min(o.L, box.L), Math.Min(o.T, box.T), Math.Max(o.R, box.R), Math.Max(o.B, box.B));
+                changed = true;
+            }
+            merged.Add(box);
+        }
+        for (var i = 0; i < targets.Count; i++)
+        {
+            if (rooms[i] == null || panels.ContainsKey(i)) continue;
+            var c = covers[i];
+            double area = Math.Max(1, (c.R - c.L) * (c.B - c.T));
+            foreach (var p in merged)
+            {
+                double inside = Math.Max(0, Math.Min(p.R, c.R) - Math.Max(p.L, c.L)) * Math.Max(0, Math.Min(p.B, c.B) - Math.Max(p.T, c.T));
+                if (inside < 0.8 * area) continue;
+                panels[i] = p;
+                break;
+            }
+        }
         var keys = panels.Keys.ToList();
         var parent = keys.ToDictionary(i => i, i => i);
         int Root(int i) { while (parent[i] != i) i = parent[i]; return i; }
         foreach (var a in keys)
             foreach (var b in keys.Where(k => k > a))
-            {
-                var p = panels[a];
-                var q = panels[b];
-                if (Math.Min(p.R, q.R) > Math.Max(p.L, q.L) && Math.Min(p.B, q.B) > Math.Max(p.T, q.T)) parent[Root(b)] = Root(a);
-            }
+                if (Overlaps(panels[a], panels[b])) parent[Root(b)] = Root(a);
+        var boxes = new List<(List<int> Members, int L, int T, int R, int B)>();
         foreach (var members in keys.GroupBy(Root).Select(g => g.Order().ToList()).OrderBy(g => g[0]))
         {
             int l = members.Min(m => panels[m].L), t = members.Min(m => panels[m].T);
@@ -752,27 +952,66 @@ public static class TextPainter
                 var pad = Math.Max(2, RoundHalfUp(PanelPadLines * lines[m]));
                 return c.L - l >= pad && r - c.R >= pad && c.T - t >= pad && b - c.B >= pad;
             });
+            var isBox = members.Count >= 2 || targets[members[0]].Rows > 1 || !listOf.ContainsKey(members[0]);
+            if (padded && isBox) boxes.Add((members, l, t, r, b));
+        }
+        var boxed = boxes.SelectMany(box => box.Members).ToHashSet();
+        var twins = new List<(int L, int T, int R, int B)>();
+        foreach (var (members, l, t, r, b) in boxes)
+        {
             var ground = grounds[members[0]];
-            if (!padded || CornerRadius(l, t, r, b, (x, y) => Distance(color(x, y), ground) <= PanelTolerance) is not { } corner) continue;
-            // Küçük panelde ikizin yazısı okunabilirlik sınırının altına inmez (TV app.js DIALOGUE_MIN_SHARE); gerekirse ikiz
-            // özgün boyda.
-            var least = members.Select(m => lines[m]).Min();
-            var scale = Math.Min(1, Math.Max(TwinScale, TwinMinShare * height / (ScreenFit.ExactFont * least)));
-            var h = RoundHalfUp((b - t) * scale);
-            var gap = Math.Max(2, (int)Math.Ceiling(ScreenFit.GapLines * lines[members[0]]));
-            bool Clear(int y0, int y1)
+            var line = lines[members[0]];
+            // Zemin: panelin yazı dışındaki noktalarının ortalaması (yazının çevresindeki şeritten daha doğru ton).
+            int sumR = 0, sumG = 0, sumB = 0, count = 0;
+            int stepX = Math.Max(1, (r - l) / 24), stepY = Math.Max(1, (b - t) / 24);
+            for (var y = t; y < b; y += stepY)
+                for (var x = l; x < r; x += stepX)
+                {
+                    if (RectHit(x, y, null)) continue;
+                    var c = color(x, y);
+                    if (Distance(c, ground) > PanelTolerance) continue;
+                    sumR += c.R;
+                    sumG += c.G;
+                    sumB += c.B;
+                    count++;
+                }
+            var fill = count >= 8 ? (sumR / count, sumG / count, sumB / count) : ground;
+            var corner = CornerRadius(l, t, r, b, (x, y) => Distance(color(x, y), ground) <= PanelTolerance);
+            var edge = Edges(l, t, r, b, width, height, fill, (x, y) => RectHit(x, y, null), color);
+            int el = edge?.Left ?? 0, et = edge?.Top ?? 0, er = edge?.Right ?? 0, eb = edge?.Bottom ?? 0;
+            int ow = r - l + el + er, oh = b - t + et + eb, ox = l - el, oy = t - et;
+            var gap = Math.Max(2, (int)Math.Ceiling(ScreenFit.GapLines * line));
+            bool Blocked((int L, int T, int R, int B) a)
             {
-                if (y0 < 0 || y1 > height) return false;
+                if (a.L < 0 || a.T < 0 || a.R > width || a.B > height) return true;
                 for (var j = 0; j < rects.Length; j++)
-                    if (!members.Contains(j) && rects[j].L < r && rects[j].R > l && rects[j].T < y1 && rects[j].B > y0) return false;
-                return true;
+                    if (!members.Contains(j) && Overlaps(a, rects[j])) return true;
+                return boxes.Any(o => Overlaps(a, (o.L, o.T, o.R, o.B))) || twins.Any(o => Overlaps(a, o));
             }
-            int top;
-            if (Clear(t - gap - h, t - gap)) top = t - gap - h;
-            else if (Clear(b + gap, b + gap + h)) top = b + gap;
-            else continue;
-            double X(int v) => (l + ((v - l) * scale)) / fw;
-            double Y(int v) => (top + ((v - t) * scale)) / fh;
+            (int X, int Y)[] candidates = (l + r) / 2 < width / 2
+                ? [(ox + ow + gap, oy), (ox - gap - ow, oy), (ox, oy + oh + gap), (ox, oy - gap - oh)]
+                : [(ox - gap - ow, oy), (ox + ow + gap, oy), (ox, oy + oh + gap), (ox, oy - gap - oh)];
+            (int X, int Y)? chosen = null;
+            foreach (var candidate in candidates)
+            {
+                if (Blocked((candidate.X, candidate.Y, candidate.X + ow, candidate.Y + oh))) continue;
+                chosen = candidate;
+                break;
+            }
+            if (chosen is not { } at) continue;
+            twins.Add((at.X, at.Y, at.X + ow, at.Y + oh));
+            int dx = at.X - ox, dy = at.Y - oy;
+            // İkizdeki Türkçe özgün panelden uzunsa ikiz sağa uzar (boş yer varsa, en çok TwinWiden).
+            var widen = (int)(TwinWiden * (r - l));
+            for (var j = 0; j < rects.Length; j++)
+                if (!members.Contains(j) && rects[j].T < b + dy && rects[j].B > t + dy && rects[j].L >= r + dx)
+                    widen = Math.Min(widen, rects[j].L - (r + dx) - er - gap);
+            foreach (var other in boxes.Select(o => (L: o.L, T: o.T, R: o.R, B: o.B)).Append((L: l, T: t, R: r, B: b)))
+                if (other.T < b + dy && other.B > t + dy && other.L >= r + dx)
+                    widen = Math.Min(widen, other.L - (r + dx) - er - gap);
+            widen = Math.Max(0, Math.Min(widen, width - (r + dx) - er));
+            double X(int v) => (v + dx) / fw;
+            double Y(int v) => (v + dy) / fh;
             (int L, int T, int R, int B)? face = null;
             foreach (var m in members)
             {
@@ -785,24 +1024,119 @@ public static class TextPainter
             {
                 var c = covers[m];
                 var align = targets[m].Align;
-                result[m] = result[m] with
+                var paint = result[m] with
                 {
                     Mode = PaintMode.Twin,
-                    Scale = scale,
-                    Tail = corner.Tail,
+                    Scale = TwinScale,
+                    Tail = corner?.Tail,
+                    Background = Hex(fill),
+                    Background2 = null,
+                    Direction = null,
+                    Patterned = false,
                     Twin = new TextBox(X(l), Y(t), X(r), Y(b)),
-                    Radius = corner.Radius * scale / fh,
+                    Radius = (corner?.Radius ?? 0) / fh,
                     Spot = new TextBox(X(c.L), Y(c.T), X(c.R), Y(c.B)),
-                    SpotRoom = new TextBox(align == "left" ? X(c.L) : X(l + inset), Y(c.T),
-                                           Math.Max(X(c.R), (r - RoundHalfUp(inset * scale)) / fw), Y(c.B)),
-                    Portrait = face is { } f ? new TextBox(f.L / fw, f.T / fh, f.R / fw, f.B / fh) : null,
-                    PortraitTwin = face is { } g ? new TextBox(X(g.L), Y(g.T), X(g.R), Y(g.B)) : null,
+                    SpotRoom = new TextBox(align == "left" ? X(c.L) : X(l + inset), Y(c.T), Math.Max(X(c.R), X(r - inset + widen)), Y(c.B)),
                 };
+                if (edge is { } border)
+                    paint = paint with { Edge = new TextPaint.EdgeLine(Hex(border.Color), border.Top / fh, border.Right / fh, border.Bottom / fh, border.Left / fh) };
+                if (face is { } f)
+                    paint = paint with
+                    {
+                        Portrait = new TextBox(f.L / fw, f.T / fh, f.R / fw, f.B / fh),
+                        PortraitTwin = new TextBox(X(f.L), Y(f.T), X(f.R), Y(f.B)),
+                    };
+                result[m] = paint;
+            }
+        }
+
+        // 7) Satırlar (yanına yazma): listede bütün satırlar aynı yana (sağa yaslı sütunda sol, sola yaslı sütunda sağ;
+        // satırdaki sekme/kart başlıklarında hizanın açık yanı, sonra alt, sonra üst), sütunda Türkçeler tek hizada (sağa yaslı
+        // listede sağ kenarları, sola yaslıda sol kenarları aynı), satırda aynı taban çizgisinde. Liste birlikte yerleşemezse
+        // her satır kendi başına (sol › sağ › alt › üst).
+        void Assign(int i, Spot spot) => result[i] = result[i] with
+        {
+            Mode = PaintMode.Beside,
+            Spot = new TextBox(spot.L / fw, spot.T / fh, spot.R / fw, spot.B / fh),
+            SpotRoom = new TextBox(spot.RoomL / fw, spot.T / fh, spot.RoomR / fw, spot.B / fh),
+        };
+        var placed = new HashSet<int>();
+        foreach (var list in lists)
+        {
+            var members = list.Members.Where(m => rooms[m] != null && !boxed.Contains(m)).ToList();
+            if (members.Count < 2) continue;
+            var ms = members.Select(m => rooms[m]!).ToList();
+            var aligns = members.Select(m => targets[m].Align).ToList();
+            // Çoğunluğun hizası; eşitlikte sıradaki ilk (sol, sağ, orta; Mac max(by:) ile aynı).
+            var majority = "left";
+            var most = -1;
+            foreach (var candidate in new[] { "left", "right", "center" })
+            {
+                var n = aligns.Count(a => a == candidate);
+                if (n <= most) continue;
+                most = n;
+                majority = candidate;
+            }
+            var sameRow = ms.Max(m => m.T) < ms.Min(m => m.B);
+            var sides = new List<Side>();
+            if (sameRow)
+            {
+                if (majority == "left") sides.Add(Side.Right);
+                else if (majority == "right") sides.Add(Side.Left);
+                sides.Add(Side.Below);
+                sides.Add(Side.Above);
+            }
+            else
+            {
+                var tolerance = RoundHalfUp(0.5 * ms.Max(m => m.Line));
+                var rightEdge = ms.Max(m => m.R) - ms.Min(m => m.R) <= tolerance;
+                var leftEdge = ms.Max(m => m.L) - ms.Min(m => m.L) <= tolerance;
+                bool? right = rightEdge && !leftEdge ? true : leftEdge && !rightEdge ? false : majority == "right" ? true
+                    : majority == "left" ? false : null;
+                sides.AddRange(right == false ? [Side.Right, Side.Left] : [Side.Left, Side.Right]);
+            }
+            foreach (var side in sides)
+            {
+                int? edge = side switch
+                {
+                    Side.Left => sameRow ? null : ms.Min(m => m.L - m.Near),
+                    Side.Right => sameRow ? null : ms.Max(m => m.R + m.Near),
+                    Side.Below => ms.Max(m => m.B + m.Near),
+                    _ => ms.Min(m => m.T - m.Near),
+                };
+                var found = ms.Select(m => PlaceSpot(m, side, edge)).ToList();
+                if (found.Any(s => s == null)) continue;
+                var spots = found.Select(s => s!.Value).ToList();
+                if (side is Side.Below or Side.Above)
+                {
+                    // Satırdaki komşular arasında Türkçeler ortadaki çizgiyi geçmez.
+                    var order = Enumerable.Range(0, spots.Count).OrderBy(k => spots[k].L).ToList();
+                    for (var k = 0; k + 1 < order.Count; k++)
+                    {
+                        int a = order[k], b = order[k + 1];
+                        var middle = (ms[a].R + ms[b].L) / 2;
+                        spots[a] = spots[a] with { RoomR = Math.Max(spots[a].R, Math.Min(spots[a].RoomR, middle)) };
+                        spots[b] = spots[b] with { RoomL = Math.Min(spots[b].L, Math.Max(spots[b].RoomL, middle)) };
+                    }
+                }
+                for (var k = 0; k < members.Count; k++) Assign(members[k], spots[k]);
+                placed.UnionWith(members);
+                break;
+            }
+        }
+        for (var i = 0; i < targets.Count; i++)
+        {
+            if (rooms[i] is not { } room || boxed.Contains(i) || placed.Contains(i)) continue;
+            foreach (var side in new[] { Side.Left, Side.Right, Side.Below, Side.Above })
+            {
+                if (PlaceSpot(room, side, null) is not { } spot) continue;
+                Assign(i, spot);
+                break;
             }
         }
         // Çakışma: yanına yazılan Türkçe başka bir hedefin Türkçesine (önceki yanına yazma alanı ya da ikiz panel) binerse
         // örtmeye döner.
-        static bool Overlaps(TextBox a, TextBox b) =>
+        static bool BoxesOverlap(TextBox a, TextBox b) =>
             Math.Min(a.Right, b.Right) > Math.Max(a.Left, b.Left) && Math.Min(a.Bottom, b.Bottom) > Math.Max(a.Top, b.Top);
         for (var i = 0; i < result.Count; i++)
         {
@@ -811,14 +1145,14 @@ public static class TextPainter
             for (var j = 0; j < result.Count && !hit; j++)
             {
                 if (j == i) continue;
-                if (result[j].Mode == PaintMode.Twin && result[j].Twin is { } twin) hit = Overlaps(mine, twin);
-                else hit = j < i && result[j].Mode == PaintMode.Beside && result[j].SpotRoom is { } other && Overlaps(mine, other);
+                if (result[j].Mode == PaintMode.Twin && result[j].Twin is { } twin) hit = BoxesOverlap(mine, twin);
+                else hit = j < i && result[j].Mode == PaintMode.Beside && result[j].SpotRoom is { } other && BoxesOverlap(mine, other);
             }
             if (hit) result[i] = result[i] with { Mode = PaintMode.Cover, Spot = null, SpotRoom = null };
         }
         // 4) Grup: aynı sütunda (ortak sol ya da sağ kenar, düzenli aralık) ya da aynı satırda duran, BÜYÜK HARF'i ve satır
         // yüksekliği aynı tek satırlık etiketler.
-        foreach (var (members, id) in Groups(targets))
+        foreach (var (members, id) in lists)
             foreach (var i in members) result[i] = result[i] with { Group = id };
         return result;
     }

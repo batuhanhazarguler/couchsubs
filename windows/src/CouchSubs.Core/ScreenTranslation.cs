@@ -704,10 +704,23 @@ public static class ScreenTranslation
     /// Yalnız özel adlardan oluşan yazı ("JASON &amp; LUCIA", "Bonnie &amp; Clyde"): "&amp;" ile bağlı, her biri bir iki
     /// sözcüklük (BÜYÜK HARFLİ yazıda tek sözcüklük), büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
     /// </summary>
+    /// <summary>Haritadaki yer adı ("Peregrine Bay", "Key Lento") ve soluk okunan parçası ("ne Bay"): iki-üç sözcük, yalnız
+    /// harf, son ya da ilk sözcük yer türü, BÜYÜK HARFLİ değil; çevrilmez (Mac/Android ile aynı).</summary>
+    public static bool IsPlaceName(string text)
+    {
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2 || words.Length > 3 || TextStyleSampler.IsUpper(text)) return false;
+        if (!words.All(w => w.All(c => char.IsLetter(c) || "'’-.".Contains(c)) && w.Any(char.IsLetter))) return false;
+        if (!words.Skip(1).All(w => char.IsUpper(w[0]))) return false;
+        return PlaceWords.Contains(words[^1]) || PlaceWords.Contains(words[0]);
+    }
+
+    private static readonly HashSet<string> PlaceWords = new() { "Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore" };
+
     public static bool KeepsNames(string text)
     {
         var plain = IconText.Plain(text).Trim();
-        if (IsTitleMark(plain)) return true;
+        if (IsTitleMark(plain) || IsPlaceName(plain)) return true;
         var parts = plain.Split(" & ");
         if (parts.Length < 2) return false;
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.

@@ -109,16 +109,19 @@ class TextPaintTest {
                 val paint = paints[k]
                 val name = "$id#$k"
                 assertEquals(name, e.getString("mode"), paint.mode)
-                fun box(key: String, got: List<Double>?) {
+                fun box(key: String, got: List<Double>?, tolerance: Double = 1.01) {
                     if (!e.has(key) || e.isNull(key)) return
-                    assertNotNull("$name $key yok", got)
-                    got!!.zip(doubles(e.getJSONArray(key))).forEach { (a, b) -> near(a, b, 1.01, "$name $key $got") }
+                    val want = doubles(e.getJSONArray(key))
+                    assertTrue("$name $key yok", got != null && got.size == want.size)
+                    got!!.zip(want).forEach { (a, b) -> near(a, b, tolerance, "$name $key $got") }
                 }
                 box("spot", px(paint.spot))
                 box("room", px(paint.spotRoom)?.let { listOf(it[0], it[2]) })
                 box("twin", px(paint.twin))
                 box("portrait", px(paint.portrait))
                 box("portraitTwin", px(paint.portraitTwin))
+                // Kenar çizgisi [üst, sağ, alt, sol] piksel.
+                box("edge", paint.edge?.let { listOf(it.top * h, it.right * h, it.bottom * h, it.left * h) }, 0.51)
                 if (e.has("radius")) near(paint.radius * h, e.getDouble("radius"), 1.5, "$name radius")
                 if (e.has("scale")) near(paint.scale, e.getDouble("scale"), 0.001, "$name scale")
                 if (e.has("twin")) {
@@ -378,5 +381,37 @@ class TextPaintTest {
         assertEquals(2, TextPainter.words("II Photo Studio"))
         assertEquals(1, TextPainter.words("SELECT ⊗"))
         assertEquals(2, TextPainter.words("Retry Checkpoint"))
+    }
+
+    /**
+     * Beta.100 (3407–3409): tek satır okunan sekme çubuğu her karede aynı çevrilir (motora gitmez); kart başlıkları ve
+     * sekme adları sözlükte; haritanın yer adı ve soluk okunan parçası çevrilmez.
+     */
+    @Test
+    fun tabBarIsStableAndPlaceNamesKept() {
+        assertEquals("JASON & LUCIA HARİTA ÖZET", UiCommands.translateLabelLoosely("JASON & LUCIA MAP BRIEF"))
+        assertEquals("JASON & LUCIA HARİTA ÖZET İLERLEME", UiCommands.translateLabelLoosely("JASON & LUCIA MAP BRIEF PROGRESS"))
+        assertEquals("HARİTA ÖZET", UiCommands.translateLabelLoosely("MAP BRIEF"))
+        assertNull("yalnız BÜYÜK HARFLİ çubuk", UiCommands.translateTabs("Map Brief"))
+        assertNull("sözlükte olmayan sözcük motora gider", UiCommands.translateTabs("MAP SOMETHING"))
+        for (label in listOf("VEHICLES", "WEAPONS", "ANIMALS", "ADD MARKER", "Map")) assertNotNull(label, UiCommands.translateLabel(label))
+        for (place in listOf("Peregrine Bay", "Shoeless Keys", "Key Lento", "Gambit Bay", "ne Bay")) {
+            assertTrue(place, ScreenTranslation.keepsNames(place))
+        }
+        for (text in listOf("Add Marker", "Bay", "Go to the Bay", "KEY BINDINGS", "Ambient Sound")) {
+            assertTrue(text, !ScreenTranslation.keepsNames(text))
+        }
+    }
+
+    /** Beta.100 (3385): menüdeki otomatik alanla kesişen hazır alan okunmaz (tuş listesi iki alana bölünmesin). */
+    @Test
+    fun presetYieldsToMenuArea() {
+        val phone = ExtraArea(GameAreaPresets.PHONE_ID, "Messages", CropRegion(top = 0.45, bottom = 0.80, left = 0.72, right = 0.99))
+        var menu = ExtraArea("auto-1", ScreenTextDetector.NAME, CropRegion(top = 0.70, bottom = 0.96, left = 0.80, right = 0.98), auto = true)
+        assertEquals("menü dışında hazır alan kalır", listOf(phone.id, "auto-1"), RegionWatcher.yieldingPresets(listOf(phone, menu)).map { it.id })
+        menu = menu.copy(menu = true)
+        assertEquals(listOf("auto-1"), RegionWatcher.yieldingPresets(listOf(phone, menu)).map { it.id })
+        menu = menu.copy(region = CropRegion(top = 0.05, bottom = 0.12, left = 0.4, right = 0.9))
+        assertEquals("kesişmeyen hazır alan kalır", listOf(phone.id, "auto-1"), RegionWatcher.yieldingPresets(listOf(phone, menu)).map { it.id })
     }
 }

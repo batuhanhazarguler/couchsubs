@@ -52,7 +52,8 @@ public static class UiCommands
         ["RESUME"] = "Sürdür", ["QUIT"] = "Çık", ["NEXT"] = "İleri", ["PREVIOUS"] = "Önceki", ["ALL"] = "Tümü",
         ["NONE"] = "Hiçbiri", ["DEFAULT"] = "Varsayılan", ["APPLY"] = "Uygula", ["RESET"] = "Sıfırla",
         ["INVENTORY"] = "Envanter", ["OUTFITS"] = "Kıyafetler", ["OUTFIT"] = "Kıyafet", ["WEAPONS"] = "Silahlar",
-        ["STATS"] = "İstatistikler", ["GAME"] = "Oyun",
+        ["STATS"] = "İstatistikler", ["GAME"] = "Oyun", ["BRIEF"] = "Özet", ["PROGRESS"] = "İlerleme", ["VEHICLES"] = "Araçlar",
+        ["ANIMALS"] = "Hayvanlar",
     };
 
     /// <summary>
@@ -141,6 +142,7 @@ public static class UiCommands
             return any ? string.Join(' ', string.Join($" {ButtonIcons.Marker} ", done).Split(' ', StringSplitOptions.RemoveEmptyEntries)) : null;
         }
         if (TranslateLabel(label) is { } direct) return direct;
+        if (TranslateTabs(label) is { } tabs) return tabs;
         var words = label.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (words.Length < 2) return null;
         // Baştaki kırıntı tuş adıysa ("R3 LOOK BEHIND") kalır; değilse ("1 Map", "pi Settings": simgenin yanlış okunuşu) atılır.
@@ -148,6 +150,28 @@ public static class UiCommands
             return ButtonIcons.IsButtonName(words[0]) ? words[0] + " " + rest : rest;
         if (words[^1].Length <= 2 && TranslateLabel(string.Join(' ', words[..^1])) is { } head) return head + " " + words[^1];
         return null;
+    }
+
+    /// <summary>Tek satır okunan sekme çubuğu ("JASON &amp; LUCIA MAP BRIEF"): "AD &amp; AD" kalır, kalan her sözcük sözlükte
+    /// olmalı; motora gitmez, her karede aynı çeviri (Mac/Android ile aynı). Yalnız BÜYÜK HARFLİ yazıda.</summary>
+    public static string? TranslateTabs(string label)
+    {
+        var words = label.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2 || !TextStyleSampler.IsUpper(label)) return null;
+        var output = new List<string>();
+        for (var i = 0; i < words.Length;)
+        {
+            if (i + 2 < words.Length && words[i + 1] == "&")
+            {
+                output.AddRange(words[i..(i + 3)]);
+                i += 3;
+                continue;
+            }
+            if (TranslateLabel(words[i]) is not { } word) return null;
+            output.Add(word);
+            i++;
+        }
+        return string.Join(' ', output);
     }
 
     private static string TurkishUpper(string text) => text.Replace('i', 'İ').Replace('ı', 'I').ToUpperInvariant();

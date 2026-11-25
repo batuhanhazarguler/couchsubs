@@ -365,11 +365,14 @@ public static class ScreenFit
         public int Rows { get; init; }
         public string Align { get; init; }
         public int? Group { get; init; }
+        /// <summary>Yazı küçülmez (ikiz kutu, beta.100: "aynı punto, küçültme yok"): sığmazsa satır kırılır, kutu aşağı uzar.</summary>
+        public bool KeepSize { get; init; }
 
         public ExactInput(string text, double left, double top, double right, double bottom, double? growLeft = null,
                           double? growRight = null, double line = 0, double? pitch = null, int rows = 1, string align = "left",
-                          int? group = null)
+                          int? group = null, bool keepSize = false)
         {
+            KeepSize = keepSize;
             Text = text;
             Left = left;
             Top = top;
@@ -406,7 +409,8 @@ public static class ScreenFit
             return new ExactInput(item.Translation, box.Left * width, box.Top * height, box.Right * width,
                 box.Bottom * height, room is { } g ? g.Left * width : null, room is { } h ? h.Right * width : null,
                 Math.Max(1, item.LineHeight * height * scale), Math.Max(1, paint.Pitch * height * scale),
-                item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, align, paint.Mode == PaintMode.Cover ? paint.Group : null);
+                item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows, align, paint.Mode == PaintMode.Twin ? null : paint.Group,
+                paint.Mode == PaintMode.Twin);
         }
     }
 
@@ -456,7 +460,7 @@ public static class ScreenFit
         }
         static bool IsLabel(ExactInput item) => item.Rows <= 1 && !item.Text.Contains('\n');
         var natural = Enumerable.Range(0, count).Select(i => IsLabel(items[i]) ? measure(items[i].Text, baseSize[i]) : 0).ToArray();
-        var scale = Enumerable.Range(0, count).Select(i => !IsLabel(items[i]) || natural[i] <= 0 ? 1
+        var scale = Enumerable.Range(0, count).Select(i => !IsLabel(items[i]) || natural[i] <= 0 || items[i].KeepSize ? 1
             : Math.Max(ExactGroupMin, Math.Min(1, (items[i].GrowRight - items[i].GrowLeft) / natural[i]))).ToArray();
         foreach (var list in members.Values.Where(list => list.Count >= 2))
         {
@@ -529,7 +533,7 @@ public static class ScreenFit
         }
         double Tall((double Font, List<string> Lines, double Gap) laid) => ((laid.Lines.Count - 1) * laid.Gap) + (row * factor);
         var laid = Layout();
-        while (Tall(laid) > coverHeight + 1 && factor > ExactParagraphMin + 1e-6)
+        while (!item.KeepSize && Tall(laid) > coverHeight + 1 && factor > ExactParagraphMin + 1e-6)
         {
             factor = Math.Max(ExactParagraphMin, Math.Round((factor - 0.05) * 100, MidpointRounding.AwayFromZero) / 100);
             laid = Layout();

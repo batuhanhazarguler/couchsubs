@@ -290,13 +290,21 @@ class PhoneSubtitleActivity : ComponentActivity() {
  * boş tarafa uzar; yazı kesilmez. Öğeler birlikte yerleşir (grubun ortak boyu için).
  *
  * Çizim kipi ([com.couchsubs.mobile.core.TextPaint.mode]; TV ve Mac/iPhone, Windows ile aynı): yanına yazmada kutu yok,
- * yazı özgün renkte, okunurluk için yumuşak gölgeyle (açık yazıda koyu, koyu yazıda açık); ikizde her ikiz panel bir kez,
- * yazılardan önce, ölçülen zeminle yuvarlak köşeli çizilir (kuyruk köşesi köşeli + küçük üçgen), genişliği içeriğe göre
- * (sol iç boşluk sağda da); kişi resmi daire içinde; yazılar zeminsiz.
+ * yazı özgün renkte, okunurluk için yumuşak gölgeyle (açık yazıda koyu, koyu yazıda açık); ikizde her ikiz kutu bir kez,
+ * yazılardan önce, ölçülen zeminle, özgünle aynı boyda yuvarlak köşeli çizilir (kuyruk köşesi köşeli + küçük üçgen);
+ * genişliği ve yüksekliği içeriğe göre (sol iç boşluk sağda da, alt iç boşluk özgündeki kadar; yazı küçülmez); kenar
+ * çizgisi kutunun dışında; kişi resmi daire içinde; yazılar zeminsiz.
+ * Özgün yazı dar ise (konuşma satırı değilse) gömülü dar yazı tipi (Barlow Condensed, res/font) ile çizilir ve ölçülür.
  */
 @androidx.compose.runtime.Composable
 private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.Item>) {
     if (items.isEmpty()) return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Gömülü dar yazı tipi (normal, kalın); yüklenemezse sistemin dar ailesi.
+    val narrowFaces = remember(context) {
+        fun load(id: Int) = runCatching { androidx.core.content.res.ResourcesCompat.getFont(context, id) }.getOrNull()
+        load(com.couchsubs.mobile.R.font.barlow_condensed_medium) to load(com.couchsubs.mobile.R.font.barlow_condensed_bold)
+    }
     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
         val w = size.width.toDouble()
         val h = size.height.toDouble()
@@ -304,12 +312,16 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
         fun paintFor(bold: Boolean, condensed: Boolean, fontSize: Double) = android.graphics.Paint().apply {
             isAntiAlias = true
             textSize = fontSize.toFloat()
-            typeface = android.graphics.Typeface.create(if (condensed) "sans-serif-condensed" else "sans-serif",
+            val embedded = if (!condensed) null else if (bold) narrowFaces.second else narrowFaces.first
+            typeface = embedded ?: android.graphics.Typeface.create(if (condensed) "sans-serif-condensed" else "sans-serif",
                 if (bold) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
         }
+        /** Özgün yazı dar ve konuşma satırı değil (#1297: konuşma satırı hiç dar çizilmez). */
+        fun condensed(item: com.couchsubs.mobile.core.ScreenTranslation.Item) =
+            item.look?.condensed == true && !com.couchsubs.mobile.core.ScreenFit.isDialogue(item)
         // Ölçü çizilecek yazı tipiyle; öğeler karışıksa geniş olanı (kalın, dar olmayan) alınır: yazı kutudan taşmaz.
         val measureBold = inputs.any { it.first.look?.bold == true }
-        val measureCondensed = inputs.all { it.first.look?.condensed == true }
+        val measureCondensed = inputs.isNotEmpty() && inputs.all { condensed(it.first) }
         val placed = com.couchsubs.mobile.core.ScreenFit.exact(inputs.map { it.second }) { text, fontSize ->
             paintFor(measureBold, measureCondensed, fontSize).measureText(text).toDouble()
         }
@@ -325,13 +337,24 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
                 val members = placed.indices.filter { inputs[it].first.paint?.twin == twin }
                 val tl = (twin.left * w).toFloat()
                 val tt = (twin.top * h).toFloat()
-                val tb = (twin.bottom * h).toFloat()
                 val pad = members.minOf { placed[it].left }.toFloat() - tl
                 val face = paint.portraitTwin
                 val content = maxOf(members.maxOf { placed[it].left + placed[it].width }.toFloat(),
                     face?.let { (it.right * w).toFloat() } ?: tl)
-                val tr = maxOf(content + maxOf(0f, pad), tl + 1f)
+                // Özgünle aynı boyda; Türkçe uzunsa sağa, satırı kırılırsa aşağı uzar (alt iç boşluk özgündeki kadar).
+                val tr = maxOf(content + maxOf(0f, pad), tl + 1f, tl + ((twin.right - twin.left) * w).toFloat())
+                val bottom = members.maxOf { placed[it].top + placed[it].height }
+                val spotBottom = members.mapNotNull { inputs[it].first.paint?.spot?.bottom }.maxOrNull()?.let { it * h } ?: bottom
+                val tb = maxOf((twin.bottom - twin.top) * h, bottom + (twin.bottom * h - spotBottom) - tt).toFloat() + tt
                 val r = (paint.radius * h).toFloat()
+                // Kenar çizgisi: kutunun dışında, her yanda kendi kalınlığında (köşesiz ince şerit).
+                val edge = paint.edge
+                val edgeColor = edge?.let { parse(it.color) }
+                if (edge != null && edgeColor != null) {
+                    fun px(v: Double) = if (v > 0) maxOf(1.0, Math.round(v * h).toDouble()).toFloat() else 0f
+                    native.drawRect(tl - px(edge.left), tt - px(edge.top), tr + px(edge.right), tb + px(edge.bottom),
+                        android.graphics.Paint().apply { style = android.graphics.Paint.Style.FILL; color = edgeColor })
+                }
                 val fill = android.graphics.Paint().apply {
                     isAntiAlias = true
                     style = android.graphics.Paint.Style.FILL
@@ -382,7 +405,7 @@ private fun ExactBlocks(items: List<com.couchsubs.mobile.core.ScreenTranslation.
                     else android.graphics.LinearGradient(left, top, right, top, first, second, android.graphics.Shader.TileMode.CLAMP)
                 } else fill.color = first
                 if (covering) native.drawRect(left, top, right, bottom, fill)
-                val text = paintFor(item.look?.bold == true, item.look?.condensed == true, p.fontSize).apply {
+                val text = paintFor(item.look?.bold == true, condensed(item), p.fontSize).apply {
                     color = parse(item.surface?.foreground) ?: android.graphics.Color.WHITE
                     if (paint.mode == com.couchsubs.mobile.core.TextPaint.MODE_BESIDE) {
                         // Okunurluk: açık yazıda koyu, koyu yazıda açık yumuşak gölge (oyunun istem yazısı gibi).

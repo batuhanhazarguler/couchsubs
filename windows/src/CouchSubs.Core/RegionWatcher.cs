@@ -356,10 +356,21 @@ public sealed partial class RegionWatcher
         }
     }
 
+    /// <summary>Menüdeki otomatik alanla kesişen hazır alan o turda okunmaz: haritanın tuş listesi iki alana bölünüp bölünme
+    /// yerindeki satır ("ADD MARKER") çevrilmiyordu (beta.100; Mac/Android ile aynı).</summary>
+    internal static IReadOnlyList<WatchedArea> YieldingPresets(IReadOnlyList<WatchedArea> areas)
+    {
+        var menus = areas.Where(a => a.Auto && a.Menu).Select(a => a.Region).ToList();
+        if (menus.Count == 0) return areas;
+        return [.. areas.Where(area => area.Id is not (GameAreaPresets.HelpId or GameAreaPresets.PhoneId) || !menus.Any(m =>
+            Math.Min(area.Region.Right, m.Right) > Math.Max(area.Region.Left, m.Left)
+            && Math.Min(area.Region.Bottom, m.Bottom) > Math.Max(area.Region.Top, m.Top)))];
+    }
+
     private async Task PassAreasAsync(Frame frame, IReadOnlyList<WatchedArea> all, int started, bool regularDue, bool confirmOnly, bool phoneDue)
     {
         // Ayarlar'da kapalı türün alanı (menü, hazır yardım/mesaj alanı, görev satırı) okunmaz; kutusu kalkar.
-        var areas = Allows is { } allows ? [.. all.Where(area => ScreenTextKinds.Reads(area, allows))] : all;
+        var areas = YieldingPresets(Allows is { } allows ? [.. all.Where(area => ScreenTextKinds.Reads(area, allows))] : all);
         var map = states;
         if (regularDue || phoneDue) Interlocked.Increment(ref passes);
         var ids = areas.Select(area => area.Id).ToHashSet();

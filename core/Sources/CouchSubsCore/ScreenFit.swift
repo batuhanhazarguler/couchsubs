@@ -353,10 +353,13 @@ public enum ScreenFit {
         public var rows: Int
         public var align: TextLook.Align
         public var group: Int?
+        /// Yazı küçülmez (ikiz kutu, beta.100: "aynı punto, küçültme yok"): sığmazsa satır kırılır, kutu aşağı uzar.
+        public var keepSize: Bool
 
         public init(text: String, left: Double, top: Double, right: Double, bottom: Double, growLeft: Double? = nil,
                     growRight: Double? = nil, line: Double, pitch: Double? = nil, rows: Int = 1, align: TextLook.Align = .left,
-                    group: Int? = nil) {
+                    group: Int? = nil, keepSize: Bool = false) {
+            self.keepSize = keepSize
             self.text = text
             self.left = left
             self.top = top
@@ -388,7 +391,7 @@ public enum ScreenFit {
                       bottom: box.bottom * height, growLeft: room.map { $0.left * width }, growRight: room.map { $0.right * width },
                       line: max(1, item.lineHeight * height * scale), pitch: max(1, paint.pitch * height * scale),
                       rows: item.paragraphs ? max(2, item.rows) : item.rows, align: align,
-                      group: paint.mode == .cover ? paint.group : nil)
+                      group: paint.mode == .twin ? nil : paint.group, keepSize: paint.mode == .twin)
         }
     }
 
@@ -431,7 +434,7 @@ public enum ScreenFit {
         func isLabel(_ item: ExactInput) -> Bool { item.rows <= 1 && !item.text.contains("\n") }
         let natural = items.indices.map { i in isLabel(items[i]) ? measure(items[i].text, base[i]) : 0 }
         var scale = items.indices.map { i -> Double in
-            guard isLabel(items[i]), natural[i] > 0 else { return 1 }
+            guard isLabel(items[i]), natural[i] > 0, !items[i].keepSize else { return 1 }
             return max(exactGroupMin, min(1, (items[i].growRight - items[i].growLeft) / natural[i]))
         }
         for list in members.values where list.count >= 2 {
@@ -494,7 +497,7 @@ public enum ScreenFit {
         func tall(_ laid: (font: Double, lines: [String], gap: Double)) -> Double {
             Double(laid.lines.count - 1) * laid.gap + row * factor
         }
-        while tall(laid) > coverHeight + 1, factor > exactParagraphMin + 1e-6 {
+        while !item.keepSize, tall(laid) > coverHeight + 1, factor > exactParagraphMin + 1e-6 {
             factor = max(exactParagraphMin, ((factor - 0.05) * 100).rounded() / 100)
             laid = layout()
         }

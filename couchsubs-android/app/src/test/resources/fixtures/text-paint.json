@@ -1,5 +1,5 @@
 {
-  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz; side: kutunun ucundaki simgenin yanı, TextPaint.iconSide; hedefte words: sözcük sayısı). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05). 'modes': çizim kipi (TextPaint.mode; hedefte kind: ScreenTextKind, prompt: tuş istemi; dikdörtgende radius: yuvarlak köşe, nokta merkezi köşe dairesinin içindeyse boyanır; tail: o alt köşe köşeli kalır, balon kuyruğu). Beklenen: mode; spot [l,t,r,b], room [sol,sağ] (spotRoom), twin [l,t,r,b], radius (piksel ±1,5), scale, tail, portrait [l,t,r,b] ve portraitTwin (null: resim yok); kutular ±1.",
+  "_": "Yerinde birebir çizimin ortak deneme dosyası (Mac/iPhone: TextPaintTests.swift, Windows: TextPaintTests.cs, Android: TextPaintTest.kt, TV: scripts/tv-exact-fit.test.js). 'paint': yapay kare (zemin: solid/h/v/checker; üstüne çizilen dikdörtgenler) ve TextPainter.paints'in beklenen sonucu (piksel; kutular ±1, renkler kanal başına ±4; verilmeyen alan denetlenmez, grow null: uzamaz; side: kutunun ucundaki simgenin yanı, TextPaint.iconSide; hedefte words: sözcük sayısı). 'exact': ScreenFit.exact yerleşimi; ölçü: genişlik = harf sayısı × charWidth × yazı boyu (±0,05). 'modes': çizim kipi (TextPaint.mode; hedefte kind: ScreenTextKind, prompt: tuş istemi; dikdörtgende radius: yuvarlak köşe, nokta merkezi köşe dairesinin içindeyse boyanır; tail: o alt köşe köşeli kalır, balon kuyruğu). Beklenen: mode; edge [üst, sağ, alt, sol] (ikizin kenar çizgisi, piksel ±0,5); spot [l,t,r,b], room [sol,sağ] (spotRoom), twin [l,t,r,b], radius (piksel ±1,5), scale, tail, portrait [l,t,r,b] ve portraitTwin (null: resim yok); kutular ±1.",
   "paint": [
     {
       "id": "duz-zemin-tasan-harf",
@@ -1442,7 +1442,7 @@
       ]
     },
     {
-      "id": "duz-koseli-kutu-ortulur",
+      "id": "duz-koseli-kutu-ikiz",
       "width": 400,
       "height": 200,
       "background": {
@@ -1489,12 +1489,32 @@
       ],
       "expect": [
         {
-          "mode": "cover"
+          "mode": "twin",
+          "portrait": null,
+          "radius": 0,
+          "room": [
+            25,
+            127
+          ],
+          "scale": 1,
+          "spot": [
+            25,
+            89,
+            107,
+            105
+          ],
+          "tail": null,
+          "twin": [
+            16,
+            70,
+            136,
+            130
+          ]
         }
       ]
     },
     {
-      "id": "yuvarlak-balon-ikiz-ustte-resimli-kuyruklu",
+      "id": "yuvarlak-balon-ikiz-yanda-resimli-kuyruklu",
       "width": 600,
       "height": 300,
       "background": {
@@ -1583,29 +1603,29 @@
             190
           ],
           "portraitTwin": [
-            106.96,
-            111.6,
-            118.56,
-            123.2
+            316,
+            170,
+            336,
+            190
           ],
-          "radius": 7.92,
+          "radius": 13.66,
           "room": [
-            122.62,
-            294
+            343,
+            589
           ],
-          "scale": 0.58,
+          "scale": 1,
           "spot": [
-            122.62,
-            112.18,
-            152.78,
-            121.46
+            343,
+            171,
+            395,
+            187
           ],
           "tail": "left",
           "twin": [
-            100,
-            100,
-            216,
-            146.4
+            304,
+            150,
+            504,
+            230
           ]
         },
         {
@@ -1617,35 +1637,35 @@
             190
           ],
           "portraitTwin": [
-            106.96,
-            111.6,
-            118.56,
-            123.2
+            316,
+            170,
+            336,
+            190
           ],
-          "radius": 7.92,
+          "radius": 13.66,
           "room": [
-            106.38,
-            294
+            315,
+            589
           ],
-          "scale": 0.58,
+          "scale": 1,
           "spot": [
-            106.38,
-            128.42,
-            204.98,
-            137.7
+            315,
+            199,
+            485,
+            215
           ],
           "tail": "left",
           "twin": [
-            100,
-            100,
-            216,
-            146.4
+            304,
+            150,
+            504,
+            230
           ]
         }
       ]
     },
     {
-      "id": "yuvarlak-panel-ustte-yer-yok-altta",
+      "id": "yuvarlak-panel-ikiz-yanda",
       "width": 600,
       "height": 300,
       "background": {
@@ -1694,31 +1714,31 @@
         {
           "mode": "twin",
           "portrait": null,
-          "radius": 7.92,
+          "radius": 13.66,
           "room": [
-            116.82,
-            283
+            333,
+            571
           ],
-          "scale": 0.58,
+          "scale": 1,
           "spot": [
-            116.82,
-            120.82,
-            187.58,
-            130.1
+            333,
+            49,
+            455,
+            65
           ],
           "tail": null,
           "twin": [
-            100,
-            104,
-            216,
-            150.4
+            304,
+            20,
+            504,
+            100
           ]
         }
       ]
     },
     {
-      "id": "yuvarlak-panel-yer-yok-ortulur",
-      "width": 600,
+      "id": "ekran-genisligindeki-panel-kutu-sayilmaz",
+      "width": 220,
       "height": 110,
       "background": {
         "kind": "solid",
@@ -1727,9 +1747,9 @@
       "rects": [
         {
           "box": [
-            100,
+            10,
             15,
-            300,
+            210,
             95
           ],
           "color": "#D0D0D0",
@@ -1737,9 +1757,9 @@
         },
         {
           "box": [
-            130,
+            40,
             48,
-            250,
+            160,
             62
           ],
           "color": "#202020"
@@ -1748,9 +1768,9 @@
       "targets": [
         {
           "box": [
-            130,
+            40,
             48,
-            250,
+            160,
             62
           ],
           "line": 14,
@@ -1764,12 +1784,22 @@
       ],
       "expect": [
         {
-          "mode": "cover"
+          "mode": "beside",
+          "room": [
+            14,
+            206
+          ],
+          "spot": [
+            39,
+            70,
+            161,
+            86
+          ]
         }
       ]
     },
     {
-      "id": "desenli-zemin-yer-yok-ortulur",
+      "id": "desenli-zemin-yanda-yer-yok-altina",
       "width": 300,
       "height": 60,
       "background": {
@@ -1832,15 +1862,35 @@
       ],
       "expect": [
         {
-          "mode": "cover"
+          "mode": "beside",
+          "room": [
+            4,
+            155
+          ],
+          "spot": [
+            9,
+            42,
+            151,
+            58
+          ]
         },
         {
-          "mode": "cover"
+          "mode": "beside",
+          "room": [
+            155,
+            296
+          ],
+          "spot": [
+            159,
+            42,
+            291,
+            58
+          ]
         }
       ]
     },
     {
-      "id": "menu-turu-hep-ortulur",
+      "id": "menu-yanina-yazilir",
       "width": 400,
       "height": 200,
       "background": {
@@ -1879,7 +1929,17 @@
       ],
       "expect": [
         {
-          "mode": "cover"
+          "mode": "beside",
+          "room": [
+            79,
+            192
+          ],
+          "spot": [
+            130,
+            89,
+            192,
+            105
+          ]
         }
       ]
     },
@@ -1923,6 +1983,397 @@
       "expect": [
         {
           "mode": "cover"
+        }
+      ]
+    },
+    {
+      "id": "liste-saga-yasli-solda-tek-sutun",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#203040"
+      },
+      "rects": [
+        {
+          "box": [
+            300,
+            40,
+            360,
+            54
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            320,
+            70,
+            360,
+            84
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            280,
+            100,
+            360,
+            114
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            300,
+            40,
+            360,
+            54
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right",
+          "kind": "menu"
+        },
+        {
+          "box": [
+            320,
+            70,
+            360,
+            84
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right",
+          "kind": "menu"
+        },
+        {
+          "box": [
+            280,
+            100,
+            360,
+            114
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "right",
+          "kind": "menu"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "beside",
+          "room": [
+            159,
+            272
+          ],
+          "spot": [
+            210,
+            39,
+            272,
+            55
+          ]
+        },
+        {
+          "mode": "beside",
+          "room": [
+            191,
+            272
+          ],
+          "spot": [
+            230,
+            69,
+            272,
+            85
+          ]
+        },
+        {
+          "mode": "beside",
+          "room": [
+            127,
+            272
+          ],
+          "spot": [
+            190,
+            99,
+            272,
+            115
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sekme-satiri-altina-ayni-cizgi",
+      "width": 400,
+      "height": 200,
+      "background": {
+        "kind": "solid",
+        "from": "#203040"
+      },
+      "rects": [
+        {
+          "box": [
+            60,
+            30,
+            120,
+            44
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            140,
+            30,
+            180,
+            44
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            200,
+            30,
+            280,
+            44
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            60,
+            30,
+            120,
+            44
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left",
+          "kind": "menu"
+        },
+        {
+          "box": [
+            140,
+            30,
+            180,
+            44
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left",
+          "kind": "menu"
+        },
+        {
+          "box": [
+            200,
+            30,
+            280,
+            44
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#203040",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left",
+          "kind": "menu"
+        }
+      ],
+      "expect": [
+        {
+          "mode": "beside",
+          "room": [
+            28,
+            130
+          ],
+          "spot": [
+            59,
+            52,
+            121,
+            68
+          ]
+        },
+        {
+          "mode": "beside",
+          "room": [
+            130,
+            190
+          ],
+          "spot": [
+            139,
+            52,
+            181,
+            68
+          ]
+        },
+        {
+          "mode": "beside",
+          "room": [
+            190,
+            322
+          ],
+          "spot": [
+            199,
+            52,
+            281,
+            68
+          ]
+        }
+      ]
+    },
+    {
+      "id": "kenar-cizgili-kart-ikiz",
+      "width": 600,
+      "height": 300,
+      "background": {
+        "kind": "solid",
+        "from": "#101010"
+      },
+      "rects": [
+        {
+          "box": [
+            100,
+            96,
+            250,
+            100
+          ],
+          "color": "#E040A0"
+        },
+        {
+          "box": [
+            100,
+            100,
+            250,
+            180
+          ],
+          "color": "#303848"
+        },
+        {
+          "box": [
+            115,
+            112,
+            200,
+            126
+          ],
+          "color": "#FFFFFF"
+        },
+        {
+          "box": [
+            115,
+            140,
+            235,
+            168
+          ],
+          "color": "#FFFFFF"
+        }
+      ],
+      "targets": [
+        {
+          "box": [
+            115,
+            112,
+            200,
+            126
+          ],
+          "line": 14,
+          "rows": 1,
+          "bg": "#303848",
+          "fg": "#FFFFFF",
+          "upper": true,
+          "align": "left",
+          "kind": "mission"
+        },
+        {
+          "box": [
+            115,
+            140,
+            235,
+            168
+          ],
+          "line": 14,
+          "rows": 2,
+          "bg": "#303848",
+          "fg": "#FFFFFF",
+          "upper": false,
+          "align": "left",
+          "kind": "mission"
+        }
+      ],
+      "expect": [
+        {
+          "edge": [
+            4,
+            0,
+            0,
+            0
+          ],
+          "mode": "twin",
+          "portrait": null,
+          "radius": 0,
+          "room": [
+            268,
+            465
+          ],
+          "scale": 1,
+          "spot": [
+            268,
+            111,
+            355,
+            127
+          ],
+          "tail": null,
+          "twin": [
+            254,
+            100,
+            404,
+            180
+          ]
+        },
+        {
+          "edge": [
+            4,
+            0,
+            0,
+            0
+          ],
+          "mode": "twin",
+          "portrait": null,
+          "radius": 0,
+          "room": [
+            268,
+            465
+          ],
+          "scale": 1,
+          "spot": [
+            268,
+            139,
+            390,
+            170
+          ],
+          "tail": null,
+          "twin": [
+            254,
+            100,
+            404,
+            180
+          ]
         }
       ]
     }

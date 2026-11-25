@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Çizim kipleri (TV uygulaması 0.9.108, app.js exactMode / exactInput / exactTwins / placeExact) gerçek Chromium'da:
-//  - beside (Sinan Bey: "SELAMLA  GREET"): kutu yok, özgün yazı açık kalır; Türkçe hemen solunda, aynı satır ve aynı
-//    yazı boyunda, özgüne yaslı, okunurluk konturuyla.
-//  - twin (#1296): özgün panel örtülmez; aynı zemin, yuvarlak köşe, kuyruk ve kişi resmiyle küçük ikiz panel hemen
-//    üstte, sol kenarı özgünle hizalı, genişliği içeriğe göre; yazı scale katında.
+// Çizim kipleri (TV uygulaması 0.9.109, app.js exactMode / exactInput / exactTwins / placeExact) gerçek Chromium'da:
+//  - beside (Sinan Bey: "SELAMLA  GREET"; beta.100: menülerde de): kutu yok, özgün yazı açık kalır; Türkçe hemen solunda,
+//    aynı satır ve aynı yazı boyunda, özgüne yaslı, okunurluk konturuyla; listede (group) bütün Türkçeler aynı boyda.
+//  - twin (beta.100): özgün kutu örtülmez; aynı zemin, kenar çizgisi, yuvarlak köşe, kuyruk ve kişi resmiyle AYNI BOYDA
+//    ikiz kutu yanında; yazı küçülmez, uzun Türkçe satır kırar ve kutu aşağı uzar.
 //  - Alanları eksik/eski gönderi örtme kipinde çizilir (eski bilgisayar bozulmaz).
 // node --test scripts/tv-exact-modes.test.js — tarayıcı yolu: COUCHSUBS_TEST_BROWSER.
 'use strict';
@@ -40,21 +40,28 @@ const items = [
   // 0) Yanına yazma: özgün "GREET" 1000-1100; Türkçe solunda (spot 880-980, boş alan 700'e kadar).
   base({ text: 'SELAMLA', box: px(1002, 502, 1098, 538), cover: px(1000, 500, 1100, 540), bg: '#3A3A3A', bgPat: true,
     mode: 'beside', spot: px(880, 500, 980, 540), spotRoom: px(700, 500, 980, 540) }),
-  // 1-2) İkiz: özgün balon 1400-1800 x 800-960 (resim 1420-1460, ad, mesaj); ikiz üstte, 0,58 katında.
+  // 1-2) İkiz: özgün balon 1400-1800 x 800-960 (resim 1412-1435, ad, mesaj); ikiz solunda, aynı boyda (960-1360), üstte
+  // pembe kenar çizgisi; mesaj uzun: satır kırılır, kutu aşağı uzar.
   { text: 'Jason', box: px(1480, 820, 1580, 860), line: 40 / H, lineH: 40 / H, cover: px(1478, 818, 1582, 862),
-    bg: '#E2EBD2', fg: '#202020', weight: 700, upper: false, align: 'left', mode: 'twin', scale: 0.58, radius: 20 / H,
-    tail: 'left', twinBox: px(1400, 701, 1632, 794), spot: px(1446, 711, 1506, 737), spotRoom: px(1446, 711, 1788, 737),
-    icon: { src: PNG, box: px(1412, 712, 1435, 735) },
+    bg: '#E2EBD2', fg: '#202020', weight: 700, upper: false, align: 'left', mode: 'twin', scale: 1, radius: 20 / H,
+    tail: 'left', twinBox: px(960, 800, 1360, 960), spot: px(1038, 818, 1142, 862), spotRoom: px(1038, 818, 1342, 862),
+    icon: { src: PNG, box: px(972, 812, 995, 835) }, edge: { color: '#E040A0', top: 4 / H, right: 0, bottom: 0, left: 0 },
     surface: { background: '#E2EBD2', foreground: '#202020', flat: true }, style: { align: 'left', bold: true, condensed: false, upper: false } },
-  { text: 'Uyandın mı, iyi misin?', box: px(1420, 880, 1760, 920), line: 40 / H, lineH: 40 / H, cover: px(1418, 878, 1762, 922),
-    bg: '#E2EBD2', fg: '#202020', weight: 400, upper: false, align: 'left', mode: 'twin', scale: 0.58, radius: 20 / H,
-    tail: 'left', twinBox: px(1400, 701, 1632, 794), spot: px(1410, 746, 1610, 771), spotRoom: px(1410, 746, 1788, 771),
-    icon: { src: PNG, box: px(1412, 712, 1435, 735) },
+  { text: 'Uyandın mı, iyi misin? Bu sabah seni aradım ama açmadın, her şey yolunda mı?', box: px(1420, 880, 1760, 920),
+    line: 40 / H, lineH: 40 / H, cover: px(1418, 878, 1762, 922),
+    bg: '#E2EBD2', fg: '#202020', weight: 400, upper: false, align: 'left', mode: 'twin', scale: 1, radius: 20 / H,
+    tail: 'left', twinBox: px(960, 800, 1360, 960), spot: px(978, 878, 1322, 922), spotRoom: px(978, 878, 1342, 922),
+    icon: { src: PNG, box: px(972, 812, 995, 835) }, edge: { color: '#E040A0', top: 4 / H, right: 0, bottom: 0, left: 0 },
     surface: { background: '#E2EBD2', foreground: '#202020', flat: true }, style: { align: 'left', bold: false, condensed: false, upper: false } },
   // 3) Eski gönderi (kip yok): örtme.
   base({ text: 'ESKİ', box: px(200, 300, 300, 340), cover: px(198, 298, 302, 342), bg: '#202020' }),
   // 4) Kip var ama spot eksik: örtme.
   base({ text: 'EKSİK', box: px(200, 400, 300, 440), cover: px(198, 398, 302, 442), bg: '#202020', mode: 'beside' }),
+  // 5-6) Liste (sağa yaslı tuş listesi): Türkçeler solda tek sütunda, aynı boyda (biri dar alanda küçülse de grup birlikte).
+  base({ text: 'ORTALA', box: px(1700, 600, 1800, 640), cover: px(1700, 600, 1800, 640), bg: '#0073F1', align: 'right', group: 7,
+    mode: 'beside', spot: px(1500, 600, 1600, 640), spotRoom: px(1300, 600, 1600, 640) }),
+  base({ text: 'HEDEF BELİRLE', box: px(1640, 660, 1800, 700), line: 44 / H, cover: px(1640, 660, 1800, 700), bg: '#0073F1',
+    align: 'right', group: 7, mode: 'beside', spot: px(1440, 660, 1600, 700), spotRoom: px(1300, 660, 1600, 700) }),
 ];
 
 function render() {
@@ -108,7 +115,7 @@ function render() {
 
 function overlaps(a, l, t, r, b) { return a.right > l + 0.5 && a.left < r - 0.5 && a.bottom > t + 0.5 && a.top < b - 0.5; }
 
-test('kipler: yanına yazma kutusuz ve özgünün solunda, ikiz küçük ve üstte, eski gönderi örtme', { skip: !browser && 'tarayıcı yok' }, () => {
+test('kipler: yanına yazma kutusuz ve özgünün solunda, liste aynı boyda, ikiz aynı boyda yanında, eski gönderi örtme', { skip: !browser && 'tarayıcı yok' }, () => {
   const drawn = render(); if (process.env.DUMP) console.log(JSON.stringify(drawn.map(e => [e.text, e.cls, e.lines.map(l => [l.text, l.left, l.right])])));
   // Sıra: ikiz panel önce, sonra öğeler.
   const panel = drawn.find(el => / twin/.test(el.cls) && !el.lines.length);
@@ -116,7 +123,7 @@ test('kipler: yanına yazma kutusuz ve özgünün solunda, ikiz küçük ve üst
   assert.ok(drawn.indexOf(panel) < drawn.findIndex(el => el.text === 'Jason'), 'panel yazılardan önce');
   const beside = drawn.find(el => el.text === 'SELAMLA');
   const name = drawn.find(el => el.text === 'Jason');
-  const message = drawn.find(el => el.text === 'Uyandın mı, iyi misin?');
+  const message = drawn.find(el => el.text.indexOf('Uyandın mı') === 0);
   const old = drawn.find(el => el.text === 'ESKİ'), missing = drawn.find(el => el.text === 'EKSİK');
 
   // Yanına yazma.
@@ -133,16 +140,24 @@ test('kipler: yanına yazma kutusuz ve özgünün solunda, ikiz küçük ve üst
   assert.ok(parseFloat(panel.radius) >= 19, 'yuvarlak köşe: ' + panel.radius);
   assert.equal(panel.bottomLeft, '0px', 'kuyruklu köşe köşeli');
   assert.ok(panel.tail, 'kuyruk çizilir');
-  assert.ok(Math.abs(panel.left - 1400) <= 1, 'sol kenar özgünle hizalı');
-  assert.ok(panel.bottom <= 800, 'özgün balonun üstünde, örtmez');
-  assert.ok(panel.right < 1800 - 50, 'genişlik içeriğe göre (özgünden dar): ' + panel.right);
-  assert.ok(panel.right >= message.lines[0].right, 'yazı panelin içinde');
-  assert.ok(panel.img && Math.abs(panel.img.left - 1412) <= 1 && panel.img.radius === '50%', 'kişi resmi yuvarlak: ' + JSON.stringify(panel.img));
+  assert.ok(Math.abs(panel.left - 960) <= 1, 'ikiz kutunun yerinde (özgünün solunda)');
+  assert.ok(panel.right <= 1400, 'özgün balonu örtmez: ' + panel.right);
+  assert.ok(Math.abs(panel.top - (800 - 4)) <= 1, 'kenar çizgisi kutunun dışında, üstte: ' + panel.top);
+  assert.ok(panel.bottom > 960 + 20, 'uzun Türkçe: kutu aşağı uzar: ' + panel.bottom);
+  assert.ok(panel.bottom >= message.lines[message.lines.length - 1].bottom, 'yazı panelin içinde');
+  assert.ok(message.lines.length >= 2, 'satır kırılır (küçülmez)');
+  assert.ok(panel.img && Math.abs(panel.img.left - 972) <= 1 && panel.img.radius === '50%', 'kişi resmi yuvarlak: ' + JSON.stringify(panel.img));
   for (const el of [name, message]) {
     assert.equal(el.bg, 'rgba(0, 0, 0, 0)', el.text + ': yazının kendi kutusu yok');
     assert.ok(!overlaps(el, 1400, 800, 1800, 960), el.text + ': özgün balon örtülmez');
-    assert.ok(Math.abs(el.font - 0.95 * 40 * 0.58) <= 0.5, el.text + ': yazı 0,58 katında: ' + el.font);
+    assert.ok(Math.abs(el.font - 0.95 * 40) <= 0.5, el.text + ': yazı özgün boyda (küçültme yok): ' + el.font);
   }
+
+  // Liste: aynı boy, solda sağa yaslı tek sütun.
+  const a = drawn.find(el => el.text === 'ORTALA'), b = drawn.find(el => el.text === 'HEDEF BELİRLE');
+  assert.equal(a.font, b.font, 'listede aynı yazı boyu: ' + a.font + ' / ' + b.font);
+  assert.ok(Math.abs(a.lines[0].right - b.lines[0].right) <= 2 && a.lines[0].right <= 1601, 'sağa yaslı tek sütun');
+  for (const el of [a, b]) assert.equal(el.bg, 'rgba(0, 0, 0, 0)', el.text + ': arka plansız');
 
   // Eski/eksik gönderi: örtme.
   for (const el of [old, missing]) {

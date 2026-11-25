@@ -1,0 +1,1 @@
+0.9.109: Screen text translation no longer covers menus and boxes: menu translations are written beside the original without a background in a game-like condensed font, boxes and cards get a same-size twin next to them.

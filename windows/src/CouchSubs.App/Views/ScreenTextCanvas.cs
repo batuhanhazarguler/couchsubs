@@ -26,14 +26,23 @@ namespace CouchSubs.App.Views;
 /// </para>
 /// <para>
 /// Çizim kipi (<see cref="TextPaint.Mode"/>; TV placeExact ve Mac ExactScreenText ile aynı): örtmede kutu; yanına yazmada
-/// kutu yok, Türkçe özgün yazının yanında özgün stille, okunurluk için yumuşak gölgeyle; ikizde özgün panelin küçük kopyası
-/// (aynı zemin, köşe, kuyruk ve kişi resmi; genişliği içeriğe göre) özgünün hemen üstünde ya da altında, yazı kutusuz.
+/// kutu yok, Türkçe özgün yazının yanında özgün stille, okunurluk için yumuşak gölgeyle; ikizde özgün kutunun aynı boydaki
+/// kopyası (aynı zemin, kenar çizgisi, köşe, kuyruk ve kişi resmi; Türkçe uzunsa sağa ve aşağı uzar) bilgisayarın verdiği
+/// yerde (yan, alt ya da üst), yazı kutusuz.
+/// </para>
+/// <para>
+/// Dar aile (özgün yazı dar; konuşma satırı hiç dar çizilmez, <see cref="ScreenFit.IsDialogue(string, int)"/>) yerinde
+/// birebir çizimde gömülü Barlow Condensed'tir (Fonts/, SIL OFL 1.1): ölçü ve çizim aynı yazı tipiyle, Mac ve TV ile aynı
+/// genişlikte.
 /// </para>
 /// </summary>
 internal sealed class ScreenTextCanvas : Canvas
 {
     private static readonly FontFamily Condensed = new("Arial Narrow, Segoe UI");
     private static readonly FontFamily Normal = new("Segoe UI");
+    /// <summary>Yerinde birebir çizimin gömülü dar ailesi (Fonts/BarlowCondensed-Medium.ttf, -Bold.ttf); yüklenemezse Arial Narrow.</summary>
+    private static readonly FontFamily ExactCondensed =
+        new(new Uri("pack://application:,,,/"), "./Fonts/#Barlow Condensed, ./Fonts/#Barlow Condensed Medium, Arial Narrow, Segoe UI");
     private static readonly CultureInfo Turkish = CultureInfo.GetCultureInfo("tr-TR");
 
     private IReadOnlyList<ScreenTranslation.Item> items = [];
@@ -141,8 +150,14 @@ internal sealed class ScreenTextCanvas : Canvas
     private void LayoutExact(IReadOnlyList<ScreenTranslation.Item> painted, double width, double height, double dpi)
     {
         if (painted.Count == 0) return;
-        var typefaces = painted.Select(item => new Typeface(item.Look!.Condensed ? Condensed : Normal, FontStyles.Normal,
-            item.Look.Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal)).ToList();
+        var typefaces = painted.Select(item =>
+        {
+            // Konuşma satırı dar aileyle çizilmez (ScreenStyleLock ile aynı kural, #1255).
+            var condensed = item.Look!.Condensed
+                && !ScreenFit.IsDialogue(item.Translation, item.Paragraphs ? Math.Max(2, item.Rows) : item.Rows);
+            return new Typeface(condensed ? ExactCondensed : Normal, FontStyles.Normal,
+                item.Look.Bold ? FontWeights.Bold : condensed ? FontWeights.Medium : FontWeights.Normal, FontStretches.Normal);
+        }).ToList();
         var texts = painted.Select(item => item.Look!.Upper ? item.Translation.ToUpper(Turkish) : item.Translation).ToList();
         var inputs = painted.Select((item, i) => ScreenFit.ExactInput.From(item, width, height)! with { Text = texts[i] }).ToList();
         // Her öğe kendi yazı tipiyle ölçülür. Grup aynı boyda kalsın diye bütün öğeler birlikte yerleşir; her yazı tipi
@@ -215,8 +230,10 @@ internal sealed class ScreenTextCanvas : Canvas
     }
 
     /// <summary>
-    /// İkiz panel: özgün panelin küçük kopyası (zemin rengi, köşe yarıçapı, konuşma balonunun kuyruğu, kişi resmi); sol kenarı
-    /// ve üstü bilgisayarın verdiği yerde, genişliği içeriğe göre (sağ iç boşluk soldakine eşit), Türkçe uzunsa aşağı uzar.
+    /// İkiz panel: özgün kutunun aynı boydaki kopyası (zemin rengi, kenar çizgisi, köşe yarıçapı, konuşma balonunun kuyruğu,
+    /// kişi resmi); sol kenarı ve üstü bilgisayarın verdiği yerde. Genişlik ve yükseklik en az özgün kadar, Türkçe uzunsa
+    /// içeriğe göre uzar (sağ iç boşluk soldakine, alt iç boşluk özgündekine eşit). Kenar çizgisi kutunun dışında, her yanda
+    /// kendi kalınlığında (TV exactEdge ile aynı).
     /// </summary>
     private void DrawTwin(IReadOnlyList<int> members, IReadOnlyList<ScreenTranslation.Item> painted,
                           IReadOnlyList<ScreenFit.ExactPlacement> placements, double width, double height)
@@ -231,18 +248,30 @@ internal sealed class ScreenTextCanvas : Canvas
         var spotBottom = members.Max(i => painted[i].Paint!.Spot is { } spot ? spot.Bottom * height : bottom);
         bottom = Math.Max(bottom, members.Max(i => placements[i].Top + placements[i].Height) + Math.Max(0, bottom - spotBottom));
         var radius = Math.Max(0, paint.Radius * height);
-        var panelWidth = Math.Max(2 * radius, right + pad - left);
+        var panelWidth = Math.Max(Math.Max(2 * radius, (twin.Right - twin.Left) * width), right + pad - left);
         var fill = new SolidColorBrush(Parse(paint.Background, Colors.LightGray));
+        // Kenar çizgisi: kare yüksekliğine oranlı kalınlık, en az 1 piksel (TV exactEdge ile aynı yuvarlama); kutunun dışında.
+        double Thick(double value) => value > 0 ? Math.Max(1, Math.Round(value * height, MidpointRounding.AwayFromZero)) : 0;
+        var edge = new Thickness(0);
+        Brush? edgeBrush = null;
+        if (paint.Edge is { } line && Parse(line.Color, Colors.Transparent) is var color && color != Colors.Transparent)
+        {
+            edge = new Thickness(Thick(line.Left), Thick(line.Top), Thick(line.Right), Thick(line.Bottom));
+            edgeBrush = new SolidColorBrush(color);
+        }
         var panel = new Border
         {
-            Width = panelWidth,
-            Height = Math.Max(1, bottom - top),
+            Width = panelWidth + edge.Left + edge.Right,
+            Height = Math.Max(1, bottom - top) + edge.Top + edge.Bottom,
             Background = fill,
+            BorderBrush = edgeBrush,
+            BorderThickness = edge,
             CornerRadius = new CornerRadius(radius, radius, paint.Tail == "right" ? 0 : radius, paint.Tail == "left" ? 0 : radius),
         };
-        SetLeft(panel, left);
-        SetTop(panel, top);
+        SetLeft(panel, left - edge.Left);
+        SetTop(panel, top - edge.Top);
         Children.Add(panel);
+        bottom += edge.Bottom;
         if (paint.Tail is "left" or "right")
         {
             // Kuyruk: köşeli köşeden aşağı doğru küçük üçgen.

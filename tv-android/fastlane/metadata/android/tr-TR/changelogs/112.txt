@@ -1,0 +1,1 @@
+0.9.109: Ekran yazısı çevirisi menüleri ve kutuları örtmüyor: menü çevirileri özgünün yanına arka plansız, oyuna benzer dar yazı tipiyle; kutu ve kartlar yanına aynı boyda ikiz kutu olarak yazılıyor.

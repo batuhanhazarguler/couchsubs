@@ -54,7 +54,8 @@ object UiCommands {
         "RESUME" to "Sürdür", "QUIT" to "Çık", "NEXT" to "İleri", "PREVIOUS" to "Önceki", "ALL" to "Tümü",
         "NONE" to "Hiçbiri", "DEFAULT" to "Varsayılan", "APPLY" to "Uygula", "RESET" to "Sıfırla",
         "INVENTORY" to "Envanter", "OUTFITS" to "Kıyafetler", "OUTFIT" to "Kıyafet", "WEAPONS" to "Silahlar",
-        "STATS" to "İstatistikler", "GAME" to "Oyun",
+        "STATS" to "İstatistikler", "GAME" to "Oyun", "BRIEF" to "Özet", "PROGRESS" to "İlerleme", "VEHICLES" to "Araçlar",
+        "ANIMALS" to "Hayvanlar",
     )
 
     private fun joined(parts: List<String>) =
@@ -162,6 +163,7 @@ object UiCommands {
             return if (any) joined(done) else null
         }
         translateLabel(label)?.let { return it }
+        translateTabs(label)?.let { return it }
         val words = label.trim().split(' ').filter { it.isNotEmpty() }
         if (words.size < 2) return null
         // Baştaki kırıntı tuş adıysa ("R3 LOOK BEHIND") kalır; değilse ("1 Map", "pi Settings") atılır.
@@ -170,5 +172,26 @@ object UiCommands {
         }
         if (words.last().length <= 2) translateLabel(words.dropLast(1).joinToString(" "))?.let { return it + " " + words.last() }
         return null
+    }
+
+    /**
+     * Tek satır okunan sekme çubuğu ("JASON & LUCIA MAP BRIEF"): "AD & AD" kalır, kalan her sözcük sözlükte olmalı; motora
+     * gitmez, her karede aynı çeviri (Mac/Windows ile aynı). Yalnız BÜYÜK HARFLİ yazıda.
+     */
+    fun translateTabs(label: String): String? {
+        val words = label.trim().split(' ').filter { it.isNotEmpty() }
+        if (words.size < 2 || !TextStyleSampler.isUpper(label)) return null
+        val out = mutableListOf<String>()
+        var i = 0
+        while (i < words.size) {
+            if (i + 2 < words.size && words[i + 1] == "&") {
+                out += words.subList(i, i + 3)
+                i += 3
+                continue
+            }
+            out += translateLabel(words[i]) ?: return null
+            i++
+        }
+        return out.joinToString(" ")
     }
 }

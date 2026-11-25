@@ -230,7 +230,7 @@ tasks.register('samsungTvPackage', Zip) {
     destinationDirectory = layout.buildDirectory.dir('generated/couchsubs-tv/tv')
     preserveFileTimestamps = false
     reproducibleFileOrder = true
-    from("$repoRoot/tv-webos") { include 'app.js', 'i18n.js', 'config.js', 'style.css', 'largeIcon.png' }
+    from("$repoRoot/tv-webos") { include 'app.js', 'i18n.js', 'config.js', 'style.css', 'largeIcon.png', 'fonts/**' }
     from("$repoRoot/tv-webos") { include 'icon.png'; rename { 'panel-icon.png' } }
     from("$repoRoot/tv-webos") {
         include 'index.html'

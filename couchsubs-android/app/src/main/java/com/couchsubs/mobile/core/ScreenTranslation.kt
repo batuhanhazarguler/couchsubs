@@ -652,9 +652,23 @@ object ScreenTranslation {
      * Yalnız özel adlardan oluşan yazı ("JASON & LUCIA", "Bonnie & Clyde"): "&" ile bağlı, her biri bir iki sözcüklük,
      * büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
      */
+    /**
+     * Haritadaki yer adı ("Peregrine Bay", "Key Lento") ve soluk okunan parçası ("ne Bay"): iki-üç sözcük, yalnız harf, son
+     * ya da ilk sözcük yer türü, BÜYÜK HARFLİ değil; çevrilmez (Mac/Windows ile aynı).
+     */
+    fun isPlaceName(text: String): Boolean {
+        val words = text.split(' ').filter { it.isNotEmpty() }
+        if (words.size !in 2..3 || TextStyleSampler.isUpper(text)) return false
+        if (!words.all { w -> w.all { it.isLetter() || it in "'’-." } && w.any { it.isLetter() } }) return false
+        if (!words.drop(1).all { it.first().isUpperCase() }) return false
+        return words.last() in placeWords || words.first() in placeWords
+    }
+
+    private val placeWords = setOf("Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore")
+
     fun keepsNames(text: String): Boolean {
         val plain = IconText.plain(text).trim()
-        if (isTitleMark(plain)) return true
+        if (isTitleMark(plain) || isPlaceName(plain)) return true
         val parts = plain.split(" & ")
         if (parts.size < 2) return false
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.

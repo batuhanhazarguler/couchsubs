@@ -599,6 +599,11 @@ public final class SubtitleServer: @unchecked Sendable {
                     result["radius"] = unitNumber(paint.radius)
                     result["scale"] = unitNumber(paint.scale)
                     if let tail = paint.tail { result["tail"] = tail }
+                    // Kenar çizgisi (TV uygulaması 0.9.109; eski TV yok sayar).
+                    if let edge = paint.edge, isRGB(edge.color) {
+                        result["edge"] = ["color": edge.color, "top": unitNumber(edge.top), "right": unitNumber(edge.right),
+                                          "bottom": unitNumber(edge.bottom), "left": unitNumber(edge.left)] as [String: Any]
+                    }
                     if let image = paint.portraitImage, let at = paint.portraitTwin {
                         result["icon"] = ["src": image, "box": Self.json(at)] as [String: Any]
                     }

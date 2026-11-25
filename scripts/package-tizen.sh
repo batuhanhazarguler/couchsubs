@@ -12,6 +12,9 @@ rm -rf "$DIST/tv-tizen"
 mkdir -p "$OUT"
 cp tv-webos/app.js tv-webos/i18n.js tv-webos/config.js tv-webos/index.html tv-webos/style.css tv-webos/largeIcon.png "$OUT/"
 cp tv-webos/icon.png "$OUT/panel-icon.png"
+# Ekran yazısının gömülü dar yazı tipi ve lisansı (style.css @font-face).
+mkdir -p "$OUT/fonts"
+cp tv-webos/fonts/BarlowCondensed-Medium.ttf tv-webos/fonts/BarlowCondensed-Bold.ttf tv-webos/fonts/OFL.txt "$OUT/fonts/"
 cp tv-tizen/platform.js tv-tizen/config.xml tv-tizen/icon.png "$OUT/"
 # Panel başlığındaki küçük simge webOS'taki gibi icon.png adını kullanamaz: Tizen'in simgesi büyüktür.
 # Samsung'un ürün API'leri (ekran koruyucuyu kapatmak için webapis.appcommon) platform.js'ten önce yüklenir.

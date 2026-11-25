@@ -52,6 +52,16 @@ TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONIN
 OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+## Fonts (TV apps, Mac, Windows, iPhone and Android apps)
+
+| Component | License | Source |
+|---|---|---|
+| Barlow Condensed (Medium, Bold), Copyright 2017 The Barlow Project Authors | SIL Open Font License 1.1 | https://github.com/jpt/barlow |
+
+Used unmodified for the condensed, game-like look of translated menu and box text (screen text). The license text ships
+next to the font files (`tv-webos/fonts/OFL.txt`, `core/Sources/CouchSubsCore/Resources/fonts/OFL.txt`,
+`windows/src/CouchSubs.App/Fonts/OFL.txt`, and the Android app's copy). The game's own typeface is not included.
+
 ## Game translation packs
 
 The packs in `core/Sources/CouchSubsCore/Resources/packs` contain only hashed keys and Turkish text; no game text is

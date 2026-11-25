@@ -10,7 +10,7 @@ let package = Package(
         .library(name: "CouchSubsCore", targets: ["CouchSubsCore"]),
     ],
     targets: [
-        .target(name: "CouchSubsCore", resources: [.copy("Resources/obs-overlay.html"), .copy("Resources/second-screen.html"),.copy("Resources/glossary-en-tr.json"), .copy("Resources/ai-models.json"), .copy("Resources/packs")], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "CouchSubsCore", resources: [.copy("Resources/obs-overlay.html"), .copy("Resources/second-screen.html"),.copy("Resources/glossary-en-tr.json"), .copy("Resources/ai-models.json"), .copy("Resources/packs"), .copy("Resources/fonts")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "tv-smoke", dependencies: ["CouchSubsCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         // Yedek okuyucunun (ayrı süreçte yazı tanıma) test ve ölçüm aracı; uygulamada yardımcı uygulamanın kendisidir.
         .executableTarget(name: "ocr-helper", dependencies: ["CouchSubsCore"], swiftSettings: [.swiftLanguageMode(.v5)]),

@@ -305,7 +305,7 @@ public final class RegionWatcher {
         server.regionsAlive()
         defer { server.regionsAlive() }
         // Ayarlar'da kapalı türün alanı (menü, hazır yardım/mesaj alanı, görev satırı) okunmaz; kutusu kalkar.
-        let areas = all.filter { area in ScreenTextKind.reads(area, allows: allows) }
+        let areas = Self.yieldingPresets(all.filter { area in ScreenTextKind.reads(area, allows: allows) })
         let ids = Set(areas.map(\.id))
         for (id, state) in states where !ids.contains(id) {
             if !state.shown.isEmpty { server.sendRegion(id: id, text: "", box: nil, lineHeight: nil) }
@@ -716,6 +716,20 @@ public final class RegionWatcher {
         }
         return Candidate(paragraphs: paragraphs, box: box, lineHeight: lineHeight, key: key, icons: cut, blocks: blocks,
                          text: textKey(paragraphs), missionCard: missionCard)
+    }
+
+    /// Menüdeki otomatik alanla kesişen hazır alan (GTA 6 sağdaki mesaj kartı alanı haritanın tuş listesine biniyor) o turda
+    /// okunmaz: liste iki alana bölünüp yarısı hazır alanda (ayrı grup, ayrı yazı boyu, örtme), yarısı menü alanında
+    /// çiziliyor, bölünme yerindeki satır ("ADD MARKER") hiç çevrilmiyordu (beta.100, 3385). Windows ve Android aynı.
+    static func yieldingPresets(_ areas: [ExtraArea]) -> [ExtraArea] {
+        let menus = areas.filter { $0.auto && $0.menu }.map(\.region)
+        guard !menus.isEmpty else { return areas }
+        return areas.filter { area in
+            !GameAreaPresets.isPreset(area.id) || !menus.contains { m in
+                let r = area.region
+                return min(r.right, m.right) > max(r.left, m.left) && min(r.bottom, m.bottom) > max(r.top, m.top)
+            }
+        }
     }
 
     /// Otomatik alandaki grubun çizim kipini seçen türü (`TextPainter.Target.kind`): alanın yerinden belli türü (menü,

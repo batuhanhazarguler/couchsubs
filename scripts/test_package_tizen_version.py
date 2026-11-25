@@ -31,7 +31,9 @@ class PackageTizenTests(unittest.TestCase):
             for folder in ("scripts", "tv-webos", "tv-tizen"):
                 (repo / folder).mkdir(parents=True)
             shutil.copy2(SCRIPT, repo / "scripts/package-tizen.sh")
-            for name in ("app.js", "i18n.js", "config.js", "style.css", "largeIcon.png", "icon.png"):
+            for name in ("app.js", "i18n.js", "config.js", "style.css", "largeIcon.png", "icon.png",
+                         "fonts/BarlowCondensed-Medium.ttf", "fonts/BarlowCondensed-Bold.ttf", "fonts/OFL.txt"):
+                (repo / "tv-webos" / name).parent.mkdir(parents=True, exist_ok=True)
                 (repo / "tv-webos" / name).write_bytes(b"source")
             (repo / "tv-webos/index.html").write_text('<script src="platform.js"></script>', encoding="utf-8")
             for name in ("platform.js", "icon.png"):

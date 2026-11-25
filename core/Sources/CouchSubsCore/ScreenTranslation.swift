@@ -634,7 +634,7 @@ public enum ScreenTranslation {
     /// (BÜYÜK HARFLİ yazıda tek sözcüklük), büyük harfle başlayan adlar. Çevirmene gitmez; çevirisi aslıdır (kutusu çizilmez, özgün yazı görünür kalır).
     public static func keepsNames(_ text: String) -> Bool {
         let plain = IconText.plain(text).trimmingCharacters(in: .whitespacesAndNewlines)
-        if isTitleMark(plain) { return true }
+        if isTitleMark(plain) || isPlaceName(plain) { return true }
         let parts = plain.components(separatedBy: " & ")
         guard parts.count >= 2 else { return false }
         // BÜYÜK HARFLİ yazıda her ad tek sözcük: "JASON & LUCIA MAP" (sekmeler tek satır okununca) ad değildir.
@@ -647,6 +647,19 @@ public enum ScreenTranslation {
             }
         }
     }
+
+    /// Haritadaki yer adı ("Peregrine Bay", "Shoeless Keys", "Key Lento") ve soluk okunan parçası ("ne Bay"): bir-üç sözcük,
+    /// yalnız harf, son ya da ilk sözcük yer türü (Bay, Key, Island…), BÜYÜK HARFLİ değil. Çevrilmez (beta.100 3408: "Peregrine
+    /// Bay" parçası "ne Körfezi" olup R1 simgesinin üstüne yazılıyordu). Windows ve Android aynı.
+    static func isPlaceName(_ text: String) -> Bool {
+        let words = text.split(separator: " ").map(String.init)
+        guard (1...3).contains(words.count), !TextStyleSampler.isUpper(text),
+              words.allSatisfy({ $0.allSatisfy { $0.isLetter || "'’-.".contains($0) } && $0.contains(where: \.isLetter) }),
+              words.dropFirst().allSatisfy({ $0.first?.isUppercase == true }) else { return false }
+        return words.count >= 2 && (placeWords.contains(words.last!) || placeWords.contains(words.first!))
+    }
+
+    private static let placeWords: Set<String> = ["Bay", "Key", "Keys", "Island", "Islands", "Beach", "Harbor", "Harbour", "Lake", "River", "Creek", "Cove", "Reef", "Springs", "Heights", "Hills", "Park", "Marina", "Inlet", "Lagoon", "Everglades", "Glades", "Shores", "Shore"]
 
     private static let iconBrackets = CharacterSet(charactersIn: " ()[]")
 

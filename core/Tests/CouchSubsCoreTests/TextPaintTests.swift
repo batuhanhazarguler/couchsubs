@@ -42,6 +42,7 @@ final class TextPaintTests: XCTestCase {
         struct ModeExpect: Decodable {
             let mode: String; let spot: [Double]?; let room: [Double]?; let twin: [Double]?; let radius: Double?
             let scale: Double?; let tail: String?; let portrait: [Double]?; let portraitTwin: [Double]?
+            let edge: [Double]?
         }
         struct ModePaint: Decodable {
             let id: String; let width: Int; let height: Int; let background: Background; let rects: [Rect]
@@ -177,6 +178,7 @@ final class TextPaintTests: XCTestCase {
                     e["tail"] = p.tail ?? NSNull()
                     e["portrait"] = px(p.portrait) ?? NSNull()
                     if let face = px(p.portraitTwin) { e["portraitTwin"] = face }
+                    if let edge = p.edge { e["edge"] = [edge.top * h, edge.right * h, edge.bottom * h, edge.left * h].map { ($0 * 100).rounded() / 100 } }
                 }
                 return e
             }
@@ -198,6 +200,7 @@ final class TextPaintTests: XCTestCase {
                 if e.twin != nil, e.portrait == nil { XCTAssertNil(paint.portrait, "\(name) resim") }
                 near(px(paint.portrait), e.portrait, "portrait")
                 near(px(paint.portraitTwin), e.portraitTwin, "portraitTwin")
+                near(paint.edge.map { [$0.top * h, $0.right * h, $0.bottom * h, $0.left * h] }, e.edge, "edge", 0.51)
                 // Örtmeyen kipte Türkçe özgün yazıya (ve kutunun ucundaki simgeye) binmez; ikiz özgün paneli örtmez.
                 if paint.mode != .cover, let room = paint.spotRoom {
                     let target = frame.targets[k].box
@@ -324,6 +327,35 @@ final class TextPaintTests: XCTestCase {
             XCTAssertTrue(ScreenTranslation.keepsNames(title), title)
         }
         for text in ["Map", "VIEW", "Grand prize", "I told you"] { XCTAssertFalse(ScreenTranslation.keepsNames(text), text) }
+    }
+
+    /// Beta.100 (3407–3409): tek satır okunan sekme çubuğu her karede aynı çevrilir (motora gitmez); kart başlıkları ve
+    /// sekme adları sözlükte; haritanın yer adı ve soluk okunan parçası çevrilmez.
+    func testTabBarIsStableAndPlaceNamesKept() {
+        XCTAssertEqual(UiCommands.translateLabelLoosely("JASON & LUCIA MAP BRIEF"), "JASON & LUCIA HARİTA ÖZET")
+        XCTAssertEqual(UiCommands.translateLabelLoosely("JASON & LUCIA MAP BRIEF PROGRESS"), "JASON & LUCIA HARİTA ÖZET İLERLEME")
+        XCTAssertEqual(UiCommands.translateLabelLoosely("MAP BRIEF"), "HARİTA ÖZET")
+        XCTAssertNil(UiCommands.translateTabs("Map Brief"), "yalnız BÜYÜK HARFLİ çubuk")
+        XCTAssertNil(UiCommands.translateTabs("MAP SOMETHING"), "sözlükte olmayan sözcük motora gider")
+        for label in ["VEHICLES", "WEAPONS", "ANIMALS", "ADD MARKER", "Map"] { XCTAssertNotNil(UiCommands.translateLabel(label), label) }
+        for place in ["Peregrine Bay", "Shoeless Keys", "Key Lento", "Gambit Bay", "ne Bay"] {
+            XCTAssertTrue(ScreenTranslation.keepsNames(place), place)
+        }
+        for text in ["Add Marker", "Bay", "Go to the Bay", "KEY BINDINGS", "Ambient Sound"] {
+            XCTAssertFalse(ScreenTranslation.keepsNames(text), text)
+        }
+    }
+
+    /// Beta.100 (3385): menüdeki otomatik alanla kesişen hazır alan okunmaz (tuş listesi iki alana bölünmesin).
+    @MainActor
+    func testPresetYieldsToMenuArea() {
+        let phone = ExtraArea(id: GameAreaPresets.phoneId, name: "Messages", region: CropRegion(top: 0.45, bottom: 0.80, left: 0.72, right: 0.99))
+        var menu = ExtraArea(id: "auto-1", name: ScreenTextDetector.areaName, region: CropRegion(top: 0.70, bottom: 0.96, left: 0.80, right: 0.98), auto: true)
+        XCTAssertEqual(RegionWatcher.yieldingPresets([phone, menu]).map(\.id), [phone.id, "auto-1"], "menü dışında hazır alan kalır")
+        menu.menu = true
+        XCTAssertEqual(RegionWatcher.yieldingPresets([phone, menu]).map(\.id), ["auto-1"])
+        menu.region = CropRegion(top: 0.05, bottom: 0.12, left: 0.4, right: 0.9)
+        XCTAssertEqual(RegionWatcher.yieldingPresets([phone, menu]).map(\.id), [phone.id, "auto-1"], "kesişmeyen hazır alan kalır")
     }
 
     /// #1268, #1270: harfi/rakamı olmayan parça (yön tuşu simgesinin "-" okunuşu, renkli nokta "•") sözcük sayılmaz; simge

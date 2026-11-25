@@ -354,6 +354,8 @@ object ScreenFit {
         val text: String, val left: Double, val top: Double, val right: Double, val bottom: Double,
         growLeft: Double? = null, growRight: Double? = null, val line: Double, pitch: Double? = null, val rows: Int = 1,
         val align: String = "left", val group: Int? = null,
+        /** Yazı küçülmez (ikiz kutu, beta.100: "aynı punto, küçültme yok"): sığmazsa satır kırılır, kutu aşağı uzar. */
+        val keepSize: Boolean = false,
     ) {
         val growLeft: Double = min(left, growLeft ?: left)
         val growRight: Double = max(right, growRight ?: right)
@@ -378,7 +380,7 @@ object ScreenFit {
                 return ExactInput(item.translation, box.left * width, box.top * height, box.right * width, box.bottom * height,
                     room?.let { it.left * width }, room?.let { it.right * width }, max(1.0, item.lineHeight * height * scale),
                     max(1.0, paint.pitch * height * scale), if (item.paragraphs) max(2, item.rows) else item.rows, align,
-                    if (paint.mode == TextPaint.MODE_COVER) paint.group else null)
+                    if (paint.mode == TextPaint.MODE_TWIN) null else paint.group, keepSize = paint.mode == TextPaint.MODE_TWIN)
             }
         }
     }
@@ -425,7 +427,7 @@ object ScreenFit {
         fun isLabel(item: ExactInput) = item.rows <= 1 && !item.text.contains('\n')
         val natural = items.indices.map { i -> if (isLabel(items[i])) measure(items[i].text, base[i]) else 0.0 }
         val scale = items.indices.map { i ->
-            if (!isLabel(items[i]) || natural[i] <= 0) 1.0
+            if (!isLabel(items[i]) || natural[i] <= 0 || items[i].keepSize) 1.0
             else max(EXACT_GROUP_MIN, min(1.0, (items[i].growRight - items[i].growLeft) / natural[i]))
         }.toMutableList()
         for (list in members.values) {
@@ -488,7 +490,7 @@ object ScreenFit {
         }
         var laid = layout()
         fun tall(laid: Laid) = (laid.lines.size - 1) * laid.gap + row * factor
-        while (tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
+        while (!item.keepSize && tall(laid) > coverHeight + 1 && factor > EXACT_PARAGRAPH_MIN + 1e-6) {
             factor = max(EXACT_PARAGRAPH_MIN, Math.round((factor - 0.05) * 100) / 100.0)
             laid = layout()
         }

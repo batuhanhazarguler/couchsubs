@@ -906,6 +906,21 @@ class RegionWatcher(
             index to ScreenTranslation.Item(source, translation, block.box, block.lineHeight, rendered.icons.takeIf { it.isNotEmpty() },
                 style?.surface, style?.look, rows = maxOf(1, block.rows), paint = block.paint)
         }
+
+        /**
+         * Menüdeki otomatik alanla kesişen hazır alan o turda okunmaz: haritanın tuş listesi iki alana bölünüp bölünme
+         * yerindeki satır ("ADD MARKER") çevrilmiyordu (beta.100; Mac/Windows ile aynı).
+         */
+        internal fun yieldingPresets(areas: List<ExtraArea>): List<ExtraArea> {
+            val menus = areas.filter { it.auto && it.menu }.map { it.region }
+            if (menus.isEmpty()) return areas
+            return areas.filter { area ->
+                !GameAreaPresets.isPreset(area.id) || menus.none { m ->
+                    minOf(area.region.right, m.right) > maxOf(area.region.left, m.left) &&
+                        minOf(area.region.bottom, m.bottom) > maxOf(area.region.top, m.top)
+                }
+            }
+        }
     }
 
     /** Bir alanın karesi: okunacak gri görüntü ve izi; [frame] kumanda simgelerinin kesileceği aynı görüntü. */
@@ -1087,6 +1102,7 @@ class RegionWatcher(
     /** Ayarlar'da kapalı türün alanı (menü, hazır yardım/mesaj alanı, görev satırı) okunmaz; kutusu kalkar. */
     private fun wanted(area: ExtraArea): Boolean = ScreenTextKind.reads(area, allows)
 
+
     /** Otomatik alan okundu ama yazı yok ya da gürültü ([ScreenTextNoise]): bulucu o karoları reddeder. */
     @Volatile var onAutoRejected: ((String) -> Unit)? = null
     /**
@@ -1153,8 +1169,9 @@ class RegionWatcher(
 
     /** Bir tur: kaldırılan alanların kutusu kalkar, her açık alan gerekirse okunur ve kararlı yazısı çevrilir. */
     fun pass(offeredIds: Set<String>, offered: List<Pair<ExtraArea, Crop>>, started: Int = session) {
-        val crops = offered.filter { wanted(it.first) }
-        val ids = offeredIds - offered.filterNot { wanted(it.first) }.map { it.first.id }.toSet()
+        val kept = yieldingPresets(offered.map { it.first }.filter { wanted(it) }).map { it.id }.toSet()
+        val crops = offered.filter { it.first.id in kept }
+        val ids = offeredIds - offered.filterNot { it.first.id in kept }.map { it.first.id }.toSet()
         synchronized(lock) {
             if (started != session) return
             passes++

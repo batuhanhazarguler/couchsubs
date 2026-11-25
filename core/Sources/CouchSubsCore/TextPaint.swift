@@ -55,13 +55,33 @@ public struct TextPaint: Equatable, Sendable {
     /// Kesilmiş resim (PNG, data: adresi; en çok `TextPainter.portraitMax` piksel); çağıran keser
     /// (`TextPainter.portraitImage`). TV'ye `icon` ({src, box}).
     public var portraitImage: String? = nil
+    /// `twin`: özgün panelin kenar çizgisi (panelin hemen dışındaki düz renkli ince şerit; GTA 6 kartının üstündeki renkli
+    /// çizgi): ikiz de aynı çizgiyle çizilir. nil: çizgi yok. TV'ye `edge` ({color, top, right, bottom, left}).
+    public var edge: Edge? = nil
 
-    /// Çizim kipleri (Sinan Bey: oyun dünyasının üstünde opak yama görünmesin).
-    /// - `cover`: düz/opak panel zemininde (menü, görev kartı, ayar listesi) özgün yazıyı örten kutu (eski davranış).
-    /// - `beside`: desenli zeminde ya da oyun dünyası üstündeki tek satırlık istemde örtü yok; özgün yazı yerinde kalır,
-    ///   Türkçe yanındaki boş alana özgün stille, okunurluk için konturla yazılır.
-    /// - `twin`: yuvarlak köşeli düz panel (bildirim, ipucu kutusu) örtülmez; Türkçesi aynı zemin, köşe ve yazı rengiyle
-    ///   hemen üstüne (yer yoksa altına) küçük, sol kenarı hizalı ayrı bir panel olarak çizilir (#1296).
+    /// Kenar çizgisi: rengi ve her yandaki kalınlığı (kare yüksekliğine oranla; 0: o yanda çizgi yok).
+    public struct Edge: Equatable, Sendable {
+        public var color: String
+        public var top: Double, right: Double, bottom: Double, left: Double
+        public init(color: String, top: Double, right: Double, bottom: Double, left: Double) {
+            self.color = color
+            self.top = top
+            self.right = right
+            self.bottom = bottom
+            self.left = left
+        }
+    }
+
+    /// Çizim kipleri (Sinan Bey, beta.100: oyun arayüzünün hiçbir öğesi örtülmez; örtme yalnız son çare).
+    /// - `cover`: türü belli olmayan yazı ("Ekranı çevir"), telefon ve hiç boş yer bulunamayan yazı: özgün yazıyı örten
+    ///   kutu (eski davranış).
+    /// - `beside`: zeminsiz satır (soldaki dikey menü, sekme çubuğu, tuş/ipucu listesi, kart başlığı, oyun dünyasındaki
+    ///   istem): özgün yazı yerinde kalır, Türkçe arka plansız, özgün stille (renk, kalınlık, dar aile, büyük harf, kontur)
+    ///   yanındaki boş alana yazılır. Listede bütün Türkçeler aynı tarafta, aynı boyda ve hizada (sağa yaslı listede solda
+    ///   sağa yaslı tek sütun, sola yaslı listede sağda, sekme çubuğunda altta).
+    /// - `twin`: kutu (görev paneli, harita mekân kartı, bildirim, ipucu kutusu, widget) örtülmez; en uygun boş yere (yan ›
+    ///   alt › üst) özgün kutunun aynısı (zemin, kenar çizgisi, köşe, kuyruk, kişi resmi, iç boşluk, aynı yazı boyu) çizilir,
+    ///   Türkçenin tamamı oraya yazılır; kutu içeriğe göre uzar.
     public enum Mode: String, Sendable { case cover, beside, twin }
 
     public init(background: String, pitch: Double, cover: TextBox) {
@@ -82,6 +102,11 @@ public struct TextPaint: Equatable, Sendable {
         paint.radius = radius * (area.bottom - area.top)
         paint.portrait = portrait?.placed(in: area)
         paint.portraitTwin = portraitTwin?.placed(in: area)
+        if let edge {
+            let h = area.bottom - area.top
+            paint.edge = Edge(color: edge.color, top: edge.top * h, right: edge.right * h, bottom: edge.bottom * h,
+                              left: edge.left * h)
+        }
         return paint
     }
 }
@@ -228,10 +253,15 @@ public enum TextPainter {
     public static let besideGapLines = 0.5
     /// Yanına yazma alanı en çok özgün yazının bu katı (+ bir satır yüksekliği) genişlikte taranır.
     public static let besideMax = 1.6
-    /// İkiz panel özgün panelin bu katı boyda (yazı, resim, köşe ve iç boşluk aynı oranda; Sinan Bey, #1296).
-    public static let twinScale = 0.58
-    /// İkizin yazısı en az karenin bu kadarı (TV app.js DIALOGUE_MIN_SHARE ile aynı): ikiz bundan küçülmez.
-    public static let twinMinShare = 0.022
+    /// Listede (grup) Türkçe sütunu özgün yazıdan en çok bu kadar satır yüksekliği uzakta olabilir (kısa satırla sütun
+    /// arasındaki boşluk da boş olmalı).
+    public static let besideReachLines = 12.0
+    /// İkiz panel özgün panelle aynı boyda (Sinan Bey, beta.100: "AYNI punto, küçültme yok"; #1296'daki 0,58 kalktı).
+    public static let twinScale = 1.0
+    /// İkizdeki yazı özgün panelin genişliğini en çok bu katı kadar aşabilir (boş yer varsa; kutu içeriğe göre uzar).
+    public static let twinWiden = 0.5
+    /// Kenar çizgisi en çok bu kadar piksel kalın aranır.
+    public static let edgeMax = 8
     /// Kişi resmi (ikiz panelde gösterilir) en çok bu kadar piksel kenarlı kesilir.
     public static let portraitMax = 40
 
@@ -388,6 +418,8 @@ public enum TextPainter {
         var lines: [Double] = []
         var grounds: [RGB] = []
         var panels: [Int: (l: Int, t: Int, r: Int, b: Int)] = [:]
+        // Yanına yazma için her hedefin çevresindeki boş alan (yalnız kipi seçilen yazıda).
+        var rooms: [Room?] = []
         /// Bir hedefin kutusu (`except` hariç) bu noktada mı.
         func rectHit(_ x: Int, _ y: Int, except: Int?) -> Bool {
             rects.indices.contains { j in j != except && x >= rects[j].l && x < rects[j].r && y >= rects[j].t && y < rects[j].b }
@@ -574,51 +606,80 @@ public enum TextPainter {
                 }
             }
 
-            // 5) Kip (yalnız türü verilen yazıda): menü, görev/harita kartı ve telefon hep örtülür. Düz zemini sınırlı bir
-            // alansa (panel) karar döngüden sonra panel panel verilir (`twin` ya da örtme); açık zeminde (desenli zemin,
-            // karenin kenarına değen ya da çok büyük düz alan) desenli zeminde ya da tek satırlık istemde Türkçe yanındaki boş
-            // alana yazılır; yer bulunamazsa örtülür.
+            // 5) Kip (yalnız türü verilen yazıda; telefon hep örtülür): düz zemini sınırlı bir alansa (panel) karar döngüden
+            // sonra panel panel verilir (kutu: ikiz; listedeki satırın kendi şeridi/vurgusu: yanına yazma). Açık zeminde
+            // (desenli zemin, degrade, karenin kenarına değen ya da çok büyük düz alan) Türkçe yanındaki boş alana yazılır;
+            // listede bütün satırlar birlikte (aynı yan, aynı hiza). Yer bulunamazsa örtülür.
             covers.append((cl, ct, cr, cb))
             lines.append(line)
             grounds.append(rgb(paint.background))
-            if let kind = target.kind, kind != .menu, kind != .mission, kind != .phone {
+            if let kind = target.kind, kind != .phone {
                 let ground = rgb(paint.background)
                 let panel = paint.patterned || paint.background2 != nil ? nil
                     : findPanel(l: cl, t: ct, r: cr, b: cb, width: width, height: height) { x, y in
                         if rectHit(x, y, except: index) || (x >= cl && x < cr && y >= ct && y < cb) { return true }
                         return distance(color(x, y), ground) <= panelTolerance
                     }
-                if let panel {
-                    panels[index] = panel
-                } else if paint.patterned || (kind == .help && target.prompt && target.rows <= 1),
-                          let spot = besideSpot(l: cl, t: ct, r: cr, b: cb, line: line, width: width, height: height,
-                                                iconLeft: iconLeft, iconRight: iconRight, free: { x, y in
-                                                    if others(x, y) { return nil }
-                                                    return distance(color(x, y), fg) <= besideInk
-                                                }) {
-                    paint.mode = .beside
-                    paint.spot = TextBox(left: Double(spot.l) / fw, top: Double(spot.t) / fh, right: Double(spot.r) / fw,
-                                         bottom: Double(spot.b) / fh)
-                    paint.spotRoom = TextBox(left: Double(spot.roomL) / fw, top: Double(spot.t) / fh,
-                                             right: Double(spot.roomR) / fw, bottom: Double(spot.b) / fh)
-                }
+                if let panel { panels[index] = panel }
+                rooms.append(measureRoom(l: cl, t: ct, r: cr, b: cb, line: line, width: width, height: height,
+                                         iconLeft: iconLeft, iconRight: iconRight) { x, y in
+                    if others(x, y) { return nil }
+                    return distance(color(x, y), fg) <= besideInk
+                })
+            } else {
+                rooms.append(nil)
             }
             result.append(paint)
         }
-        // İkiz paneller: kesişen paneller tek paneldir (bildirimin başlığı ve gövdesi; birinin taraması paneldeki resimde
-        // erken durabilir), kutusu hepsinin birleşimi. Her yazı panelin içinde her yanda `panelPadLines` boşlukla durmalı;
-        // durmuyorsa ya da köşeler yuvarlak değilse (köşeli kutu) örtülür. İkiz panel önce üste, yer yoksa alta (arada
-        // `gapLines`); başka yazıya ve karenin dışına taşmaz. Her yazı ikizde kendi yerinde, panelin iç genişliğinde (en
-        // küçük sol iç boşluk iki yanda) uzayabilir; paneldeki kişi resmi ikizde de gösterilir.
+        func overlaps(_ a: (l: Int, t: Int, r: Int, b: Int), _ b: (l: Int, t: Int, r: Int, b: Int)) -> Bool {
+            min(a.r, b.r) > max(a.l, b.l) && min(a.b, b.b) > max(a.t, b.t)
+        }
+        // Listeler (`groups`): aynı sütunda ya da aynı satırda duran, aynı boydaki tek satırlık etiketler.
+        let lists = groups(targets)
+        var listOf: [Int: Int] = [:]
+        for (k, list) in lists.enumerated() { for m in list.0 { listOf[m] = k } }
+
+        // 6) Kutular (ikiz): kesişen paneller tek paneldir (bildirimin başlığı ve gövdesi, kartın başlığı, açıklaması ve
+        // ayrıntıları), kutusu hepsinin birleşimi. Her yazı panelin içinde her yanda `panelPadLines` boşlukla durmalı;
+        // durmuyorsa panel yazının kendi şerididir (yanına yazılır). Tek satırlık tek yazılı panel listenin satırıysa (kart
+        // başlığının koyu şeridi, seçili satırın açık vurgusu) kutu değil satırdır. İkiz özgünle aynı boyda (yazı, resim,
+        // köşe, iç boşluk, kenar çizgisi), en uygun boş yere: yan (ekranın ortasına bakan yan önce) › alt › üst; başka
+        // yazıya, başka kutuya ve karenin dışına taşmaz. Yer yoksa örtülür (son çare).
+        // Zemini degrade ya da desenli ölçülen yazı (yarı saydam kartın altından harita görünüyor) başka yazının bulduğu
+        // panelin içindeyse o paneldedir: kartın başlığı ve açıklaması ayrıntı satırlarıyla tek kart olur (beta.100 3407–3409:
+        // kartın parçaları ayrı yamalarla örtülüyordu).
+        // Kesişen paneller önce birleşir (yarı saydam kartta her yazının taraması kartın bir parçasında durabilir); yazının
+        // örtüsünün en az %80'i birleşik panelin içindeyse yazı o paneldedir.
+        var merged: [(l: Int, t: Int, r: Int, b: Int)] = []
+        for p in panels.keys.sorted() {
+            var box = panels[p]!
+            var changed = true
+            while changed {
+                changed = false
+                if let k = merged.firstIndex(where: { overlaps($0, box) }) {
+                    let o = merged.remove(at: k)
+                    box = (min(o.l, box.l), min(o.t, box.t), max(o.r, box.r), max(o.b, box.b))
+                    changed = true
+                }
+            }
+            merged.append(box)
+        }
+        for i in targets.indices where rooms[i] != nil && panels[i] == nil {
+            let c = covers[i]
+            let area = Double(max(1, (c.r - c.l) * (c.b - c.t)))
+            if let inside = merged.first(where: { p in
+                Double(max(0, min(p.r, c.r) - max(p.l, c.l)) * max(0, min(p.b, c.b) - max(p.t, c.t))) >= 0.8 * area
+            }) {
+                panels[i] = inside
+            }
+        }
         let keys = panels.keys.sorted()
         var parent = Dictionary(uniqueKeysWithValues: keys.map { ($0, $0) })
         func root(_ i: Int) -> Int { var i = i; while parent[i]! != i { i = parent[i]! }; return i }
         for a in keys {
-            for b in keys where b > a {
-                let p = panels[a]!, q = panels[b]!
-                if min(p.r, q.r) > max(p.l, q.l) && min(p.b, q.b) > max(p.t, q.t) { parent[root(b)] = root(a) }
-            }
+            for b in keys where b > a && overlaps(panels[a]!, panels[b]!) { parent[root(b)] = root(a) }
         }
+        var boxes: [(members: [Int], l: Int, t: Int, r: Int, b: Int)] = []
         for members in Dictionary(grouping: keys, by: root).values.map({ $0.sorted() }).sorted(by: { $0[0] < $1[0] }) {
             let l = members.map { panels[$0]!.l }.min()!, t = members.map { panels[$0]!.t }.min()!
             let r = members.map { panels[$0]!.r }.max()!, b = members.map { panels[$0]!.b }.max()!
@@ -626,25 +687,55 @@ public enum TextPainter {
                 let c = covers[m], pad = max(2, Int((panelPadLines * lines[m]).rounded()))
                 return c.l - l >= pad && r - c.r >= pad && c.t - t >= pad && b - c.b >= pad
             }
+            let box = members.count >= 2 || targets[members[0]].rows > 1 || listOf[members[0]] == nil
+            if padded && box { boxes.append((members, l, t, r, b)) }
+        }
+        let boxed = Set(boxes.flatMap(\.members))
+        var twins: [(l: Int, t: Int, r: Int, b: Int)] = []
+        for box in boxes {
+            let (members, l, t, r, b) = box
             let ground = grounds[members[0]]
-            guard padded, let corner = cornerRadius(l: l, t: t, r: r, b: b, ground: { x, y in
-                distance(color(x, y), ground) <= panelTolerance
-            }) else { continue }
-            // İkiz özgünün `twinScale` katı boyda (Sinan Bey, #1296: Türkçe balon belirgin küçük), sol kenarı özgünle hizalı;
-            // önce hemen üstte, yer yoksa altta (arada `gapLines`). Türkçe uzunsa ikiz özgün panelin genişliğine kadar uzar.
-            // Küçük panelde (oyunun bildirimi çoğu zaman küçük) ikizin yazısı okunabilirlik sınırının altına inmez: TV'nin
-            // konuşma satırı alt sınırı (app.js DIALOGUE_MIN_SHARE, 1080'de 24 piksel); gerekirse ikiz özgün boyda.
-            let least = members.map { lines[$0] }.min() ?? lines[members[0]]
-            let scale = min(1, max(twinScale, twinMinShare * Double(height) / (ScreenFit.exactFont * least)))
-            let h = Int((Double(b - t) * scale).rounded()), gap = max(2, Int((ScreenFit.gapLines * lines[members[0]]).rounded(.up)))
-            func clear(_ y0: Int, _ y1: Int) -> Bool {
-                y0 >= 0 && y1 <= height && !rects.indices.contains { j in
-                    !members.contains(j) && rects[j].l < r && rects[j].r > l && rects[j].t < y1 && rects[j].b > y0
+            let line = lines[members[0]]
+            // Zemin: panelin yazı dışındaki noktalarının ortalaması (yazının çevresindeki şeritten daha doğru ton).
+            var sum = (0, 0, 0), count = 0
+            let stepX = max(1, (r - l) / 24), stepY = max(1, (b - t) / 24)
+            for y in stride(from: t, to: b, by: stepY) {
+                for x in stride(from: l, to: r, by: stepX) where !rectHit(x, y, except: nil) {
+                    let c = color(x, y)
+                    guard distance(c, ground) <= panelTolerance else { continue }
+                    sum = (sum.0 + c.r, sum.1 + c.g, sum.2 + c.b)
+                    count += 1
                 }
             }
-            guard let top = clear(t - gap - h, t - gap) ? t - gap - h : clear(b + gap, b + gap + h) ? b + gap : nil else { continue }
-            func x(_ v: Int) -> Double { (Double(l) + Double(v - l) * scale) / fw }
-            func y(_ v: Int) -> Double { (Double(top) + Double(v - t) * scale) / fh }
+            let fill: RGB = count >= 8 ? (sum.0 / count, sum.1 / count, sum.2 / count) : ground
+            let corner = cornerRadius(l: l, t: t, r: r, b: b) { x, y in distance(color(x, y), ground) <= panelTolerance }
+            let edge = edges(l: l, t: t, r: r, b: b, width: width, height: height, ground: fill,
+                             blocked: { x, y in rectHit(x, y, except: nil) }, color: color)
+            let el = edge?.left ?? 0, et = edge?.top ?? 0, er = edge?.right ?? 0, eb = edge?.bottom ?? 0
+            let ow = r - l + el + er, oh = b - t + et + eb, ox = l - el, oy = t - et
+            let gap = max(2, Int((ScreenFit.gapLines * line).rounded(.up)))
+            func blocked(_ a: (l: Int, t: Int, r: Int, b: Int)) -> Bool {
+                a.l < 0 || a.t < 0 || a.r > width || a.b > height
+                    || rects.indices.contains { j in !members.contains(j) && overlaps(a, rects[j]) }
+                    || boxes.contains { overlaps(a, ($0.l, $0.t, $0.r, $0.b)) } || twins.contains { overlaps(a, $0) }
+            }
+            let sides = (l + r) / 2 < width / 2 ? [(ox + ow + gap, oy), (ox - gap - ow, oy)] : [(ox - gap - ow, oy), (ox + ow + gap, oy)]
+            let candidates = sides + [(ox, oy + oh + gap), (ox, oy - gap - oh)]
+            guard let at = candidates.first(where: { !blocked(($0.0, $0.1, $0.0 + ow, $0.1 + oh)) }) else { continue }
+            twins.append((at.0, at.1, at.0 + ow, at.1 + oh))
+            let dx = at.0 - ox, dy = at.1 - oy
+            // İkizdeki Türkçe özgün panelden uzunsa ikiz sağa uzar (boş yer varsa, en çok `twinWiden`).
+            var widen = Int(twinWiden * Double(r - l))
+            for j in rects.indices where !members.contains(j) && rects[j].t < b + dy && rects[j].b > t + dy && rects[j].l >= r + dx {
+                widen = min(widen, rects[j].l - (r + dx) - er - gap)
+            }
+            for other in boxes.map({ ($0.l, $0.t, $0.r, $0.b) }) + [(l, t, r, b)]
+                where other.1 < b + dy && other.3 > t + dy && other.0 >= r + dx {
+                widen = min(widen, other.0 - (r + dx) - er - gap)
+            }
+            widen = max(0, min(widen, width - (r + dx) - er))
+            func x(_ v: Int) -> Double { Double(v + dx) / fw }
+            func y(_ v: Int) -> Double { Double(v + dy) / fh }
             var face: (l: Int, t: Int, r: Int, b: Int)? = nil
             for m in members where face == nil {
                 face = portrait(panelLeft: l, panelTop: t, panelBottom: b, l: covers[m].l, t: covers[m].t, b: covers[m].b,
@@ -657,20 +748,91 @@ public enum TextPainter {
                 let c = covers[m], align = targets[m].align
                 var paint = result[m]
                 paint.mode = .twin
-                paint.scale = scale
-                paint.tail = corner.tail
+                paint.scale = twinScale
+                paint.tail = corner?.tail
+                paint.background = hex(fill)
+                paint.background2 = nil
+                paint.direction = nil
+                paint.patterned = false
                 paint.twin = TextBox(left: x(l), top: y(t), right: x(r), bottom: y(b))
-                paint.radius = corner.radius * scale / fh
+                paint.radius = (corner?.radius ?? 0) / fh
                 paint.spot = TextBox(left: x(c.l), top: y(c.t), right: x(c.r), bottom: y(c.b))
                 paint.spotRoom = TextBox(left: align == .left ? x(c.l) : x(l + inset), top: y(c.t),
-                                         right: max(x(c.r), Double(r - Int((Double(inset) * scale).rounded())) / fw),
-                                         bottom: y(c.b))
+                                         right: max(x(c.r), x(r - inset + widen)), bottom: y(c.b))
+                if let edge {
+                    paint.edge = TextPaint.Edge(color: hex(edge.color), top: Double(et) / fh, right: Double(er) / fh,
+                                                bottom: Double(eb) / fh, left: Double(el) / fh)
+                }
                 if let face {
                     paint.portrait = TextBox(left: Double(face.l) / fw, top: Double(face.t) / fh, right: Double(face.r) / fw,
                                              bottom: Double(face.b) / fh)
                     paint.portraitTwin = TextBox(left: x(face.l), top: y(face.t), right: x(face.r), bottom: y(face.b))
                 }
                 result[m] = paint
+            }
+        }
+
+        // 7) Satırlar (yanına yazma): listede bütün satırlar aynı yana (sağa yaslı sütunda sol, sola yaslı sütunda sağ;
+        // satırdaki sekme/kart başlıklarında hizanın açık yanı, sonra alt, sonra üst), sütunda Türkçeler tek hizada (sağa
+        // yaslı listede sağ kenarları, sola yaslıda sol kenarları aynı), satırda aynı taban çizgisinde. Liste birlikte
+        // yerleşemezse her satır kendi başına (sol › sağ › alt › üst).
+        func assign(_ i: Int, _ spot: Spot) {
+            result[i].mode = .beside
+            result[i].spot = TextBox(left: Double(spot.l) / fw, top: Double(spot.t) / fh, right: Double(spot.r) / fw,
+                                     bottom: Double(spot.b) / fh)
+            result[i].spotRoom = TextBox(left: Double(spot.roomL) / fw, top: Double(spot.t) / fh,
+                                         right: Double(spot.roomR) / fw, bottom: Double(spot.b) / fh)
+        }
+        var placed = Set<Int>()
+        for list in lists {
+            let members = list.0.filter { rooms[$0] != nil && !boxed.contains($0) }
+            guard members.count >= 2 else { continue }
+            let ms = members.map { rooms[$0]! }
+            let aligns = members.map { targets[$0].align }
+            let majority: TextLook.Align = [TextLook.Align.left, .right, .center]
+                .max { a, b in aligns.filter { $0 == a }.count < aligns.filter { $0 == b }.count } ?? .left
+            let sameRow = ms.map(\.t).max()! < ms.map(\.b).min()!
+            var sides: [Side]
+            if sameRow {
+                sides = (majority == .left ? [.right] : majority == .right ? [.left] : []) + [.below, .above]
+            } else {
+                let tolerance = Int((0.5 * ms.map(\.line).max()!).rounded())
+                let rightEdge = ms.map(\.r).max()! - ms.map(\.r).min()! <= tolerance
+                let leftEdge = ms.map(\.l).max()! - ms.map(\.l).min()! <= tolerance
+                let right = rightEdge && !leftEdge ? true : leftEdge && !rightEdge ? false : majority == .right ? true
+                    : majority == .left ? false : nil
+                sides = right == false ? [.right, .left] : [.left, .right]
+            }
+            for side in sides {
+                var edge: Int? = nil
+                switch side {
+                case .left: edge = sameRow ? nil : ms.map { $0.l - $0.near }.min()!
+                case .right: edge = sameRow ? nil : ms.map { $0.r + $0.near }.max()!
+                case .below: edge = ms.map { $0.b + $0.near }.max()!
+                case .above: edge = ms.map { $0.t - $0.near }.min()!
+                }
+                var spots = ms.map { spot($0, side, edge: edge) }
+                guard spots.allSatisfy({ $0 != nil }) else { continue }
+                if side == .below || side == .above {
+                    // Satırdaki komşular arasında Türkçeler ortadaki çizgiyi geçmez.
+                    let order = spots.indices.sorted { spots[$0]!.l < spots[$1]!.l }
+                    for (a, b) in zip(order, order.dropFirst()) {
+                        let middle = (ms[a].r + ms[b].l) / 2
+                        spots[a]!.roomR = max(spots[a]!.r, min(spots[a]!.roomR, middle))
+                        spots[b]!.roomL = min(spots[b]!.l, max(spots[b]!.roomL, middle))
+                    }
+                }
+                for (m, s) in zip(members, spots) { assign(m, s!) }
+                placed.formUnion(members)
+                break
+            }
+        }
+        for i in targets.indices where rooms[i] != nil && !boxed.contains(i) && !placed.contains(i) {
+            for side in [Side.left, .right, .below, .above] {
+                if let s = spot(rooms[i]!, side, edge: nil) {
+                    assign(i, s)
+                    break
+                }
             }
         }
         // Çakışma: yanına yazılan Türkçe başka bir hedefin Türkçesine (önceki yanına yazma alanı ya da ikiz panel) binerse
@@ -693,23 +855,40 @@ public enum TextPainter {
         }
         // 4) Grup: aynı sütunda (ortak sol ya da sağ kenar, düzenli aralık) ya da aynı satırda duran, BÜYÜK HARF'i ve
         // satır yüksekliği aynı tek satırlık etiketler.
-        for (members, id) in groups(targets) { for i in members { result[i].group = id } }
+        for (members, id) in lists { for i in members { result[i].group = id } }
         return result
     }
 
-    /// Yanına yazma alanı (Sinan Bey: "SELAMLA  GREET"): önce sol, sonra sağ, sonra üst (simgenin olduğu yana değil). `free(x, y)`: nil başka hedef ya
-    /// da simge (alan orada biter), true yazı rengine yakın nokta, false boş zemin. Bir sütun/satır, yazı rengindeki
-    /// noktaları `besideShare`'den azsa boştur. Türkçe özgün yazıdan `besideGapLines`, öbür uçta `ScreenFit.gapLines`
-    /// uzak; alan en az örtü kutusu genişliğinde olmalı (sol/sağ), üstte örtü kutusu kadar yükseklik boş olmalı.
-    /// Dönen: örtü boyundaki yazı kutusu (piksel) ve uzayabileceği sol/sağ sınır.
-    static func besideSpot(l: Int, t: Int, r: Int, b: Int, line: Double, width: Int, height: Int, iconLeft: Bool,
-                           iconRight: Bool, free: (Int, Int) -> Bool?)
-        -> (l: Int, t: Int, r: Int, b: Int, roomL: Int, roomR: Int)? {
+    /// Yanına yazma için bir hedefin çevresindeki boş alan (piksel; döngüde ölçülür, kip kararı döngüden sonra verilir).
+    struct Room {
+        /// Örtü kutusu ve satır yüksekliği.
+        var l: Int, t: Int, r: Int, b: Int
+        var line: Double
+        /// Türkçenin özgünden uzaklığı (`besideGapLines`), öbür uçta engelden uzaklığı (`ScreenFit.gapLines`) ve en çok
+        /// genişliği (`besideMax`).
+        var near: Int, far: Int, most: Int
+        var iconLeft: Bool, iconRight: Bool
+        /// Örtünün solundan/sağından art arda boş sütun sayısı (en çok `cap`; azsa alan bir engelle bitti).
+        var left = 0, right = 0, cap = 0
+        /// Altından/üstünden art arda boş satır sayısı.
+        var down = 0, up = 0
+        /// Altındaki/üstündeki yazı şeridinde (yakın boşluktan sonra örtü yüksekliği) solda/sağda art arda boş sütun (en
+        /// çok `side` + `far`).
+        var downLeft = 0, downRight = 0, upLeft = 0, upRight = 0, side = 0
+    }
+
+    enum Side { case left, right, below, above }
+    typealias Spot = (l: Int, t: Int, r: Int, b: Int, roomL: Int, roomR: Int)
+
+    /// Boş alan ölçümü. `free(x, y)`: nil başka hedef ya da simge (alan orada biter), true yazı rengine yakın nokta, false
+    /// boş zemin. Bir sütun/satır, yazı rengindeki noktaları `besideShare`'den azsa boştur.
+    static func measureRoom(l: Int, t: Int, r: Int, b: Int, line: Double, width: Int, height: Int, iconLeft: Bool,
+                            iconRight: Bool, free: (Int, Int) -> Bool?) -> Room {
         let w = r - l, h = b - t
-        guard w > 0, h > 0, t >= 0, b <= height else { return nil }
-        let near = max(2, Int((besideGapLines * line).rounded()))
-        let far = max(1, Int((ScreenFit.gapLines * line).rounded(.up)))
-        let most = Int((besideMax * Double(w) + line).rounded())
+        var room = Room(l: l, t: t, r: r, b: b, line: line, near: max(2, Int((besideGapLines * line).rounded())),
+                        far: max(1, Int((ScreenFit.gapLines * line).rounded(.up))),
+                        most: Int((besideMax * Double(max(0, w)) + line).rounded()), iconLeft: iconLeft, iconRight: iconRight)
+        guard w > 0, h > 0, t >= 0, b <= height else { return room }
         func open(_ cells: [Bool?]) -> Bool {
             guard !cells.isEmpty, !cells.contains(where: { $0 == nil }) else { return false }
             let ink = cells.filter { $0 == true }.count
@@ -723,35 +902,115 @@ public enum TextPainter {
             guard y >= 0, y < height, x0 >= 0, x1 <= width, x1 > x0 else { return false }
             return open((x0..<x1).map { free($0, y) })
         }
-        /// `x`'ten `step` yönünde art arda boş sütun sayısı (en çok `cap`).
         func run(from x: Int, step: Int, _ y0: Int, _ y1: Int, cap: Int) -> Int {
             var n = 0
             while n < cap, column(x + step * n, y0, y1) { n += 1 }
             return n
         }
-        /// `n` boş sütundan yazıya kalan: yakın boşluk ve (alan engelle bittiyse) uzak boşluk çıkar.
-        func usable(_ n: Int, cap: Int) -> Int { min(most, n - near - (n < cap ? far : 0)) }
-        let cap = near + most + far
-        if !iconLeft {
-            let n = run(from: l - 1, step: -1, t, b, cap: cap)
-            let room = usable(n, cap: cap)
-            if room >= w { return (l - near - w, t, l - near, b, l - near - room, l - near) }
+        func rows(from y: Int, step: Int, cap: Int) -> Int {
+            var n = 0
+            while n < cap, row(y + step * n, l, r) { n += 1 }
+            return n
         }
-        if !iconRight {
-            let n = run(from: r, step: 1, t, b, cap: cap)
-            let room = usable(n, cap: cap)
-            if room >= w { return (r + near, t, r + near + w, b, r + near, r + near + room) }
+        room.cap = min(width, room.near + room.most + room.far + Int((besideReachLines * line).rounded()))
+        room.left = iconLeft ? 0 : run(from: l - 1, step: -1, t, b, cap: room.cap)
+        room.right = iconRight ? 0 : run(from: r, step: 1, t, b, cap: room.cap)
+        let vertical = room.near + 2 * h
+        room.down = rows(from: b + room.near, step: 1, cap: vertical)
+        room.up = rows(from: t - room.near - 1, step: -1, cap: vertical)
+        room.side = w / 2
+        let low = b + room.near, high = t - room.near - h
+        if low + h <= height {
+            room.downLeft = run(from: l - 1, step: -1, low, low + h, cap: room.side + room.far)
+            room.downRight = run(from: r, step: 1, low, low + h, cap: room.side + room.far)
         }
-        let top = t - near - h
-        if top >= 0, (top..<(t - near)).allSatisfy({ row($0, l, r) }) {
-            let side = w / 2
-            let nl = run(from: l - 1, step: -1, top, t - near, cap: side + far)
-            let nr = run(from: r, step: 1, top, t - near, cap: side + far)
-            let roomL = l - max(0, min(side, nl - (nl < side + far ? far : 0)))
-            let roomR = r + max(0, min(side, nr - (nr < side + far ? far : 0)))
-            return (l, top, r, t - near, roomL, roomR)
+        if high >= 0 {
+            room.upLeft = run(from: l - 1, step: -1, high, high + h, cap: room.side + room.far)
+            room.upRight = run(from: r, step: 1, high, high + h, cap: room.side + room.far)
         }
-        return nil
+        return room
+    }
+
+    /// Yanına yazma yeri (Sinan Bey: "SELAMLA  GREET"; beta.100: menülerde de). `edge`: listede ortak kenar (solda
+    /// Türkçenin sağ kenarı, sağda sol kenarı, altta üstü, üstte altı); nil: hedefin kendi kenarından yakın boşluk kadar.
+    /// Solda/sağda alan en az örtü genişliğinde olmalı (Türkçe `most`'a kadar uzar); altta/üstte örtü yüksekliği kadar satır
+    /// boş olmalı (Türkçe iki yana yarım genişliğe kadar uzar). Simgenin olduğu yana yazılmaz.
+    static func spot(_ m: Room, _ side: Side, edge: Int?) -> Spot? {
+        let w = m.r - m.l, h = m.b - m.t
+        guard w > 0, h > 0 else { return nil }
+        func usable(_ n: Int, cap: Int) -> Int { n - (n < cap ? m.far : 0) }
+        func spread(_ left: Int, _ right: Int) -> (Int, Int) {
+            let cap = m.side + m.far
+            return (m.l - max(0, min(m.side, usable(left, cap: cap))), m.r + max(0, min(m.side, usable(right, cap: cap))))
+        }
+        switch side {
+        case .left:
+            guard !m.iconLeft else { return nil }
+            let e = edge ?? (m.l - m.near), gap = m.l - e
+            guard gap >= m.near else { return nil }
+            let room = min(m.most, usable(m.left, cap: m.cap) - gap)
+            guard room >= w else { return nil }
+            return (e - w, m.t, e, m.b, e - room, e)
+        case .right:
+            guard !m.iconRight else { return nil }
+            let e = edge ?? (m.r + m.near), gap = e - m.r
+            guard gap >= m.near else { return nil }
+            let room = min(m.most, usable(m.right, cap: m.cap) - gap)
+            guard room >= w else { return nil }
+            return (e, m.t, e + w, m.b, e, e + room)
+        case .below:
+            let top = edge ?? (m.b + m.near)
+            guard top - m.b >= m.near, m.down >= top + h - (m.b + m.near) else { return nil }
+            let (roomL, roomR) = spread(m.downLeft, m.downRight)
+            return (m.l, top, m.r, top + h, roomL, roomR)
+        case .above:
+            let bottom = edge ?? (m.t - m.near)
+            guard m.t - bottom >= m.near, bottom - h >= 0, m.up >= (m.t - m.near) - (bottom - h) else { return nil }
+            let (roomL, roomR) = spread(m.upLeft, m.upRight)
+            return (m.l, bottom - h, m.r, bottom, roomL, roomR)
+        }
+    }
+
+    /// Panelin ([l, r) x [t, b)) kenar çizgisi: her yanda panelin hemen dışındaki 1…`edgeMax` piksellik düz renkli şerit
+    /// (satır/sütun noktalarının en az %80'i ortalamasına `panelTolerance` kadar yakın, zeminden uzak) ve ötesinde o renk
+    /// biter. Çizginin rengi ilk bulunan yanınki; öbür yanlar ancak aynı renkteyse. nil: çizgi yok.
+    static func edges(l: Int, t: Int, r: Int, b: Int, width: Int, height: Int, ground: RGB,
+                      blocked: (Int, Int) -> Bool, color: (Int, Int) -> RGB) -> (color: RGB, top: Int, right: Int, bottom: Int, left: Int)? {
+        /// Yanın k. dış çizgisinin rengi (düzse).
+        func strip(_ points: [(Int, Int)]) -> RGB? {
+            guard !points.isEmpty, points.allSatisfy({ $0.0 >= 0 && $0.0 < width && $0.1 >= 0 && $0.1 < height }),
+                  !points.contains(where: { blocked($0.0, $0.1) }) else { return nil }
+            let colors = points.map { color($0.0, $0.1) }
+            let average = mean(colors)
+            guard Double(colors.filter { distance($0, average) <= panelTolerance }.count) >= 0.8 * Double(colors.count)
+            else { return nil }
+            return average
+        }
+        func horizontal(_ y: Int) -> [(Int, Int)] {
+            let step = max(1, (r - l) / 32)
+            return stride(from: l, to: r, by: step).map { ($0, y) }
+        }
+        func vertical(_ x: Int) -> [(Int, Int)] {
+            let step = max(1, (b - t) / 32)
+            return stride(from: t, to: b, by: step).map { (x, $0) }
+        }
+        var reference: RGB? = nil
+        /// Kalınlık: `line(k)` (k = 1, 2, …) aynı renkte sürdükçe; `edgeMax`'a varan ya da karenin kenarına değen şerit çizgi değildir.
+        func thickness(_ line: (Int) -> [(Int, Int)]) -> Int {
+            guard let first = strip(line(1)), distance(first, ground) > panelTolerance,
+                  reference.map({ distance($0, first) <= panelTolerance }) ?? true else { return 0 }
+            var k = 1
+            while k < edgeMax, let next = strip(line(k + 1)), distance(next, first) <= panelTolerance { k += 1 }
+            guard k < edgeMax, line(k + 1).allSatisfy({ $0.0 >= 0 && $0.0 < width && $0.1 >= 0 && $0.1 < height }) else { return 0 }
+            if reference == nil { reference = first }
+            return k
+        }
+        let top = thickness { horizontal(t - $0) }
+        let bottom = thickness { horizontal(b - 1 + $0) }
+        let left = thickness { vertical(l - $0) }
+        let right = thickness { vertical(r - 1 + $0) }
+        guard let reference, top + bottom + left + right > 0 else { return nil }
+        return (reference, top, right, bottom, left)
     }
 
     /// Kare (CGImage) üzerinden ölçüm.

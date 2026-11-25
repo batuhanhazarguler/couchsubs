@@ -118,6 +118,7 @@ public class TextPaintTests
                     if (face.ValueKind == JsonValueKind.Null) Assert.True(paint.Portrait is null, $"{name} resim olmamalı");
                     else Near(Px(paint.Portrait), "portrait");
                 }
+                Near(paint.Edge is { } edge ? [edge.Top * h, edge.Right * h, edge.Bottom * h, edge.Left * h] : null, "edge", 0.51);
                 // Örtmeyen kipte Türkçe özgün yazıya (ve kutunun ucundaki simgeye) binmez; ikiz özgün paneli örtmez.
                 if (paint.Mode != PaintMode.Cover && paint.SpotRoom is { } spotRoom)
                 {
@@ -131,7 +132,8 @@ public class TextPaintTests
 
     /// <summary>
     /// Kip örtmeyen öğede yerleşim girdisi Türkçenin yerinden (spot) gelir; ikizde yazı boyu ölçekli, yanına yazmada yazı
-    /// özgüne yaslanır; grup yalnız örtmede (Mac ScreenFit.ExactInput ile aynı).
+    /// özgüne yaslanır; grup örtmede ve yanına yazmada (listedeki Türkçeler aynı boyda), ikizde yok; ikizde yazı küçülmez
+    /// (Mac ScreenFit.ExactInput ile aynı).
     /// </summary>
     [Fact]
     public void ExactInputFollowsMode()
@@ -149,11 +151,14 @@ public class TextPaintTests
         Close(380, beside.Left, 1e-6, "sol");
         Close(300, beside.GrowLeft, 1e-6, "uzama solu");
         Assert.Equal("right", beside.Align);
-        Assert.Null(beside.Group);
+        Assert.Equal(3, beside.Group);
+        Assert.False(beside.KeepSize);
         Close(50, beside.Line, 1e-6, "satır");
         var twin = ScreenFit.ExactInput.From(item with { Paint = item.Paint! with { Mode = PaintMode.Twin, Scale = 0.5 } }, 1000, 1000)!;
         Close(25, twin.Line, 1e-6, "ikiz satır");
         Assert.Equal("center", twin.Align);
+        Assert.Null(twin.Group);
+        Assert.True(twin.KeepSize);
         var covered = ScreenFit.ExactInput.From(item with { Paint = item.Paint! with { Mode = PaintMode.Cover } }, 1000, 1000)!;
         Close(500, covered.Left, 1e-6, "örtü solu");
         Assert.Equal(3, covered.Group);
@@ -183,10 +188,15 @@ public class TextPaintTests
                 Mode = PaintMode.Twin, Spot = new TextBox(0.5, 0.3, 0.56, 0.33), SpotRoom = new TextBox(0.5, 0.3, 0.6, 0.33),
                 Twin = new TextBox(0.48, 0.28, 0.6, 0.36), Radius = 0.006, Scale = 0.58, Tail = "left",
                 PortraitImage = "data:image/png;base64,AA==", PortraitTwin = new TextBox(0.485, 0.29, 0.495, 0.31),
+                Edge = new TextPaint.EdgeLine("#E0A030", 0.003, 0, 0, 0),
             },
         }, phone: false);
         Assert.Equal("twin", twin["mode"]);
-        foreach (var key in new[] { "spot", "spotRoom", "twinBox", "radius", "scale", "tail", "icon", "cover" }) Assert.True(twin.ContainsKey(key), key);
+        foreach (var key in new[] { "spot", "spotRoom", "twinBox", "radius", "scale", "tail", "icon", "cover", "edge" }) Assert.True(twin.ContainsKey(key), key);
+        var edge = Assert.IsType<SortedDictionary<string, object>>(twin["edge"]);
+        Assert.Equal("#E0A030", edge["color"]);
+        Assert.Equal(0.003m, edge["top"]);
+        Assert.Equal(0m, edge["left"]);
         Assert.Equal(0.58m, twin["scale"]);
         var icon = Assert.IsType<SortedDictionary<string, object>>(twin["icon"]);
         Assert.Equal("data:image/png;base64,AA==", icon["src"]);
@@ -433,5 +443,41 @@ public class TextPaintTests
             Assert.True(b.Left >= 0 && b.Top >= 0 && b.Right <= 1 && b.Bottom <= 1, $"{box}: {b}");
             Assert.True(b.Left <= b.Right && b.Top <= b.Bottom, $"{box}: {b}");
         }
+    }
+
+    /// <summary>
+    /// Beta.100 (3407–3409): tek satır okunan sekme çubuğu her karede aynı çevrilir (motora gitmez); kart başlıkları ve sekme
+    /// adları sözlükte; haritanın yer adı ve soluk okunan parçası çevrilmez (Mac testTabBarIsStableAndPlaceNamesKept ile aynı).
+    /// </summary>
+    [Fact]
+    public void TabBarIsStableAndPlaceNamesKept()
+    {
+        Assert.Equal("JASON & LUCIA HARİTA ÖZET", UiCommands.TranslateLabelLoosely("JASON & LUCIA MAP BRIEF"));
+        Assert.Equal("JASON & LUCIA HARİTA ÖZET İLERLEME", UiCommands.TranslateLabelLoosely("JASON & LUCIA MAP BRIEF PROGRESS"));
+        Assert.Equal("HARİTA ÖZET", UiCommands.TranslateLabelLoosely("MAP BRIEF"));
+        Assert.Null(UiCommands.TranslateTabs("Map Brief"));
+        Assert.Null(UiCommands.TranslateTabs("MAP SOMETHING"));
+        foreach (var label in new[] { "VEHICLES", "WEAPONS", "ANIMALS", "ADD MARKER", "Map" })
+            Assert.True(UiCommands.TranslateLabel(label) is not null, label);
+        foreach (var place in new[] { "Peregrine Bay", "Shoeless Keys", "Key Lento", "Gambit Bay", "ne Bay" })
+            Assert.True(ScreenTranslation.KeepsNames(place), place);
+        foreach (var text in new[] { "Add Marker", "Bay", "Go to the Bay", "KEY BINDINGS", "Ambient Sound" })
+            Assert.False(ScreenTranslation.KeepsNames(text), text);
+    }
+
+    /// <summary>
+    /// Beta.100 (3385): menüdeki otomatik alanla kesişen hazır alan okunmaz (tuş listesi iki alana bölünmesin; Mac
+    /// testPresetYieldsToMenuArea ile aynı).
+    /// </summary>
+    [Fact]
+    public void PresetYieldsToMenuArea()
+    {
+        var phone = new WatchedArea(GameAreaPresets.PhoneId, "Messages", new CropRegion(0.45, 0.80, 0.72, 0.99));
+        var menu = new WatchedArea("auto-1", ScreenTextDetector.AreaName, new CropRegion(0.70, 0.96, 0.80, 0.98)) { Auto = true };
+        Assert.Equal([phone.Id, "auto-1"], RegionWatcher.YieldingPresets([phone, menu]).Select(a => a.Id));
+        menu = menu with { Menu = true };
+        Assert.Equal(["auto-1"], RegionWatcher.YieldingPresets([phone, menu]).Select(a => a.Id));
+        menu = menu with { Region = new CropRegion(0.05, 0.12, 0.4, 0.9) };
+        Assert.Equal([phone.Id, "auto-1"], RegionWatcher.YieldingPresets([phone, menu]).Select(a => a.Id));
     }
 }

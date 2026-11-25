@@ -8,7 +8,9 @@ import SwiftUI
 /// PhoneSubtitleActivity ile aynı yerleşim: `ScreenFit.exact`). Kip (`TextPaint.mode`):
 /// - örtme: kareden ölçülen örtü kutusu tam sınırında, opak, köşesiz ve gölgesiz; zemin düz renk ya da degrade.
 /// - yanına yazma: kutu yok; Türkçe özgün yazının yanında, özgün renk ve stilde, okunurluk için yumuşak konturla.
-/// - ikiz: özgün panel örtülmez; aynı zemin, köşe, kuyruk ve kişi resmiyle küçük bir ikiz panel, genişliği içeriğe göre.
+/// - ikiz: özgün kutu örtülmez; aynı zemin, kenar çizgisi, köşe, kuyruk ve kişi resmiyle aynı boyda ikiz kutu, genişliği ve
+///   yüksekliği içeriğe göre (yazı küçülmez).
+/// Özgün yazı dar ise (konuşma satırı değilse) gömülü dar yazı tipi (`EmbeddedFonts`, Barlow Condensed) ile çizilir.
 /// Türkçe özgün renk, kalınlık, hiza ve satır aralığıyla. Grup aynı boyda, uzun çeviri boş tarafa uzar; yazı kesilmez.
 /// `items`: `paint`'i olan öğeler.
 struct ExactScreenText: View {
@@ -18,10 +20,13 @@ struct ExactScreenText: View {
     var body: some View {
         let shown = items.filter { $0.paint != nil }
         let inputs = shown.compactMap { ScreenFit.ExactInput($0, width: size.width, height: size.height) }
-        // Ölçü sistem yazı tipiyle; grupta kalın öğe varsa kalın ölçülür (geniş ölçü yazıyı hiç taşırmaz).
+        // Ölçü çizimin yazı tipiyle; grupta kalın öğe varsa kalın ölçülür (geniş ölçü yazıyı hiç taşırmaz). Dar öğeler gömülü
+        // dar yazı tipiyle ölçülür (hepsi dar değilse geniş ölçü).
         let bold = shown.contains { $0.look?.bold == true }
+        let narrow = !shown.isEmpty && shown.allSatisfy(Self.condensed)
         let placed = ScreenFit.exact(inputs) { text, fontSize in
-            Double(ScreenFit.textWidth(text, size: CGFloat(fontSize), bold: bold))
+            if narrow, let width = EmbeddedFonts.width(text, size: CGFloat(fontSize), bold: bold) { return Double(width) }
+            return Double(ScreenFit.textWidth(text, size: CGFloat(fontSize), bold: bold))
         }
         let twins = Self.twins(shown, placed, size: size)
         ZStack(alignment: .topLeading) {
@@ -43,6 +48,13 @@ struct ExactScreenText: View {
         var fill: Color
         var tail: String?
         var portrait: (image: CGImage, frame: CGRect)?
+        /// Kenar çizgisi: rengi ve her yandaki kalınlığı (piksel; kutunun dışında).
+        var edge: (color: Color, top: CGFloat, right: CGFloat, bottom: CGFloat, left: CGFloat)?
+    }
+
+    /// Özgün yazı dar ve konuşma satırı değil: gömülü dar yazı tipi (#1297: konuşma satırı hiç dar çizilmez).
+    static func condensed(_ item: ScreenTranslation.Item) -> Bool {
+        item.look?.condensed == true && !ScreenFit.isDialogue(item.translation, rows: item.paragraphs ? max(2, item.rows) : item.rows)
     }
 
     /// Aynı ikiz kutusunu paylaşan öğeler tek panel: genişliği içeriğe göre (en sağdaki yazı ya da resim + sol iç boşluk),
@@ -57,6 +69,9 @@ struct ExactScreenText: View {
             let left = box.left * size.width
             let pad = max(0, (members.map { placed[$0].left }.min() ?? left) - left)
             var right = members.map { placed[$0].left + placed[$0].width }.max() ?? box.right * size.width
+            // Yükseklik de içeriğe göre: satırı kırılan Türkçe kutuyu aşağı uzatır, alt iç boşluk özgündeki kadar kalır.
+            let bottom = members.map { placed[$0].top + placed[$0].height }.max() ?? box.bottom * size.height
+            let spotBottom = members.compactMap { items[$0].paint?.spot?.bottom }.max().map { $0 * size.height } ?? bottom
             var portrait: (image: CGImage, frame: CGRect)?
             if let at = paint.portraitTwin, let image = image(paint.portraitImage) {
                 let frame = CGRect(x: at.left * size.width, y: at.top * size.height, width: (at.right - at.left) * size.width,
@@ -64,10 +79,16 @@ struct ExactScreenText: View {
                 portrait = (image, frame)
                 right = max(right, frame.maxX)
             }
-            let frame = CGRect(x: left, y: box.top * size.height, width: max(1, right + pad - left),
-                               height: (box.bottom - box.top) * size.height)
+            let top = box.top * size.height
+            let frame = CGRect(x: left, y: top, width: max(1, right + pad - left, (box.right - box.left) * size.width),
+                               height: max((box.bottom - box.top) * size.height, bottom + (box.bottom * size.height - spotBottom) - top))
+            var edge: (color: Color, top: CGFloat, right: CGFloat, bottom: CGFloat, left: CGFloat)?
+            if let line = paint.edge, let tone = color(line.color) {
+                func px(_ v: Double) -> CGFloat { v > 0 ? max(1, (v * size.height).rounded()) : 0 }
+                edge = (tone, px(line.top), px(line.right), px(line.bottom), px(line.left))
+            }
             result.append(Twin(frame: frame, radius: paint.radius * size.height, fill: color(paint.background) ?? .white,
-                               tail: paint.tail, portrait: portrait))
+                               tail: paint.tail, portrait: portrait, edge: edge))
         }
         return result
     }
@@ -76,6 +97,11 @@ struct ExactScreenText: View {
     static func panel(_ twin: Twin) -> some View {
         let r = twin.radius
         ZStack(alignment: .topLeading) {
+            if let edge = twin.edge {
+                // Kenar çizgisi: kutunun dışında, her yanda kendi kalınlığında (köşesiz ince şerit).
+                edge.color.frame(width: twin.frame.width + edge.left + edge.right, height: twin.frame.height + edge.top + edge.bottom)
+                    .offset(x: -edge.left, y: -edge.top)
+            }
             Bubble(radius: r, tail: twin.tail)
                 .fill(twin.fill)
                 .frame(width: twin.frame.width, height: twin.frame.height)
@@ -156,8 +182,7 @@ struct ExactScreenText: View {
         ZStack(alignment: .topLeading) {
             ForEach(Array(place.lines.enumerated()), id: \.offset) { k, text in
                 Text(verbatim: text)
-                    .font(.system(size: place.fontSize, weight: item.look?.bold == true ? .bold : .regular)
-                        .width(item.look?.condensed == true ? .condensed : .standard))
+                    .font(font(item, size: place.fontSize))
                     .foregroundStyle(foreground)
                     .shadow(color: mode == .beside ? halo : .clear, radius: mode == .beside ? max(1, place.fontSize * 0.08) : 0)
                     .shadow(color: mode == .beside ? halo : .clear, radius: 0, x: 0, y: mode == .beside ? 1 : 0)
@@ -170,6 +195,13 @@ struct ExactScreenText: View {
         .frame(width: place.width, height: place.height, alignment: .topLeading)
         .background(mode == .cover ? fill(item) : LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom))
         .offset(x: place.left, y: place.top)
+    }
+
+    /// Çizimin yazı tipi: dar özgünde gömülü dar yazı tipi (yüklenemezse sistemin dar genişliği), değilse sistem.
+    static func font(_ item: ScreenTranslation.Item, size: CGFloat) -> Font {
+        let bold = item.look?.bold == true
+        if condensed(item), let name = EmbeddedFonts.condensedName(bold: bold) { return .custom(name, fixedSize: size) }
+        return .system(size: size, weight: bold ? .bold : .regular).width(condensed(item) ? .condensed : .standard)
     }
 
     /// Yanına yazılan Türkçe özgüne yaslanır (ScreenFit.ExactInput ile aynı).

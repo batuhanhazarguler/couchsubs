@@ -1,16 +1,16 @@
 {
-  "_": "Çizim kipinin (TextPaint.mode: cover/beside/twin) gerçek karelerde seçimi (Mac/iPhone: TextPaintModeFrameTests.swift, Windows: TextPaintModeFrameTests.cs, Android: TextPaintModeFrameTest.kt). Kareler testdata/frames altında; kutular karede, kenarlara oranla (elle ölçüldü, yazı tanıma yok). text yalnız sözcük sayısı ve büyük harf için (yer tutucu). kind: ScreenTextKind (yoksa hep cover); prompt: tuş istemi. Beklenen: mode; portrait: ikiz panelde kişi resmi; twinAbove: ikiz özgün panelin üstünde.",
+  "_": "Çizim kipinin (TextPaint.mode: cover/beside/twin) gerçek karelerde seçimi (Mac/iPhone: TextPaintModeFrameTests.swift, Windows: TextPaintModeFrameTests.cs, Android: TextPaintModeFrameTest.kt). Kareler testdata/frames altında; kutular karede, kenarlara oranla (elle ölçüldü, yazı tanıma yok). text yalnız sözcük sayısı ve büyük harf için (yer tutucu, oyun metni değil). kind: ScreenTextKind (yoksa hep cover); prompt: tuş istemi; rows: özgün satır sayısı (yoksa 1). Beklenen: mode; side: yanına yazılan Türkçenin özgüne göre yanı (left/right/below/above); twinSide: ikiz kutunun özgün kutuya göre yanı; portrait: ikizde kişi resmi. same: aynı hizada olması gereken liste (Türkçe sütunun ortak kenarı ya da ortak üst çizgi).",
   "frames": [
     {
-      "id": "bildirim-ikiz",
+      "id": "bildirim-ikiz-yaninda",
       "file": "gta6-n4-bildirim.jpg",
       "targets": [
         { "text": "Name", "box": [0.8255, 0.8241, 0.8427, 0.8407], "kind": "help" },
         { "text": "Message body text in the box", "box": [0.8005, 0.8593, 0.9505, 0.8769], "kind": "help" }
       ],
       "expect": [
-        { "mode": "twin", "portrait": true, "twinAbove": true },
-        { "mode": "twin", "twinAbove": true }
+        { "mode": "twin", "portrait": true, "twinSide": "left" },
+        { "mode": "twin", "twinSide": "left" }
       ]
     },
     {
@@ -20,7 +20,7 @@
         { "text": "Hold L2 to aim", "box": [0.4496, 0.9447, 0.5493, 0.9691], "kind": "help", "prompt": true }
       ],
       "expect": [
-        { "mode": "beside" }
+        { "mode": "beside", "side": "left" }
       ]
     },
     {
@@ -34,25 +34,67 @@
       ]
     },
     {
-      "id": "harita-menu-kart-ortme",
+      "id": "harita-menu-tus-listesi-solda-tek-sutun",
       "file": "gta6-menu-harita.jpg",
       "targets": [
-        { "text": "Body line of the card text", "box": [0.1468, 0.2765, 0.4288, 0.3102], "kind": "other" },
-        { "text": "RECENTER", "box": [0.8689, 0.7194, 0.9595, 0.7544], "kind": "menu" }
+        { "text": "RECENTER", "box": [0.8708, 0.7204, 0.9333, 0.7537], "kind": "menu" },
+        { "text": "2D VIEW", "box": [0.8823, 0.7685, 0.9333, 0.8019], "kind": "menu" },
+        { "text": "ADD MARKER", "box": [0.8521, 0.8167, 0.9333, 0.85], "kind": "menu" },
+        { "text": "SET DESTINATION", "box": [0.8281, 0.8648, 0.9333, 0.8981], "kind": "menu" },
+        { "text": "EXIT", "box": [0.9073, 0.913, 0.9333, 0.9444], "kind": "menu" }
       ],
+      "same": [[0, 1, 2, 3, 4]],
       "expect": [
-        { "mode": "cover" },
-        { "mode": "cover" }
+        { "mode": "beside", "side": "left" },
+        { "mode": "beside", "side": "left" },
+        { "mode": "beside", "side": "left" },
+        { "mode": "beside", "side": "left" },
+        { "mode": "beside", "side": "left" }
       ]
     },
     {
-      "id": "harita-kart-gorev-ortme",
-      "file": "gta6-harita-kart.jpg",
+      "id": "harita-menu-sekmeler-altta",
+      "file": "gta6-menu-harita.jpg",
       "targets": [
-        { "text": "Body line of card", "box": [0.5465, 0.447, 0.7616, 0.4754], "kind": "mission" }
+        { "text": "NAME & NAME", "box": [0.5104, 0.0593, 0.6385, 0.1], "kind": "menu" },
+        { "text": "MAP", "box": [0.6708, 0.0593, 0.7073, 0.1], "kind": "menu" },
+        { "text": "BRIEF", "box": [0.7396, 0.0593, 0.7885, 0.1], "kind": "menu" },
+        { "text": "PROGRESS", "box": [0.8208, 0.0593, 0.9104, 0.1], "kind": "menu" }
+      ],
+      "same": [[0, 1, 2, 3]],
+      "expect": [
+        { "mode": "beside", "side": "below" },
+        { "mode": "beside", "side": "below" },
+        { "mode": "beside", "side": "below" },
+        { "mode": "beside", "side": "below" }
+      ]
+    },
+    {
+      "id": "harita-menu-kart-ikiz",
+      "file": "gta6-menu-harita.jpg",
+      "targets": [
+        { "text": "CARD TITLE", "box": [0.1938, 0.1898, 0.3458, 0.2361], "kind": "menu" },
+        { "text": "Body line of the card text that wraps", "box": [0.1469, 0.2713, 0.4573, 0.4074], "kind": "menu", "rows": 3 }
       ],
       "expect": [
-        { "mode": "cover" }
+        { "mode": "twin", "twinSide": "right" },
+        { "mode": "twin", "twinSide": "right" }
+      ]
+    },
+    {
+      "id": "harita-kart-gorev-ikiz",
+      "file": "gta6-harita-kart.jpg",
+      "targets": [
+        { "text": "PLACE", "box": [0.5474, 0.3963, 0.6026, 0.4231], "kind": "mission" },
+        { "text": "Body line of the card text", "box": [0.5474, 0.4444, 0.7896, 0.5574], "kind": "mission", "rows": 3 },
+        { "text": "LEFT", "box": [0.5474, 0.5824, 0.5828, 0.6083], "kind": "mission" },
+        { "text": "RIGHT", "box": [0.7396, 0.5824, 0.7979, 0.6083], "kind": "mission" }
+      ],
+      "expect": [
+        { "mode": "twin", "twinSide": "left" },
+        { "mode": "twin", "twinSide": "left" },
+        { "mode": "twin", "twinSide": "left" },
+        { "mode": "twin", "twinSide": "left" }
       ]
     }
   ]
