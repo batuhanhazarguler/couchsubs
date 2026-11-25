@@ -233,8 +233,9 @@ final class ScreenTextDetectorTests: XCTestCase {
         XCTAssertLessThanOrEqual(detector.areas.count, ScreenTextDetector.menuMaxAreas)
     }
 
-    /// #1268, gerçek kare: tuş listesinin kutuları denizin renginde (yanındaki Ⓛ3/Ⓡ3 simgesi ve taşan harf konturu zemine
-    /// karışmaz). Eskiden "RECENTER" ve "2D VIEW" açık gri çiziliyordu.
+    /// #1268, gerçek kare: tuş listesinin kutuları denizin renginde, yazı koyu lacivert (yanındaki Ⓛ3/Ⓡ3 simgesi ve taşan
+    /// harf konturu zemine karışmaz). Eskiden "RECENTER" ve "2D VIEW" açık gri çiziliyordu; Android "ADD MARKER"ı grimsi
+    /// (#608096) çiziyordu (Android RegionAliveTest ile aynı aralık).
     func testOutlinedMapHintsAreDrawnInTheSeaColour() throws {
         let url = ScreenFitTests.directory.appendingPathComponent("gta6-harita-kart.jpg")
         let source = try XCTUnwrap(CGImageSourceCreateWithURL(url as CFURL, nil))
@@ -246,9 +247,12 @@ final class ScreenTextDetectorTests: XCTestCase {
                                            ("SET DESTINATION", [0.128, 0.672, 0.750, 0.759])]
         for (text, b) in lines {
             let box = TextBox(left: b[0], top: b[1], right: b[2], bottom: b[3])
-            let style = TextStyleSampler.sample(crop, box: box, lines: [TextLine(text, box: box)], source: text).surface
+            let (style, look) = TextStyleSampler.sample(crop, box: box, lines: [TextLine(text, box: box)], source: text)
             XCTAssertLessThanOrEqual(TextPainter.distance(TextPainter.rgb(style.background), (0x3A, 0x94, 0xBB)), 24,
                                      "\(text): \(style.background)")
+            XCTAssertLessThanOrEqual(TextPainter.distance(TextPainter.rgb(style.foreground), (0x1E, 0x2E, 0x3E)), 24,
+                                     "\(text): \(style.foreground)")
+            XCTAssertFalse(look.flat, "\(text): deniz düz zemin değil")
         }
     }
 

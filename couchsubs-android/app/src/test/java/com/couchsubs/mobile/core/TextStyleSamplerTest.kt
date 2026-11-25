@@ -73,4 +73,39 @@ class TextStyleSamplerTest {
         val style = TextStyleSampler.sample(GrayFrame(luma, width, height), 0, 0, width, height, 10.0, "Go to the Saloon.")!!
         assertFalse(style.surface.flat)
     }
+
+    /**
+     * #1268 (gerçek karede "ADD MARKER"): kontur yazının zemin kümesi denizle kontur grisinin karışımı; ikisinin parlaklığı
+     * aynı (125) ama rengi değil. Zemin renk sapmasıyla düz sayılmaz, yanındaki şerit de konturlu olduğundan bir şerit ötedeki
+     * düz deniz zemin olur. Eskiden sapma yalnız parlaklıktan ölçülüyor, kutu grimsi çiziliyordu (Mac ve Windows ile aynı
+     * görüntü).
+     */
+    @Test
+    fun lumaFlatButColouredGroundTakesTheFarBand() {
+        val width = 400
+        val height = 100
+        val rgb = IntArray(width * height) { index ->
+            val x = index % width
+            val y = index / width
+            when {
+                y in 30 until 70 && x % 16 < 5 -> 0xF0F0F0
+                y in 20 until 80 && x % 16 in 5 until 10 -> 0x7D7D7D
+                else -> 0x3A94BB
+            }
+        }
+        val luma = ByteArray(rgb.size) { i ->
+            val c = rgb[i]
+            ((299 * ((c shr 16) and 0xff) + 587 * ((c shr 8) and 0xff) + 114 * (c and 0xff)) / 1000).toByte()
+        }
+        val style = TextStyleSampler.sample(GrayFrame(luma, width, height), 40, 30, 360, 70, 40.0, "ADD MARKER",
+            color = { x, y -> rgb[y * width + x] })!!
+        fun distance(hex: String, r: Int, g: Int, b: Int): Int {
+            val c = hex.removePrefix("#").toInt(16)
+            return maxOf(kotlin.math.abs(((c shr 16) and 0xff) - r), kotlin.math.abs(((c shr 8) and 0xff) - g),
+                kotlin.math.abs((c and 0xff) - b))
+        }
+        assertFalse(style.surface.flat)
+        assertTrue(style.surface.background, distance(style.surface.background, 58, 148, 187) <= 8)
+        assertTrue(style.surface.foreground, distance(style.surface.foreground, 240, 240, 240) <= 8)
+    }
 }

@@ -68,6 +68,32 @@ final class TextStyleSamplerTests: XCTestCase {
         XCTAssertFalse(look.flat)
     }
 
+    /// #1268 (gerçek karede "ADD MARKER"): kontur yazının zemin kümesi denizle kontur grisinin karışımı; ikisinin parlaklığı
+    /// aynı (125) ama rengi değil. Zemin renk sapmasıyla düz sayılmaz, yanındaki şerit de konturlu olduğundan bir şerit ötedeki
+    /// düz deniz zemin olur. Android eskiden sapmayı yalnız parlaklıktan ölçüyor, kutuyu grimsi çiziyordu (Windows ve Android
+    /// ile aynı görüntü).
+    func testLumaFlatButColouredGroundTakesTheFarBand() {
+        let (width, height) = (400, 100)
+        var pixels = [UInt8](repeating: 255, count: width * height * 4)
+        for y in 0..<height {
+            for x in 0..<width {
+                let c: RGB = (30..<70).contains(y) && x % 16 < 5 ? (240, 240, 240)
+                    : (20..<80).contains(y) && (5..<10).contains(x % 16) ? (125, 125, 125) : (58, 148, 187)
+                let p = (y * width + x) * 4
+                (pixels[p], pixels[p + 1], pixels[p + 2]) = (c.r, c.g, c.b)
+            }
+        }
+        let frame = ScreenTextDetectorTests.image(pixels, width: width, height: height)
+        let box = TextBox(left: 0.1, top: 0.3, right: 0.9, bottom: 0.7)
+        let (surface, look) = TextStyleSampler.sample(frame, box: box, lines: [TextLine("ADD MARKER", box: box)],
+                                                      source: "ADD MARKER")
+        XCTAssertFalse(look.flat)
+        XCTAssertLessThanOrEqual(TextPainter.distance(TextPainter.rgb(surface.background), (58, 148, 187)), 8,
+                                 surface.background)
+        XCTAssertLessThanOrEqual(TextPainter.distance(TextPainter.rgb(surface.foreground), (240, 240, 240)), 8,
+                                 surface.foreground)
+    }
+
     func testAlignmentFollowsTheLineEdges() {
         let frame = Self.text((20, 22, 30), (240, 240, 240), stroke: 2)
         func line(_ left: Double, _ right: Double, _ top: Double) -> TextLine {

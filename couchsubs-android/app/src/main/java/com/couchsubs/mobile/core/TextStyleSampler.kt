@@ -14,13 +14,17 @@ data class TextLook(val bold: Boolean, val condensed: Boolean, val align: String
 /**
  * Otomatik bulunan ekran yazısının stili (Google Lens tarzı yerinde çeviri için): blok kutusundaki pikseller parlaklığa
  * göre Otsu eşiğiyle ikiye ayrılır, az olan küme yazı, çok olan zemindir. Android'de çözücünün karesi yalnız parlaklık
- * düzlemidir; renkler bu yüzden gri tonudur (#LLLLLL). Windows ve Mac/iPhone aynı eşikleri uygular (TextStyleSampler).
+ * düzlemidir; renk verilmezse renkler gri tonudur (#LLLLLL). Windows ve Mac/iPhone ile aynı algoritma ve eşikler
+ * (TextStyleSampler).
  */
 object TextStyleSampler {
     const val BOLD_INK = 0.28
     const val CONDENSED = 0.45
     const val UPPER_SHARE = 0.80
-    const val FLAT_DEVIATION = 12.0
+    /** Zemin kümesinin renk sapması (üç kanalın sapmasının ortalaması) bundan küçükse düz zemin (Mac/Windows ile aynı). */
+    const val FLAT_DEVIATION = 16.0
+    private const val SAMPLES_X = 48
+    private const val SAMPLES_Y = 10
     private val turkish = Locale.forLanguageTag("tr")
 
     data class Style(val surface: TextSurface, val look: TextLook)
@@ -43,93 +47,59 @@ object TextStyleSampler {
         val t = top.coerceIn(0, frame.height)
         val b = bottom.coerceIn(0, frame.height)
         if (r - l < 2 || b - t < 2 || !frame.isValid) return null
+        // Mac/iPhone ve Windows ile aynı: kutu 48 × 10 noktalık ızgarayla örneklenir, kümelerin renk sapması (düz zemin)
+        // üç renk kanalının sapmasının ortalamasıdır. Eskiden kutunun her pikseli alınıyor, sapma yalnız parlaklıktan ve
+        // 12 eşiğiyle ölçülüyordu: haritanın tuş listesinde "ADD MARKER" satırının zemin kümesi (mavi deniz + açık gri
+        // harf kenarı) parlaklıkça düz çıkıyor, uzaktaki şeride bakılmıyor, kutu denizin üstünde grimsi (#608096)
+        // çiziliyordu (#1268; Mac'te deniz mavisi).
+        val pixels = ArrayList<Pixel>(SAMPLES_X * SAMPLES_Y)
+        collect(frame, color, l, t, r, b, pixels)
+        if (pixels.size < 8) return null
         val histogram = IntArray(256)
-        for (y in t until b) for (x in l until r) histogram[frame.at(x, y)]++
+        for (pixel in pixels) histogram[pixel.luma]++
         val threshold = otsu(histogram)
-        var lowCount = 0L; var lowSum = 0L; var lowSquares = 0.0
-        var highCount = 0L; var highSum = 0L; var highSquares = 0.0
-        for (value in 0..255) {
-            val count = histogram[value].toLong()
-            if (count == 0L) continue
-            if (value <= threshold) {
-                lowCount += count; lowSum += count * value; lowSquares += count.toDouble() * value * value
-            } else {
-                highCount += count; highSum += count * value; highSquares += count.toDouble() * value * value
-            }
-        }
-        if (lowCount == 0L || highCount == 0L) return null
-        var textIsHigh = highCount <= lowCount
+        val low = pixels.filter { it.luma <= threshold }
+        val high = pixels.filter { it.luma > threshold }
+        if (low.isEmpty() || high.isEmpty()) return null
+        var ink = if (low.size < high.size) low else high
+        var ground = if (low.size < high.size) high else low
         // Zemin, kutunun hemen dışındaki şeride (yazı yok) parlaklıkça yakın olan kümedir: sıkı kutudaki kalın dar yazıda
         // harf noktaları zeminden çok olabiliyor, kutu beyaz çiziliyordu (#860). Çok olan küme kutunun kenarını da
         // dolduruyorsa ([FILLED_EDGE]; seçili menü satırının ters rengi kutunun kendisidir) zemin odur.
-        val ring = surrounding(frame, l, t, r, b)
-        ring?.let { points -> points.map { (x, y) -> frame.at(x, y) }.sorted().let { it[it.size / 2].toDouble() } }?.let { around ->
-            val lowFirst = abs(lowSum.toDouble() / lowCount - around) <= abs(highSum.toDouble() / highCount - around)
-            val groundIsLow = textIsHigh
-            var edges = 0
-            var groundEdges = 0
-            for (y in t until b) for (x in l until r) {
-                if (x != l && y != t && x != r - 1 && y != b - 1) continue
-                edges++
-                if ((frame.at(x, y) <= threshold) == groundIsLow) groundEdges++
-            }
-            val edgeShare = if (edges == 0) 0.0 else groundEdges.toDouble() / edges
-            if (lowFirst != groundIsLow && edgeShare < FILLED_EDGE) textIsHigh = !textIsHigh
+        val ring = surrounding(frame, color, l, t, r, b)
+        if (ring != null) {
+            val around = ring.map { it.luma }.sorted().let { it[it.size / 2].toDouble() }
+            val lowFirst = abs(low.map { it.luma }.average() - around) <= abs(high.map { it.luma }.average() - around)
+            val groundIsLow = low.size >= high.size
+            val edges = pixels.count { it.edge }
+            val edgeShare = if (edges == 0) 0.0 else ground.count { it.edge }.toDouble() / edges
+            if (lowFirst != groundIsLow && edgeShare < FILLED_EDGE) ink = ground.also { ground = ink }
         }
-        val inkCount = if (textIsHigh) highCount else lowCount
-        val groundCount = if (textIsHigh) lowCount else highCount
-        val ink = (if (textIsHigh) highSum else lowSum).toDouble() / inkCount
-        val ground = (if (textIsHigh) lowSum else highSum).toDouble() / groundCount
-        val groundSquares = if (textIsHigh) lowSquares else highSquares
-        val deviation = sqrt(maxOf(0.0, groundSquares / groundCount - ground * ground))
-        // Renkli kare: kümeler parlaklıkla ayrılır, renkleri kümedeki piksellerin ortalamasıdır (iPhone ile aynı).
-        var inkHex = hex(ink)
-        var groundHex = hex(ground)
-        if (color != null) {
-            val inkSum = LongArray(3)
-            val groundSum = LongArray(3)
-            for (y in t until b) for (x in l until r) {
-                val rgb = color(x, y)
-                val isHigh = frame.at(x, y) > threshold
-                val sum = if (isHigh == textIsHigh) inkSum else groundSum
-                sum[0] += (rgb shr 16) and 0xff
-                sum[1] += (rgb shr 8) and 0xff
-                sum[2] += rgb and 0xff
-            }
-            inkHex = rgbHex(inkSum, inkCount)
-            groundHex = rgbHex(groundSum, groundCount)
-        }
+        val inkCount = ink.size.toLong()
+        val groundCount = ground.size.toLong()
+        var groundHex = mean(ground)
+        var inkHex = mean(ink)
+        val flat = deviation(ground) < flatLimit
+        var shade = ground.map { it.luma }.average()
         // Düz olmayan zeminde kenarlıklı yazı (GTA 6 haritasındaki tuş ipuçları: beyaz harf, koyu kenarlık, açık mavi deniz):
         // kutunun içinde üç ton var, zemin kümesi harfle denizin karışımı çıkıyor, kutu denizin üstünde açık gri
         // çiziliyordu. Yazının hemen çevresindeki şerit düzse zemin odur.
         // Şeridin yan parçası yazının yanındaki tuş simgesine (RECENTER Ⓛ3, 2D VIEW Ⓡ3), alt/üst parçası kutudan taşan harf
         // konturuna denk gelince şerit düz çıkmıyor, kutu yine açık gri çiziliyordu (#1268): o zaman yalnız yazıdan biraz
         // uzaktaki üst ve alt şeride bakılır (Mac/iPhone, Windows ile aynı).
-        val band = if (deviation < flatLimit) null else sequenceOf({ ring }, { surrounding(frame, l, t, r, b, sides = false) })
+        val band = if (flat) null else sequenceOf({ ring }, { surrounding(frame, color, l, t, r, b, sides = false) })
             .mapNotNull { it() }
-            .firstOrNull { points ->
-                val lumas = points.map { (x, y) -> frame.at(x, y) }
-                val mean = lumas.average()
-                sqrt(lumas.sumOf { (it - mean) * (it - mean) } / lumas.size) < flatLimit
-            }
+            .firstOrNull { deviation(it) < flatLimit }
         if (band != null) {
-            val mean = band.map { (x, y) -> frame.at(x, y) }.average()
-            groundHex = if (color == null) hex(mean) else {
-                val sum = LongArray(3)
-                for ((x, y) in band) {
-                    val rgb = color(x, y)
-                    sum[0] += (rgb shr 16) and 0xff
-                    sum[1] += (rgb shr 8) and 0xff
-                    sum[2] += rgb and 0xff
-                }
-                rgbHex(sum, band.size.toLong())
-            }
+            groundHex = mean(band)
+            shade = band.map { it.luma }.average()
         }
+        if (contrast(groundHex, inkHex) < 3) inkHex = if (shade < 128) "#FFFFFF" else "#000000"
         val ratio = inkCount.toDouble() / (inkCount + groundCount)
         val longest = source.split('\n').maxOfOrNull { it.trim().length } ?: 0
         val condensed = longest > 0 && lineHeight > 0 && (r - l).toDouble() / longest / lineHeight < CONDENSED
         return Style(
-            TextSurface(groundHex, inkHex, deviation < flatLimit),
+            TextSurface(groundHex, inkHex, flat),
             TextLook(bold = ratio >= BOLD_INK, condensed = condensed, align = align(edges), upper = isUpper(source)),
         )
     }
@@ -139,17 +109,43 @@ object TextStyleSampler {
     /** Çok olan küme kutunun kenar noktalarının en az bu kadarını dolduruyorsa (seçili satırın zemini) zemindir. */
     const val FILLED_EDGE = 0.7
 
+    private class Pixel(val luma: Int, val r: Int, val g: Int, val b: Int, val edge: Boolean)
+
     /**
-     * Dikdörtgenin hemen dışındaki şeridin noktaları (x, y); kareden taşan parça atlanır, nokta azsa null. [sides] false ise
+     * Dikdörtgenin 48 × 10 noktalık ızgarası (Mac/Windows ile aynı; noktalar hücre ortasında). Renk verilmezse gri ton.
+     * Dikdörtgen 2 pikselden darsa nokta eklenmez.
+     */
+    private fun collect(frame: GrayFrame, color: ((Int, Int) -> Int)?, l: Int, t: Int, r: Int, b: Int, into: MutableList<Pixel>) {
+        if (r - l < 2 || b - t < 2) return
+        for (sy in 0 until SAMPLES_Y) {
+            val y = minOf(frame.height - 1, (t + (sy + 0.5) * (b - t) / SAMPLES_Y).toInt())
+            for (sx in 0 until SAMPLES_X) {
+                val x = minOf(frame.width - 1, (l + (sx + 0.5) * (r - l) / SAMPLES_X).toInt())
+                val luma = frame.at(x, y)
+                val edge = sx == 0 || sy == 0 || sx == SAMPLES_X - 1 || sy == SAMPLES_Y - 1
+                if (color == null) {
+                    into.add(Pixel(luma, luma, luma, luma, edge))
+                } else {
+                    val rgb = color(x, y)
+                    into.add(Pixel(luma, (rgb shr 16) and 0xff, (rgb shr 8) and 0xff, rgb and 0xff, edge))
+                }
+            }
+        }
+    }
+
+    /**
+     * Dikdörtgenin hemen dışındaki şeridin noktaları; kareden taşan parça atlanır, nokta azsa null. [sides] false ise
      * yalnız üst ve alt şerit, kutudan bir şerit boyu uzakta (taşan harf konturu girmesin).
      */
-    private fun surrounding(frame: GrayFrame, l: Int, t: Int, r: Int, b: Int, sides: Boolean = true): List<Pair<Int, Int>>? {
+    private fun surrounding(
+        frame: GrayFrame, color: ((Int, Int) -> Int)?, l: Int, t: Int, r: Int, b: Int, sides: Boolean = true,
+    ): List<Pixel>? {
         val d = maxOf(1, ((b - t) * RING_SHARE).toInt())
         val away = if (sides) 0 else d
-        val values = mutableListOf<Pair<Int, Int>>()
+        val values = mutableListOf<Pixel>()
         fun strip(x0: Int, y0: Int, x1: Int, y1: Int) {
-            if (x0 < 0 || y0 < 0 || x1 > frame.width || y1 > frame.height || x1 - x0 < 1 || y1 - y0 < 1) return
-            for (y in y0 until y1) for (x in x0 until x1) values.add(x to y)
+            if (x0 < 0 || y0 < 0 || x1 > frame.width || y1 > frame.height) return
+            collect(frame, color, x0, y0, x1, y1, values)
         }
         strip(l, t - away - d, r, t - away)
         strip(l, b + away, r, b + away + d)
@@ -160,6 +156,35 @@ object TextStyleSampler {
         return if (values.size < 16) null else values
     }
 
+    private fun mean(pixels: List<Pixel>): String {
+        val n = pixels.size
+        return String.format(Locale.ROOT, "#%02X%02X%02X", pixels.sumOf { it.r } / n, pixels.sumOf { it.g } / n, pixels.sumOf { it.b } / n)
+    }
+
+    /** Üç renk kanalının standart sapmasının ortalaması. */
+    private fun deviation(pixels: List<Pixel>): Double {
+        fun spread(channel: (Pixel) -> Int): Double {
+            val average = pixels.sumOf { channel(it).toDouble() } / pixels.size
+            return sqrt(pixels.sumOf { (channel(it) - average) * (channel(it) - average) } / pixels.size)
+        }
+        return (spread { it.r } + spread { it.g } + spread { it.b }) / 3
+    }
+
+    /** WCAG 2 kontrast oranı (1–21). */
+    internal fun contrast(a: String, b: String): Double {
+        fun luminance(hex: String): Double {
+            val v = hex.removePrefix("#").toIntOrNull(16) ?: 0
+            fun linear(c: Int): Double {
+                val x = c / 255.0
+                return if (x <= 0.03928) x / 12.92 else Math.pow((x + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear((v shr 16) and 0xff) + 0.7152 * linear((v shr 8) and 0xff) + 0.0722 * linear(v and 0xff)
+        }
+        val x = luminance(a)
+        val y = luminance(b)
+        return (maxOf(x, y) + 0.05) / (minOf(x, y) + 0.05)
+    }
+
     /** Otsu eşiği: iki kümenin arasındaki varyansı en büyük yapan parlaklık (bu değer ve altı koyu küme). */
     fun otsu(histogram: IntArray): Int {
         val total = histogram.sum().toDouble()
@@ -168,7 +193,7 @@ object TextStyleSampler {
         for (i in 0..255) sum += i.toDouble() * histogram[i]
         var backSum = 0.0
         var backCount = 0.0
-        var best = 0.0
+        var best = -1.0
         var threshold = 127
         for (i in 0..254) {
             backCount += histogram[i]
@@ -213,15 +238,5 @@ object TextStyleSampler {
             rights <= tolerance -> "right"
             else -> listOf("left" to lefts, "center" to centers, "right" to rights).minBy { it.second }.first
         }
-    }
-
-    private fun rgbHex(sum: LongArray, count: Long): String {
-        if (count <= 0) return "#000000"
-        return String.format(Locale.ROOT, "#%02X%02X%02X", (sum[0] / count).toInt(), (sum[1] / count).toInt(), (sum[2] / count).toInt())
-    }
-
-    private fun hex(luma: Double): String {
-        val v = luma.toInt().coerceIn(0, 255)
-        return String.format(Locale.ROOT, "#%02X%02X%02X", v, v, v)
     }
 }

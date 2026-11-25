@@ -71,6 +71,39 @@ public class TextStyleSamplerTests
         Assert.False(look.Flat);
     }
 
+    /// <summary>
+    /// #1268 (gerçek karede "ADD MARKER"): kontur yazının zemin kümesi denizle kontur grisinin karışımı; ikisinin parlaklığı
+    /// aynı (125) ama rengi değil. Zemin renk sapmasıyla düz sayılmaz, yanındaki şerit de konturlu olduğundan bir şerit ötedeki
+    /// düz deniz zemin olur. Android eskiden sapmayı yalnız parlaklıktan ölçüyor, kutuyu grimsi çiziyordu (Mac ve Android ile
+    /// aynı görüntü; gerçek kare Mac'te ve Android'de denenir).
+    /// </summary>
+    [Fact]
+    public void LumaFlatButColouredGroundTakesTheFarBand()
+    {
+        var frame = Frame.Blank(400, 100);
+        for (var y = 0; y < 100; y++)
+            for (var x = 0; x < 400; x++)
+            {
+                var (r, g, b) = y is >= 30 and < 70 && x % 16 < 5 ? (240, 240, 240)
+                    : y is >= 20 and < 80 && x % 16 is >= 5 and < 10 ? (125, 125, 125) : (58, 148, 187);
+                var p = y * frame.Stride + x * 4;
+                frame.Pixels[p] = (byte)b;
+                frame.Pixels[p + 1] = (byte)g;
+                frame.Pixels[p + 2] = (byte)r;
+                frame.Pixels[p + 3] = 255;
+            }
+        var box = new TextBox(0.1, 0.3, 0.9, 0.7);
+        var (surface, look) = TextStyleSampler.Sample(frame, box, [new TextLine("ADD MARKER", box)], "ADD MARKER");
+        Assert.False(look.Flat);
+        static int Distance(string hex, int r, int g, int b)
+        {
+            var v = Convert.ToInt32(hex[1..], 16);
+            return Math.Max(Math.Abs(((v >> 16) & 0xff) - r), Math.Max(Math.Abs(((v >> 8) & 0xff) - g), Math.Abs((v & 0xff) - b)));
+        }
+        Assert.True(Distance(surface.Background, 58, 148, 187) <= 8, surface.Background);
+        Assert.True(Distance(surface.Foreground, 240, 240, 240) <= 8, surface.Foreground);
+    }
+
     [Fact]
     public void AlignmentFollowsTheLineEdges()
     {
