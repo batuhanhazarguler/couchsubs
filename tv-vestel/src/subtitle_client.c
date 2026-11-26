@@ -76,6 +76,7 @@ static long long g_shown_at;                                        /* güncel a
 static int  g_paragraphs;                                           /* güncel altyazı çok satırlı panel mi (yığma dışı) */
 static SseSpeaker g_speakers[SPEAKERS_MAX]; static int g_nspeakers;   /* gösterilen satırların ad renkleri (güncel + yığıldıysa önceki) */
 static double g_subbox[4]; static int g_have_subbox;                 /* son altyazının İngilizce yeri (placement) */
+static double g_keep[4]; static int g_have_keep;                     /* ekrandaki görev satırının yeri (objective/keep) */
 #define STACK_WITHIN_MS 1500   /* yeni altyazı bu süre içinde gelirse önceki üstte kalır (webOS ile aynı) */
 static int  g_visible = 0;
 static long long g_hide_at = 0;
@@ -107,6 +108,35 @@ static int speaker_prefix_len(const char *line, unsigned *color) {
     return best;
 }
 
+/* Altyazı görev satırını örtmez (webOS clearObjective, upstream #1378): altyazı kutusu görev satırının (ve yerindeki görev
+   çevirisinin) üstüne kayar. upper/bottom/left/right: kutunun ekrandaki yeri (px). Dönen: dikey kayma (<= 0). */
+#define AVOID_GAP 0.006
+#define PLACE_GAP 0.024
+static int mission_top(int top, int line);   /* görev çevirisi kutusunun üstü (renderer'a göre) */
+static int objective_dy(int upper, int bottom, int left, int right) {
+    if (!g_have_keep || g_paragraphs) return 0;
+    if (g_have_subbox && g_keep[1] < (g_subbox[1] + g_subbox[3]) / 2) return 0;   /* altyazı görevin kendisi */
+    int top = (int)(g_keep[1] * SCREEN_H), line = (int)((g_keep[3] - g_keep[1]) * SCREEN_H);
+    top = mission_top(top, line);
+    int gap = (int)(SCREEN_H * AVOID_GAP); if (gap < 4) gap = 4;
+    int limit = top - gap;
+    if (bottom <= limit || right <= g_keep[0] * SCREEN_W || left >= g_keep[2] * SCREEN_W) return 0;
+    int dy = limit - bottom;
+    if (!strcmp(g_style.placement, "below") && g_have_subbox) {   /* "Altında": İngilizce satırın üstüne geçer */
+        int alt = (int)(g_subbox[1] * SCREEN_H) - (int)(SCREEN_H * PLACE_GAP) - bottom;
+        if (alt < dy) dy = alt;
+    }
+    if (upper + dy < 0) dy = -upper;
+    return dy < 0 ? dy : 0;
+}
+
+/* Hizalı telefon panelinin tek parçası (webOS placeAlignedPanel): ekrandaki yeri, görünüşü ve satırları. Satırların
+   [0, sub) arası ana yazı (px, bold), [sub, n) arası liste kartının önizlemesi (sub_px, soluk). */
+typedef struct {
+    int x, y, w, h, padx, pady, rad, line_h, sub_line_h, n, sub, px, sub_px, bold, center;
+    unsigned bg, fg, sel; unsigned char alpha; int have_sel, sel_w;
+} APart;
+
 /* ================= RENDERER ================= */
 #ifdef HOST_TEST
 static int  render_init(void) { printf("[render] init (host stub)\n"); return 0; }
@@ -120,6 +150,7 @@ static void render_show(const char *text, const SubStyle *st) {
     if (g_have_subbox) printf("[render] BOX %.3f,%.3f,%.3f,%.3f place=%s\n",
                               g_subbox[0], g_subbox[1], g_subbox[2], g_subbox[3],
                               st->placement[0] ? st->placement : "cover");
+    if (g_have_keep) printf("[render] KEEP top=%.3f dy=%d\n", g_keep[1], objective_dy(880, 1000, 400, 1500));
     /* ad rengi satır-satır (gerçek renderer gibi; yığmada ad ikinci satırda olabilir) */
     const char *line = text;
     while (line) {
@@ -158,6 +189,14 @@ static void blocks_clear(const char *prefix) { printf("[blocks] CLEAR id=%s#\n",
 static void blocks_trim(const char *prefix, unsigned keep) { printf("[blocks] TRIM id=%s# keep=%x\n", prefix, keep); }
 static void blocks_clear_all(void) { printf("[blocks] CLEAR-ALL\n"); }
 static int anim_tick(long long now) { (void)now; return 0; }
+static int mission_top(int top, int line) { (void)line; return top; }
+/* Hizalı panel ölçümü: kaba (bayt başına yarım em); yerleşim mantığını test etmeye yeter. */
+static void *a_font(int px, int bold) { (void)bold; return (void *)(long)px; }
+static int a_measure(void *ctx, const char *s, int bytes) { (void)s; if (bytes < 0) bytes = (int)strlen(s); return bytes * (int)(long)ctx / 2; }
+static void a_draw(const char *id, const APart *a, char lines[][WRAP_MAX_BYTES]) {
+    printf("[aligned] id=%s x=%d y=%d w=%d h=%d px=%d bold=%d center=%d bg=%06x fg=%06x a=%02x sel=%d n=%d sub=%d text=\"%s\"\n",
+           id, a->x, a->y, a->w, a->h, a->px, a->bold, a->center, a->bg, a->fg, a->alpha, a->have_sel, a->n, a->sub, a->n ? lines[0] : "");
+}
 #else
 typedef DFBResult   (*InitFn)(int *, char *(*[]));
 typedef DFBResult   (*CreateFn)(IDirectFB **);
@@ -263,6 +302,7 @@ static void render_show(const char *text, const SubStyle *st) {
         int pct = st->bottomPercent >= 0 ? st->bottomPercent : 7;
         posy = SCREEN_H - (pct * SCREEN_H / 100) - (box_y + box_h);
     }
+    posy += objective_dy(posy + box_y, posy + box_y + box_h, BAND_X + box_x, BAND_X + box_x + box_w);
     if (posy < 0) posy = 0; if (posy > SCREEN_H - BAND_H) posy = SCREEN_H - BAND_H;
     R_win->MoveTo(R_win, BAND_X, posy);
     /* çiz: şeffaf temizle → yarı saydam siyah kutu → beyaz/sarı metin (yalnız kendi yüzey) */
@@ -572,9 +612,12 @@ static void blocks_show(const char *id, const char *text, const double box[4], d
     panel_draw(R_blk, SCREEN_ITEMS_MAX, id, text, box, line, haveSurf, bg, fg, bold, cond, o);
 }
 
+#define AFONT_MAX 8
+static struct { IDirectFBFont *f; int px, bold; } A_fonts[AFONT_MAX]; static int A_next;
 static void render_deinit(void) {
     regions_clear(); screen_clear(); blocks_clear_all();
     if (R_rfont) R_rfont->Release(R_rfont);
+    for (int i = 0; i < AFONT_MAX; i++) if (A_fonts[i].f) A_fonts[i].f->Release(A_fonts[i].f);
     if (R_font) R_font->Release(R_font);
     if (R_bfont) R_bfont->Release(R_bfont);
     if (R_surf) R_surf->Release(R_surf);
@@ -583,7 +626,183 @@ static void render_deinit(void) {
     if (R_dfb) R_dfb->Release(R_dfb);
     if (R_h) dlclose(R_h);
 }
+/* ---- hizalı telefon paneli (DirectFB) ---- */
+/* Birkaç boy/kalınlık aynı anda kullanılıyor (ad, not, önizleme): her olayda font yeniden kurulmasın diye küçük önbellek. */
+static void *a_font(int px, int bold) {
+    if (px < 12) px = 12; if (px > 96) px = 96;
+    for (int i = 0; i < AFONT_MAX; i++) if (A_fonts[i].f && A_fonts[i].px == px && A_fonts[i].bold == bold) return A_fonts[i].f;
+    int k = A_next; A_next = (A_next + 1) % AFONT_MAX;
+    if (A_fonts[k].f) { A_fonts[k].f->Release(A_fonts[k].f); A_fonts[k].f = NULL; }
+    DFBFontDescription fd; fd.flags = DFDESC_HEIGHT; fd.height = px;
+    IDirectFBFont *f = NULL;
+    if (bold && R_dfb->CreateFont(R_dfb, BOLD_FONT_PATH, &fd, &f) != 0) f = NULL;
+    if (!f && R_dfb->CreateFont(R_dfb, FONT_PATH, &fd, &f) != 0) return NULL;
+    A_fonts[k].f = f; A_fonts[k].px = px; A_fonts[k].bold = bold;
+    return f;
+}
+static int a_measure(void *ctx, const char *s, int bytes) {
+    IDirectFBFont *f = ctx; int w = 0;
+    if (!f || f->GetStringWidth(f, s, bytes, &w) != 0) return -1;
+    return w;
+}
+/* Görev çevirisi kutusu (auto-mission blokları) görev satırının hemen üstündeyse onu da örtme. */
+static int mission_top(int top, int line) {
+    int t = top;
+    for (int i = 0; i < SCREEN_ITEMS_MAX; i++) {
+        Region *r = &R_blk[i];
+        if (r->win && !strncmp(r->id, "auto-mission#", 13) && r->y + r->h > top && r->y >= top - 2 * line && r->y < t) t = r->y;
+    }
+    return t;
+}
+static void a_draw(const char *id, const APart *a, char lines[][WRAP_MAX_BYTES]) {
+    if (!R_layer) return;
+    Region *r = pool_slot(R_blk, SCREEN_ITEMS_MAX, id);
+    if (!r) { for (int i = 0; i < SCREEN_ITEMS_MAX; i++) if (!R_blk[i].win) { r = &R_blk[i]; break; } }
+    if (!r) return;
+    int x = a->x < 0 ? 0 : a->x, y = a->y < 0 ? 0 : a->y, bw = a->w, bh = a->h;
+    if (x > SCREEN_W - 1) x = SCREEN_W - 1;
+    if (bw > SCREEN_W - x) bw = SCREEN_W - x;
+    if (y + bh > SCREEN_H) bh = SCREEN_H - y;
+    if (bw < 1 || bh < 1) { if (r->win) region_destroy(r); return; }
+    unsigned th = 2166136261u;
+    for (int i = 0; i < a->n; i++) th = (th ^ text_hash(lines[i])) * 16777619u;
+    th ^= (unsigned)(a->px * 131 + a->sub_px * 7 + a->bold * 3 + a->center) ^ (a->have_sel ? a->sel : 0);
+    int flags = 0x40000 | (a->sub << 8) | a->n;
+    if (r->win && r->text_hash == th && r->flags == flags && r->w == bw && r->h == bh &&
+        abs(x - r->x) <= POS_JITTER && abs(y - r->y) <= POS_JITTER && color_near(a->bg, r->bg) && color_near(a->fg, r->fg))
+        return;                                       /* aynı balon aynı yerde: dokunma (titreme yok) */
+    int fresh = 0;
+    if (!r->win || r->w != bw || r->h != bh) {
+        if (r->win) region_destroy(r);
+        if (make_window(bw, bh, x, y, &r->win, &r->surf) != 0) { r->win = NULL; return; }
+        strncpy(r->id, id, sizeof(r->id) - 1); r->id[sizeof(r->id) - 1] = 0;
+        r->w = bw; r->h = bh; fresh = 1;
+    } else if (x != r->x || y != r->y) {              /* sohbet kaydı / alttakini itme: kayarak (webOS 200 ms) */
+        int cx = r->x, cy = r->y;
+        if (r->a_start) r->win->GetPosition(r->win, &cx, &cy);
+        r->ax = cx; r->ay = cy; r->a_start = now_ms();
+    }
+    IDirectFBSurface *s = r->surf;
+    s->Clear(s, 0, 0, 0, 0);
+    s->SetDrawingFlags(s, DSDRAW_NOFX);
+    int inset = 0;
+    if (a->have_sel) {                                /* seçili liste satırı: telefondaki renkte iç çerçeve */
+        s->SetColor(s, (a->sel >> 16) & 0xFF, (a->sel >> 8) & 0xFF, a->sel & 0xFF, 0xFF);
+        fill_round(s, bw, bh, a->rad);
+        inset = a->sel_w;
+    }
+    s->SetColor(s, (a->bg >> 16) & 0xFF, (a->bg >> 8) & 0xFF, a->bg & 0xFF, a->alpha);
+    if (inset) { IDirectFBSurface *sub = NULL; DFBRectangle rc = { inset, inset, bw - 2 * inset, bh - 2 * inset };
+                 if (rc.w > 0 && rc.h > 0 && s->GetSubSurface(s, &rc, &sub) == 0 && sub) {
+                     sub->SetDrawingFlags(sub, DSDRAW_NOFX);
+                     sub->SetColor(sub, (a->bg >> 16) & 0xFF, (a->bg >> 8) & 0xFF, a->bg & 0xFF, a->alpha);
+                     fill_round(sub, rc.w, rc.h, a->rad > inset ? a->rad - inset : 0); sub->Release(sub); } }
+    else fill_round(s, bw, bh, a->rad);
+    /* önizleme yazısı %80 opak (webOS opacity 0.8): zemin rengine doğru karıştırılır */
+    unsigned pf = 0;
+    for (int sh = 0; sh <= 16; sh += 8) pf |= ((((a->fg >> sh) & 0xFF) * 8 + ((a->bg >> sh) & 0xFF) * 2) / 10) << sh;
+    int ty = a->pady;
+    for (int i = 0; i < a->n; i++) {
+        int main = i < a->sub;
+        IDirectFBFont *f = a_font(main ? a->px : a->sub_px, main ? a->bold : 0);
+        if (!f) break;
+        s->SetFont(s, f);
+        unsigned c = main ? a->fg : pf;
+        s->SetColor(s, (c >> 16) & 0xFF, (c >> 8) & 0xFF, c & 0xFF, 0xFF);
+        int tx = a->padx;
+        if (a->center) { int tw = a_measure(f, lines[i], -1); if (tw > 0 && tw < bw) tx = (bw - tw) / 2; }
+        s->DrawString(s, lines[i], -1, tx, ty, DSTF_TOPLEFT);
+        ty += main ? a->line_h : a->sub_line_h;
+    }
+    s->Flip(s, NULL, DSFLIP_NONE);
+    if (fresh) r->f_start = now_ms();
+    else if (!r->f_start) r->win->SetOpacity(r->win, 0xFF);
+    if (fresh || !r->a_start) r->win->MoveTo(r->win, x, y);
+    r->x = x; r->y = y; r->text_hash = th; r->bg = a->bg; r->fg = a->fg; r->flags = flags;
+}
 #endif
+
+/* ================= hizalı telefon paneli: yerleşim (webOS placeAlignedPanel, TV 0.9.106/0.9.110) =================
+   Zemin kartı yok; her Türkçe balon bilgisayarın gönderdiği kutuda (telefondaki İngilizce balonla aynı yükseklikte),
+   telefonun balon renginde %85 opak; gelen sola, giden sağa yaslı. Kişi adı küçük kalın hap, not koyu hap, liste satırı
+   tek kart (kalın ad + soluk önizleme; avatar/rozet resmi çizilmez). Gerçek yazı uzunsa alttakiler en az kaydırmayla
+   (bilgisayarın bıraktığı aralık korunarak) itilir. Dönen: çizilen öğelerin bit maskesi. */
+static char A_lines[WRAP_MAX_LINES][WRAP_MAX_BYTES];
+static unsigned aligned_panel(const SseEvent *e) {
+    const char *id = e->id;
+    double linef = 0;
+    for (int i = 0; i < e->nitems; i++) if (e->items[i].panel == PANEL_CARD && e->items[i].line > 0) { linef = e->items[i].line; break; }
+    double line = (linef > 0 ? linef : 0.022) * SCREEN_H;
+    int base = (int)(line * 0.95); if (base < BUBBLE_MIN_FONT) base = BUBBLE_MIN_FONT;
+    int order[SCREEN_ITEMS_MAX], m = 0;
+    for (int i = 0; i < e->nitems; i++) {            /* başlık önce, kalanlar yukarıdan aşağı */
+        int k = e->items[i].panel;
+        if (k == PANEL_NONE || k == PANEL_CARD || !e->items[i].have_box) continue;
+        if (!e->items[i].text[0] && !e->items[i].row_name[0] && !e->items[i].row_preview[0]) continue;
+        int j = m++;
+        while (j > 0) {
+            const typeof(e->items[0]) *p = &e->items[order[j - 1]];
+            int before = k == PANEL_TITLE ? p->panel != PANEL_TITLE : p->panel != PANEL_TITLE && p->box[1] > e->items[i].box[1];
+            if (!before) break;
+            order[j] = order[j - 1]; j--;
+        }
+        order[j] = i;
+    }
+    unsigned keep = 0; int bottom = 0, planned = 0, first = 1;
+    for (int o = 0; o < m; o++) {
+        int i = order[o]; const typeof(e->items[0]) *it = &e->items[i];
+        int x = (int)(it->box[0] * SCREEN_W), top = (int)(it->box[1] * SCREEN_H);
+        int w = (int)((it->box[2] - it->box[0]) * SCREEN_W); if (w < 1) w = 1;
+        int boxh = (int)((it->box[3] - it->box[1]) * SCREEN_H);
+        APart a; memset(&a, 0, sizeof a);
+        a.px = base; a.alpha = 0xD9;
+        a.bg = it->have_surface ? it->bg : 0x141518; a.fg = it->have_surface ? it->fg : 0xFFFFFF;
+        int align = 0;                               /* 0 sol, 1 orta, 2 sağ */
+        if (it->panel == PANEL_TITLE) { a.px = base * 8 / 10; a.bold = 1; }
+        else if (it->panel == PANEL_NOTE) { if (it->left) { a.px = base * 92 / 100; a.bold = it->bold; } else { a.px = base * 8 / 10; align = 1; } }
+        else if (it->panel == PANEL_MINE) align = 2;
+        a.padx = a.px * 6 / 10; a.pady = a.px * 3 / 10; a.rad = a.px * 3 / 4;
+        a.line_h = a.px * 125 / 100;
+        void *f = a_font(a.px, a.bold);
+        int avail = w - 2 * a.padx; if (avail < a.px) avail = a.px;
+        int widest = 0;
+        if (it->panel == PANEL_ROW) {
+            /* liste kartı: telefonun satır kartı renginde, tam genişlik, en az özgün satır boyunda */
+            if (!it->have_surface) { a.bg = 0xF4F1EC; a.fg = 0x17181B; }
+            a.bold = 1; a.pady = a.px * 47 / 100; a.rad = a.px * 85 / 100;
+            a.sub_px = a.px * 92 / 100; a.sub_line_h = a.sub_px * 125 / 100;
+            const char *name = it->row_name[0] || it->row_preview[0] ? it->row_name : it->text;
+            f = a_font(a.px, 1);
+            a.n = name[0] ? wrap_text(name, A_lines, WRAP_MAX_LINES, avail, a_measure, f) : 0;
+            a.sub = a.n;
+            if (it->row_preview[0] && a.n < WRAP_MAX_LINES)
+                a.n += wrap_text(it->row_preview, A_lines + a.n, WRAP_MAX_LINES - a.n, avail, a_measure, a_font(a.sub_px, 0));
+            a.w = w;
+            a.h = a.sub * a.line_h + (a.n - a.sub) * a.sub_line_h + 2 * a.pady;
+            if (a.h < boxh) a.h = boxh;
+            if (it->have_selected) { a.have_sel = 1; a.sel = it->row_selected; a.sel_w = (int)(line * 0.12); if (a.sel_w < 2) a.sel_w = 2; }
+        } else {
+            a.n = wrap_text(it->text, A_lines, WRAP_MAX_LINES, avail, a_measure, f);
+            if (it->panel == PANEL_TITLE && a.n > 1) a.n = 1;   /* başlık tek satır */
+            a.sub = a.n;
+            for (int k = 0; k < a.n; k++) { int tw = a_measure(f, A_lines[k], -1); if (tw > widest) widest = tw; }
+            a.w = widest + 2 * a.padx; if (a.w > w) a.w = w;
+            a.h = a.n * a.line_h + 2 * a.pady;
+            a.center = align == 1;
+        }
+        if (a.n <= 0) continue;
+        a.x = align == 2 ? x + w - a.w : align == 1 ? x + (w - a.w) / 2 : x;
+        int gap = 0;
+        if (!first) { gap = top - planned; if (gap < 0) gap = 0; if (gap > (int)(line * 0.6)) gap = (int)(line * 0.6); }
+        a.y = first || top >= bottom + gap ? top : bottom + gap;
+        bottom = a.y + a.h; planned = (int)(it->box[3] * SCREEN_H); first = 0;
+        char bid[80]; snprintf(bid, sizeof bid, "%s#%d", id, i);
+        a_draw(bid, &a, A_lines);
+        keep |= 1u << i;
+    }
+    return keep;
+}
+
 
 /* ================= style birleştirme + olay ================= */
 static void merge_style(const SubStyle *in) {
@@ -636,12 +855,17 @@ static void on_event(const SseEvent *e, void *u) {
             g_have_subbox = e->have_box;
             if (e->have_box) { for (int i = 0; i < 4; i++) g_subbox[i] = e->box[i]; }
             g_paragraphs = e->paragraphs;
+            if (!e->paragraphs) { g_have_keep = e->have_keep; if (e->have_keep) for (int i = 0; i < 4; i++) g_keep[i] = e->keep[i]; }
             g_shown_at = now;
             render_show(g_disp, &g_style); g_visible = 1;
             { int d = e->durationMs > 0 ? e->durationMs : 8000; if (d < 1000) d = 1000; g_hide_at = now + d; }
             break;
         }
         case EV_CLEAR: render_hide(); g_visible = 0; g_hide_at = 0; g_text[0] = 0; g_disp[0] = 0; g_shown_at = 0; g_paragraphs = 0; break;
+        case EV_OBJECTIVE:
+            g_have_keep = e->have_keep; if (e->have_keep) for (int i = 0; i < 4; i++) g_keep[i] = e->keep[i];
+            if (g_visible) render_show(g_disp, &g_style);
+            break;
         case EV_STYLE: merge_style(&e->style); if (g_visible) render_show(g_disp, &g_style); break;
         case EV_EXIT:  render_hide(); regions_clear(); screen_clear(); blocks_clear_all(); g_visible = 0; g_text[0] = 0; g_exit_evt = 1; break;
         case EV_REGION:
@@ -650,6 +874,9 @@ static void on_event(const SseEvent *e, void *u) {
             if (e->nitems > 0) {
                 region_hide(e->id);                  /* blok modunda birleşik pencere olmasın */
                 int phone = !strcmp(e->id, "game-phone");
+                int aligned = 0;
+                for (int i = 0; i < e->nitems; i++) aligned |= e->items[i].aligned;
+                if (phone && aligned) { blocks_trim(e->id, aligned_panel(e)); break; }
                 char bid[80]; unsigned keep = 0;
                 for (int i = 0; i < e->nitems; i++) {
                     if (!e->items[i].have_box || e->items[i].text[0] == 0) continue;
@@ -760,7 +987,7 @@ int main(int argc, char **argv) {
         if (rl <= 0 || rl >= (int)sizeof req || cs_send_all(fd, req, rl) != 0) {
             memset(req, 0, sizeof req); close(fd); render_hide(); sleep_ms(RECONNECT_MS); continue; }
         memset(req, 0, sizeof req);                         /* anahtar içeren isteği bellekte bırakma */
-        SseParser p; sse_init(&p);
+        static SseParser p; sse_init(&p);   /* 512 KB: yığında değil */
         int st = consume_headers(fd, &p);
         if (st != 200) {
             close(fd); render_hide(); g_visible = 0;

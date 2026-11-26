@@ -33,7 +33,7 @@ static int mock_measure(void *ctx, const char *s, int bytes) {
 }
 
 int main(void) {
-    SseParser p;
+    static SseParser p;
 
     /* 1) Basit subtitle */
     reset(&p);
@@ -249,6 +249,27 @@ int main(void) {
     double dv;
     CHECK(json_get_num("{\"left\":0.1234}", "left", &dv) && dv > 0.123 && dv < 0.124, "json ondalik");
     CHECK(json_get_num("{\"left\":1}", "top", &dv) == 0, "json num eksik alan");
+
+    /* 10) upstream beta.104: keep (görev satırı) altyazı kutusu sanılmaz; objective; hizalı panel + liste kartı; büyük olay */
+    reset(&p);
+    const char *s10 = "event: subtitle\ndata: {\"duration\":2000,\"keep\":{\"bottom\":0.93,\"left\":0.3,\"right\":0.7,\"top\":0.9},\"text\":\"Selam\"}\n\n";
+    sse_feed(&p, s10, (int)strlen(s10), cb, NULL);
+    CHECK(g_subs == 1 && !g_last.have_box && g_last.have_keep && g_last.keep[1] > 0.89 && g_last.keep[1] < 0.91, "keep kutusu ayri, box yok");
+    reset(&p);
+    const char *s10b = "event: objective\ndata: {\"box\":{\"bottom\":0.8,\"left\":0.1,\"right\":0.5,\"top\":0.75}}\n\nevent: objective\ndata: {}\n\n";
+    sse_feed(&p, s10b, (int)strlen(s10b), cb, NULL);
+    CHECK(g_others == 0 && g_last.type == EV_OBJECTIVE && !g_last.have_keep, "objective olayi (bos = kalkti)");
+    reset(&p);
+    static char big10[200000]; int b10 = sprintf(big10, "event: region\ndata: {\"blocks\":[{\"aligned\":true,\"box\":{\"bottom\":0.3,\"left\":0.1,\"right\":0.4,\"top\":0.25},"
+        "\"cover\":{\"bottom\":0.9,\"left\":0.9,\"right\":0.95,\"top\":0.85},\"panel\":\"row\",\"row\":{\"avatar\":\"data:image/png;base64,");
+    for (int i = 0; i < 120000; i++) big10[b10++] = 'A';
+    b10 += sprintf(big10 + b10, "\",\"name\":\"Cal\",\"preview\":\"Selam dostum\",\"selected\":\"#1E88FF\"},\"style\":{\"align\":\"left\"},\"text\":\"Cal\\nSelam dostum\"}],"
+        "\"id\":\"game-phone\",\"text\":\"Cal\"}\n\n");
+    sse_feed(&p, big10, b10, cb, NULL);
+    CHECK(g_regions == 1 && g_last.nitems == 1 && g_last.items[0].panel == PANEL_ROW && g_last.items[0].aligned
+          && !strcmp(g_last.items[0].row_name, "Cal") && !strcmp(g_last.items[0].row_preview, "Selam dostum")
+          && g_last.items[0].have_selected && g_last.items[0].row_selected == 0x1E88FF && g_last.items[0].left
+          && g_last.items[0].box[0] > 0.09 && g_last.items[0].box[0] < 0.11, "120 KB avatarli liste karti (kutu cover'dan alinmadi)");
 
     printf("\n== SONUC: %d gecti, %d kaldi ==\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

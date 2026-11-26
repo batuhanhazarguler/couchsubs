@@ -8,7 +8,7 @@
 #define COUCHSUBS_SSE_H
 
 #define SSE_LINE_MAX   SSE_DATA_MAX   /* SSE olayı tek data satırıdır: satır sınırı olaydan küçükse uzun olay kırpılırdı */
-#define SSE_DATA_MAX   32768   /* GTA 6 telefon paneli: 16 öğe × ~400 B; taşan olay sessizce atılır */
+#define SSE_DATA_MAX   262144  /* GTA 6 telefon listesi avatar/rozet PNG'leriyle (base64, ~6 KB/resim) 100 KB'ı aşabiliyor */
 #define SSE_TEXT_MAX   2048
 #define SSE_EV_MAX     64
 #define WRAP_MAX_LINES 10
@@ -21,11 +21,12 @@
 typedef struct { char name[SPEAKER_NAME_MAX]; unsigned color; } SseSpeaker;
 
 /* GTA 6 telefonunun yan paneli (SubtitleServer `panel` alanı): kart zemini, kişinin adı, karşı taraf, oyuncu, not. */
-enum { PANEL_NONE = 0, PANEL_CARD, PANEL_TITLE, PANEL_THEIRS, PANEL_MINE, PANEL_NOTE };   /* color: 0xRRGGBB */
+enum { PANEL_NONE = 0, PANEL_CARD, PANEL_TITLE, PANEL_THEIRS, PANEL_MINE, PANEL_NOTE, PANEL_ROW };   /* color: 0xRRGGBB */
+#define ROW_NAME_MAX 96
 
 typedef enum {
     EV_NONE = 0, EV_SUBTITLE, EV_CLEAR, EV_STYLE, EV_EXIT, EV_PING,
-    EV_REGION, EV_REGION_CLEAR, EV_SCREEN, EV_SCREEN_CLEAR, EV_OTHER
+    EV_REGION, EV_REGION_CLEAR, EV_SCREEN, EV_SCREEN_CLEAR, EV_OBJECTIVE, EV_OTHER
 } EvType;
 
 typedef struct {
@@ -48,6 +49,8 @@ typedef struct {
     int    paragraphs;              /* subtitle: çok satırlı panel (görev vb.) — yığma dışı */
     int    nspeakers;               /* subtitle: speakerNames öğe sayısı (ad rengi) */
     SseSpeaker speakers[SPEAKERS_MAX];
+    double keep[4];                 /* subtitle `keep` / EV_OBJECTIVE `box`: ekrandaki görev satırının yeri */
+    int    have_keep;
     SubStyle style;                 /* EV_STYLE */
     char   id[64];                  /* EV_REGION: ek alanın kimliği */
     double box[4];                  /* EV_REGION: İngilizce yazının yeri (left,top,right,bottom; 0-1) */
@@ -66,6 +69,12 @@ typedef struct {
         int    condensed;           /* style.condensed (yatayda sıkıştırılmış çizim) */
         int    bubble;              /* GTA 6 telefon mesajı kendi balonunun üstünde (sığana kadar küçülür) */
         int    panel;               /* telefon yan paneli parçası: PANEL_* (0 = panel değil) */
+        int    aligned;             /* hizalı panel (TV 0.9.106): parça kutusunun yerinde, zemin kartı yok */
+        int    left;                /* style.align == "left" (sohbet listesinin satırı) */
+        char   row_name[ROW_NAME_MAX];   /* liste kartı (TV 0.9.110): kalın ad */
+        char   row_preview[SCREEN_TEXT_MAX]; /* adın altındaki önizleme */
+        unsigned row_selected;      /* seçili satırın çerçeve rengi; have_selected ise */
+        int    have_selected, row_widget;
     } items[SCREEN_ITEMS_MAX];
 } SseEvent;
 

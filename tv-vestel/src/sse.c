@@ -149,6 +149,20 @@ static int next_object(const char **pp, char *obj, int objsz) {
     return 1;
 }
 
+/* `key` nesnesinin ({left,top,right,bottom}) içinden okur: aynı adlar başka nesnelerde de geçer (keep, cover, spot, edge…),
+ * düz arama yanlış kutuyu alabilir. 1 = bulundu. */
+static int json_get_box(const char *d, const char *key, double out[4]) {
+    const char *p = find_key_colon(d, key);
+    if (!p) return 0;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != '{') return 0;
+    char obj[256]; const char *q = p; int n = 0;
+    while (*q && *q != '}' && n < (int)sizeof obj - 2) obj[n++] = *q++;
+    obj[n++] = '}'; obj[n] = 0;
+    return json_get_num(obj, "left", &out[0]) && json_get_num(obj, "top", &out[1]) &&
+           json_get_num(obj, "right", &out[2]) && json_get_num(obj, "bottom", &out[3]);
+}
+
 /* `d` içinde `key` dizisinin '[' sonrasını döner; yoksa NULL. */
 static const char *array_body(const char *d, const char *key) {
     const char *p = find_key_colon(d, key);
@@ -179,28 +193,41 @@ static int parse_items(const char *d, const char *key, SseEvent *e) {
     const char *p = array_body(d, key);
     if (!p) return 0;
     int count = 0;
-    char obj[SSE_DATA_MAX];
+    static char obj[SSE_DATA_MAX];   /* yığında 256 KB olmasın (TV'nin yığın sınırı) */
     while (count < SCREEN_ITEMS_MAX && next_object(&p, obj, sizeof obj)) {
         json_get_str(obj, "text", e->items[count].text, SCREEN_TEXT_MAX);
-        double l, t, r, b;
-        if (json_get_num(obj, "left", &l) && json_get_num(obj, "top", &t) &&
-            json_get_num(obj, "right", &r) && json_get_num(obj, "bottom", &b)) {
-            e->items[count].box[0] = l; e->items[count].box[1] = t;
-            e->items[count].box[2] = r; e->items[count].box[3] = b; e->items[count].have_box = 1;
-        }
+        e->items[count].have_box = json_get_box(obj, "box", e->items[count].box);
         /* surface: özgün yazının arka/ön rengi. background/foreground yalnız surface içinde geçer (benzersiz). */
         char hb[16], hf[16]; unsigned bg, fg;
         if (json_get_str(obj, "background", hb, sizeof hb) && json_get_str(obj, "foreground", hf, sizeof hf) &&
             parse_hex_rgb(hb, &bg) && parse_hex_rgb(hf, &fg)) {
             e->items[count].bg = bg; e->items[count].fg = fg; e->items[count].have_surface = 1;
+        } else if (json_get_str(obj, "bg", hb, sizeof hb) && json_get_str(obj, "fg", hf, sizeof hf) &&
+                   parse_hex_rgb(hb, &bg) && parse_hex_rgb(hf, &fg)) {
+            /* birebir çizim (TextPaint, TV 0.9.102): ölçülen zemin/yazı rengi. shortcut: beside/twin kipleri ve degrade
+               çizilmiyor, öğe eski TV gibi yerinde örtülür; webOS exactMode'u taşımak gerekirse genişlet. */
+            e->items[count].bg = bg; e->items[count].fg = fg; e->items[count].have_surface = 1;
         }
         e->items[count].bold = json_get_bool(obj, "bold");          /* style.bold (yalnız style içinde geçer) */
         e->items[count].condensed = json_get_bool(obj, "condensed");/* style.condensed */
+        { int w; if (json_get_int(obj, "weight", &w) && w >= 700) e->items[count].bold = 1; }
         e->items[count].bubble = json_get_bool(obj, "bubble");
+        e->items[count].aligned = json_get_bool(obj, "aligned");
+        { char al[12]; e->items[count].left = json_get_str(obj, "align", al, sizeof al) && !strcmp(al, "left"); }
         char pn[12]; e->items[count].panel = PANEL_NONE;
         if (json_get_str(obj, "panel", pn, sizeof pn)) {
-            static const char *names[] = { "", "card", "title", "theirs", "mine", "note" };
-            for (int k = 1; k <= PANEL_NOTE; k++) if (!strcmp(pn, names[k])) e->items[count].panel = k;
+            static const char *names[] = { "", "card", "title", "theirs", "mine", "note", "row" };
+            for (int k = 1; k <= PANEL_ROW; k++) if (!strcmp(pn, names[k])) e->items[count].panel = k;
+        }
+        /* row{name,preview,selected,widget}: bu adlar öğede yalnız row içinde geçer. Avatar/rozet resmi çizilmez. */
+        e->items[count].row_name[0] = e->items[count].row_preview[0] = 0;
+        e->items[count].have_selected = 0; e->items[count].row_widget = 0;
+        if (e->items[count].panel == PANEL_ROW) {
+            json_get_str(obj, "name", e->items[count].row_name, ROW_NAME_MAX);
+            json_get_str(obj, "preview", e->items[count].row_preview, SCREEN_TEXT_MAX);
+            char hs[16]; unsigned sc;
+            if (json_get_str(obj, "selected", hs, sizeof hs) && parse_hex_rgb(hs, &sc)) { e->items[count].row_selected = sc; e->items[count].have_selected = 1; }
+            e->items[count].row_widget = json_get_bool(obj, "widget");
         }
         if (!json_get_num(obj, "line", &e->items[count].line)) e->items[count].line = 0;
         count++;
@@ -216,7 +243,7 @@ static void dispatch(SseParser *p, SseCb cb, void *user) {
         return;
     }
     if (!p->have_ev && !p->have_data) return;   /* boş blok */
-    SseEvent e; memset(&e, 0, sizeof(e));
+    static SseEvent e; memset(&e, 0, sizeof(e));   /* ~40 KB: yığında değil */
     e.style.bottomPercent = -1; e.style.background = -1; e.style.fontSize = 0; e.style.stackPrevious = -1; e.style.bandShape = -1;
     strncpy(e.name, p->ev, sizeof(e.name) - 1);
     const char *d = p->data;
@@ -227,11 +254,8 @@ static void dispatch(SseParser *p, SseCb cb, void *user) {
         e.replace = json_get_bool(d, "replace");
         e.paragraphs = json_get_bool(d, "paragraphs");
         e.nspeakers = parse_speakers(d, &e);   /* "Konuşan adını renklendir": ad rengi */
-        double sl, stp, sr, sb;                 /* İngilizce altyazının yeri (placement için) */
-        if (json_get_num(d, "left", &sl) && json_get_num(d, "top", &stp) &&
-            json_get_num(d, "right", &sr) && json_get_num(d, "bottom", &sb)) {
-            e.box[0] = sl; e.box[1] = stp; e.box[2] = sr; e.box[3] = sb; e.have_box = 1;
-        }
+        e.have_box = json_get_box(d, "box", e.box);        /* İngilizce altyazının yeri (placement için) */
+        e.have_keep = json_get_box(d, "keep", e.keep);     /* görev satırının yeri (altyazı onun üstüne kayar) */
     } else if (!strcmp(p->ev, "clear")) {
         e.type = EV_CLEAR;
     } else if (!strcmp(p->ev, "style")) {
@@ -256,13 +280,12 @@ static void dispatch(SseParser *p, SseCb cb, void *user) {
         json_get_str(d, "text", e.text, sizeof(e.text));
         e.nitems = parse_items(d, "blocks", &e);     /* blocks: alan içindeki konumlu alt-çeviriler */
         if (e.nitems == 0) {                          /* blok yoksa birleşik box (left/top/.. o zaman benzersiz) */
-            double l, t, r, b;
-            if (json_get_num(d, "left", &l) && json_get_num(d, "top", &t) &&
-                json_get_num(d, "right", &r) && json_get_num(d, "bottom", &b)) {
-                e.box[0] = l; e.box[1] = t; e.box[2] = r; e.box[3] = b; e.have_box = 1;
-            }
+            e.have_box = json_get_box(d, "box", e.box);
             if (!json_get_num(d, "line", &e.line)) e.line = 0;
         }
+    } else if (!strcmp(p->ev, "objective")) {
+        e.type = EV_OBJECTIVE;                       /* {box} ya da {} (görev satırı kalktı) */
+        e.have_keep = json_get_box(d, "box", e.keep);
     } else if (!strcmp(p->ev, "region-clear")) {
         e.type = EV_REGION_CLEAR;
     } else if (!strcmp(p->ev, "screen")) {
