@@ -163,6 +163,9 @@ final class LivePhoneServices: PhoneServices {
             let token = try await client.connect()
             let launched = (try? await client.launch(appId: AppIdentity.samsungAppId, params: ["server": server, "key": accessKey])) != nil
             return TVPairing(key: token, launched: launched)
+        case .vestelLinux:
+            // Vestel Linux istemcisi bu cihaza kendisi bağlanır; iOS'ta Vestel kurulumu yok (yalnız Mac, deneysel).
+            return TVPairing(key: "", launched: true)
         case .lg:
             let client = SSAPClient(tv: tv, clientKey: key)
             defer { client.close() }
@@ -194,6 +197,8 @@ final class LivePhoneServices: PhoneServices {
                                            log: { InstallLog.shared.write($0) })
             return AndroidTVKeeper(host: tv.host, port: InstalledTVApp.adbPort(for: tv.host), server: server, appConnected: appConnected,
                                    locator: locator, onOpenResult: onOpenResult)
+        case .vestelLinux:
+            return IdleKeeper()
         case .samsung:
             SamsungAppKnowledge.installLog = { InstallLog.shared.write($0) }
             let token = SamsungTokenHolder(token: key, onChange: onKey)

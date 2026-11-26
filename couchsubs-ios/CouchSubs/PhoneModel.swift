@@ -2463,6 +2463,7 @@ final class PhoneModel: ObservableObject {
             case .androidTV: "Android TV"
             case .lg: "LG TV"
             case .samsung: "Samsung TV"
+            case .vestelLinux: "Vestel Linux TV"
             }
             try? await pair(LGTV(name: name, host: host, brand: brand))
             if keeper != nil, tv?.host == host, previousHost != host {

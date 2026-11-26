@@ -32,6 +32,8 @@ struct TVInstallScreen: View {
                 case .samsung: SamsungInstallSection(update: update?.brand == .samsung ? update : nil, working: $working, onDone: finish)
                 case .androidTV: AndroidTVInstallSection(update: update?.brand == .androidTV ? update : nil, working: $working, onDone: finish)
                 case .lg: LGInstallSection(update: update?.brand == .lg ? update : nil, working: $working, onDone: finish)
+                // Vestel Linux TV yalnız Mac'te (deneysel); telefondan kurulum yok, sekmede de seçilemez.
+                case .vestelLinux: EmptyView()
                 }
             } else {
                 InstallSearching()

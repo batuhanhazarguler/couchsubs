@@ -648,6 +648,7 @@ struct TargetScreen: View {
         case .lg: "LG"
         case .samsung: "Samsung"
         case .androidTV: "Android TV"
+        case .vestelLinux: "Vestel Linux"
         }
     }
 
