@@ -196,6 +196,12 @@ static int parse_items(const char *d, const char *key, SseEvent *e) {
         }
         e->items[count].bold = json_get_bool(obj, "bold");          /* style.bold (yalnız style içinde geçer) */
         e->items[count].condensed = json_get_bool(obj, "condensed");/* style.condensed */
+        e->items[count].bubble = json_get_bool(obj, "bubble");
+        char pn[12]; e->items[count].panel = PANEL_NONE;
+        if (json_get_str(obj, "panel", pn, sizeof pn)) {
+            static const char *names[] = { "", "card", "title", "theirs", "mine", "note" };
+            for (int k = 1; k <= PANEL_NOTE; k++) if (!strcmp(pn, names[k])) e->items[count].panel = k;
+        }
         if (!json_get_num(obj, "line", &e->items[count].line)) e->items[count].line = 0;
         count++;
     }

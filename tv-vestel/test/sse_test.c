@@ -97,6 +97,22 @@ int main(void) {
     CHECK(g_regions == 1 && !strcmp(g_last.id, "quest") && !strcmp(g_lasttext, "Görev: kaç") && g_last.have_box
           && g_last.box[0] > 0.09 && g_last.box[0] < 0.11 && g_last.box[3] > 0.24 && g_last.box[3] < 0.26, "region id+text+box");
 
+    /* 9b2) uzun telefon paneli: tek data satırı 4 KB'yi aşar (gerçek olay 5.4 KB); son blok da eksiksiz gelmeli */
+    reset(&p);
+    {
+        static char big9[SSE_DATA_MAX]; int bl9 = 0;
+        bl9 += sprintf(big9 + bl9, "event: region\ndata: {\"blocks\":[");
+        for (int i = 0; i < 14; i++) {
+            bl9 += sprintf(big9 + bl9, "%s{\"box\":{\"left\":0.6,\"top\":0.%02d,\"right\":0.9,\"bottom\":0.%02d},\"panel\":\"theirs\",\"text\":\"", i ? "," : "", 20 + i * 4, 23 + i * 4);
+            for (int k = 0; k < 330; k++) big9[bl9++] = 'a' + (k % 26);
+            bl9 += sprintf(big9 + bl9, " SON%d\"}", i);
+        }
+        bl9 += sprintf(big9 + bl9, "],\"id\":\"game-phone\",\"text\":\"x\"}\n\n");
+        sse_feed(&p, big9, bl9, cb, 0);
+        CHECK(bl9 > 4096 && g_regions == 1 && g_last.nitems == 14 && strstr(g_last.items[13].text, " SON13")
+              && g_last.items[13].panel == PANEL_THEIRS, "uzun telefon paneli (>4KB satir) eksiksiz");
+    }
+
     /* 9c) region boş metin (alan kalkar) ve region-clear */
     reset(&p);
     const char *s9c = "event: region\ndata: {\"id\":\"quest\",\"text\":\"\",\"box\":{\"left\":0,\"top\":0,\"right\":0.1,\"bottom\":0.1}}\n\nevent: region-clear\ndata: {}\n\n";

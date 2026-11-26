@@ -45,7 +45,9 @@ _Static_assert(offsetof(IDirectFB, Release) == 12, "Release offset != 12 (ARM32)
 #define PAD_Y    14
 #define LINE_GAP 8
 #define INNER_BOTTOM 12
-#define FONT_PATH "/vendor/fonts/OpenSans-Regular.ttf"
+/* Vestel dosya adları karışık: OpenSans-Regular.ttf aslında Italic, -Italic Light, -Light Light Italic (adların içi,
+   24.11). Düz yazı için gerçek Semibold; webOS da altyazı/ekran yazısında 600 kalınlık kullanıyor. */
+#define FONT_PATH "/vendor/fonts/OpenSans-Semibold.ttf"
 #define BOLD_FONT_PATH "/vendor/fonts/OpenSans-Bold.ttf"   /* TV'de mevcut (21.11): aynı aile bold */
 #define STREAM_TIMEOUT_MS 45000   /* ping 15s; 3 kayıp ping sonrası yeniden bağlan */
 #define RECONNECT_MS      2000
@@ -54,6 +56,17 @@ _Static_assert(offsetof(IDirectFB, Release) == 12, "Release offset != 12 (ARM32)
 #define REGION_H       260
 #define REGION_FONT_PX 30
 #define RPAD           16
+#define SCREEN_PAD     0.004      /* webOS SCREEN_PAD: yeriyle gelen kutu her yandan bu kadar büyür */
+#define SCREEN_MIN_FONT 14        /* webOS SCREEN_MIN_FONT (özgün renksiz kutuda en küçük yazı) */
+#define POS_JITTER     14         /* px (1920 düzleminde): Mac'in okuma titremesi ~±0.005 ekran; bunun altı yok sayılır */
+#define COLOR_JITTER   12         /* kanal başına: özgün zemin rengi karede bir iki ton oynuyor */
+
+/* GTA 6 telefonu çizim seçenekleri (yalnız ek alan blokları): webOS placeItems/placePanel kuralları. */
+typedef struct { int phone, bubble, panel, avail; } DrawOpts;   /* avail: alttaki balona kadar px (0 = sınırsız) */
+#define SLIDE_MS        200       /* webOS: left/top 0.2s ease-out */
+#define FADE_MS         150       /* yeni kutu birden değil, kısa sürede belirsin */
+#define PHONE_PAD       0.001     /* webOS: telefon öğesinin payı (SCREEN_PAD yerine) */
+#define BUBBLE_MIN_FONT (18 * SCREEN_H / 1080)   /* webOS BUBBLE_MIN_FONT: balon yazısı en az bu kadar */
 
 /* ---- durum ---- */
 static SubStyle g_style = { 46, 7, 90, 0, "white", "cover", 1, 0 };
@@ -61,7 +74,6 @@ static char g_text[SSE_TEXT_MAX];                                    /* güncel 
 static char g_disp[SSE_TEXT_MAX];                                    /* ekranda gösterilen (yığıldıysa önceki + güncel) */
 static long long g_shown_at;                                        /* güncel altyazının gösterilme anı (yığma penceresi) */
 static int  g_paragraphs;                                           /* güncel altyazı çok satırlı panel mi (yığma dışı) */
-#define CONDENSE_SCALE 0.85    /* condensed: metin genişliği bu orana iner (harfler oranlı küçülür, iç içe geçmez) */
 static SseSpeaker g_speakers[SPEAKERS_MAX]; static int g_nspeakers;   /* gösterilen satırların ad renkleri (güncel + yığıldıysa önceki) */
 static double g_subbox[4]; static int g_have_subbox;                 /* son altyazının İngilizce yeri (placement) */
 #define STACK_WITHIN_MS 1500   /* yeni altyazı bu süre içinde gelirse önceki üstte kalır (webOS ile aynı) */
@@ -137,13 +149,15 @@ static void screen_show(int idx, const char *text, const double box[4], double l
            idx, box[0], box[1], box[2], box[3], x, w, line, haveSurf, bg, fg, bold, cond, text);
 }
 static void screen_clear(void) { printf("[screen] CLEAR-ALL\n"); }
-static void blocks_show(const char *id, const char *text, const double box[4], double line, int haveSurf, unsigned bg, unsigned fg, int bold, int cond) {
+static void blocks_show(const char *id, const char *text, const double box[4], double line, int haveSurf, unsigned bg, unsigned fg, int bold, int cond, const DrawOpts *o) {
     int x, w; panel_geom(box, &x, &w);
-    printf("[blocks] SHOW id=%s box=%.3f,%.3f,%.3f,%.3f x=%d w=%d line=%.3f surf=%d bg=%06x fg=%06x bold=%d cond=%d text=\"%s\"\n",
-           id, box[0], box[1], box[2], box[3], x, w, line, haveSurf, bg, fg, bold, cond, text);
+    printf("[blocks] SHOW id=%s box=%.3f,%.3f,%.3f,%.3f x=%d w=%d line=%.3f surf=%d bg=%06x fg=%06x bold=%d cond=%d panel=%d bubble=%d avail=%d text=\"%s\"\n",
+           id, box[0], box[1], box[2], box[3], x, w, line, haveSurf, bg, fg, bold, cond, o ? o->panel : 0, o ? o->bubble : 0, o ? o->avail : 0, text);
 }
 static void blocks_clear(const char *prefix) { printf("[blocks] CLEAR id=%s#\n", prefix); }
+static void blocks_trim(const char *prefix, unsigned keep) { printf("[blocks] TRIM id=%s# keep=%x\n", prefix, keep); }
 static void blocks_clear_all(void) { printf("[blocks] CLEAR-ALL\n"); }
+static int anim_tick(long long now) { (void)now; return 0; }
 #else
 typedef DFBResult   (*InitFn)(int *, char *(*[]));
 typedef DFBResult   (*CreateFn)(IDirectFB **);
@@ -294,7 +308,10 @@ static void render_hide(void) {
     if (R_win) R_win->SetOpacity(R_win, 0x00);
 }
 /* ---- ek alanlar: her alan için küçük, kendi yüzeyli bir ghost pencere (band ile aynı kanıtlı desen) ---- */
-typedef struct { char id[64]; IDirectFBWindow *win; IDirectFBSurface *surf; int w, h; } Region;
+/* text_hash/x/y/bg/fg/flags: son çizim; aynı yazı hemen hemen aynı yere gelince pencereye dokunulmaz (titreme yok). */
+/* ax/ay: kayma animasyonunun başladığı yer, a_start: başlangıcı (0 = yok); f_start: belirme başlangıcı (0 = yok). */
+typedef struct { char id[64]; IDirectFBWindow *win; IDirectFBSurface *surf; int w, h, x, y; unsigned text_hash, bg, fg; int flags;
+                 int ax, ay; long long a_start, f_start; } Region;
 static Region R_reg[REGION_MAX];              /* canlı ek alanlar (birleşik metin) */
 static Region R_scr[SCREEN_ITEMS_MAX];        /* "Ekranı çevir" öğeleri (ayrı havuz) */
 static Region R_blk[SCREEN_ITEMS_MAX];        /* ek alan blokları ("id#n" anahtarlı; ayrı havuz) */
@@ -308,7 +325,7 @@ static int rfont_measure(void *ctx, const char *s, int bytes) {
 }
 /* Ek alan fontu, box'ın satır yüksekliğine göre (özgün yazı boyutuyla eşleşsin). px değişince yeniden kurulur. */
 static void ensure_rfont(int px) {
-    if (px < 16) px = 16; if (px > 72) px = 72;
+    if (px < 12) px = 12; if (px > 96) px = 96;
     if (R_rfont && R_rfont_px == px) return;
     if (R_rfont) { R_rfont->Release(R_rfont); R_rfont = NULL; }
     DFBFontDescription fd; fd.flags = DFDESC_HEIGHT; fd.height = px;
@@ -335,7 +352,7 @@ static Region *pool_slot(Region *pool, int size, const char *id) {
 static void region_destroy(Region *r) {
     if (r->surf) { r->surf->Release(r->surf); r->surf = NULL; }
     if (r->win) { r->win->SetOpacity(r->win, 0x00); r->win->Destroy(r->win); r->win->Release(r->win); r->win = NULL; }
-    r->id[0] = 0;
+    r->id[0] = 0; r->a_start = r->f_start = 0;
 }
 static void pool_clear(Region *pool, int size) { for (int i = 0; i < size; i++) if (pool[i].win) region_destroy(&pool[i]); }
 static void region_hide(const char *id) { Region *r = pool_slot(R_reg, REGION_MAX, id); if (r) region_destroy(r); }
@@ -348,78 +365,211 @@ static void blocks_clear(const char *prefix) {
     for (int i = 0; i < SCREEN_ITEMS_MAX; i++)
         if (R_blk[i].win && !strncmp(R_blk[i].id, prefix, pl) && R_blk[i].id[pl] == '#') region_destroy(&R_blk[i]);
 }
+/* Yalnız bu olayda çizilmeyen "<prefix>#n" bloklarını kaldır (keep: çizilen n'lerin bit maskesi). Hepsini silip yeniden
+   kurmak, Mac aynı alanı saniyede birkaç kez gönderdiğinde kutuyu yanıp söndürüyordu. */
+static void blocks_trim(const char *prefix, unsigned keep) {
+    size_t pl = strlen(prefix);
+    for (int i = 0; i < SCREEN_ITEMS_MAX; i++) {
+        if (!R_blk[i].win || strncmp(R_blk[i].id, prefix, pl) || R_blk[i].id[pl] != '#') continue;
+        int n = atoi(R_blk[i].id + pl + 1);
+        if (n < 0 || n >= 32 || !(keep & (1u << n))) region_destroy(&R_blk[i]);
+    }
+}
+static unsigned text_hash(const char *s) { unsigned h = 2166136261u; while (*s) { h ^= (unsigned char)*s++; h *= 16777619u; } return h; }
+/* İki renk kanal kanal yakın mı (Mac her karede rengi bir iki ton oynatıyor). */
+static int color_near(unsigned a, unsigned b) {
+    for (int s = 0; s <= 16; s += 8) { int d = (int)((a >> s) & 0xFF) - (int)((b >> s) & 0xFF); if (d < -COLOR_JITTER || d > COLOR_JITTER) return 0; }
+    return 1;
+}
 
-/* Bir pool slot'una yarı saydam kutu + metin çizer. haveSurf=0 → varsayılan siyah kutu (%90) + beyaz yazı;
-   haveSurf=1 → özgün renkler (bg kutu, fg yazı; kutu neredeyse opak). bold → faux-bold (çift çizim).
-   condensed → metni yatayda %85 sıkıştır (DirectFB SetMatrix; desteklenmezse normal genişlikte çizilir). */
+/* Köşeleri yuvarlatılmış dolu dikdörtgen (DirectFB'de hazır yok): ortası tek parça, köşe satırları tek tek kısaltılır. */
+static void fill_round(IDirectFBSurface *s, int w, int h, int rad) {
+    if (rad * 2 > h) rad = h / 2;
+    if (rad * 2 > w) rad = w / 2;
+    if (rad <= 1) { s->FillRectangle(s, 0, 0, w, h); return; }
+    s->FillRectangle(s, 0, rad, w, h - 2 * rad);
+    for (int yy = 0; yy < rad; yy++) {
+        int dy = rad - yy, dx = 0;                     /* çeyrek çember: dx² + dy² <= rad² */
+        while ((dx + 1) * (dx + 1) + dy * dy <= rad * rad) dx++;
+        int in = rad - dx;
+        s->FillRectangle(s, in, yy, w - 2 * in, 1);
+        s->FillRectangle(s, in, h - 1 - yy, w - 2 * in, 1);
+    }
+}
+
+/* Bir pool slot'una kutu + metin çizer. haveSurf=0 → varsayılan siyah kutu (%90) + beyaz yazı; haveSurf=1 → özgün
+   renkler. o (NULL olabilir): GTA 6 telefonu (balon, yan panel parçası) için webOS placeItems/placePanel kuralları. */
 static void panel_draw(Region *pool, int size, const char *id, const char *text, const double box[4],
-                       double line, int haveSurf, unsigned bg, unsigned fg, int bold, int condensed) {
+                       double line, int haveSurf, unsigned bg, unsigned fg, int bold, int condensed, const DrawOpts *o) {
     if (!R_layer) return;
-    /* font: box'ın satır yüksekliğine (`line`) göre — özgün yazı boyutuyla eşleşsin; yoksa varsayılan. */
+    int phone = o && o->phone, bubble = o && o->bubble, part = o ? o->panel : PANEL_NONE;
+    int inPanel = part != PANEL_NONE;
+    /* font: box'ın satır yüksekliğine (`line`) göre — özgün yazı boyutuyla eşleşsin; yoksa varsayılan.
+       Yan panel: en az BUBBLE_MIN_FONT; başlık 1.05, not 0.8 kat (webOS .panel-title / .note). */
     int px = line > 0 ? (int)(line * SCREEN_H * 0.95) : REGION_FONT_PX;
+    if (inPanel) {
+        if (px < BUBBLE_MIN_FONT) px = BUBBLE_MIN_FONT;
+        if (part == PANEL_TITLE) px = px * 105 / 100;
+        if (part == PANEL_NOTE) px = px * 8 / 10;
+    }
     ensure_rfont(px); if (!R_rfont) return;
     Region *r = pool_slot(pool, size, id);
     if (!r) { for (int i = 0; i < size; i++) if (!pool[i].win) { r = &pool[i]; break; } }
     if (!r) return;                                   /* havuz dolu: fazlasını atla */
-    /* Pencere İngilizce yazının yerine (box sol-üst), box GENİŞLİĞİNDE; ekran kenarına sığdırılır.
-       Böylece sol-alt/sağ-üst/sağ-alt gibi her köşedeki alan kendi yerinde kalır (sabit genişlik kaydırmıyor). */
-    int x = (int)(box[0] * SCREEN_W), y = (int)(box[1] * SCREEN_H);
+    /* fit: yeriyle gelen çeviri ("Ekranı çevir", ek alan blokları) webOS placeItems gibi çizilir: kutu her yandan
+       pay kadar büyür, iç boşluk ince, yazı kutuya sığana kadar küçülür. Bloksuz ek alan eski düzende kalır.
+       Yan panel parçalarının kutusu bilgisayarın hesapladığı balonun kendisidir: pay yok. */
+    int fit = pool != R_reg;
+    double pad = !fit || inPanel ? 0 : phone ? PHONE_PAD : SCREEN_PAD;
+    int padx, pady, rad;
+    if (!fit)                                        { padx = pady = RPAD; rad = 0; }
+    else if (part == PANEL_THEIRS || part == PANEL_MINE) { padx = px * 6 / 10; pady = px * 32 / 100; rad = px * 3 / 4; }
+    else if (inPanel)                                { padx = pady = 0; rad = 18 * SCREEN_H / 1080; }
+    else if (bubble)                                 { padx = 3; pady = 1; rad = 3; }
+    else if (phone)                                  { padx = 2; pady = 1; rad = 2; }
+    else                                             { padx = 6; pady = 2; rad = 6; }
+    int x = (int)((box[0] - pad) * SCREEN_W), y = (int)((box[1] - pad) * SCREEN_H);
     if (x < 0) x = 0; if (y < 0) y = 0;
     if (x > SCREEN_W - 1) x = SCREEN_W - 1; if (y > SCREEN_H - 1) y = SCREEN_H - 1;
-    int bw = (int)((box[2] - box[0]) * SCREEN_W);
-    if (bw < 160) bw = 160;                           /* çok dar kutuda da okunur kalsın */
+    int bw = (int)((box[2] - box[0] + 2 * pad) * SCREEN_W);
+    int minw = !fit ? 160 : phone ? 1 : 80;          /* çok dar kutuda da okunur kalsın (telefonda balonun kendisi) */
+    if (bw < minw) bw = minw;
     if (bw > SCREEN_W - x) bw = SCREEN_W - x;          /* ekranın sağına taşmasın */
+    /* Aynı yazı, aynı görünüş, yer/genişlik/renk titreme payı içinde: pencere olduğu gibi kalır (yeniden çizim yok). */
+    unsigned th = text_hash(text);
+    int flags = (haveSurf ? 1 : 0) | (bold ? 2 : 0) | (condensed ? 4 : 0) | (bubble ? 8 : 0) | (part << 4) | ((px / 4) << 8);
+    if (r->win && r->text_hash == th && r->flags == flags &&
+        abs(x - r->x) <= POS_JITTER && abs(y - r->y) <= POS_JITTER && abs(bw - r->w) <= POS_JITTER &&
+        (!haveSurf || (color_near(bg, r->bg) && color_near(fg, r->fg))))
+        return;
+    int boxh = (int)((box[3] - box[1] + 2 * pad) * SCREEN_H);
     static char lines[WRAP_MAX_LINES][WRAP_MAX_BYTES];
-    int n = wrap_text(text, lines, WRAP_MAX_LINES, bw - 2 * RPAD, rfont_measure, NULL);
-    if (n <= 0) { region_destroy(r); return; }
-    int line_h = 0; if (R_rfont->GetHeight(R_rfont, &line_h) != 0 || line_h <= 0) line_h = px + 6;
-    int bh = n * line_h + (n - 1) * LINE_GAP + 2 * RPAD;
+    int n = 0, line_h = 0, gap = phone ? 0 : LINE_GAP, bh;
+    if (part == PANEL_CARD) {
+        bh = boxh;                                     /* kart: yalnız zemin, boyu panelin kendisi */
+    } else {
+        /* Türkçe çoğu zaman İngilizceden uzun (webOS placeItems): özgün görünüşlü yazı %20, telefon balonu %35
+           (en az 18 px) küçülüp kutuya sığmaya çalışır; balon alttaki balona kadar uzayabilir (avail), üst üste binmez.
+           Düz kutu 1.5 katına kadar uzar. En küçük boyda da sığmazsa kutu uzar (yazı kesilmez). */
+        int floor_px, limit;
+        if (bubble)              { floor_px = px * 65 / 100 > BUBBLE_MIN_FONT ? px * 65 / 100 : BUBBLE_MIN_FONT; if (floor_px > px) floor_px = px; limit = boxh + 1; }
+        else if (phone || haveSurf) { floor_px = px * 8 / 10; limit = boxh + 1; }
+        else                     { floor_px = SCREEN_MIN_FONT; limit = (int)(boxh * 1.5 > line * SCREEN_H * 2.6 ? boxh * 1.5 : line * SCREEN_H * 2.6); }
+        if (!fit) floor_px = px;
+        if (o && o->avail > 0 && o->avail < limit) limit = o->avail;
+        for (;;) {
+            n = wrap_text(text, lines, WRAP_MAX_LINES, bw - 2 * padx, rfont_measure, NULL);
+            if (n <= 0) { region_destroy(r); return; }
+            if (phone) line_h = px * 118 / 100;        /* webOS telefon line-height ~1.1: fontun kendi yüksekliği fazla açık */
+            else { line_h = 0; if (R_rfont->GetHeight(R_rfont, &line_h) != 0 || line_h <= 0) line_h = px + 6; }
+            bh = n * line_h + (n - 1) * gap + 2 * pady;
+            if (!fit || bh <= limit || px <= floor_px) break;
+            px = px - 2 < floor_px ? floor_px : px - 2;
+            ensure_rfont(px); if (!R_rfont) return;
+        }
+        /* webOS minHeight: kutu en az özgün yazının (balonun) boyunda; alttaki balona taşmadan. */
+        if (fit) { int minh = o && o->avail > 0 && o->avail < boxh ? o->avail : boxh; if (bh < minh) bh = minh; }
+    }
     if (y + bh > SCREEN_H) bh = SCREEN_H - y;          /* ekranın altına taşmasın (kırpılır) */
-    if (bh < line_h) bh = line_h;
-    /* pencereyi oluştur; boyut değişmişse yeniden kur (DirectFB Resize yerine güvenli yeniden yaratma), yoksa taşı. */
+    if (bh < 1) bh = 1;
+    /* pencereyi oluştur; boyut değişmişse yeniden kur (DirectFB Resize yerine güvenli yeniden yaratma), yoksa taşı.
+       Yumuşak geçiş (webOS): yeni kutu FADE_MS'de belirir; telefonun yerinde kalan yazısı gerçekten yer değiştirince
+       (sohbet kaydı, yeni mesaj, telefon kıpırdadı) eski yerinden SLIDE_MS'de kayar. Adımları anim_tick atar. */
+    int fresh = 0;
     if (!r->win || r->w != bw || r->h != bh) {
         if (r->win) region_destroy(r);
         if (make_window(bw, bh, x, y, &r->win, &r->surf) != 0) { r->win = NULL; return; }
         strncpy(r->id, id, sizeof(r->id) - 1); r->id[sizeof(r->id) - 1] = 0;
-        r->w = bw; r->h = bh;
+        r->w = bw; r->h = bh; fresh = 1;
+        if (part == PANEL_CARD) r->win->LowerToBottom(r->win);   /* kart balonların arkasında kalsın */
+    } else if (phone && (x != r->x || y != r->y)) {
+        int cx = r->x, cy = r->y;
+        if (r->a_start) r->win->GetPosition(r->win, &cx, &cy);   /* süren kaymanın bulunduğu yerden devam */
+        r->ax = cx; r->ay = cy; r->a_start = now_ms();
     } else {
         r->win->MoveTo(r->win, x, y);
     }
     r->surf->Clear(r->surf, 0, 0, 0, 0);
     r->surf->SetDrawingFlags(r->surf, DSDRAW_NOFX);
-    if (haveSurf) r->surf->SetColor(r->surf, (bg >> 16) & 0xFF, (bg >> 8) & 0xFF, bg & 0xFF, 0xF0);
-    else          r->surf->SetColor(r->surf, 0, 0, 0, (unsigned char)(90 * 255 / 100));
-    r->surf->FillRectangle(r->surf, 0, 0, bw, bh);
-    r->surf->SetFont(r->surf, R_rfont);
-    if (haveSurf) r->surf->SetColor(r->surf, (fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF, 0xFF);
-    else          r->surf->SetColor(r->surf, 0xFF, 0xFF, 0xFF, 0xFF);
-    /* condensed: yalnız metni yatayda 0.85 ölçekle (kutu dolgusundan SONRA; sol pad RPAD sabit kalsın diye öteleme).
-       Desteklenmezse (eski/kısıtlı sürücü) SetRenderOptions hata döner, metin normal genişlikte çizilir. */
-    int matrixOn = 0;
-    if (condensed) {
-        int f = (int)(CONDENSE_SCALE * 65536);   /* X' = f·X/65536 + sol pad sabit kalsın diye öteleme */
-        s32 m[9] = { f, 0, (s32)(((1 << 16) - f) * RPAD), 0, 1 << 16, 0, 0, 0, 1 << 16 };
-        if (r->surf->SetMatrix(r->surf, m) == DFB_OK && r->surf->SetRenderOptions(r->surf, DSRO_MATRIX) == DFB_OK)
-            matrixOn = 1;
+    /* zemin: başlık ve not kartın üstünde zeminsiz; kart %88 (webOS PANEL_OPACITY); telefon tam opak; özgün renk ~%94 */
+    if (part != PANEL_TITLE && part != PANEL_NOTE) {
+        unsigned char a = part == PANEL_CARD ? 0xE0 : phone ? 0xFF : 0xF0;
+        if (haveSurf) r->surf->SetColor(r->surf, (bg >> 16) & 0xFF, (bg >> 8) & 0xFF, bg & 0xFF, a);
+        else          r->surf->SetColor(r->surf, 0, 0, 0, (unsigned char)(90 * 255 / 100));
+        fill_round(r->surf, bw, bh, rad);
+        if (part == PANEL_CARD && haveSurf) {
+            /* webOS .panel-couch: sağ altta 0.9×0.6 em sade kanepe, yazı renginde %35 (PANEL_COUCH: x,y,w,h,rx; 24×16). */
+            static const int couch[6][5] = { {30,10,180,80,25}, {0,50,50,80,20}, {190,50,50,80,20}, {40,80,160,50,15}, {20,130,20,30,8}, {200,130,20,30,8} };
+            double k = px * 0.9 / 240.0;             /* birim: viewBox × 10 */
+            int ox = bw - (int)(px * 0.45) - (int)(240 * k), oy = bh - (int)(px * 0.45) - (int)(160 * k);
+            r->surf->SetDrawingFlags(r->surf, DSDRAW_BLEND);
+            r->surf->SetColor(r->surf, (fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF, 0x59);
+            for (int c = 0; c < 6; c++) {
+                int cx = ox + (int)(couch[c][0] * k), cy = oy + (int)(couch[c][1] * k);
+                int cw = (int)(couch[c][2] * k) > 0 ? (int)(couch[c][2] * k) : 1, ch = (int)(couch[c][3] * k) > 0 ? (int)(couch[c][3] * k) : 1;
+                r->surf->FillRectangle(r->surf, cx, cy, cw, ch);
+            }
+            r->surf->SetDrawingFlags(r->surf, DSDRAW_NOFX);
+        }
     }
-    for (int i = 0; i < n; i++) {
-        int ty = RPAD + i * (line_h + LINE_GAP);
-        r->surf->DrawString(r->surf, lines[i], -1, RPAD, ty, DSTF_TOPLEFT);
-        if (bold) r->surf->DrawString(r->surf, lines[i], -1, RPAD + 1, ty, DSTF_TOPLEFT);   /* faux-bold */
+    if (part != PANEL_CARD) {
+        r->surf->SetFont(r->surf, R_rfont);
+        if (haveSurf) r->surf->SetColor(r->surf, (fg >> 16) & 0xFF, (fg >> 8) & 0xFF, fg & 0xFF, 0xFF);
+        else          r->surf->SetColor(r->surf, 0xFF, 0xFF, 0xFF, 0xFF);
+        /* condensed: bu TV'nin DirectFB'si SetMatrix'i desteklemiyor (her çağrıda günlüğe hata basıyordu); yazı
+           sıkıştırılmaz, sığdırmayı küçülme yapar. */
+        (void)condensed;
+        for (int i = 0; i < n; i++) {
+            int ty = pady + i * (line_h + gap), tx = padx;
+            if (part == PANEL_TITLE || part == PANEL_NOTE) {   /* webOS: başlık ve not ortalı */
+                int tw = rfont_measure(NULL, lines[i], (int)strlen(lines[i]));
+                if (tw > 0 && tw < bw) tx = (bw - tw) / 2;
+            }
+            r->surf->DrawString(r->surf, lines[i], -1, tx, ty, DSTF_TOPLEFT);
+            if (bold) r->surf->DrawString(r->surf, lines[i], -1, tx + 1, ty, DSTF_TOPLEFT);   /* faux-bold */
+        }
     }
-    if (matrixOn) r->surf->SetRenderOptions(r->surf, DSRO_NONE);
     r->surf->Flip(r->surf, NULL, DSFLIP_NONE);
-    r->win->SetOpacity(r->win, 0xFF);
+    if (fresh && fit) r->f_start = now_ms();         /* opaklık anim_tick'te 0'dan açılır */
+    else if (!r->f_start) r->win->SetOpacity(r->win, 0xFF);
+    r->x = x; r->y = y; r->text_hash = th; r->bg = bg; r->fg = fg; r->flags = flags;
+}
+
+/* Süren kayma/belirme adımları; ana döngü her turda çağırır. Dönen: sürmekte olan animasyon var mı (döngü sık uyansın). */
+static int anim_step(Region *pool, int size, long long now) {
+    int active = 0;
+    for (int i = 0; i < size; i++) {
+        Region *r = &pool[i];
+        if (!r->win) continue;
+        if (r->a_start) {
+            double t = (double)(now - r->a_start) / SLIDE_MS;
+            if (t >= 1) { r->win->MoveTo(r->win, r->x, r->y); r->a_start = 0; }
+            else {
+                double e = 1 - (1 - t) * (1 - t) * (1 - t);   /* ease-out (webOS transition ease-out) */
+                r->win->MoveTo(r->win, r->ax + (int)((r->x - r->ax) * e), r->ay + (int)((r->y - r->ay) * e));
+                active = 1;
+            }
+        }
+        if (r->f_start) {
+            double t = (double)(now - r->f_start) / FADE_MS;
+            if (t >= 1) { r->win->SetOpacity(r->win, 0xFF); r->f_start = 0; }
+            else { r->win->SetOpacity(r->win, (unsigned char)(t * 255)); active = 1; }
+        }
+    }
+    return active;
+}
+static int anim_tick(long long now) {
+    return anim_step(R_blk, SCREEN_ITEMS_MAX, now) | anim_step(R_scr, SCREEN_ITEMS_MAX, now);
 }
 static void region_show(const char *id, const char *text, const double box[4], double line) {
-    panel_draw(R_reg, REGION_MAX, id, text, box, line, 0, 0, 0, 0, 0);
+    panel_draw(R_reg, REGION_MAX, id, text, box, line, 0, 0, 0, 0, 0, NULL);
 }
 static void screen_show(int idx, const char *text, const double box[4], double line, int haveSurf, unsigned bg, unsigned fg, int bold, int cond) {
     char id[16]; snprintf(id, sizeof id, "scr%d", idx);
-    panel_draw(R_scr, SCREEN_ITEMS_MAX, id, text, box, line, haveSurf, bg, fg, bold, cond);
+    panel_draw(R_scr, SCREEN_ITEMS_MAX, id, text, box, line, haveSurf, bg, fg, bold, cond, NULL);
 }
-static void blocks_show(const char *id, const char *text, const double box[4], double line, int haveSurf, unsigned bg, unsigned fg, int bold, int cond) {
-    panel_draw(R_blk, SCREEN_ITEMS_MAX, id, text, box, line, haveSurf, bg, fg, bold, cond);
+static void blocks_show(const char *id, const char *text, const double box[4], double line, int haveSurf, unsigned bg, unsigned fg, int bold, int cond, const DrawOpts *o) {
+    panel_draw(R_blk, SCREEN_ITEMS_MAX, id, text, box, line, haveSurf, bg, fg, bold, cond, o);
 }
 
 static void render_deinit(void) {
@@ -448,6 +598,21 @@ static void merge_style(const SubStyle *in) {
     if (in->stackPrevious >= 0) g_style.stackPrevious = in->stackPrevious;
     if (in->bandShape >= 0) g_style.bandShape = in->bandShape;
 }
+/* webOS screenBottom: telefon balonu, altında duran ve yatayda çakışan ilk balona kadar büyüyebilir (üst üste
+   binmesin). Dönen: px cinsinden kullanılabilir yükseklik; altında balon yoksa 0 (sınırsız). */
+static int space_below(const SseEvent *e, int i) {
+    const double *b = e->items[i].box;
+    double bottom = 2.0;
+    for (int j = 0; j < e->nitems; j++) {
+        const double *nb = e->items[j].box;
+        if (j == i || !e->items[j].have_box || !e->items[j].text[0] || nb[1] < b[3]) continue;
+        if (nb[0] - PHONE_PAD < b[2] + PHONE_PAD && nb[2] + PHONE_PAD > b[0] - PHONE_PAD && nb[1] < bottom) bottom = nb[1];
+    }
+    if (bottom > 1.5) return 0;
+    int v = (int)((bottom - PHONE_PAD - (b[1] - PHONE_PAD)) * SCREEN_H) - 1;
+    return v > 0 ? v : 1;
+}
+
 static void on_event(const SseEvent *e, void *u) {
     (void)u;
     switch (e->type) {
@@ -482,19 +647,26 @@ static void on_event(const SseEvent *e, void *u) {
         case EV_REGION:
             /* blocks varsa her alt-çeviriyi kendi yerinde göster (birleşik pencereyi gizle); yoksa birleşik metin. */
             if (!e->id[0]) break;
-            blocks_clear(e->id);                     /* bu alanın eski blokları */
             if (e->nitems > 0) {
                 region_hide(e->id);                  /* blok modunda birleşik pencere olmasın */
-                char bid[80];
+                int phone = !strcmp(e->id, "game-phone");
+                char bid[80]; unsigned keep = 0;
                 for (int i = 0; i < e->nitems; i++) {
                     if (!e->items[i].have_box || e->items[i].text[0] == 0) continue;
+                    /* Mac altyazının kendisini ekran yazısı sanınca aynı cümle ikinci kez, dar kutuda çıkıyordu. */
+                    if (g_visible && !strcmp(e->items[i].text, g_text)) continue;
                     snprintf(bid, sizeof bid, "%s#%d", e->id, i);
+                    DrawOpts o = { phone, e->items[i].bubble, e->items[i].panel, 0 };
+                    if (o.bubble) o.avail = space_below(e, i);
                     blocks_show(bid, e->items[i].text, e->items[i].box, e->items[i].line,
                                 e->items[i].have_surface, e->items[i].bg, e->items[i].fg,
-                                e->items[i].bold, e->items[i].condensed);
+                                e->items[i].bold, e->items[i].condensed, &o);
+                    keep |= 1u << i;
                 }
+                blocks_trim(e->id, keep);            /* yalnız bu olayda gelmeyen eski bloklar kalkar */
                 break;
             }
+            blocks_clear(e->id);                     /* bloksuz olay: bu alanın eski blokları */
             if (e->text[0] == 0 || !e->have_box) { region_hide(e->id); break; }
             region_show(e->id, e->text, e->box, e->line);
             break;
@@ -606,9 +778,10 @@ int main(int argc, char **argv) {
         }
         printf("[net] bagli, /events akisi (%s)\n", g_key[0] ? "kimlik dogrulamali" : "anahtarsiz");
         long long last_rx = now_ms();
+        int animating = 0;
         while (!g_quit && !g_exit_evt) {
             fd_set rf; FD_ZERO(&rf); FD_SET(fd, &rf);
-            struct timeval tv = { 0, 200000 };
+            struct timeval tv = { 0, animating ? 16000 : 200000 };   /* animasyon sürerken ~60 kare/sn */
             int sr = select(fd + 1, &rf, NULL, NULL, &tv);
             long long now = now_ms();
             if (sr > 0 && FD_ISSET(fd, &rf)) {
@@ -619,6 +792,7 @@ int main(int argc, char **argv) {
             }
             if (g_visible && g_hide_at && now >= g_hide_at) { render_hide(); g_visible = 0; g_hide_at = 0; }
             if (g_screen_hide_at && now >= g_screen_hide_at) { screen_clear(); g_screen_hide_at = 0; }
+            animating = anim_tick(now_ms());
             if (now - last_rx > STREAM_TIMEOUT_MS) { printf("[net] akis durgun -> yeniden baglan\n"); break; }
         }
         close(fd);

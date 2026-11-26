@@ -106,6 +106,21 @@ class H(socketserver.BaseRequestHandler):
                     s.sendall(frame("region", '{"id":"game-phone","text":"Selam\\nGorusuruz","blocks":['
                         '{"box":{"left":0.62,"top":0.55,"right":0.9,"bottom":0.6},"text":"Selam","style":{"bold":true},"surface":{"background":"#203040","foreground":"#ffffff"}},'
                         '{"box":{"left":0.62,"top":0.64,"right":0.9,"bottom":0.69},"text":"Gorusuruz"}]}')); time.sleep(0.2)
+                    # GTA 6 telefonu, yan panel: kart + başlık + karşı taraf/oyuncu balonları (gerçek olaydan kısaltıldı)
+                    s.sendall(frame("region", '{"id":"game-phone","text":"Cal\\nSelam\\nTamam","box":{"left":0.6067,"top":0.1682,"right":0.9585,"bottom":0.8342},"line":0.024,"blocks":['
+                        '{"box":{"left":0.6067,"top":0.1682,"right":0.9585,"bottom":0.8342},"line":0.024,"panel":"card","surface":{"background":"#141518","foreground":"#F3EEE4"},"text":" "},'
+                        '{"box":{"left":0.6243,"top":0.1778,"right":0.9409,"bottom":0.2114},"line":0.024,"panel":"title","style":{"align":"center","bold":true},"surface":{"background":"#141518","foreground":"#F3EEE4"},"text":"Cal"},'
+                        '{"box":{"left":0.6243,"top":0.2542,"right":0.8889,"bottom":0.3262},"line":0.024,"panel":"theirs","surface":{"background":"#F3EEE4","foreground":"#17181B"},"text":"Selam"},'
+                        '{"box":{"left":0.7641,"top":0.3406,"right":0.9409,"bottom":0.3838},"line":0.024,"panel":"mine","style":{"align":"right"},"surface":{"background":"#F5B83D","foreground":"#17181B"},"text":"Tamam"}]}')); time.sleep(0.2)
+                    # balonların üstünde: her balon alttaki balona kadar büyüyebilir (üst üste binmesin)
+                    s.sendall(frame("region", '{"id":"game-phone","text":"a\\nb","box":{"left":0.4,"top":0.25,"right":0.6,"bottom":0.45},"line":0.024,"blocks":['
+                        '{"box":{"left":0.4,"top":0.25,"right":0.6,"bottom":0.33},"line":0.024,"bubble":true,"surface":{"background":"#E8E6F0","foreground":"#111111"},"text":"Uzun bir mesaj"},'
+                        '{"box":{"left":0.45,"top":0.34,"right":0.6,"bottom":0.38},"line":0.024,"bubble":true,"surface":{"background":"#5060E0","foreground":"#FFFFFF"},"text":"Son"}]}')); time.sleep(0.2)
+                    # altyazının kendisini "görev yazısı" sanan blok çizilmez (ikinci kopya olmasın); farklı blok çizilir
+                    s.sendall(frame("subtitle", '{"duration":3000,"text":"Evet, firsat buldukca doldururum."}')); time.sleep(0.15)
+                    s.sendall(frame("region", '{"id":"auto-mission","text":"x","blocks":['
+                        '{"box":{"left":0.38,"top":0.68,"right":0.52,"bottom":0.77},"line":0.043,"text":"Evet, firsat buldukca doldururum."},'
+                        '{"box":{"left":0.1,"top":0.1,"right":0.3,"bottom":0.15},"line":0.02,"text":"Farkli blok"}]}')); time.sleep(0.2)
                     s.sendall(frame("region-clear", "{}")); time.sleep(0.15)
                     # bold stil (faux-bold: çift çizim)
                     s.sendall(frame("style", '{"bold":true}')); time.sleep(0.1)

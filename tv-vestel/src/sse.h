@@ -7,18 +7,21 @@
 #ifndef COUCHSUBS_SSE_H
 #define COUCHSUBS_SSE_H
 
-#define SSE_LINE_MAX   4096
-#define SSE_DATA_MAX   8192
+#define SSE_LINE_MAX   SSE_DATA_MAX   /* SSE olayı tek data satırıdır: satır sınırı olaydan küçükse uzun olay kırpılırdı */
+#define SSE_DATA_MAX   32768   /* GTA 6 telefon paneli: 16 öğe × ~400 B; taşan olay sessizce atılır */
 #define SSE_TEXT_MAX   2048
 #define SSE_EV_MAX     64
 #define WRAP_MAX_LINES 10
 #define WRAP_MAX_BYTES 512
-#define SCREEN_ITEMS_MAX 8      /* "Ekranı çevir" en çok öğe (ek alanlardan ayrı havuz; shortcut: menü kırpılırsa artır) */
+#define SCREEN_ITEMS_MAX 16     /* "Ekranı çevir"/blok en çok öğe (telefon paneli: kart + başlık + mesajlar) */
 #define SCREEN_TEXT_MAX  512    /* ekran yazıları kısa etiketlerdir */
 #define SPEAKERS_MAX     8      /* subtitle speakerNames: aynı anda renklendirilen konuşan sayısı */
 #define SPEAKER_NAME_MAX 48
 
-typedef struct { char name[SPEAKER_NAME_MAX]; unsigned color; } SseSpeaker;   /* color: 0xRRGGBB */
+typedef struct { char name[SPEAKER_NAME_MAX]; unsigned color; } SseSpeaker;
+
+/* GTA 6 telefonunun yan paneli (SubtitleServer `panel` alanı): kart zemini, kişinin adı, karşı taraf, oyuncu, not. */
+enum { PANEL_NONE = 0, PANEL_CARD, PANEL_TITLE, PANEL_THEIRS, PANEL_MINE, PANEL_NOTE };   /* color: 0xRRGGBB */
 
 typedef enum {
     EV_NONE = 0, EV_SUBTITLE, EV_CLEAR, EV_STYLE, EV_EXIT, EV_PING,
@@ -61,6 +64,8 @@ typedef struct {
         unsigned bg, fg;            /* 0xRRGGBB (have_surface ise geçerli) */
         int    bold;                /* style.bold */
         int    condensed;           /* style.condensed (yatayda sıkıştırılmış çizim) */
+        int    bubble;              /* GTA 6 telefon mesajı kendi balonunun üstünde (sığana kadar küçülür) */
+        int    panel;               /* telefon yan paneli parçası: PANEL_* (0 = panel değil) */
     } items[SCREEN_ITEMS_MAX];
 } SseEvent;
 
